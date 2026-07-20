@@ -161,28 +161,26 @@ export default function FlightPage() {
   }, [stopTracking]);
 
   return (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      width: "100%",
+      height: "100dvh",
+      overflow: "hidden",
+    }}
+  >
+    {/* Carte plein écran */}
     <div
-  style={{
-    position: "fixed",
-    inset: 0,
-    width: "100%",
-    height: "100dvh",
-    overflow: "hidden",
-  }}
->
-      {/* Carte plein écran */}
-      <<div
-  style={{
-    position: "absolute",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-    zIndex: 0,
-  }}
->
-        }}
-      >
-        <FlightMap
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        zIndex: 0,
+      }}
+    >
+      <FlightMap
           currentPosition={currentPosition}
           gpsProjection={gpsProjection}
           weatherProjection={weatherProjection}
