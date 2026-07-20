@@ -26,6 +26,11 @@ export default function FlightMap({
   const map = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const sourceRef = useRef<boolean>(false);
+  const onMapReadyRef = useRef(onMapReady);
+
+useEffect(() => {
+  onMapReadyRef.current = onMapReady;
+}, [onMapReady]);
 
   // Initialiser la carte
   useEffect(() => {
@@ -153,7 +158,7 @@ export default function FlightMap({
       });
 
       sourceRef.current = true;
-      onMapReady?.(map.current);
+      onMapReadyRef.current?.(map.current);
     });
 
     // Cleanup au démontage
@@ -165,7 +170,7 @@ export default function FlightMap({
         sourceRef.current = false;
       }
     };
-  }, [onMapReady]);
+  }, []);
 
   // Mettre à jour la position du marqueur et centrer la carte
   useEffect(() => {
