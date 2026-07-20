@@ -1,65 +1,237 @@
-import Image from "next/image";
+import Button from "./components/Button";
+import NavigationBar from "./components/NavigationBar";
+import TopStatusBar from "./components/TopStatusBar";
 
-export default function Home() {
+const systemStatus = [
+  { label: "GPS", status: "Prêt", color: "var(--bc-success)" },
+  { label: "Météo", status: "À actualiser", color: "var(--bc-warning)" },
+  { label: "Réseau", status: "Connecté", color: "var(--bc-success)" },
+  { label: "Cartes", status: "Disponible", color: "var(--bc-success)" },
+];
+
+const flightData = [
+  { label: "Vent au sol", value: "6 km/h", detail: "240°" },
+  { label: "Vent à 300 m", value: "14 km/h", detail: "255°" },
+  { label: "Lever du soleil", value: "05:58", detail: "Heure locale" },
+  { label: "Espaces aériens", value: "À vérifier", detail: "Avant le vol" },
+];
+
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="min-h-screen px-4 pb-28 pt-6 sm:px-6">
+      <div className="mx-auto w-full max-w-md">
+        <TopStatusBar />
+
+        <header className="mb-7">
+          <p
+            className="mb-2 text-sm font-semibold uppercase tracking-[0.2em]"
+            style={{ color: "var(--bc-accent)" }}
+          >
+            Balloon Companion
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+          <h1 className="text-3xl font-bold tracking-tight">
+            Bonjour Aurélien
+          </h1>
+
+          <p
+            className="mt-2 text-base"
+            style={{ color: "var(--bc-text-secondary)" }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Préparons ton prochain vol.
+          </p>
+        </header>
+
+        <section
+          className="mb-5 overflow-hidden border"
+          style={{
+            background: "var(--bc-background-elevated)",
+            borderColor: "var(--bc-border)",
+            borderRadius: "var(--bc-radius-large)",
+            boxShadow: "var(--bc-shadow-card)",
+          }}
+        >
+          <div
+            className="flex items-center justify-between border-b px-5 py-4"
+            style={{ borderColor: "var(--bc-border)" }}
           >
-            Documentation
-          </a>
+            <div>
+              <p
+                className="text-xs font-semibold uppercase tracking-[0.16em]"
+                style={{ color: "var(--bc-text-muted)" }}
+              >
+                Conditions du jour
+              </p>
+
+              <h2 className="mt-1 text-xl font-bold">Briefing non lancé</h2>
+            </div>
+
+            <div
+              className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold"
+              style={{
+                background: "rgb(240 168 75 / 12%)",
+                color: "var(--bc-warning)",
+              }}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: "var(--bc-warning)" }}
+              />
+              À vérifier
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2">
+            {flightData.map((item, index) => (
+              <div
+                key={item.label}
+                className="min-h-28 px-5 py-4"
+                style={{
+                  borderRight:
+                    index % 2 === 0
+                      ? "1px solid var(--bc-border)"
+                      : undefined,
+                  borderBottom:
+                    index < 2
+                      ? "1px solid var(--bc-border)"
+                      : undefined,
+                }}
+              >
+                <p
+                  className="text-sm"
+                  style={{ color: "var(--bc-text-secondary)" }}
+                >
+                  {item.label}
+                </p>
+
+                <p className="mt-2 text-xl font-bold">{item.value}</p>
+
+                <p
+                  className="mt-1 text-xs"
+                  style={{ color: "var(--bc-text-muted)" }}
+                >
+                  {item.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="mb-7">
+          <Button href="/prepare">Préparer un vol</Button>
         </div>
-      </main>
-    </div>
+
+        <section className="mb-7">
+          <div className="mb-3 flex items-end justify-between">
+            <div>
+              <p
+                className="text-xs font-semibold uppercase tracking-[0.16em]"
+                style={{ color: "var(--bc-text-muted)" }}
+              >
+                Système
+              </p>
+
+              <h2 className="mt-1 text-xl font-bold">État de l’application</h2>
+            </div>
+
+            <p
+              className="text-sm"
+              style={{ color: "var(--bc-text-secondary)" }}
+            >
+              3/4 prêts
+            </p>
+          </div>
+
+          <div
+            className="grid grid-cols-2 gap-px overflow-hidden border"
+            style={{
+              background: "var(--bc-border)",
+              borderColor: "var(--bc-border)",
+              borderRadius: "var(--bc-radius-medium)",
+            }}
+          >
+            {systemStatus.map((item) => (
+              <div
+                key={item.label}
+                className="flex items-center gap-3 px-4 py-4"
+                style={{ background: "var(--bc-surface)" }}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{
+                    background: item.color,
+                    boxShadow: `0 0 12px ${item.color}`,
+                  }}
+                />
+
+                <div>
+                  <p className="font-semibold">{item.label}</p>
+                  <p
+                    className="mt-0.5 text-xs"
+                    style={{ color: "var(--bc-text-secondary)" }}
+                  >
+                    {item.status}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid grid-cols-2 gap-3">
+          <button
+            className="min-h-32 border p-4 text-left transition-transform active:scale-[0.98]"
+            style={{
+              background: "var(--bc-surface)",
+              borderColor: "var(--bc-border)",
+              borderRadius: "var(--bc-radius-medium)",
+            }}
+          >
+            <span
+              className="text-xs font-semibold uppercase tracking-[0.14em]"
+              style={{ color: "var(--bc-text-muted)" }}
+            >
+              Carnet
+            </span>
+
+            <strong className="mt-5 block text-2xl">0 vol</strong>
+
+            <span
+              className="mt-1 block text-sm"
+              style={{ color: "var(--bc-text-secondary)" }}
+            >
+              Consulter le carnet
+            </span>
+          </button>
+
+          <button
+            className="min-h-32 border p-4 text-left transition-transform active:scale-[0.98]"
+            style={{
+              background: "var(--bc-surface)",
+              borderColor: "var(--bc-border)",
+              borderRadius: "var(--bc-radius-medium)",
+            }}
+          >
+            <span
+              className="text-xs font-semibold uppercase tracking-[0.14em]"
+              style={{ color: "var(--bc-text-muted)" }}
+            >
+              Dernier terrain
+            </span>
+
+            <strong className="mt-5 block text-2xl">Non défini</strong>
+
+            <span
+              className="mt-1 block text-sm"
+              style={{ color: "var(--bc-text-secondary)" }}
+            >
+              Ajouter un terrain
+            </span>
+          </button>
+        </section>
+      </div>
+
+      <NavigationBar activeItem="Accueil" />
+    </main>
   );
 }
