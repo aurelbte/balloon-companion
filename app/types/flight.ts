@@ -50,6 +50,21 @@ export type GeolocationState =
   | "unavailable"
   | "simulation";
 
+export type FlightSessionStatus =
+  | "ready"
+  | "acquiring"
+  | "recording"
+  | "stopped";
+
+export interface PersistedFlightSession {
+  version: 1;
+  status: FlightSessionStatus;
+  startTime: number | null;
+  points: GeoPoint[];
+  metrics: FlightMetrics;
+  savedAt: number;
+}
+
 /**
  * Configuration des couches d'affichage
  */

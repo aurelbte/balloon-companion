@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useFlightTracking } from "../hooks/useFlightTracking";
@@ -27,73 +27,94 @@ export default function FlightPage() {
   });
 
   const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
-  const [gpsProjection, setGpsProjection] = useState<ProjectionPoint[]>([]);
-  const [weatherProjection, setWeatherProjection] = useState<ProjectionPoint[]>([]);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
   // Géolocalisation
-  const { point: currentPosition, state: geoState, error: geoError, requestPermission } =
-    useGeolocation({
-      enableHighAccuracy: true,
-      maximumAge: 1000,
-      timeout: 10000,
-      simulateIfUnavailable: false,
-    });
+  const {
+    point: currentPosition,
+    state: geoState,
+    error: geoError,
+    isStale,
+    requestPermission,
+    stopTracking: stopGeolocation,
+  } = useGeolocation({
+    enableHighAccuracy: true,
+    maximumAge: 1000,
+    timeout: 10000,
+    enableDevelopmentTestMode: true,
+  });
 
   // Suivi du vol
   const {
     isTracking,
+    points,
     metrics,
     startTracking,
     stopTracking,
     addPoint,
-    reset,
+    status: flightStatus,
+    hasSavedFlight,
+    markAcquiring,
+    markReady,
   } = useFlightTracking();
 
   // Ajouter un point à chaque mise à jour GPS
   useEffect(() => {
-    if (isTracking && currentPosition) {
+    if (isTracking && currentPosition && !isStale) {
       addPoint(currentPosition);
     }
-  }, [isTracking, currentPosition, addPoint]);
+  }, [isTracking, currentPosition, isStale, addPoint]);
 
-  // Calculer les projections GPS et météo
-  useEffect(() => {
-    if (!currentPosition || (currentPosition.speed || 0) <= 0.5) {
-      if (gpsProjection.length > 0 || weatherProjection.length > 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setGpsProjection([]);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setWeatherProjection([]);
-      }
-      return;
+  // Une projection exige un point frais, un cap réel et une vitesse suffisante.
+  // Un cap absent ne doit jamais être interprété comme un cap nord (0°).
+  const gpsProjection = useMemo<ProjectionPoint[]>(() => {
+    if (
+      !currentPosition ||
+      isStale ||
+      currentPosition.heading === null ||
+      !Number.isFinite(currentPosition.heading) ||
+      currentPosition.speed === null ||
+      !Number.isFinite(currentPosition.speed) ||
+      currentPosition.speed <= 0.5
+    ) {
+      return [];
     }
 
-    const gps = buildGpsProjectionPoints(
+    return buildGpsProjectionPoints(
       currentPosition.latitude,
       currentPosition.longitude,
-      currentPosition.heading || 0,
-      currentPosition.speed || 0
+      currentPosition.heading,
+      currentPosition.speed
     );
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setGpsProjection(gps);
+  }, [currentPosition, isStale]);
 
-    if (layerSettings.weatherProjection) {
-      const weather = buildWeatherProjectionPoints(
-        currentPosition.latitude,
-        currentPosition.longitude,
-        currentPosition.heading || 0,
-        currentPosition.speed || 0
-      );
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setWeatherProjection(weather);
+  const weatherProjection = useMemo<ProjectionPoint[]>(() => {
+    if (
+      !layerSettings.weatherProjection ||
+      gpsProjection.length === 0 ||
+      !currentPosition
+    ) {
+      return [];
     }
-  }, [currentPosition, layerSettings.weatherProjection]);
 
-  // Demander la permission au premier rendu
+    return buildWeatherProjectionPoints(
+      currentPosition.latitude,
+      currentPosition.longitude,
+      currentPosition.heading as number,
+      currentPosition.speed as number
+    );
+  }, [currentPosition, gpsProjection.length, layerSettings.weatherProjection]);
+
   useEffect(() => {
+    markAcquiring();
     requestPermission();
-  }, [requestPermission]);
+  }, [markAcquiring, requestPermission]);
+
+  useEffect(() => {
+    if ((geoState === "active" || geoState === "simulation") && !isStale) {
+      markReady();
+    }
+  }, [geoState, isStale, markReady]);
 
   // Handlers pour les boutons
   const handleRecenterMap = useCallback(() => {
@@ -148,28 +169,80 @@ export default function FlightPage() {
   }, [currentPosition, gpsProjection, weatherProjection, layerSettings]);
 
   const handleStartTracking = useCallback(() => {
-    if (geoState === "active" || geoState === "simulation") {
-      reset();
+    if ((geoState === "active" || geoState === "simulation") && !isStale) {
+      if (
+        flightStatus === "stopped" &&
+        hasSavedFlight &&
+        !window.confirm(
+          "Commencer un nouveau vol et remplacer la session arrêtée ?"
+        )
+      ) {
+        return;
+      }
       startTracking();
     } else {
+      markAcquiring();
       requestPermission();
     }
-  }, [geoState, reset, startTracking, requestPermission]);
+  }, [
+    flightStatus,
+    geoState,
+    hasSavedFlight,
+    isStale,
+    markAcquiring,
+    requestPermission,
+    startTracking,
+  ]);
 
   const handleStopTracking = useCallback(() => {
-    stopTracking();
-  }, [stopTracking]);
+    if (window.confirm("Arrêter et sauvegarder l’enregistrement du vol ?")) {
+      stopTracking();
+      stopGeolocation();
+    }
+  }, [stopGeolocation, stopTracking]);
+
+  const displayedMetrics = useMemo(
+    () =>
+      isStale
+        ? {
+            ...metrics,
+            altitude: null,
+            verticalSpeed: null,
+            groundSpeed: null,
+            heading: null,
+          }
+        : metrics,
+    [isStale, metrics]
+  );
+
+  const gpsStatus = (() => {
+    if (geoState === "simulation") return "MODE TEST • GPS SIMULÉ";
+    if (geoState === "permission_denied") return "GPS REFUSÉ";
+    if (geoState === "unavailable" || geoState === "error") {
+      return "GPS INDISPONIBLE";
+    }
+    if (geoState === "idle" && flightStatus === "stopped") return "GPS ARRÊTÉ";
+    if (isStale) return "POSITION ANCIENNE";
+    if (
+      geoState === "active" &&
+      currentPosition &&
+      currentPosition.accuracy !== null
+    ) {
+      return `GPS ACTIF · ±${Math.round(currentPosition.accuracy)} m`;
+    }
+    return "RECHERCHE GPS";
+  })();
 
   return (
-  <div
-    style={{
-      position: "fixed",
-      inset: 0,
-      width: "100%",
-      height: "100dvh",
-      overflow: "hidden",
-    }}
-  >
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100%",
+        height: "100dvh",
+        overflow: "hidden",
+      }}
+    >
     {/* Carte plein écran */}
     <div
       style={{
@@ -180,8 +253,9 @@ export default function FlightPage() {
         zIndex: 0,
       }}
     >
-      <FlightMap
-          currentPosition={currentPosition}
+        <FlightMap
+          currentPosition={isStale ? null : currentPosition}
+          flightPoints={points}
           gpsProjection={gpsProjection}
           weatherProjection={weatherProjection}
           showGpsProjection={layerSettings.gpsProjection && isTracking}
@@ -194,11 +268,35 @@ export default function FlightPage() {
 
       {/* Panneau d'instruments */}
       <FlightInstruments
-        metrics={metrics}
+        metrics={displayedMetrics}
         isRecording={isTracking}
         highContrast={layerSettings.highContrast}
         geolocationState={geoState}
       />
+
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          position: "fixed",
+          top: "max(16px, env(safe-area-inset-top))",
+          right: "16px",
+          zIndex: 20,
+          padding: "9px 11px",
+          borderRadius: "12px",
+          background: "rgba(7, 17, 31, 0.9)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
+          color:
+            (geoState === "active" || geoState === "simulation") && !isStale
+              ? "var(--bc-success)"
+              : "var(--bc-warning)",
+          fontSize: "11px",
+          fontWeight: 800,
+          letterSpacing: "0.04em",
+        }}
+      >
+        {gpsStatus}
+      </div>
 
       {/* Boutons flottants */}
       <FlightControls
@@ -223,8 +321,8 @@ export default function FlightPage() {
         <div
           style={{
             position: "fixed",
-            top: "16px",
-            left: "16px",
+            top: "max(112px, calc(env(safe-area-inset-top) + 96px))",
+            right: "16px",
             backgroundColor: "rgba(239, 68, 68, 0.1)",
             border: "1px solid var(--bc-danger)",
             borderRadius: "8px",

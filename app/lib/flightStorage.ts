@@ -46,6 +46,10 @@ export function saveCurrentFlight(flight: Flight): boolean {
  * @returns Les données du vol en cours, ou null si aucun vol n'existe
  */
 export function getCurrentFlight(): Flight | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {

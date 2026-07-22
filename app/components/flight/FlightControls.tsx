@@ -44,17 +44,28 @@ export default function FlightControls({
     border: "1px solid var(--bc-border)",
   };
 
+  const primaryButtonStyle = {
+    ...buttonStyle,
+    width: isTracking ? "132px" : "118px",
+    borderRadius: "24px",
+    gap: "7px",
+    fontSize: "11px",
+    fontWeight: "900",
+    letterSpacing: "0.04em",
+  };
+
   return (
     <div
       style={{
         position: "fixed",
-        bottom: "120px",
+        top: "50%",
         right: "16px",
+        transform: "translateY(-50%)",
         display: "flex",
         flexDirection: "column" as const,
         gap: "12px",
+        alignItems: "flex-end",
         zIndex: 40,
-        paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
       {/* Bouton recentrer */}
@@ -91,11 +102,12 @@ export default function FlightControls({
       {!isTracking ? (
         <button
           onClick={onStartTracking}
-          style={buttonStyle}
+          style={primaryButtonStyle}
           title="Démarrer le suivi"
           aria-label="Démarrer l'enregistrement du vol"
         >
           <Play size={24} fill="currentColor" />
+          DÉMARRER
         </button>
       ) : (
         <button
@@ -112,13 +124,14 @@ export default function FlightControls({
             }
           }}
           style={{
-            ...buttonStyle,
+            ...primaryButtonStyle,
             backgroundColor: "#ef6464",
           }}
           title="Arrêter le suivi"
           aria-label="Arrêter l'enregistrement du vol"
         >
           <Square size={20} fill="currentColor" />
+          ARRÊTER
         </button>
       )}
     </div>
