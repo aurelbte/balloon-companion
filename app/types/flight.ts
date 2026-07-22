@@ -76,6 +76,8 @@ export interface FlightLayerSettings {
   highContrast: boolean;
 }
 
+export type BaseMap = "plan" | "satellite";
+
 /**
  * État du suivi de vol
  */

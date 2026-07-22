@@ -2,16 +2,27 @@
 
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
+import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { GeoPoint, ProjectionPoint } from "../../types/flight";
+import type { BaseMap, GeoPoint, ProjectionPoint } from "../../types/flight";
+
+const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
+const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
+const PLAN_LAYER_ID = "osm-tiles";
+const SATELLITE_FAILURE_MESSAGE = "Satellite indisponible — fond Plan restauré";
+const SATELLITE_ERROR_WINDOW_MS = 10_000;
+const SATELLITE_LOAD_TIMEOUT_MS = 12_000;
+const MAX_SATELLITE_ERRORS = 3;
 
 interface FlightMapProps {
   currentPosition: GeoPoint | null;
+  baseMap: BaseMap;
   flightPoints: GeoPoint[];
   gpsProjection: ProjectionPoint[];
   weatherProjection: ProjectionPoint[];
   showGpsProjection: boolean;
   showWeatherProjection: boolean;
+  onSatelliteError: (message: string) => void;
   onMapReady?: (map: maplibregl.Map) => void;
 }
 
@@ -48,11 +59,13 @@ function buildFlightTrackData(points: GeoPoint[]): GeoJSON.FeatureCollection {
 
 export default function FlightMap({
   currentPosition,
+  baseMap,
   flightPoints,
   gpsProjection,
   weatherProjection,
   showGpsProjection,
   showWeatherProjection,
+  onSatelliteError,
   onMapReady,
 }: FlightMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -61,6 +74,12 @@ export default function FlightMap({
   const sourceRef = useRef<boolean>(false);
   const onMapReadyRef = useRef(onMapReady);
   const flightPointsRef = useRef(flightPoints);
+  const baseMapRef = useRef(baseMap);
+  const onSatelliteErrorRef = useRef(onSatelliteError);
+  const satelliteErrorsRef = useRef<number[]>([]);
+  const satelliteFailedRef = useRef(false);
+  const satelliteLoadTimeoutRef = useRef<number | null>(null);
+  const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
 useEffect(() => {
   onMapReadyRef.current = onMapReady;
@@ -70,41 +89,74 @@ useEffect(() => {
     flightPointsRef.current = flightPoints;
   }, [flightPoints]);
 
+  useEffect(() => {
+    baseMapRef.current = baseMap;
+  }, [baseMap]);
+
+  useEffect(() => {
+    onSatelliteErrorRef.current = onSatelliteError;
+  }, [onSatelliteError]);
+
   // Initialiser la carte
   useEffect(() => {
     if (map.current || !mapContainer.current) {
       return;
     }
 
+    const baseSources: Record<string, SourceSpecification> = {
+      "osm-tiles": {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution:
+          '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
+      },
+    };
+    const baseLayers: LayerSpecification[] = [
+      {
+        id: PLAN_LAYER_ID,
+        type: "raster",
+        source: "osm-tiles",
+        minzoom: 0,
+        maxzoom: 19,
+      },
+    ];
+
+    if (mapTilerKey) {
+      baseSources[SATELLITE_SOURCE_ID] = {
+        type: "raster" as const,
+        tiles: [
+          `https://api.maptiler.com/maps/hybrid-v4/256/{z}/{x}/{y}@2x.jpg?key=${encodeURIComponent(mapTilerKey)}`,
+        ],
+        tileSize: 256,
+        maxzoom: 22,
+        attribution:
+          '<a href="https://www.maptiler.com/copyright/" target="_blank">© MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
+      };
+      baseLayers.push({
+        id: SATELLITE_LAYER_ID,
+        type: "raster",
+        source: SATELLITE_SOURCE_ID,
+        minzoom: 0,
+        maxzoom: 22,
+        layout: { visibility: "none" },
+      });
+    }
+
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style: {
   version: 8,
-  sources: {
-    "osm-tiles": {
-      type: "raster",
-      tiles: [
-        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
-    },
-  },
-  layers: [
-    {
-      id: "osm-tiles",
-      type: "raster",
-      source: "osm-tiles",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
+  sources: baseSources,
+  layers: baseLayers,
 },
       center: [3.058, 50.631],
       zoom: 12,
       pitch: 0,
       bearing: 0,
-      attributionControl: false,
+      attributionControl: {
+        compact: true,
+      },
     });
 
     // Ajouter les contrôles de navigation
@@ -232,6 +284,39 @@ useEffect(() => {
       onMapReadyRef.current?.(map.current);
     });
 
+    map.current.on("sourcedata", (event) => {
+      if (
+        event.sourceId === SATELLITE_SOURCE_ID &&
+        event.isSourceLoaded
+      ) {
+        satelliteErrorsRef.current = [];
+        if (satelliteLoadTimeoutRef.current !== null) {
+          window.clearTimeout(satelliteLoadTimeoutRef.current);
+          satelliteLoadTimeoutRef.current = null;
+        }
+      }
+    });
+
+    map.current.on("error", (event) => {
+      if (
+        baseMapRef.current !== "satellite" ||
+        satelliteFailedRef.current ||
+        !event.error.message.includes("api.maptiler.com")
+      ) {
+        return;
+      }
+
+      const now = Date.now();
+      satelliteErrorsRef.current = satelliteErrorsRef.current
+        .filter((timestamp) => now - timestamp <= SATELLITE_ERROR_WINDOW_MS)
+        .concat(now);
+
+      if (satelliteErrorsRef.current.length >= MAX_SATELLITE_ERRORS) {
+        satelliteFailedRef.current = true;
+        onSatelliteErrorRef.current(SATELLITE_FAILURE_MESSAGE);
+      }
+    });
+
     // Cleanup au démontage
     return () => {
       if (map.current) {
@@ -240,8 +325,55 @@ useEffect(() => {
         markerRef.current = null;
         sourceRef.current = false;
       }
+      if (satelliteLoadTimeoutRef.current !== null) {
+        window.clearTimeout(satelliteLoadTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [mapTilerKey]);
+
+  useEffect(() => {
+    if (!map.current || !sourceRef.current) return;
+
+    const canShowSatellite =
+      baseMap === "satellite" &&
+      Boolean(mapTilerKey) &&
+      !satelliteFailedRef.current &&
+      Boolean(map.current.getLayer(SATELLITE_LAYER_ID));
+
+    map.current.setLayoutProperty(
+      PLAN_LAYER_ID,
+      "visibility",
+      canShowSatellite ? "none" : "visible"
+    );
+
+    if (map.current.getLayer(SATELLITE_LAYER_ID)) {
+      map.current.setLayoutProperty(
+        SATELLITE_LAYER_ID,
+        "visibility",
+        canShowSatellite ? "visible" : "none"
+      );
+    }
+
+    if (satelliteLoadTimeoutRef.current !== null) {
+      window.clearTimeout(satelliteLoadTimeoutRef.current);
+      satelliteLoadTimeoutRef.current = null;
+    }
+
+    if (canShowSatellite) {
+      satelliteErrorsRef.current = [];
+      satelliteLoadTimeoutRef.current = window.setTimeout(() => {
+        if (
+          baseMapRef.current === "satellite" &&
+          !satelliteFailedRef.current &&
+          map.current &&
+          !map.current.isSourceLoaded(SATELLITE_SOURCE_ID)
+        ) {
+          satelliteFailedRef.current = true;
+          onSatelliteErrorRef.current(SATELLITE_FAILURE_MESSAGE);
+        }
+      }, SATELLITE_LOAD_TIMEOUT_MS);
+    }
+  }, [baseMap, mapTilerKey]);
 
   // Mettre à jour la position du marqueur et centrer la carte
   useEffect(() => {
@@ -438,5 +570,58 @@ useEffect(() => {
     }
   }, [currentPosition, weatherProjection, showWeatherProjection]);
 
-  return <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />;
+  return (
+    <>
+      <style>{`
+        .flight-map .maplibregl-ctrl-bottom-left {
+          bottom: calc(max(6px, env(safe-area-inset-bottom)) + 124px);
+          left: 6px;
+        }
+        .flight-map .maplibregl-ctrl-attrib {
+          max-width: calc(100vw - 170px);
+          font-size: 10px;
+        }
+        @media (max-width: 380px) {
+          .flight-map .maplibregl-ctrl-attrib { max-width: 185px; }
+        }
+      `}</style>
+      <div
+        ref={mapContainer}
+        className="flight-map"
+        style={{ width: "100%", height: "100%" }}
+      />
+      {baseMap === "satellite" && mapTilerKey && (
+        <a
+          href="https://www.maptiler.com/"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="MapTiler"
+          style={{
+            position: "absolute",
+            left: "8px",
+            bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 158px)",
+            zIndex: 2,
+            display: "block",
+            width: "75px",
+            height: "25px",
+          }}
+        >
+          {/* Logo MapTiler officiel, obligatoire avec un compte Free. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="https://api.maptiler.com/resources/logo.svg"
+            alt="MapTiler"
+            width="75"
+            height="25"
+            style={{
+              display: "block",
+              width: "75px",
+              height: "25px",
+              objectFit: "contain",
+            }}
+          />
+        </a>
+      )}
+    </>
+  );
 }

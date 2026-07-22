@@ -58,9 +58,8 @@ export default function FlightControls({
     <div
       style={{
         position: "fixed",
-        top: "50%",
+        bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 124px)",
         right: "16px",
-        transform: "translateY(-50%)",
         display: "flex",
         flexDirection: "column" as const,
         gap: "12px",

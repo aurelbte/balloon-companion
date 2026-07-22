@@ -13,6 +13,7 @@ import FlightInstruments from "../components/flight/FlightInstruments";
 import FlightControls from "../components/flight/FlightControls";
 import LayersPanel from "../components/flight/LayersPanel";
 import type {
+  BaseMap,
   FlightLayerSettings,
   ProjectionPoint,
 } from "../types/flight";
@@ -27,7 +28,10 @@ export default function FlightPage() {
   });
 
   const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
+  const [baseMap, setBaseMap] = useState<BaseMap>("plan");
+  const [satelliteError, setSatelliteError] = useState<string | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
 
   // Géolocalisation
   const {
@@ -201,6 +205,19 @@ export default function FlightPage() {
     }
   }, [stopGeolocation, stopTracking]);
 
+  const handleBaseMapChange = useCallback(
+    (nextBaseMap: BaseMap) => {
+      if (nextBaseMap === "satellite" && !satelliteConfigured) return;
+      setBaseMap(nextBaseMap);
+    },
+    [satelliteConfigured]
+  );
+
+  const handleSatelliteError = useCallback((message: string) => {
+    setBaseMap("plan");
+    setSatelliteError(message);
+  }, []);
+
   const displayedMetrics = useMemo(
     () =>
       isStale
@@ -255,11 +272,13 @@ export default function FlightPage() {
     >
         <FlightMap
           currentPosition={isStale ? null : currentPosition}
+          baseMap={baseMap}
           flightPoints={points}
           gpsProjection={gpsProjection}
           weatherProjection={weatherProjection}
           showGpsProjection={layerSettings.gpsProjection && isTracking}
           showWeatherProjection={layerSettings.weatherProjection && isTracking}
+          onSatelliteError={handleSatelliteError}
           onMapReady={(map) => {
             mapRef.current = map;
           }}
@@ -312,6 +331,15 @@ export default function FlightPage() {
       <LayersPanel
         isOpen={isLayersPanelOpen}
         settings={layerSettings}
+        baseMap={baseMap}
+        satelliteAvailable={satelliteConfigured && satelliteError === null}
+        satelliteMessage={
+          satelliteError ??
+          (!satelliteConfigured
+            ? "Fond satellite non configuré"
+            : null)
+        }
+        onBaseMapChange={handleBaseMapChange}
         onSettingsChange={setLayerSettings}
         onClose={() => setIsLayersPanelOpen(false)}
       />

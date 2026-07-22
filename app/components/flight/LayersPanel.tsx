@@ -1,10 +1,14 @@
 "use client";
 
 import { X } from "lucide-react";
-import type { FlightLayerSettings } from "../../types/flight";
+import type { BaseMap, FlightLayerSettings } from "../../types/flight";
 
 interface LayersPanelProps {
   settings: FlightLayerSettings;
+  baseMap: BaseMap;
+  satelliteAvailable: boolean;
+  satelliteMessage: string | null;
+  onBaseMapChange: (baseMap: BaseMap) => void;
   onSettingsChange: (settings: FlightLayerSettings) => void;
   onClose: () => void;
   isOpen: boolean;
@@ -12,6 +16,10 @@ interface LayersPanelProps {
 
 export default function LayersPanel({
   settings,
+  baseMap,
+  satelliteAvailable,
+  satelliteMessage,
+  onBaseMapChange,
   onSettingsChange,
   onClose,
   isOpen,
@@ -121,6 +129,81 @@ export default function LayersPanel({
 
         {/* Couches */}
         <div>
+          <section
+            style={{
+              padding: "12px 16px 16px",
+              borderBottom: "1px solid var(--bc-border)",
+            }}
+          >
+            <p
+              style={{
+                margin: "0 0 10px",
+                color: "var(--bc-text-muted)",
+                fontSize: "11px",
+                fontWeight: "700",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Fond de carte
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "8px",
+              }}
+            >
+              {(["plan", "satellite"] as const).map((option) => {
+                const isDisabled = option === "satellite" && !satelliteAvailable;
+                const isSelected = baseMap === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => onBaseMapChange(option)}
+                    aria-pressed={isSelected}
+                    style={{
+                      minHeight: "44px",
+                      borderRadius: "10px",
+                      border: `1px solid ${
+                        isSelected ? "var(--bc-accent)" : "var(--bc-border)"
+                      }`,
+                      background: isSelected
+                        ? "rgba(245, 158, 66, 0.14)"
+                        : "var(--bc-background-elevated)",
+                      color: isDisabled
+                        ? "var(--bc-text-muted)"
+                        : isSelected
+                          ? "var(--bc-accent)"
+                          : "var(--bc-text-primary)",
+                      fontSize: "14px",
+                      fontWeight: "750",
+                      opacity: isDisabled ? 0.55 : 1,
+                      cursor: isDisabled ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {option === "plan" ? "Plan" : "Satellite"}
+                  </button>
+                );
+              })}
+            </div>
+            {satelliteMessage && (
+              <p
+                role="status"
+                style={{
+                  margin: "10px 0 0",
+                  color: "var(--bc-warning)",
+                  fontSize: "12px",
+                  lineHeight: 1.35,
+                }}
+              >
+                {satelliteMessage}
+              </p>
+            )}
+          </section>
+
           {/* Projection GPS */}
           <label
             style={{
