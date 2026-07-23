@@ -1,6 +1,7 @@
 import Button from "./components/Button";
 import NavigationBar from "./components/NavigationBar";
 import TopStatusBar from "./components/TopStatusBar";
+import Link from "next/link";
 
 const systemStatus = [
   { label: "GPS", status: "Prêt", color: "var(--bc-success)" },
@@ -121,6 +122,31 @@ export default function HomePage() {
           <Button href="/prepare">Préparer un vol</Button>
         </div>
 
+        <div className="mb-7 grid grid-cols-2 gap-3">
+          <Link
+            href="/flight"
+            className="grid min-h-14 place-items-center rounded-2xl border font-bold"
+            style={{
+              borderColor: "var(--bc-border)",
+              background: "var(--bc-surface)",
+              color: "var(--bc-text-primary)",
+            }}
+          >
+            Mode Vol
+          </Link>
+          <Link
+            href="/flights"
+            className="grid min-h-14 place-items-center rounded-2xl border font-bold"
+            style={{
+              borderColor: "var(--bc-border)",
+              background: "var(--bc-surface)",
+              color: "var(--bc-text-primary)",
+            }}
+          >
+            Journal des vols
+          </Link>
+        </div>
+
         <section className="mb-7">
           <div className="mb-3 flex items-end justify-between">
             <div>
@@ -179,7 +205,8 @@ export default function HomePage() {
         </section>
 
         <section className="grid grid-cols-2 gap-3">
-          <button
+          <Link
+            href="/flights"
             className="min-h-32 border p-4 text-left transition-transform active:scale-[0.98]"
             style={{
               background: "var(--bc-surface)",
@@ -191,18 +218,18 @@ export default function HomePage() {
               className="text-xs font-semibold uppercase tracking-[0.14em]"
               style={{ color: "var(--bc-text-muted)" }}
             >
-              Carnet
+              Journal
             </span>
 
-            <strong className="mt-5 block text-2xl">0 vol</strong>
+            <strong className="mt-5 block text-2xl">Voir les vols</strong>
 
             <span
               className="mt-1 block text-sm"
               style={{ color: "var(--bc-text-secondary)" }}
             >
-              Consulter le carnet
+              Consulter les vols
             </span>
-          </button>
+          </Link>
 
           <button
             className="min-h-32 border p-4 text-left transition-transform active:scale-[0.98]"

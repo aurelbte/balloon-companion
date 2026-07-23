@@ -4,6 +4,7 @@ import { MapPin, Maximize2, Layers, Play, Square } from "lucide-react";
 
 interface FlightControlsProps {
   isTracking: boolean;
+  withNavigation?: boolean;
   onRecenterMap: () => void;
   onFitProjection: () => void;
   onOpenLayers: () => void;
@@ -13,6 +14,7 @@ interface FlightControlsProps {
 
 export default function FlightControls({
   isTracking,
+  withNavigation = false,
   onRecenterMap,
   onFitProjection,
   onOpenLayers,
@@ -56,7 +58,9 @@ export default function FlightControls({
     <div
       style={{
         position: "fixed",
-        bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 124px)",
+        bottom: `calc(max(6px, env(safe-area-inset-bottom)) + ${
+          withNavigation ? "192px" : "124px"
+        })`,
         right: "16px",
         display: "flex",
         flexDirection: "column" as const,

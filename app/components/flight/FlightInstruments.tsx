@@ -8,11 +8,13 @@ interface FlightInstrumentsProps {
   isRecording: boolean;
   highContrast?: boolean;
   geolocationState?: string;
+  withNavigation?: boolean;
 }
 
 export default function FlightInstruments({
   metrics,
   highContrast = false,
+  withNavigation = false,
 }: FlightInstrumentsProps) {
   const formatAltitudeValue = (altitude: number | null) => {
     if (altitude === null || !Number.isFinite(altitude)) {
@@ -46,7 +48,9 @@ export default function FlightInstruments({
     position: "fixed" as const,
     left: "6px",
     right: "6px",
-    bottom: "max(6px, env(safe-area-inset-bottom))",
+    bottom: withNavigation
+      ? "calc(max(6px, env(safe-area-inset-bottom)) + 68px)"
+      : "max(6px, env(safe-area-inset-bottom))",
     zIndex: 20,
     display: "grid",
     gridTemplateColumns: "0.9fr 1.35fr 1fr 0.85fr 1.15fr",

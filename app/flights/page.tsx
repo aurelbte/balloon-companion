@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import type { RecordedFlight } from "../lib/recordedFlight";
 import { getRecordedFlightPresentation } from "../lib/recordedFlightPresentation";
 import { IndexedDbRecordedFlightStorage } from "../lib/recordedFlightStorage";
+import NavigationBar from "../components/NavigationBar";
+import { getFlightReplayPath } from "../lib/recordedFlightPresentation";
 
 export default function FlightsPage() {
   const [flights, setFlights] = useState<RecordedFlight[]>([]);
@@ -26,7 +28,7 @@ export default function FlightsPage() {
   }, []);
 
   return (
-    <main className="min-h-screen px-4 pb-8 pt-6 sm:px-6">
+    <main className="min-h-screen px-4 pb-28 pt-6 sm:px-6">
       <div className="mx-auto w-full max-w-md">
         <Link
           href="/"
@@ -46,7 +48,7 @@ export default function FlightsPage() {
             VOLS CONSERVÉS
           </p>
           <h1 style={{ marginTop: "7px", fontSize: "30px", fontWeight: 950 }}>
-            Mes vols
+            Journal des vols
           </h1>
         </header>
         {loading ? (
@@ -62,7 +64,7 @@ export default function FlightsPage() {
               return (
                 <Link
                   key={flight.id}
-                  href={`/flights/${encodeURIComponent(flight.id)}`}
+                  href={getFlightReplayPath(flight.id)}
                   style={{
                     padding: "17px",
                     border: "1px solid var(--bc-border)",
@@ -90,6 +92,7 @@ export default function FlightsPage() {
           </div>
         )}
       </div>
+      <NavigationBar activeItem="Journal" />
     </main>
   );
 }

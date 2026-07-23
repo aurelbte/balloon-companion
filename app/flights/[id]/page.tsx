@@ -7,6 +7,7 @@ import FlightReplayMap from "../../components/flight/FlightReplayMap";
 import RecordedFlightSummaryCard from "../../components/flight/RecordedFlightSummaryCard";
 import type { RecordedFlight } from "../../lib/recordedFlight";
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage";
+import NavigationBar from "../../components/NavigationBar";
 
 export default function RecordedFlightPage() {
   const params = useParams<{ id: string }>();
@@ -47,7 +48,7 @@ export default function RecordedFlightPage() {
   }, [params.id]);
 
   return (
-    <main className="min-h-screen px-4 pb-8 pt-6 sm:px-6">
+    <main className="min-h-screen px-4 pb-28 pt-6 sm:px-6">
       <div className="mx-auto w-full max-w-xl">
         <Link
           href="/flights"
@@ -128,6 +129,7 @@ export default function RecordedFlightPage() {
           </>
         )}
       </div>
+      <NavigationBar activeItem="Journal" />
     </main>
   );
 }

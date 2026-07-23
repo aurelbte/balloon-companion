@@ -101,6 +101,9 @@ export function useFlightTracking(
   const pointsRef = useRef<GeoPoint[]>([]);
   const metricsRef = useRef<FlightMetrics>(EMPTY_METRICS);
   const persistenceChainRef = useRef<Promise<void>>(Promise.resolve());
+  const completionPromiseRef = useRef<Promise<RecordedFlight | null> | null>(
+    null,
+  );
 
   const updateStatus = useCallback((nextStatus: FlightSessionStatus) => {
     statusRef.current = nextStatus;
@@ -240,12 +243,26 @@ export function useFlightTracking(
     [updateStatus],
   );
 
+  const completeFlightOnce = useCallback(
+    (flight: RecordedFlight): Promise<RecordedFlight | null> => {
+      if (completionPromiseRef.current) return completionPromiseRef.current;
+      const completion = completeFlight(flight).finally(() => {
+        if (completionPromiseRef.current === completion) {
+          completionPromiseRef.current = null;
+        }
+      });
+      completionPromiseRef.current = completion;
+      return completion;
+    },
+    [completeFlight],
+  );
+
   const stopTracking = useCallback(async () => {
     const flight = activeFlightRef.current;
     if (!flight || statusRef.current !== "recording") return null;
     await persistCurrentFlight();
-    return completeFlight(flight);
-  }, [completeFlight, persistCurrentFlight]);
+    return completeFlightOnce(flight);
+  }, [completeFlightOnce, persistCurrentFlight]);
 
   const resumeInterruptedFlight = useCallback(() => {
     if (!recoverableFlight) return;
@@ -261,8 +278,8 @@ export function useFlightTracking(
 
   const completeInterruptedFlight = useCallback(async () => {
     if (!recoverableFlight) return null;
-    return completeFlight(recoverableFlight);
-  }, [completeFlight, recoverableFlight]);
+    return completeFlightOnce(recoverableFlight);
+  }, [completeFlightOnce, recoverableFlight]);
 
   const abandonInterruptedFlight = useCallback(async () => {
     if (!recoverableFlight) return true;

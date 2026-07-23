@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
-import { useGeolocation } from "../hooks/useGeolocation";
-import { useFlightTracking } from "../hooks/useFlightTracking";
+import { useRouter } from "next/navigation";
+import { useFlightRuntime } from "../contexts/FlightRuntimeContext";
 import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
 import { useFlightContext } from "../hooks/useFlightContext";
-import { useWakeLock } from "../hooks/useWakeLock";
 import { useAirspaceCoverage, type AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import {
   buildGpsProjectionPoints,
@@ -31,6 +30,12 @@ import AirspaceDetails from "../components/flight/AirspaceDetails";
 import CurrentAirspaceBadge from "../components/flight/CurrentAirspaceBadge";
 import FlightRecoveryDialog from "../components/flight/FlightRecoveryDialog";
 import RecordedFlightScreen from "../components/flight/RecordedFlightScreen";
+import ActiveFlightNavigationDialog from "../components/flight/ActiveFlightNavigationDialog";
+import NavigationBar from "../components/NavigationBar";
+import {
+  getFlightNavigationIntent,
+  resolveFlightNavigationAction,
+} from "../lib/flightNavigation";
 import type {
   BaseMap,
   FlightLayerSettings,
@@ -38,6 +43,7 @@ import type {
 } from "../types/flight";
 
 export default function FlightPage() {
+  const router = useRouter();
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
     gpsProjection: true,
     weatherProjection: false,
@@ -56,10 +62,13 @@ export default function FlightPage() {
   >("manual");
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [flightActionBusy, setFlightActionBusy] = useState(false);
+  const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
+    string | null
+  >(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
 
-  // Géolocalisation
+  const { geolocation, tracking } = useFlightRuntime();
   const {
     point: currentPosition,
     state: geoState,
@@ -67,12 +76,7 @@ export default function FlightPage() {
     isStale,
     requestPermission,
     stopTracking: stopGeolocation,
-  } = useGeolocation({
-    enableHighAccuracy: true,
-    maximumAge: 1000,
-    timeout: 10000,
-    enableDevelopmentTestMode: true,
-  });
+  } = geolocation;
   const {
     selectedAirspaces,
     selectedAirspace,
@@ -106,7 +110,6 @@ export default function FlightPage() {
     metrics,
     startTracking,
     stopTracking,
-    addPoint,
     storageReady,
     storageError,
     recoverableFlight,
@@ -117,15 +120,7 @@ export default function FlightPage() {
     dismissCompletedFlight,
     markAcquiring,
     markReady,
-  } = useFlightTracking();
-  useWakeLock(isTracking);
-
-  // Ajouter un point à chaque mise à jour GPS
-  useEffect(() => {
-    if (isTracking && currentPosition && !isStale) {
-      addPoint(currentPosition);
-    }
-  }, [isTracking, currentPosition, isStale, addPoint]);
+  } = tracking;
 
   // Une projection exige un point frais, un cap réel et une vitesse suffisante.
   // Un cap absent ne doit jamais être interprété comme un cap nord (0°).
@@ -257,6 +252,68 @@ export default function FlightPage() {
       stopGeolocation();
     }
   }, [stopGeolocation, stopTracking]);
+
+  const handleNavigationRequest = useCallback(
+    (target: string) => {
+      if (target === "/flight" || flightActionBusy) return;
+      const intent = getFlightNavigationIntent({
+        target,
+        isFlightRecording: isTracking,
+      });
+      if (intent.kind === "NAVIGATE") {
+        router.push(intent.target);
+        return;
+      }
+      setPendingNavigationTarget(intent.target);
+    },
+    [flightActionBusy, isTracking, router],
+  );
+
+  const handleStayOnFlight = useCallback(() => {
+    const resolution = resolveFlightNavigationAction({
+      action: "STAY",
+      pendingTarget: pendingNavigationTarget,
+    });
+    setPendingNavigationTarget(resolution.pendingTarget);
+  }, [pendingNavigationTarget]);
+
+  const handleContinueNavigation = useCallback(() => {
+    if (flightActionBusy) return;
+    const resolution = resolveFlightNavigationAction({
+      action: "CONTINUE",
+      pendingTarget: pendingNavigationTarget,
+    });
+    setPendingNavigationTarget(resolution.pendingTarget);
+    if (resolution.navigateTo) router.push(resolution.navigateTo);
+  }, [flightActionBusy, pendingNavigationTarget, router]);
+
+  const handleFinalizeBeforeNavigation = useCallback(async () => {
+    if (flightActionBusy) return;
+    const resolution = resolveFlightNavigationAction({
+      action: "FINALIZE",
+      pendingTarget: pendingNavigationTarget,
+    });
+    if (!resolution.navigateTo) {
+      setPendingNavigationTarget(null);
+      return;
+    }
+    setFlightActionBusy(true);
+    const completed = await stopTracking();
+    if (completed) {
+      dismissCompletedFlight();
+      stopGeolocation();
+      setPendingNavigationTarget(null);
+      router.push(resolution.navigateTo);
+    }
+    setFlightActionBusy(false);
+  }, [
+    dismissCompletedFlight,
+    flightActionBusy,
+    pendingNavigationTarget,
+    router,
+    stopGeolocation,
+    stopTracking,
+  ]);
 
   const handleCompleteInterruptedFlight = useCallback(async () => {
     setFlightActionBusy(true);
@@ -428,6 +485,7 @@ export default function FlightPage() {
         isRecording={isTracking}
         highContrast={layerSettings.highContrast}
         geolocationState={geoState}
+        withNavigation
       />
 
       <CurrentAirspaceBadge
@@ -478,35 +536,13 @@ export default function FlightPage() {
       {/* Boutons flottants */}
       <FlightControls
         isTracking={isTracking}
+        withNavigation
         onRecenterMap={handleRecenterMap}
         onFitProjection={handleFitProjection}
         onOpenLayers={() => setIsLayersPanelOpen(true)}
         onStartTracking={handleStartTracking}
         onStopTracking={() => setStopConfirmationOpen(true)}
       />
-
-      {isTracking && (
-        <div
-          role="status"
-          style={{
-            position: "fixed",
-            top: "max(16px, env(safe-area-inset-top))",
-            left: "50%",
-            zIndex: 21,
-            transform: "translateX(-50%)",
-            padding: "7px 10px",
-            borderRadius: "999px",
-            background: "rgba(127, 29, 29, .92)",
-            color: "#fff",
-            fontSize: "10px",
-            fontWeight: 950,
-            letterSpacing: ".08em",
-            whiteSpace: "nowrap",
-          }}
-        >
-          ● ENREGISTREMENT
-        </div>
-      )}
 
       {!isTracking && !recoverableFlight && !completedFlight && (
         <p
@@ -628,6 +664,15 @@ export default function FlightPage() {
         />
       )}
 
+      {pendingNavigationTarget && isTracking && (
+        <ActiveFlightNavigationDialog
+          busy={flightActionBusy}
+          onStay={handleStayOnFlight}
+          onContinue={handleContinueNavigation}
+          onFinalize={() => void handleFinalizeBeforeNavigation()}
+        />
+      )}
+
       {/* Panneau des couches */}
       <LayersPanel
         isOpen={isLayersPanelOpen}
@@ -685,6 +730,7 @@ export default function FlightPage() {
           ⚠ {geoError}
         </div>
       )}
+      <NavigationBar activeItem="Vol" onNavigate={handleNavigationRequest} />
     </div>
   );
 }
