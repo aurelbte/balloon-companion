@@ -9,7 +9,6 @@ interface FlightControlsProps {
   onOpenLayers: () => void;
   onStartTracking: () => void;
   onStopTracking: () => void;
-  onConfirmStop?: () => void;
 }
 
 export default function FlightControls({
@@ -19,7 +18,6 @@ export default function FlightControls({
   onOpenLayers,
   onStartTracking,
   onStopTracking,
-  onConfirmStop,
 }: FlightControlsProps) {
   const buttonStyle = {
     display: "flex",
@@ -110,18 +108,7 @@ export default function FlightControls({
         </button>
       ) : (
         <button
-          onClick={() => {
-            if (onConfirmStop) {
-              const confirm = window.confirm(
-                "Arrêter l'enregistrement du vol ?"
-              );
-              if (confirm) {
-                onStopTracking();
-              }
-            } else {
-              onStopTracking();
-            }
-          }}
+          onClick={onStopTracking}
           style={{
             ...primaryButtonStyle,
             backgroundColor: "#ef6464",

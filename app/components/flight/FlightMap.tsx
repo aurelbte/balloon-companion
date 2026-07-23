@@ -1,18 +1,55 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import {
+  createAirspaceSelectionIndex,
+  getRenderedAirspaceId,
+  resolveRenderedAirspaces,
+  type AirspaceSelectionIndex,
+  type RenderedAirspaceFeature,
+} from "../../lib/airspaceSelection";
+import type {
+  AirspaceFeatureCollection,
+  AirspaceGeoJsonProperties,
+} from "../../lib/openaip";
+import {
+  AIRSPACE_MAP_PALETTE,
+  AIRSPACE_RENDER_ORDER,
+  getAirspaceCategoryStyle,
+  getAirspaceVisualCategory,
+  isAirspaceCategoryVisibleAtZoom,
+  prepareAirspacesForMap,
+  type AirspaceVisualCategory,
+} from "../../lib/airspaceMapStyle";
+import { sortAirspacesForMapClick } from "../../lib/airspaceMapSelection";
 import type { BaseMap, GeoPoint, ProjectionPoint } from "../../types/flight";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
 const PLAN_LAYER_ID = "osm-tiles";
+const AIRSPACES_SOURCE_ID = "airspaces-source";
+const AIRSPACES_SELECTED_FILL_LAYER_ID = "airspaces-selected-fill";
+const AIRSPACES_SELECTED_OUTLINE_LAYER_ID = "airspaces-selected-outline";
+const NO_SELECTED_AIRSPACE_ID = "__no_selected_airspace__";
 const SATELLITE_FAILURE_MESSAGE = "Satellite indisponible — fond Plan restauré";
 const SATELLITE_ERROR_WINDOW_MS = 10_000;
 const SATELLITE_LOAD_TIMEOUT_MS = 12_000;
 const MAX_SATELLITE_ERRORS = 3;
+
+function getAirspaceLayerId(
+  category: AirspaceVisualCategory,
+  kind: "fill" | "outline",
+): string {
+  return `airspaces-${category.toLowerCase().replaceAll("_", "-")}-${kind}`;
+}
+
+const AIRSPACE_BASE_LAYER_IDS = AIRSPACE_RENDER_ORDER.flatMap((category) => [
+  getAirspaceLayerId(category, "fill"),
+  getAirspaceLayerId(category, "outline"),
+]);
 
 interface FlightMapProps {
   currentPosition: GeoPoint | null;
@@ -20,10 +57,27 @@ interface FlightMapProps {
   flightPoints: GeoPoint[];
   gpsProjection: ProjectionPoint[];
   weatherProjection: ProjectionPoint[];
+  airspaces: AirspaceFeatureCollection;
+  showAirspaces: boolean;
+  selectedAirspaceId: string | null;
   showGpsProjection: boolean;
   showWeatherProjection: boolean;
   onSatelliteError: (message: string) => void;
+  onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
+  onViewportChange?: (viewport: FlightMapViewport) => void;
   onMapReady?: (map: maplibregl.Map) => void;
+}
+
+interface FlightMapViewport {
+  latitude: number;
+  longitude: number;
+  zoom: number;
+  bounds: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  };
 }
 
 function buildFlightTrackData(points: GeoPoint[]): GeoJSON.FeatureCollection {
@@ -63,9 +117,14 @@ export default function FlightMap({
   flightPoints,
   gpsProjection,
   weatherProjection,
+  airspaces,
+  showAirspaces,
+  selectedAirspaceId,
   showGpsProjection,
   showWeatherProjection,
   onSatelliteError,
+  onAirspacesSelected,
+  onViewportChange,
   onMapReady,
 }: FlightMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -73,7 +132,43 @@ export default function FlightMap({
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const sourceRef = useRef<boolean>(false);
   const onMapReadyRef = useRef(onMapReady);
+  const onAirspacesSelectedRef = useRef(onAirspacesSelected);
+  const onViewportChangeRef = useRef(onViewportChange);
   const flightPointsRef = useRef(flightPoints);
+  const styleAltitude =
+    currentPosition?.altitude !== null &&
+    currentPosition?.altitude !== undefined &&
+    Number.isFinite(currentPosition.altitude)
+      ? Math.round(currentPosition.altitude / 50) * 50
+      : null;
+  const styleVerticalAccuracy =
+    currentPosition?.verticalAccuracy !== null &&
+    currentPosition?.verticalAccuracy !== undefined &&
+    Number.isFinite(currentPosition.verticalAccuracy)
+      ? Math.round(currentPosition.verticalAccuracy / 10) * 10
+      : null;
+  const styledAirspaces = useMemo(
+    () =>
+      prepareAirspacesForMap(airspaces, {
+        currentAltitudeMeters: styleAltitude,
+        verticalAccuracyMeters: styleVerticalAccuracy,
+      }),
+    [airspaces, styleAltitude, styleVerticalAccuracy],
+  );
+  const initialAirspacesRef = useRef(styledAirspaces);
+  const airspaceIndexRef = useRef<AirspaceSelectionIndex>(
+    createAirspaceSelectionIndex(airspaces)
+  );
+  const airspaceFeaturesByIdRef = useRef(
+    new Map(
+      airspaces.features.map((feature) => [
+        feature.properties.airspaceId,
+        feature,
+      ]),
+    ),
+  );
+  const selectedAirspaceIdRef = useRef(selectedAirspaceId);
+  const showAirspacesRef = useRef(showAirspaces);
   const baseMapRef = useRef(baseMap);
   const onSatelliteErrorRef = useRef(onSatelliteError);
   const satelliteErrorsRef = useRef<number[]>([]);
@@ -86,8 +181,61 @@ useEffect(() => {
 }, [onMapReady]);
 
   useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
+
+  useEffect(() => {
+    onAirspacesSelectedRef.current = onAirspacesSelected;
+  }, [onAirspacesSelected]);
+
+  useEffect(() => {
     flightPointsRef.current = flightPoints;
   }, [flightPoints]);
+
+  useEffect(() => {
+    airspaceIndexRef.current = createAirspaceSelectionIndex(airspaces);
+    airspaceFeaturesByIdRef.current = new Map(
+      airspaces.features.map((feature) => [
+        feature.properties.airspaceId,
+        feature,
+      ]),
+    );
+  }, [airspaces]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+
+    const classifications = new Map<string, {
+      type: number;
+      name: string;
+      visualCategory: AirspaceVisualCategory;
+    }>();
+    for (const feature of airspaces.features) {
+      const properties = feature.properties;
+      const key = `${properties.type}:${properties.name}`;
+      if (!classifications.has(key)) {
+        classifications.set(key, {
+          type: properties.type,
+          name: properties.name,
+          visualCategory: getAirspaceVisualCategory(properties),
+        });
+      }
+    }
+    if (classifications.size > 0) {
+      console.debug(
+        "[Airspaces] Catégorisation OpenAIP",
+        [...classifications.values()],
+      );
+    }
+  }, [airspaces]);
+
+  useEffect(() => {
+    selectedAirspaceIdRef.current = selectedAirspaceId;
+  }, [selectedAirspaceId]);
+
+  useEffect(() => {
+    showAirspacesRef.current = showAirspaces;
+  }, [showAirspaces]);
 
   useEffect(() => {
     baseMapRef.current = baseMap;
@@ -168,9 +316,210 @@ useEffect(() => {
       "bottom-right"
     );
 
+    const notifyViewportChange = () => {
+      if (!map.current) return;
+
+      const center = map.current.getCenter();
+      const bounds = map.current.getBounds();
+      onViewportChangeRef.current?.({
+        latitude: center.lat,
+        longitude: center.lng,
+        zoom: map.current.getZoom(),
+        bounds: {
+          west: bounds.getWest(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          north: bounds.getNorth(),
+        },
+      });
+    };
+
+    map.current.on("moveend", notifyViewportChange);
+
+    map.current.on("click", (event) => {
+      if (
+        !map.current ||
+        !showAirspacesRef.current ||
+        !AIRSPACE_BASE_LAYER_IDS.some((layerId) =>
+          Boolean(map.current?.getLayer(layerId)),
+        )
+      ) {
+        return;
+      }
+
+      const hitBox: [[number, number], [number, number]] = [
+        [event.point.x - 8, event.point.y - 8],
+        [event.point.x + 8, event.point.y + 8],
+      ];
+      const zoom = map.current.getZoom();
+      const visibleCategories = AIRSPACE_RENDER_ORDER.filter((category) =>
+        isAirspaceCategoryVisibleAtZoom(category, zoom),
+      );
+      const visibleFillLayerIds = visibleCategories
+        .map((category) => getAirspaceLayerId(category, "fill"))
+        .filter((layerId) => Boolean(map.current?.getLayer(layerId)));
+      const visibleOutlineLayerIds = visibleCategories
+        .map((category) => getAirspaceLayerId(category, "outline"))
+        .filter((layerId) => Boolean(map.current?.getLayer(layerId)));
+      const renderedFeatures = map.current.queryRenderedFeatures(hitBox, {
+        layers: [...visibleFillLayerIds, ...visibleOutlineLayerIds],
+      });
+
+      const resolvedAirspaces = resolveRenderedAirspaces(
+        renderedFeatures as RenderedAirspaceFeature[],
+        airspaceIndexRef.current
+      );
+      const selectedAirspaces = sortAirspacesForMapClick({
+        candidates: resolvedAirspaces.flatMap((airspace) => {
+          const feature = airspaceFeaturesByIdRef.current.get(
+            airspace.airspaceId,
+          );
+          return feature
+            ? [{ airspace, geometry: feature.geometry }]
+            : [];
+        }),
+        zoom,
+      }).map(({ airspace }) => airspace);
+
+      if (
+        process.env.NODE_ENV === "development" &&
+        renderedFeatures.length > 0 &&
+        resolvedAirspaces.length === 0
+      ) {
+        console.warn("[Airspaces] Rendered features found but unresolved", {
+          renderedFeatures,
+          renderedIds: renderedFeatures.map((feature) =>
+            getRenderedAirspaceId(feature as RenderedAirspaceFeature)
+          ),
+          availableIds: [...airspaceIndexRef.current.byId.keys()],
+        });
+      }
+
+      onAirspacesSelectedRef.current?.(selectedAirspaces);
+    });
+
     // Ajouter une source pour les projections
     map.current.on("load", () => {
       if (!map.current) return;
+
+      if (!map.current.getSource(AIRSPACES_SOURCE_ID)) {
+        map.current.addSource(AIRSPACES_SOURCE_ID, {
+          type: "geojson",
+          data: initialAirspacesRef.current,
+          attribution:
+            '<a href="https://www.openaip.net/" target="_blank">© openAIP</a> — <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank">CC BY-NC 4.0</a>',
+        });
+      }
+
+      for (const category of AIRSPACE_RENDER_ORDER) {
+        const categoryStyle = getAirspaceCategoryStyle(category);
+        const categoryFilter: maplibregl.FilterSpecification = [
+          "==",
+          ["get", "visualCategory"],
+          category,
+        ];
+        const fillLayerId = getAirspaceLayerId(category, "fill");
+        const outlineLayerId = getAirspaceLayerId(category, "outline");
+
+        if (!map.current.getLayer(fillLayerId)) {
+          map.current.addLayer({
+            id: fillLayerId,
+            type: "fill",
+            source: AIRSPACES_SOURCE_ID,
+            filter: categoryFilter,
+            minzoom: categoryStyle.minZoom,
+            ...(categoryStyle.maxZoom === undefined
+              ? {}
+              : { maxzoom: categoryStyle.maxZoom }),
+            layout: {
+              visibility: showAirspacesRef.current ? "visible" : "none",
+            },
+            paint: {
+              "fill-color": categoryStyle.color,
+              "fill-opacity": [
+                "case",
+                ["==", ["get", "verticalRelevance"], "ABOVE_FAR"],
+                0,
+                categoryStyle.fillOpacity,
+              ],
+            },
+          });
+        }
+
+        if (!map.current.getLayer(outlineLayerId)) {
+          map.current.addLayer({
+            id: outlineLayerId,
+            type: "line",
+            source: AIRSPACES_SOURCE_ID,
+            filter: categoryFilter,
+            minzoom: categoryStyle.minZoom,
+            ...(categoryStyle.maxZoom === undefined
+              ? {}
+              : { maxzoom: categoryStyle.maxZoom }),
+            layout: {
+              "line-join": "round",
+              "line-cap": "round",
+              visibility: showAirspacesRef.current ? "visible" : "none",
+            },
+            paint: {
+              "line-color": categoryStyle.color,
+              "line-width": [
+                "case",
+                ["==", ["get", "verticalRelevance"], "ABOVE_FAR"],
+                Math.max(0.7, categoryStyle.lineWidth * 0.75),
+                categoryStyle.lineWidth,
+              ],
+              "line-opacity": [
+                "case",
+                ["==", ["get", "verticalRelevance"], "ABOVE_FAR"],
+                Math.min(categoryStyle.lineOpacity, 0.42),
+                categoryStyle.lineOpacity,
+              ],
+            },
+          });
+        }
+      }
+
+      if (!map.current.getLayer(AIRSPACES_SELECTED_FILL_LAYER_ID)) {
+        map.current.addLayer({
+          id: AIRSPACES_SELECTED_FILL_LAYER_ID,
+          type: "fill",
+          source: AIRSPACES_SOURCE_ID,
+          filter: [
+            "==",
+            ["get", "airspaceId"],
+            selectedAirspaceIdRef.current ?? NO_SELECTED_AIRSPACE_ID,
+          ],
+          layout: {
+            visibility: showAirspacesRef.current ? "visible" : "none",
+          },
+          paint: {
+            "fill-color": AIRSPACE_MAP_PALETTE.SELECTED,
+            "fill-opacity": 0.2,
+          },
+        });
+      }
+
+      if (!map.current.getLayer(AIRSPACES_SELECTED_OUTLINE_LAYER_ID)) {
+        map.current.addLayer({
+          id: AIRSPACES_SELECTED_OUTLINE_LAYER_ID,
+          type: "line",
+          source: AIRSPACES_SOURCE_ID,
+          filter: [
+            "==",
+            ["get", "airspaceId"],
+            selectedAirspaceIdRef.current ?? NO_SELECTED_AIRSPACE_ID,
+          ],
+          layout: {
+            visibility: showAirspacesRef.current ? "visible" : "none",
+          },
+          paint: {
+            "line-color": AIRSPACE_MAP_PALETTE.SELECTED,
+            "line-width": 3.2,
+            "line-opacity": 1,
+          },
+        });
+      }
 
       map.current.addSource("flight-track-source", {
         type: "geojson",
@@ -282,6 +631,7 @@ useEffect(() => {
 
       sourceRef.current = true;
       onMapReadyRef.current?.(map.current);
+      notifyViewportChange();
     });
 
     map.current.on("sourcedata", (event) => {
@@ -374,6 +724,48 @@ useEffect(() => {
       }, SATELLITE_LOAD_TIMEOUT_MS);
     }
   }, [baseMap, mapTilerKey]);
+
+  useEffect(() => {
+    if (!map.current || !sourceRef.current) return;
+
+    const source = map.current.getSource(AIRSPACES_SOURCE_ID) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    source?.setData(styledAirspaces);
+
+    for (const layerId of [
+      ...AIRSPACE_BASE_LAYER_IDS,
+      AIRSPACES_SELECTED_FILL_LAYER_ID,
+      AIRSPACES_SELECTED_OUTLINE_LAYER_ID,
+    ]) {
+      if (map.current.getLayer(layerId)) {
+        map.current.setLayoutProperty(
+          layerId,
+          "visibility",
+          showAirspaces ? "visible" : "none"
+        );
+      }
+    }
+  }, [styledAirspaces, showAirspaces]);
+
+  useEffect(() => {
+    if (!map.current || !sourceRef.current) return;
+
+    const filter: maplibregl.FilterSpecification = [
+      "==",
+      ["get", "airspaceId"],
+      selectedAirspaceId ?? NO_SELECTED_AIRSPACE_ID,
+    ];
+
+    for (const layerId of [
+      AIRSPACES_SELECTED_FILL_LAYER_ID,
+      AIRSPACES_SELECTED_OUTLINE_LAYER_ID,
+    ]) {
+      if (map.current.getLayer(layerId)) {
+        map.current.setFilter(layerId, filter);
+      }
+    }
+  }, [selectedAirspaceId]);
 
   // Mettre à jour la position du marqueur et centrer la carte
   useEffect(() => {

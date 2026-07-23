@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test app/lib/*.test.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "start": "next start",
     "lint": "eslint"

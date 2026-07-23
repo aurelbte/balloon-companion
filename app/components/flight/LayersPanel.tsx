@@ -8,6 +8,8 @@ interface LayersPanelProps {
   baseMap: BaseMap;
   satelliteAvailable: boolean;
   satelliteMessage: string | null;
+  airspacesLoading: boolean;
+  airspacesError: string | null;
   onBaseMapChange: (baseMap: BaseMap) => void;
   onSettingsChange: (settings: FlightLayerSettings) => void;
   onClose: () => void;
@@ -19,6 +21,8 @@ export default function LayersPanel({
   baseMap,
   satelliteAvailable,
   satelliteMessage,
+  airspacesLoading,
+  airspacesError,
   onBaseMapChange,
   onSettingsChange,
   onClose,
@@ -203,6 +207,64 @@ export default function LayersPanel({
               </p>
             )}
           </section>
+
+          {/* Espaces aériens */}
+          <div
+            style={{
+              borderBottom: "1px solid var(--bc-border)",
+              backgroundColor: settings.airspaces
+                ? "rgba(139, 92, 246, 0.1)"
+                : "transparent",
+            }}
+          >
+            <label
+              style={{
+                ...checkboxStyle,
+                borderBottom: "none",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.airspaces}
+                onChange={() => handleToggle("airspaces")}
+                style={{
+                  width: "18px",
+                  height: "18px",
+                  cursor: "pointer",
+                }}
+              />
+              <span style={labelStyle}>
+                <span style={colorSquareStyle("#8b5cf6")} />
+                Espaces aériens
+              </span>
+              {settings.airspaces && (airspacesLoading || airspacesError) && (
+                <span
+                  role="status"
+                  style={{
+                    color: airspacesError
+                      ? "var(--bc-warning)"
+                      : "var(--bc-text-muted)",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {airspacesLoading ? "Chargement…" : airspacesError}
+                </span>
+              )}
+            </label>
+            {settings.airspaces && (
+              <p
+                style={{
+                  margin: "-2px 16px 12px 46px",
+                  color: "var(--bc-text-muted)",
+                  fontSize: "11px",
+                  lineHeight: 1.35,
+                }}
+              >
+                Données indicatives — vérifier l’AIP et les NOTAM officiels.
+              </p>
+            )}
+          </div>
 
           {/* Projection GPS */}
           <label

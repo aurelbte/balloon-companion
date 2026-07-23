@@ -85,9 +85,10 @@ function isDevelopmentTestRequest(): boolean {
 }
 
 function generateSimulatedPosition(state: SimulationState): GeoPoint {
-  const speed = 17 + Math.sin(state.elapsedSeconds / 18) * 5;
+  const speedKilometersPerHour = 17 + Math.sin(state.elapsedSeconds / 18) * 5;
+  const speedMetersPerSecond = speedKilometersPerHour / 3.6;
   const heading = (55 + Math.sin(state.elapsedSeconds / 25) * 35 + 360) % 360;
-  const distanceMeters = speed / 3.6;
+  const distanceMeters = speedMetersPerSecond;
   const headingRadians = (heading * Math.PI) / 180;
 
   state.latitude += (Math.cos(headingRadians) * distanceMeters) / 111_320;
@@ -103,9 +104,10 @@ function generateSimulatedPosition(state: SimulationState): GeoPoint {
       128 +
       state.elapsedSeconds * 0.35 +
       Math.sin(state.elapsedSeconds / 10) * 4,
-    speed,
+    speed: speedMetersPerSecond,
     heading,
     accuracy: 6,
+    verticalAccuracy: 8,
     timestamp: Date.now(),
   };
 }
@@ -198,7 +200,7 @@ export function useGeolocation(
     // Démarrer le suivi GPS réel
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        const { latitude, longitude, altitude, accuracy } =
+        const { latitude, longitude, altitude, accuracy, altitudeAccuracy } =
           position.coords;
         const { speed, heading } = position.coords;
 
@@ -206,9 +208,13 @@ export function useGeolocation(
           latitude,
           longitude,
           altitude: altitude !== null ? altitude : null,
-          speed: speed !== null ? speed * 3.6 : null, // Convertir m/s en km/h
+          speed: speed !== null ? speed : null,
           heading: heading !== null ? heading : null,
           accuracy: accuracy || null,
+          verticalAccuracy:
+            altitudeAccuracy !== null && Number.isFinite(altitudeAccuracy)
+              ? altitudeAccuracy
+              : null,
           timestamp: position.timestamp,
         };
 

@@ -4,14 +4,33 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useFlightTracking } from "../hooks/useFlightTracking";
+import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
+import { useFlightContext } from "../hooks/useFlightContext";
+import { useWakeLock } from "../hooks/useWakeLock";
+import { useAirspaceCoverage, type AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import {
   buildGpsProjectionPoints,
   buildWeatherProjectionPoints,
 } from "../lib/geo";
+import {
+  type AirspaceGeoJsonProperties,
+} from "../lib/openaip";
+import {
+  getAirspaceBadgePresentation,
+  type FlightContextGpsStatus,
+} from "../lib/flightContext";
+import {
+  getAirspaceFrequencyPresentations,
+  selectOperationalFrequency,
+} from "../lib/operationalFrequency";
 import FlightMap from "../components/flight/FlightMap";
 import FlightInstruments from "../components/flight/FlightInstruments";
 import FlightControls from "../components/flight/FlightControls";
 import LayersPanel from "../components/flight/LayersPanel";
+import AirspaceDetails from "../components/flight/AirspaceDetails";
+import CurrentAirspaceBadge from "../components/flight/CurrentAirspaceBadge";
+import FlightRecoveryDialog from "../components/flight/FlightRecoveryDialog";
+import RecordedFlightScreen from "../components/flight/RecordedFlightScreen";
 import type {
   BaseMap,
   FlightLayerSettings,
@@ -30,6 +49,13 @@ export default function FlightPage() {
   const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
   const [baseMap, setBaseMap] = useState<BaseMap>("plan");
   const [satelliteError, setSatelliteError] = useState<string | null>(null);
+  const [airspaceViewport, setAirspaceViewport] =
+    useState<AirspaceCoverageViewport | null>(null);
+  const [airspaceSelectionOrigin, setAirspaceSelectionOrigin] = useState<
+    "manual" | "current"
+  >("manual");
+  const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
+  const [flightActionBusy, setFlightActionBusy] = useState(false);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
 
@@ -47,6 +73,31 @@ export default function FlightPage() {
     timeout: 10000,
     enableDevelopmentTestMode: true,
   });
+  const {
+    selectedAirspaces,
+    selectedAirspace,
+    selectedIndex: selectedAirspaceIndex,
+    verticalContext,
+    selectAirspaces,
+    selectPrevious,
+    selectNext,
+    closeSelection,
+  } = useSelectedAirspace(
+    !isStale &&
+      currentPosition?.altitude !== null &&
+      currentPosition?.altitude !== undefined &&
+      Number.isFinite(currentPosition.altitude)
+      ? currentPosition.altitude
+      : null,
+    !isStale ? (currentPosition?.verticalAccuracy ?? null) : null
+  );
+  const airspaceCoverage = useAirspaceCoverage({
+    position: currentPosition,
+    isPositionStale: isStale,
+    viewport: airspaceViewport,
+    explorationEnabled: layerSettings.airspaces,
+  });
+  const airspaces = airspaceCoverage.airspaces;
 
   // Suivi du vol
   const {
@@ -56,11 +107,18 @@ export default function FlightPage() {
     startTracking,
     stopTracking,
     addPoint,
-    status: flightStatus,
-    hasSavedFlight,
+    storageReady,
+    storageError,
+    recoverableFlight,
+    completedFlight,
+    resumeInterruptedFlight,
+    completeInterruptedFlight,
+    abandonInterruptedFlight,
+    dismissCompletedFlight,
     markAcquiring,
     markReady,
   } = useFlightTracking();
+  useWakeLock(isTracking);
 
   // Ajouter un point à chaque mise à jour GPS
   useEffect(() => {
@@ -79,7 +137,7 @@ export default function FlightPage() {
       !Number.isFinite(currentPosition.heading) ||
       currentPosition.speed === null ||
       !Number.isFinite(currentPosition.speed) ||
-      currentPosition.speed <= 0.5
+      currentPosition.speed <= 0.5 / 3.6
     ) {
       return [];
     }
@@ -88,7 +146,7 @@ export default function FlightPage() {
       currentPosition.latitude,
       currentPosition.longitude,
       currentPosition.heading,
-      currentPosition.speed
+      currentPosition.speed * 3.6
     );
   }, [currentPosition, isStale]);
 
@@ -105,7 +163,7 @@ export default function FlightPage() {
       currentPosition.latitude,
       currentPosition.longitude,
       currentPosition.heading as number,
-      currentPosition.speed as number
+      (currentPosition.speed as number) * 3.6
     );
   }, [currentPosition, gpsProjection.length, layerSettings.weatherProjection]);
 
@@ -173,37 +231,51 @@ export default function FlightPage() {
   }, [currentPosition, gpsProjection, weatherProjection, layerSettings]);
 
   const handleStartTracking = useCallback(() => {
+    if (!storageReady) return;
     if ((geoState === "active" || geoState === "simulation") && !isStale) {
-      if (
-        flightStatus === "stopped" &&
-        hasSavedFlight &&
-        !window.confirm(
-          "Commencer un nouveau vol et remplacer la session arrêtée ?"
-        )
-      ) {
-        return;
-      }
-      startTracking();
+      startTracking(currentPosition);
     } else {
       markAcquiring();
       requestPermission();
     }
   }, [
-    flightStatus,
+    currentPosition,
     geoState,
-    hasSavedFlight,
     isStale,
     markAcquiring,
     requestPermission,
     startTracking,
+    storageReady,
   ]);
 
-  const handleStopTracking = useCallback(() => {
-    if (window.confirm("Arrêter et sauvegarder l’enregistrement du vol ?")) {
-      stopTracking();
+  const handleConfirmStopTracking = useCallback(async () => {
+    setFlightActionBusy(true);
+    const completed = await stopTracking();
+    setFlightActionBusy(false);
+    if (completed) {
+      setStopConfirmationOpen(false);
       stopGeolocation();
     }
   }, [stopGeolocation, stopTracking]);
+
+  const handleCompleteInterruptedFlight = useCallback(async () => {
+    setFlightActionBusy(true);
+    await completeInterruptedFlight();
+    setFlightActionBusy(false);
+  }, [completeInterruptedFlight]);
+
+  const handleAbandonInterruptedFlight = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Abandonner définitivement cet enregistrement et tous ses points ?"
+      )
+    ) {
+      return;
+    }
+    setFlightActionBusy(true);
+    await abandonInterruptedFlight();
+    setFlightActionBusy(false);
+  }, [abandonInterruptedFlight]);
 
   const handleBaseMapChange = useCallback(
     (nextBaseMap: BaseMap) => {
@@ -211,6 +283,23 @@ export default function FlightPage() {
       setBaseMap(nextBaseMap);
     },
     [satelliteConfigured]
+  );
+
+  const handleLayerSettingsChange = useCallback(
+    (nextSettings: FlightLayerSettings) => {
+      if (layerSettings.airspaces && !nextSettings.airspaces) {
+        closeSelection();
+      }
+      setLayerSettings(nextSettings);
+    },
+    [closeSelection, layerSettings.airspaces]
+  );
+
+  const handleViewportChange = useCallback(
+    (viewport: AirspaceCoverageViewport) => {
+      setAirspaceViewport(viewport);
+    },
+    []
   );
 
   const handleSatelliteError = useCallback((message: string) => {
@@ -232,23 +321,66 @@ export default function FlightPage() {
     [isStale, metrics]
   );
 
-  const gpsStatus = (() => {
-    if (geoState === "simulation") return "MODE TEST • GPS SIMULÉ";
-    if (geoState === "permission_denied") return "GPS REFUSÉ";
-    if (geoState === "unavailable" || geoState === "error") {
-      return "GPS INDISPONIBLE";
-    }
-    if (geoState === "idle" && flightStatus === "stopped") return "GPS ARRÊTÉ";
-    if (isStale) return "POSITION ANCIENNE";
-    if (
-      geoState === "active" &&
-      currentPosition &&
-      currentPosition.accuracy !== null
-    ) {
-      return `GPS ACTIF · ±${Math.round(currentPosition.accuracy)} m`;
-    }
-    return "RECHERCHE GPS";
-  })();
+  const flightContextGpsStatus: FlightContextGpsStatus =
+    isStale && currentPosition
+      ? "STALE"
+      : geoState === "requesting"
+        ? "ACQUIRING"
+        : (geoState === "active" || geoState === "simulation") &&
+            currentPosition
+          ? "ACTIVE"
+          : "UNAVAILABLE";
+
+  const flightContext = useFlightContext({
+    position: currentPosition,
+    gpsStatus: flightContextGpsStatus,
+    airspaces,
+    loadedCoverage: airspaceCoverage.loadedCoverage,
+    airspaceDataAvailable:
+      airspaceCoverage.gpsCoverage.status === "COMPLETE" ||
+      airspaceCoverage.gpsCoverage.status === "PARTIAL",
+  });
+  const operationalFrequency = useMemo(
+    () => selectOperationalFrequency(flightContext),
+    [flightContext]
+  );
+  const airspaceBadgePresentation = useMemo(
+    () =>
+      getAirspaceBadgePresentation(flightContext, operationalFrequency),
+    [flightContext, operationalFrequency]
+  );
+  const selectedAirspaceFrequencies = useMemo(
+    () =>
+      selectedAirspace
+        ? getAirspaceFrequencyPresentations(
+            selectedAirspace,
+            operationalFrequency
+          )
+        : [],
+    [operationalFrequency, selectedAirspace]
+  );
+  const currentAirspaceContext = flightContext.airspace.current;
+  const containingAirspaceContexts = flightContext.airspace.containing;
+
+  const handleManualAirspaceSelection = useCallback(
+    (nextAirspaces: AirspaceGeoJsonProperties[]) => {
+      setAirspaceSelectionOrigin("manual");
+      selectAirspaces(nextAirspaces);
+    },
+    [selectAirspaces]
+  );
+
+  const handleOpenCurrentAirspace = useCallback(() => {
+    if (!currentAirspaceContext) return;
+    setAirspaceSelectionOrigin("current");
+    selectAirspaces(
+      containingAirspaceContexts.map((context) => context.airspace)
+    );
+  }, [
+    containingAirspaceContexts,
+    currentAirspaceContext,
+    selectAirspaces,
+  ]);
 
   return (
     <div
@@ -276,9 +408,14 @@ export default function FlightPage() {
           flightPoints={points}
           gpsProjection={gpsProjection}
           weatherProjection={weatherProjection}
+          airspaces={airspaces}
+          showAirspaces={layerSettings.airspaces}
+          selectedAirspaceId={selectedAirspace?.airspaceId ?? null}
           showGpsProjection={layerSettings.gpsProjection && isTracking}
           showWeatherProjection={layerSettings.weatherProjection && isTracking}
           onSatelliteError={handleSatelliteError}
+          onAirspacesSelected={handleManualAirspaceSelection}
+          onViewportChange={handleViewportChange}
           onMapReady={(map) => {
             mapRef.current = map;
           }}
@@ -293,29 +430,50 @@ export default function FlightPage() {
         geolocationState={geoState}
       />
 
-      <div
-        role="status"
-        aria-live="polite"
-        style={{
-          position: "fixed",
-          top: "max(16px, env(safe-area-inset-top))",
-          right: "16px",
-          zIndex: 20,
-          padding: "9px 11px",
-          borderRadius: "12px",
-          background: "rgba(7, 17, 31, 0.9)",
-          border: "1px solid rgba(255, 255, 255, 0.18)",
-          color:
-            (geoState === "active" || geoState === "simulation") && !isStale
-              ? "var(--bc-success)"
-              : "var(--bc-warning)",
-          fontSize: "11px",
-          fontWeight: 800,
-          letterSpacing: "0.04em",
-        }}
-      >
-        {gpsStatus}
-      </div>
+      <CurrentAirspaceBadge
+        presentation={airspaceBadgePresentation}
+        onOpenCurrentAirspace={handleOpenCurrentAirspace}
+      />
+
+      {geoState === "simulation" && (
+        <span
+          aria-label="Mode test, position GPS simulée"
+          style={{
+            position: "fixed",
+            top: "max(58px, calc(env(safe-area-inset-top) + 42px))",
+            right: "16px",
+            zIndex: 19,
+            color: "rgba(253, 230, 138, 0.82)",
+            fontSize: "8px",
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+          }}
+        >
+          TEST
+        </span>
+      )}
+
+      {layerSettings.airspaces && airspaceCoverage.visibleLoading && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            top: "max(58px, calc(env(safe-area-inset-top) + 42px))",
+            left: "50%",
+            zIndex: 19,
+            transform: "translateX(-50%)",
+            padding: "6px 9px",
+            borderRadius: "9px",
+            background: "rgba(7, 17, 31, 0.88)",
+            color: "var(--bc-text-primary)",
+            fontSize: "10px",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Chargement des espaces…
+        </div>
+      )}
 
       {/* Boutons flottants */}
       <FlightControls
@@ -324,8 +482,151 @@ export default function FlightPage() {
         onFitProjection={handleFitProjection}
         onOpenLayers={() => setIsLayersPanelOpen(true)}
         onStartTracking={handleStartTracking}
-        onStopTracking={handleStopTracking}
+        onStopTracking={() => setStopConfirmationOpen(true)}
       />
+
+      {isTracking && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            top: "max(16px, env(safe-area-inset-top))",
+            left: "50%",
+            zIndex: 21,
+            transform: "translateX(-50%)",
+            padding: "7px 10px",
+            borderRadius: "999px",
+            background: "rgba(127, 29, 29, .92)",
+            color: "#fff",
+            fontSize: "10px",
+            fontWeight: 950,
+            letterSpacing: ".08em",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ● ENREGISTREMENT
+        </div>
+      )}
+
+      {!isTracking && !recoverableFlight && !completedFlight && (
+        <p
+          style={{
+            position: "fixed",
+            right: "16px",
+            bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 292px)",
+            zIndex: 18,
+            width: "min(220px, 58vw)",
+            margin: 0,
+            color: "rgba(244,247,251,.78)",
+            fontSize: "10px",
+            lineHeight: 1.35,
+            textAlign: "right",
+            textShadow: "0 1px 3px #000",
+          }}
+        >
+          Pour un enregistrement continu sur iPhone, garder Balloon Companion
+          ouverte et l’écran allumé.
+        </p>
+      )}
+
+      {storageError && (
+        <div
+          role="alert"
+          style={{
+            position: "fixed",
+            left: "16px",
+            right: "16px",
+            bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 126px)",
+            zIndex: 70,
+            padding: "10px 12px",
+            borderRadius: "12px",
+            background: "rgba(127,29,29,.95)",
+            color: "#fff",
+            fontSize: "12px",
+            fontWeight: 800,
+          }}
+        >
+          {storageError}
+        </div>
+      )}
+
+      {stopConfirmationOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmer l’arrêt du vol"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            display: "grid",
+            placeItems: "center",
+            padding: "20px",
+            background: "rgba(2,8,18,.78)",
+          }}
+        >
+          <section
+            style={{
+              width: "min(100%, 380px)",
+              padding: "22px",
+              borderRadius: "20px",
+              background: "var(--bc-background-elevated)",
+              border: "1px solid var(--bc-border-strong)",
+            }}
+          >
+            <h2 style={{ fontSize: "23px", fontWeight: 950 }}>
+              Arrêter et enregistrer ce vol ?
+            </h2>
+            <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
+              <button
+                disabled={flightActionBusy}
+                onClick={() => setStopConfirmationOpen(false)}
+                style={{
+                  minHeight: "52px",
+                  borderRadius: "13px",
+                  border: "1px solid var(--bc-border)",
+                  background: "var(--bc-surface)",
+                  color: "var(--bc-text-primary)",
+                  fontWeight: 900,
+                }}
+              >
+                CONTINUER LE VOL
+              </button>
+              <button
+                disabled={flightActionBusy}
+                onClick={() => void handleConfirmStopTracking()}
+                style={{
+                  minHeight: "52px",
+                  borderRadius: "13px",
+                  border: 0,
+                  background: "var(--bc-danger)",
+                  color: "#fff",
+                  fontWeight: 900,
+                }}
+              >
+                ARRÊTER ET ENREGISTRER
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {recoverableFlight && (
+        <FlightRecoveryDialog
+          flight={recoverableFlight}
+          busy={flightActionBusy}
+          onResume={resumeInterruptedFlight}
+          onComplete={() => void handleCompleteInterruptedFlight()}
+          onAbandon={() => void handleAbandonInterruptedFlight()}
+        />
+      )}
+
+      {completedFlight && (
+        <RecordedFlightScreen
+          flight={completedFlight}
+          onReturn={dismissCompletedFlight}
+        />
+      )}
 
       {/* Panneau des couches */}
       <LayersPanel
@@ -339,10 +640,30 @@ export default function FlightPage() {
             ? "Fond satellite non configuré"
             : null)
         }
+        airspacesLoading={airspaceCoverage.visibleLoading}
+        airspacesError={airspaceCoverage.statusMessage}
         onBaseMapChange={handleBaseMapChange}
-        onSettingsChange={setLayerSettings}
+        onSettingsChange={handleLayerSettingsChange}
         onClose={() => setIsLayersPanelOpen(false)}
       />
+
+      {selectedAirspace && verticalContext && (
+        <AirspaceDetails
+          airspace={selectedAirspace}
+          verticalContext={verticalContext}
+          currentIndex={selectedAirspaceIndex}
+          totalCount={selectedAirspaces.length}
+          onPrevious={selectPrevious}
+          onNext={selectNext}
+          onClose={closeSelection}
+          contextLabel={
+            airspaceSelectionOrigin === "current"
+              ? "ESPACE ACTUEL"
+              : "ESPACE CONSULTÉ"
+          }
+          frequencies={selectedAirspaceFrequencies}
+        />
+      )}
 
       {/* Indicateur d'erreur GPS */}
       {geoError && geoState !== "simulation" && (

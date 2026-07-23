@@ -13,6 +13,7 @@ export interface GeoPoint {
   speed: number | null;
   heading: number | null;
   accuracy: number | null;
+  verticalAccuracy: number | null;
   timestamp: number;
 }
 

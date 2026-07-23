@@ -106,7 +106,9 @@ export default function FlightInstruments({
     },
     {
       label: "SOL",
-      value: formatNumber(metrics.groundSpeed),
+      value: formatNumber(
+        metrics.groundSpeed === null ? null : metrics.groundSpeed * 3.6,
+      ),
       unit: "km/h",
       priority: "speed",
     },

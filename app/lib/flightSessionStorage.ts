@@ -38,6 +38,8 @@ function isGeoPoint(value: unknown): value is GeoPoint {
     isNullableFiniteNumber(point.speed) &&
     isNullableFiniteNumber(point.heading) &&
     isNullableFiniteNumber(point.accuracy) &&
+    (point.verticalAccuracy === undefined ||
+      isNullableFiniteNumber(point.verticalAccuracy)) &&
     isFiniteNumber(point.timestamp)
   );
 }
