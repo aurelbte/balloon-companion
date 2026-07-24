@@ -2,6 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Balloon,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  CloudSun,
+  Layers,
+  MapPin,
+  Route,
+  Scale,
+  Timer,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import NavigationBar from "../components/NavigationBar";
 import { getCurrentFlight, saveCurrentFlight } from "../lib/flightStorage";
 
@@ -18,7 +33,7 @@ type PreparationField = keyof PreparationData;
 
 type SelectorDefinition = {
   field: PreparationField;
-  icon: string;
+  icon: LucideIcon;
   label: string;
 };
 
@@ -32,12 +47,12 @@ const INITIAL_PREPARATION: PreparationData = {
 };
 
 const PREPARATION_FIELDS: SelectorDefinition[] = [
-  { field: "terrain", icon: "📍", label: "Terrain" },
-  { field: "date", icon: "📅", label: "Date" },
-  { field: "heure", icon: "🕐", label: "Heure de décollage" },
-  { field: "duree", icon: "⏱", label: "Durée prévue" },
-  { field: "meteo", icon: "🌤", label: "Modèle météo" },
-  { field: "ballon", icon: "🎈", label: "Ballon" },
+  { field: "terrain", icon: MapPin, label: "Terrain" },
+  { field: "date", icon: CalendarDays, label: "Date" },
+  { field: "heure", icon: Clock3, label: "Décollage" },
+  { field: "duree", icon: Timer, label: "Durée prévue" },
+  { field: "meteo", icon: CloudSun, label: "Modèle météo" },
+  { field: "ballon", icon: Balloon, label: "Ballon" },
 ];
 
 const SELECTOR_OPTIONS: Partial<Record<PreparationField, string[]>> = {
@@ -47,10 +62,10 @@ const SELECTOR_OPTIONS: Partial<Record<PreparationField, string[]>> = {
 };
 
 const VALIDATION_CARDS = [
-  { icon: "🌤", label: "Conditions météo", href: "/briefing" },
-  { icon: "🧭", label: "Trajectoire", href: "/map" },
-  { icon: "⚖️", label: "Charge", href: "/briefing" },
-  { icon: "🛩️", label: "Espaces aériens", href: "/flight" },
+  { icon: CloudSun, label: "Conditions météo", href: "/briefing" },
+  { icon: Route, label: "Trajectoire", href: "/map" },
+  { icon: Scale, label: "Charge", href: "/briefing" },
+  { icon: Layers, label: "Espaces aériens", href: "/flight" },
 ] as const;
 
 function formatDate(value: string): string {
@@ -131,78 +146,78 @@ export default function PreparePage() {
   const options = activeSelector
     ? SELECTOR_OPTIONS[activeSelector.field]
     : undefined;
+  const ActiveSelectorIcon = activeSelector?.icon;
 
   return (
-    <main className="min-h-screen px-4 pb-32 pt-5 sm:px-6 sm:pt-7">
-      <div className="mx-auto w-full max-w-lg">
-        <header className="mb-6">
+    <main className="min-h-dvh px-3.5 pb-24 pt-3.5 sm:px-6 sm:pt-5">
+      <div className="mx-auto w-full max-w-md">
+        <header className="mb-2.5">
           <p
-            className="mb-1.5 text-xs font-bold uppercase tracking-[0.2em]"
+            className="mb-0.5 text-[11px] font-bold uppercase tracking-[0.2em]"
             style={{ color: "var(--bc-accent)" }}
           >
             Prépa
           </p>
-          <h1 className="text-[2rem] font-black leading-tight tracking-tight">
+          <h1 className="text-[1.75rem] font-black leading-tight tracking-tight">
             Préparer le vol
           </h1>
-          <p
-            className="mt-2 max-w-sm text-[15px] leading-6"
-            style={{ color: "var(--bc-text-secondary)" }}
-          >
-            Les informations sont enregistrées automatiquement.
-          </p>
         </header>
 
         <section aria-label="Paramètres du vol">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {PREPARATION_FIELDS.map((definition) => (
-              <button
-                key={definition.field}
-                type="button"
-                onClick={() => openSelector(definition)}
-                className="group flex min-h-[104px] w-full items-center gap-4 rounded-[20px] border px-5 py-4 text-left transition-colors active:scale-[0.99]"
-                style={{
-                  background: "var(--bc-surface)",
-                  borderColor: "var(--bc-border)",
-                  boxShadow: "var(--bc-shadow-card)",
-                }}
-                aria-label={`Modifier ${definition.label.toLowerCase()}`}
-              >
-                <span
-                  aria-hidden="true"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[1.35rem]"
-                  style={{ background: "var(--bc-background-elevated)" }}
+          <div className="grid grid-cols-2 gap-2">
+            {PREPARATION_FIELDS.map((definition) => {
+              const Icon = definition.icon;
+              return (
+                <button
+                  key={definition.field}
+                  type="button"
+                  onClick={() => openSelector(definition)}
+                  className="group flex h-[78px] w-full items-center gap-2.5 rounded-2xl border px-3 text-left transition-[transform,border-color,background-color,box-shadow] duration-200 ease-out hover:border-[var(--bc-border-strong)] active:scale-[0.98]"
+                  style={{
+                    background: "var(--bc-surface)",
+                    borderColor: "var(--bc-border)",
+                    boxShadow: "0 8px 22px rgb(0 0 0 / 14%)",
+                  }}
+                  aria-label={`Modifier ${definition.label.toLowerCase()}`}
                 >
-                  {definition.icon}
-                </span>
-                <span className="min-w-0 flex-1">
                   <span
-                    className="block text-[13px] font-bold uppercase tracking-[0.08em]"
-                    style={{ color: "var(--bc-text-secondary)" }}
+                    aria-hidden="true"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                    style={{
+                      background: "var(--bc-background-elevated)",
+                      color: "var(--bc-accent)",
+                    }}
                   >
-                    {definition.label}
+                    <Icon size={18} strokeWidth={1.9} />
                   </span>
-                  <span className="mt-1 block truncate text-lg font-extrabold">
-                    {getDisplayValue(
-                      definition.field,
-                      preparation[definition.field],
-                    )}
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className="block truncate text-[10px] font-bold uppercase tracking-[0.07em]"
+                      style={{ color: "var(--bc-text-secondary)" }}
+                    >
+                      {definition.label}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[15px] font-extrabold leading-tight">
+                      {getDisplayValue(
+                        definition.field,
+                        preparation[definition.field],
+                      )}
+                    </span>
                   </span>
-                </span>
-                <span
-                  aria-hidden="true"
-                  className="text-xl font-light"
-                  style={{ color: "var(--bc-text-muted)" }}
-                >
-                  ›
-                </span>
-              </button>
-            ))}
+                  <ChevronRight
+                    aria-hidden="true"
+                    size={16}
+                    strokeWidth={1.8}
+                    style={{ color: "var(--bc-text-muted)" }}
+                  />
+                </button>
+              );
+            })}
           </div>
         </section>
 
         <div
-          className="my-5 flex min-h-6 items-center justify-center gap-2 text-sm font-semibold"
+          className="my-2 flex min-h-4 items-center justify-center gap-1.5 text-[11px] font-semibold transition-opacity duration-200"
           aria-live="polite"
           style={{
             color:
@@ -214,7 +229,7 @@ export default function PreparePage() {
           {calculationState === "calculating" && (
             <>
               <span
-                className="h-2 w-2 animate-pulse rounded-full"
+                className="h-1.5 w-1.5 animate-pulse rounded-full"
                 style={{ background: "var(--bc-accent)" }}
               />
               Mise à jour…
@@ -224,35 +239,47 @@ export default function PreparePage() {
         </div>
 
         {calculationState === "ready" && (
-          <section aria-labelledby="flight-validation-title" className="mt-1">
+          <section aria-labelledby="flight-validation-title">
             <h2
               id="flight-validation-title"
-              className="mb-3 text-lg font-black tracking-tight"
+              className="mb-1.5 text-[16px] font-black tracking-tight"
             >
               Validation du vol
             </h2>
 
-            <div className="grid grid-cols-2 gap-3">
-              {VALIDATION_CARDS.map((card) => (
-                <button
-                  key={card.label}
-                  type="button"
-                  onClick={() => router.push(card.href)}
-                  className="flex min-h-[112px] flex-col items-start justify-between rounded-[18px] border p-4 text-left transition-colors active:scale-[0.99]"
-                  style={{
-                    background: "var(--bc-surface)",
-                    borderColor: isComplete
-                      ? "rgb(69 196 134 / 55%)"
-                      : "var(--bc-border)",
-                  }}
-                >
-                  <span className="flex w-full items-start justify-between">
-                    <span aria-hidden="true" className="text-xl">
-                      {card.icon}
+            <div className="grid grid-cols-2 gap-1.5">
+              {VALIDATION_CARDS.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <button
+                    key={card.label}
+                    type="button"
+                    onClick={() => router.push(card.href)}
+                    className="flex h-[68px] items-center gap-2 rounded-2xl border px-2.5 text-left transition-[transform,border-color,background-color,box-shadow] duration-200 ease-out hover:border-[var(--bc-border-strong)] active:scale-[0.98]"
+                    style={{
+                      background: "var(--bc-surface)",
+                      borderColor: isComplete
+                        ? "rgb(69 196 134 / 48%)"
+                        : "var(--bc-border)",
+                      boxShadow: "0 8px 22px rgb(0 0 0 / 14%)",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                      style={{
+                        background: "var(--bc-background-elevated)",
+                        color: "var(--bc-success)",
+                      }}
+                    >
+                      <Icon size={17} strokeWidth={1.9} />
+                    </span>
+                    <span className="min-w-0 flex-1 text-[12px] font-extrabold leading-tight">
+                      {card.label}
                     </span>
                     <span
                       aria-hidden="true"
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-sm font-black"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
                       style={{
                         background: isComplete
                           ? "rgb(69 196 134 / 18%)"
@@ -262,41 +289,55 @@ export default function PreparePage() {
                           : "var(--bc-text-muted)",
                       }}
                     >
-                      {isComplete ? "✓" : "›"}
+                      {isComplete ? (
+                        <Check size={12} strokeWidth={2.5} />
+                      ) : (
+                        <ChevronRight size={12} strokeWidth={2} />
+                      )}
                     </span>
-                  </span>
-                  <span className="mt-3 text-[15px] font-extrabold leading-tight">
-                    {card.label}
-                  </span>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
 
             {isComplete ? (
               <div
-                className="mt-5 rounded-[22px] border px-5 py-6 text-center"
+                className="mt-2.5 flex items-center gap-3 rounded-2xl border px-4 py-3.5"
                 style={{
-                  background: "rgb(69 196 134 / 13%)",
-                  borderColor: "rgb(69 196 134 / 55%)",
-                  boxShadow: "0 16px 40px rgb(69 196 134 / 10%)",
+                  background:
+                    "linear-gradient(135deg, rgb(69 196 134 / 20%), rgb(69 196 134 / 8%))",
+                  borderColor: "rgb(69 196 134 / 68%)",
+                  boxShadow: "0 10px 28px rgb(69 196 134 / 14%)",
                 }}
               >
-                <p
-                  className="text-2xl font-black tracking-tight"
-                  style={{ color: "var(--bc-success)" }}
+                <span
+                  aria-hidden="true"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                  style={{
+                    background: "rgb(69 196 134 / 18%)",
+                    color: "var(--bc-success)",
+                  }}
                 >
-                  🎈 Prêt au décollage
-                </p>
-                <p
-                  className="mt-2 text-xs font-semibold"
-                  style={{ color: "var(--bc-text-secondary)" }}
-                >
-                  Vérifier chaque rubrique avant la décision de vol.
-                </p>
+                  <Balloon size={21} strokeWidth={2} />
+                </span>
+                <div>
+                  <p
+                    className="text-xl font-black tracking-tight"
+                    style={{ color: "var(--bc-success)" }}
+                  >
+                    Préparation terminée
+                  </p>
+                  <p
+                    className="mt-0.5 text-[10px] font-semibold"
+                    style={{ color: "var(--bc-text-secondary)" }}
+                  >
+                    Consultez chaque rubrique avant votre décision de vol.
+                  </p>
+                </div>
               </div>
             ) : (
               <p
-                className="mt-4 text-center text-sm font-semibold"
+                className="mt-2.5 text-center text-xs font-semibold"
                 style={{ color: "var(--bc-warning)" }}
               >
                 Renseigner la date pour finaliser la préparation.
@@ -306,7 +347,7 @@ export default function PreparePage() {
         )}
 
         <p
-          className="mx-auto mt-6 max-w-sm text-center text-xs leading-5"
+          className="mx-auto mt-2.5 max-w-sm text-center text-[10px] leading-4"
           style={{ color: "var(--bc-text-muted)" }}
         >
           Balloon Companion assiste la préparation. Le pilote reste seul
@@ -337,9 +378,14 @@ export default function PreparePage() {
           >
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <span aria-hidden="true" className="text-2xl">
-                  {activeSelector.icon}
-                </span>
+                {ActiveSelectorIcon && (
+                  <ActiveSelectorIcon
+                    aria-hidden="true"
+                    size={24}
+                    strokeWidth={1.9}
+                    style={{ color: "var(--bc-accent)" }}
+                  />
+                )}
                 <h2
                   id="preparation-selector-title"
                   className="mt-2 text-2xl font-black"
@@ -358,7 +404,7 @@ export default function PreparePage() {
                 }}
                 aria-label="Fermer le sélecteur"
               >
-                ×
+                <X aria-hidden="true" size={20} />
               </button>
             </div>
 
@@ -437,7 +483,12 @@ export default function PreparePage() {
                     >
                       {option}
                       {selected && (
-                        <span style={{ color: "var(--bc-accent)" }}>✓</span>
+                        <Check
+                          aria-hidden="true"
+                          size={18}
+                          strokeWidth={2.5}
+                          style={{ color: "var(--bc-accent)" }}
+                        />
                       )}
                     </button>
                   );
