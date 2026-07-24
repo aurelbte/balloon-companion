@@ -25,6 +25,16 @@ import {
   type AirspaceVisualCategory,
 } from "../../lib/airspaceMapStyle";
 import { sortAirspacesForMapClick } from "../../lib/airspaceMapSelection";
+import {
+  FLIGHT_TRACK_STYLE,
+  GPS_PROJECTION_STYLE,
+  getFollowCameraOffset,
+  getFollowPositionAfterAction,
+  getMapCameraInsets,
+  getVisibleProjectionMinutes,
+  shouldSuspendFollowForDrag,
+  shouldApplyInitialCenter,
+} from "../../lib/flightMapPresentation";
 import type { BaseMap, GeoPoint, ProjectionPoint } from "../../types/flight";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
@@ -38,6 +48,99 @@ const SATELLITE_FAILURE_MESSAGE = "Satellite indisponible — fond Plan restaur�
 const SATELLITE_ERROR_WINDOW_MS = 10_000;
 const SATELLITE_LOAD_TIMEOUT_MS = 12_000;
 const MAX_SATELLITE_ERRORS = 3;
+const FOLLOW_CAMERA_DURATION_MS = 180;
+
+interface ProjectionTimeMarker {
+  minutes: number;
+  marker: maplibregl.Marker;
+}
+
+function getMapViewportSize(map: maplibregl.Map) {
+  const canvas = map.getCanvas();
+  return {
+    width: canvas.clientWidth,
+    height: canvas.clientHeight,
+  };
+}
+
+function followMapPosition(
+  map: maplibregl.Map,
+  position: GeoPoint,
+  duration: number,
+) {
+  map.easeTo({
+    center: [position.longitude, position.latitude],
+    offset: getFollowCameraOffset(getMapViewportSize(map)),
+    duration,
+  });
+}
+
+function clearProjectionTimeMarkers(markers: ProjectionTimeMarker[]) {
+  for (const { marker } of markers) marker.remove();
+  markers.length = 0;
+}
+
+function syncProjectionTimeMarkers(
+  map: maplibregl.Map,
+  markers: ProjectionTimeMarker[],
+  projection: ProjectionPoint[],
+) {
+  const existingByMinutes = new Map(
+    markers.map((item) => [item.minutes, item]),
+  );
+  const nextMarkers: ProjectionTimeMarker[] = [];
+
+  for (const point of projection) {
+    let item = existingByMinutes.get(point.minutes);
+    if (item) {
+      item.marker.setLngLat([point.longitude, point.latitude]);
+      existingByMinutes.delete(point.minutes);
+    } else {
+      const element = document.createElement("div");
+      element.className = "flight-projection-time-marker";
+      element.textContent = `${point.minutes} min`;
+      element.setAttribute(
+        "aria-label",
+        `Projection à ${point.minutes} minutes`,
+      );
+      item = {
+        minutes: point.minutes,
+        marker: new maplibregl.Marker({ element, anchor: "center" })
+          .setLngLat([point.longitude, point.latitude])
+          .addTo(map),
+      };
+    }
+    nextMarkers.push(item);
+  }
+
+  for (const { marker } of existingByMinutes.values()) marker.remove();
+  markers.splice(0, markers.length, ...nextMarkers);
+}
+
+function updateProjectionTimeMarkerVisibility(
+  map: maplibregl.Map,
+  markers: ProjectionTimeMarker[],
+  projection: ProjectionPoint[],
+) {
+  const visibleMinutes = new Set(
+    getVisibleProjectionMinutes(map.getZoom(), projection),
+  );
+  const visibleScreenPoints: Array<{ x: number; y: number }> = [];
+
+  for (const { marker, minutes } of [...markers].sort(
+    (left, right) => left.minutes - right.minutes,
+  )) {
+    const screenPoint = map.project(marker.getLngLat());
+    const overlaps = visibleScreenPoints.some(
+      (point) =>
+        Math.abs(point.x - screenPoint.x) < 46 &&
+        Math.abs(point.y - screenPoint.y) < 26,
+    );
+    const visible = visibleMinutes.has(minutes) && !overlaps;
+    marker.getElement().style.display = visible ? "block" : "none";
+    if (visible) visibleScreenPoints.push(screenPoint);
+  }
+}
 
 function getAirspaceLayerId(
   category: AirspaceVisualCategory,
@@ -62,10 +165,14 @@ interface FlightMapProps {
   selectedAirspaceId: string | null;
   showGpsProjection: boolean;
   showWeatherProjection: boolean;
+  followPosition: boolean;
+  recenterRequest: number;
+  fitProjectionRequest: number;
   onSatelliteError: (message: string) => void;
   onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
+  onFollowPositionChange?: (following: boolean) => void;
+  onMapPress?: () => void;
   onViewportChange?: (viewport: FlightMapViewport) => void;
-  onMapReady?: (map: maplibregl.Map) => void;
 }
 
 interface FlightMapViewport {
@@ -122,19 +229,32 @@ export default function FlightMap({
   selectedAirspaceId,
   showGpsProjection,
   showWeatherProjection,
+  followPosition,
+  recenterRequest,
+  fitProjectionRequest,
   onSatelliteError,
   onAirspacesSelected,
+  onFollowPositionChange,
+  onMapPress,
   onViewportChange,
-  onMapReady,
 }: FlightMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const projectionTimeMarkersRef = useRef<ProjectionTimeMarker[]>([]);
   const sourceRef = useRef<boolean>(false);
-  const onMapReadyRef = useRef(onMapReady);
   const onAirspacesSelectedRef = useRef(onAirspacesSelected);
   const onViewportChangeRef = useRef(onViewportChange);
+  const onFollowPositionChangeRef = useRef(onFollowPositionChange);
+  const onMapPressRef = useRef(onMapPress);
   const flightPointsRef = useRef(flightPoints);
+  const currentPositionRef = useRef(currentPosition);
+  const gpsProjectionRef = useRef(gpsProjection);
+  const showGpsProjectionRef = useRef(showGpsProjection);
+  const followPositionRef = useRef(followPosition);
+  const initialCenterCompletedRef = useRef(false);
+  const lastRecenterRequestRef = useRef(recenterRequest);
+  const lastFitProjectionRequestRef = useRef(fitProjectionRequest);
   const styleAltitude =
     currentPosition?.altitude !== null &&
     currentPosition?.altitude !== undefined &&
@@ -176,13 +296,17 @@ export default function FlightMap({
   const satelliteLoadTimeoutRef = useRef<number | null>(null);
   const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
-useEffect(() => {
-  onMapReadyRef.current = onMapReady;
-}, [onMapReady]);
-
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange;
   }, [onViewportChange]);
+
+  useEffect(() => {
+    onFollowPositionChangeRef.current = onFollowPositionChange;
+  }, [onFollowPositionChange]);
+
+  useEffect(() => {
+    onMapPressRef.current = onMapPress;
+  }, [onMapPress]);
 
   useEffect(() => {
     onAirspacesSelectedRef.current = onAirspacesSelected;
@@ -191,6 +315,22 @@ useEffect(() => {
   useEffect(() => {
     flightPointsRef.current = flightPoints;
   }, [flightPoints]);
+
+  useEffect(() => {
+    currentPositionRef.current = currentPosition;
+  }, [currentPosition]);
+
+  useEffect(() => {
+    gpsProjectionRef.current = gpsProjection;
+  }, [gpsProjection]);
+
+  useEffect(() => {
+    showGpsProjectionRef.current = showGpsProjection;
+  }, [showGpsProjection]);
+
+  useEffect(() => {
+    followPositionRef.current = followPosition;
+  }, [followPosition]);
 
   useEffect(() => {
     airspaceIndexRef.current = createAirspaceSelectionIndex(airspaces);
@@ -250,6 +390,7 @@ useEffect(() => {
     if (map.current || !mapContainer.current) {
       return;
     }
+    const projectionTimeMarkers = projectionTimeMarkersRef.current;
 
     const baseSources: Record<string, SourceSpecification> = {
       "osm-tiles": {
@@ -335,8 +476,45 @@ useEffect(() => {
     };
 
     map.current.on("moveend", notifyViewportChange);
+    map.current.on("dragstart", (event) => {
+      if (!map.current || !followPositionRef.current) return;
+
+      const originalEvent = event.originalEvent;
+      const touchCount =
+        originalEvent && "touches" in originalEvent
+          ? originalEvent.touches.length
+          : 1;
+      if (
+        shouldSuspendFollowForDrag({
+          isZooming: map.current.isZooming(),
+          touchCount,
+        })
+      ) {
+        const nextFollowPosition = getFollowPositionAfterAction(
+          followPositionRef.current,
+          "MANUAL_DRAG",
+        );
+        followPositionRef.current = nextFollowPosition;
+        onFollowPositionChangeRef.current?.(nextFollowPosition);
+      }
+    });
+    map.current.on("zoomend", () => {
+      if (!map.current) return;
+
+      updateProjectionTimeMarkerVisibility(
+        map.current,
+        projectionTimeMarkersRef.current,
+        gpsProjectionRef.current,
+      );
+
+      const position = currentPositionRef.current;
+      if (followPositionRef.current && position) {
+        followMapPosition(map.current, position, 0);
+      }
+    });
 
     map.current.on("click", (event) => {
+      onMapPressRef.current?.();
       if (
         !map.current ||
         !showAirspacesRef.current ||
@@ -527,6 +705,21 @@ useEffect(() => {
       });
 
       map.current.addLayer({
+        id: "flight-track-halo",
+        type: "line",
+        source: "flight-track-source",
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "rgba(2, 8, 23, 0.78)",
+          "line-width": FLIGHT_TRACK_STYLE.haloWidth,
+          "line-opacity": 0.86,
+        },
+      });
+
+      map.current.addLayer({
         id: "flight-track-line",
         type: "line",
         source: "flight-track-source",
@@ -536,8 +729,8 @@ useEffect(() => {
         },
         paint: {
           "line-color": "#f59e42",
-          "line-width": 4,
-          "line-opacity": 0.9,
+          "line-width": FLIGHT_TRACK_STYLE.lineWidth,
+          "line-opacity": 0.96,
         },
       });
 
@@ -565,6 +758,21 @@ useEffect(() => {
 
       // Couche de ligne pour la projection GPS
       map.current.addLayer({
+        id: "gps-projection-halo",
+        type: "line",
+        source: "gps-projection-source",
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": "rgba(2, 8, 23, 0.88)",
+          "line-width": GPS_PROJECTION_STYLE.haloWidth,
+          "line-opacity": 0.9,
+        },
+      });
+
+      map.current.addLayer({
         id: "gps-projection-line",
         type: "line",
         source: "gps-projection-source",
@@ -574,8 +782,8 @@ useEffect(() => {
         },
         paint: {
           "line-color": "#10b981",
-          "line-width": 3,
-          "line-opacity": 0.7,
+          "line-width": GPS_PROJECTION_STYLE.lineWidth,
+          "line-opacity": 0.96,
         },
       });
 
@@ -585,9 +793,11 @@ useEffect(() => {
         type: "circle",
         source: "gps-projection-source",
         paint: {
-          "circle-radius": 5,
+          "circle-radius": 5.5,
           "circle-color": "#10b981",
-          "circle-opacity": 0.8,
+          "circle-opacity": 0.96,
+          "circle-stroke-color": "rgba(2, 8, 23, 0.9)",
+          "circle-stroke-width": 2,
         },
       });
 
@@ -630,7 +840,17 @@ useEffect(() => {
       });
 
       sourceRef.current = true;
-      onMapReadyRef.current?.(map.current);
+      const initialPosition = currentPositionRef.current;
+      if (
+        followPositionRef.current &&
+        shouldApplyInitialCenter({
+          hasValidPosition: Boolean(initialPosition),
+          alreadyCentered: initialCenterCompletedRef.current,
+        })
+      ) {
+        initialCenterCompletedRef.current = true;
+        followMapPosition(map.current, initialPosition as GeoPoint, 220);
+      }
       notifyViewportChange();
     });
 
@@ -670,6 +890,7 @@ useEffect(() => {
     // Cleanup au démontage
     return () => {
       if (map.current) {
+        clearProjectionTimeMarkers(projectionTimeMarkers);
         map.current.remove();
         map.current = null;
         markerRef.current = null;
@@ -831,8 +1052,76 @@ useEffect(() => {
         .addTo(map.current);
     }
 
-    
+    if (followPositionRef.current) {
+      const duration = initialCenterCompletedRef.current
+        ? FOLLOW_CAMERA_DURATION_MS
+        : 220;
+      initialCenterCompletedRef.current = true;
+      followMapPosition(map.current, currentPosition, duration);
+    }
   }, [currentPosition]);
+
+  useEffect(() => {
+    if (
+      !map.current ||
+      !currentPosition ||
+      recenterRequest === lastRecenterRequestRef.current
+    ) {
+      return;
+    }
+
+    lastRecenterRequestRef.current = recenterRequest;
+    followPositionRef.current = true;
+    followMapPosition(map.current, currentPosition, 220);
+  }, [currentPosition, recenterRequest]);
+
+  useEffect(() => {
+    if (
+      !map.current ||
+      !currentPosition ||
+      fitProjectionRequest === lastFitProjectionRequestRef.current
+    ) {
+      return;
+    }
+
+    lastFitProjectionRequestRef.current = fitProjectionRequest;
+    const visibleProjection = [
+      ...(showGpsProjection ? gpsProjection : []),
+      ...(showWeatherProjection ? weatherProjection : []),
+    ];
+    if (visibleProjection.length === 0) return;
+
+    const bounds = new maplibregl.LngLatBounds(
+      [currentPosition.longitude, currentPosition.latitude],
+      [currentPosition.longitude, currentPosition.latitude],
+    );
+    for (const point of visibleProjection) {
+      bounds.extend([point.longitude, point.latitude]);
+    }
+
+    const viewportSize = getMapViewportSize(map.current);
+    const camera = map.current.cameraForBounds(bounds, {
+      padding: getMapCameraInsets(viewportSize),
+    });
+    if (!camera) return;
+    const fitZoom = camera.zoom ?? map.current.getZoom();
+
+    followPositionRef.current = true;
+    map.current.easeTo({
+      center: [currentPosition.longitude, currentPosition.latitude],
+      zoom: Math.max(map.current.getMinZoom(), fitZoom - 0.45),
+      bearing: map.current.getBearing(),
+      offset: getFollowCameraOffset(viewportSize),
+      duration: 260,
+    });
+  }, [
+    currentPosition,
+    fitProjectionRequest,
+    gpsProjection,
+    showGpsProjection,
+    showWeatherProjection,
+    weatherProjection,
+  ]);
 
   useEffect(() => {
     if (!map.current || !sourceRef.current) return;
@@ -882,7 +1171,25 @@ useEffect(() => {
         features,
       });
 
+      syncProjectionTimeMarkers(
+        map.current,
+        projectionTimeMarkersRef.current,
+        gpsProjection,
+      );
+      updateProjectionTimeMarkerVisibility(
+        map.current,
+        projectionTimeMarkersRef.current,
+        gpsProjection,
+      );
+
       // Afficher les couches
+      if (map.current.getLayer("gps-projection-halo")) {
+        map.current.setLayoutProperty(
+          "gps-projection-halo",
+          "visibility",
+          "visible",
+        );
+      }
       if (map.current.getLayer("gps-projection-line")) {
         map.current.setLayoutProperty("gps-projection-line", "visibility", "visible");
       }
@@ -890,7 +1197,15 @@ useEffect(() => {
         map.current.setLayoutProperty("gps-projection-points", "visibility", "visible");
       }
     } else {
+      clearProjectionTimeMarkers(projectionTimeMarkersRef.current);
       // Masquer les couches
+      if (map.current.getLayer("gps-projection-halo")) {
+        map.current.setLayoutProperty(
+          "gps-projection-halo",
+          "visibility",
+          "none",
+        );
+      }
       if (map.current.getLayer("gps-projection-line")) {
         map.current.setLayoutProperty("gps-projection-line", "visibility", "none");
       }
@@ -973,8 +1288,28 @@ useEffect(() => {
           max-width: calc(100vw - 170px);
           font-size: 10px;
         }
+        .flight-projection-time-marker {
+          pointer-events: none;
+          min-width: 34px;
+          padding: 4px 6px;
+          border: 1px solid rgba(167, 243, 208, 0.9);
+          border-radius: 9px;
+          background: rgba(2, 8, 23, 0.9);
+          color: #ecfdf5;
+          box-shadow: 0 2px 7px rgba(0, 0, 0, 0.42);
+          font-size: 10px;
+          font-weight: 900;
+          line-height: 1;
+          text-align: center;
+          white-space: nowrap;
+        }
         @media (max-width: 380px) {
           .flight-map .maplibregl-ctrl-attrib { max-width: 185px; }
+          .flight-projection-time-marker {
+            min-width: 30px;
+            padding-inline: 5px;
+            font-size: 9px;
+          }
         }
       `}</style>
       <div

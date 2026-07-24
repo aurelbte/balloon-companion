@@ -1,23 +1,29 @@
 "use client";
 
-import { MapPin, Maximize2, Layers, Play, Square } from "lucide-react";
+import { LocateFixed, Map, Maximize2, Play, Square } from "lucide-react";
 
 interface FlightControlsProps {
   isTracking: boolean;
+  followPosition: boolean;
+  mapOptionsOpen: boolean;
+  mapDisplayCustomized: boolean;
   withNavigation?: boolean;
   onRecenterMap: () => void;
   onFitProjection: () => void;
-  onOpenLayers: () => void;
+  onToggleMapOptions: () => void;
   onStartTracking: () => void;
   onStopTracking: () => void;
 }
 
 export default function FlightControls({
   isTracking,
+  followPosition,
+  mapOptionsOpen,
+  mapDisplayCustomized,
   withNavigation = false,
   onRecenterMap,
   onFitProjection,
-  onOpenLayers,
+  onToggleMapOptions,
   onStartTracking,
   onStopTracking,
 }: FlightControlsProps) {
@@ -54,6 +60,13 @@ export default function FlightControls({
     letterSpacing: "0.04em",
   };
 
+  const activeSecondaryButtonStyle = {
+    ...secondaryButtonStyle,
+    borderColor: "var(--bc-accent)",
+    color: "var(--bc-accent)",
+    backgroundColor: "rgba(7, 17, 31, 0.96)",
+  };
+
   return (
     <div
       style={{
@@ -66,42 +79,59 @@ export default function FlightControls({
         flexDirection: "column" as const,
         gap: "12px",
         alignItems: "flex-end",
-        zIndex: 40,
+        zIndex: 44,
       }}
     >
       {/* Bouton recentrer */}
       <button
+        type="button"
         onClick={onRecenterMap}
-        style={secondaryButtonStyle}
-        title="Recentrer la carte"
-        aria-label="Recentrer la carte sur la position"
+        style={
+          followPosition ? activeSecondaryButtonStyle : secondaryButtonStyle
+        }
+        title="Suivre ma position"
+        aria-label={
+          followPosition
+            ? "Suivi de position actif"
+            : "Réactiver le suivi de position"
+        }
+        aria-pressed={followPosition}
       >
-        <MapPin size={20} />
+        <LocateFixed size={20} />
       </button>
 
       {/* Bouton cadrer projection */}
       <button
+        type="button"
         onClick={onFitProjection}
         style={secondaryButtonStyle}
-        title="Cadrer la projection"
-        aria-label="Adapter le zoom pour voir la projection"
+        title="Vue élargie de la trajectoire"
+        aria-label="Afficher une vue élargie de la trajectoire projetée"
       >
         <Maximize2 size={20} />
       </button>
 
-      {/* Bouton couches */}
+      {/* Options de carte */}
       <button
-        onClick={onOpenLayers}
-        style={secondaryButtonStyle}
-        title="Couches"
-        aria-label="Ouvrir le panneau des couches"
+        type="button"
+        onClick={onToggleMapOptions}
+        style={
+          mapOptionsOpen || mapDisplayCustomized
+            ? activeSecondaryButtonStyle
+            : secondaryButtonStyle
+        }
+        title="Carte"
+        aria-label="Options de carte"
+        aria-expanded={mapOptionsOpen}
+        aria-pressed={mapDisplayCustomized}
       >
-        <Layers size={20} />
+        <Map size={20} />
       </button>
 
       {/* Bouton principal : démarrer/arrêter le suivi */}
       {!isTracking ? (
         <button
+          type="button"
           onClick={onStartTracking}
           style={primaryButtonStyle}
           title="Démarrer le suivi"
@@ -112,6 +142,7 @@ export default function FlightControls({
         </button>
       ) : (
         <button
+          type="button"
           onClick={onStopTracking}
           style={{
             ...primaryButtonStyle,

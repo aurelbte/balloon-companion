@@ -81,6 +81,16 @@ button {
   cursor: pointer;
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--bc-accent);
+  outline-offset: 3px;
+}
+
 ::selection {
   background: rgb(245 158 66 / 30%);
   color: var(--bc-text-primary);

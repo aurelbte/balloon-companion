@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import maplibregl from "maplibre-gl";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useFlightRuntime } from "../contexts/FlightRuntimeContext";
 import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
@@ -25,7 +24,7 @@ import {
 import FlightMap from "../components/flight/FlightMap";
 import FlightInstruments from "../components/flight/FlightInstruments";
 import FlightControls from "../components/flight/FlightControls";
-import LayersPanel from "../components/flight/LayersPanel";
+import MapOptionsPopover from "../components/flight/MapOptionsPopover";
 import AirspaceDetails from "../components/flight/AirspaceDetails";
 import CurrentAirspaceBadge from "../components/flight/CurrentAirspaceBadge";
 import FlightRecoveryDialog from "../components/flight/FlightRecoveryDialog";
@@ -36,6 +35,11 @@ import {
   getFlightNavigationIntent,
   resolveFlightNavigationAction,
 } from "../lib/flightNavigation";
+import {
+  getFollowPositionAfterAction,
+  getMapOptionsOpenAfterAction,
+  isMapDisplayCustomized,
+} from "../lib/flightMapPresentation";
 import type {
   BaseMap,
   FlightLayerSettings,
@@ -52,7 +56,10 @@ export default function FlightPage() {
     highContrast: false,
   });
 
-  const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
+  const [isMapOptionsOpen, setIsMapOptionsOpen] = useState(false);
+  const [followPosition, setFollowPosition] = useState(true);
+  const [recenterRequest, setRecenterRequest] = useState(0);
+  const [fitProjectionRequest, setFitProjectionRequest] = useState(0);
   const [baseMap, setBaseMap] = useState<BaseMap>("plan");
   const [satelliteError, setSatelliteError] = useState<string | null>(null);
   const [airspaceViewport, setAirspaceViewport] =
@@ -65,7 +72,6 @@ export default function FlightPage() {
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
 
   const { geolocation, tracking } = useFlightRuntime();
@@ -175,55 +181,20 @@ export default function FlightPage() {
 
   // Handlers pour les boutons
   const handleRecenterMap = useCallback(() => {
-    if (mapRef.current && currentPosition) {
-      mapRef.current.flyTo({
-        center: [currentPosition.longitude, currentPosition.latitude],
-        zoom: 14,
-        duration: 500,
-      });
-    }
+    if (!currentPosition) return;
+    setFollowPosition((current) =>
+      getFollowPositionAfterAction(current, "RECENTER"),
+    );
+    setRecenterRequest((request) => request + 1);
   }, [currentPosition]);
 
   const handleFitProjection = useCallback(() => {
-    if (!mapRef.current || !currentPosition) return;
-
-    const allPoints: Array<[number, number]> = [
-      [currentPosition.longitude, currentPosition.latitude],
-    ];
-
-    if (layerSettings.gpsProjection) {
-      allPoints.push(
-        ...gpsProjection.map((p) => [p.longitude, p.latitude] as [number, number])
-      );
-    }
-
-    if (layerSettings.weatherProjection) {
-      allPoints.push(
-        ...weatherProjection.map((p) => [p.longitude, p.latitude] as [number, number])
-      );
-    }
-
-    if (allPoints.length === 1) return;
-
-    // Calculer les limites
-    const lngs = allPoints.map((p) => p[0]);
-    const lats = allPoints.map((p) => p[1]);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-
-    mapRef.current.fitBounds(
-      [
-        [minLng, minLat],
-        [maxLng, maxLat],
-      ],
-      {
-        padding: 50,
-        duration: 500,
-      }
+    if (!currentPosition) return;
+    setFollowPosition((current) =>
+      getFollowPositionAfterAction(current, "FIT_PROJECTION"),
     );
-  }, [currentPosition, gpsProjection, weatherProjection, layerSettings]);
+    setFitProjectionRequest((request) => request + 1);
+  }, [currentPosition]);
 
   const handleStartTracking = useCallback(() => {
     if (!storageReady) return;
@@ -364,6 +335,12 @@ export default function FlightPage() {
     setSatelliteError(message);
   }, []);
 
+  const handleCloseMapOptions = useCallback(() => {
+    setIsMapOptionsOpen((isOpen) =>
+      getMapOptionsOpenAfterAction(isOpen, "MAP_PRESS"),
+    );
+  }, []);
+
   const displayedMetrics = useMemo(
     () =>
       isStale
@@ -439,6 +416,12 @@ export default function FlightPage() {
     selectAirspaces,
   ]);
 
+  const mapDisplayCustomized = isMapDisplayCustomized({
+    baseMap,
+    airspaces: layerSettings.airspaces,
+    highContrast: layerSettings.highContrast,
+  });
+
   return (
     <div
       style={{
@@ -470,12 +453,14 @@ export default function FlightPage() {
           selectedAirspaceId={selectedAirspace?.airspaceId ?? null}
           showGpsProjection={layerSettings.gpsProjection && isTracking}
           showWeatherProjection={layerSettings.weatherProjection && isTracking}
+          followPosition={followPosition}
+          recenterRequest={recenterRequest}
+          fitProjectionRequest={fitProjectionRequest}
           onSatelliteError={handleSatelliteError}
           onAirspacesSelected={handleManualAirspaceSelection}
+          onFollowPositionChange={setFollowPosition}
+          onMapPress={handleCloseMapOptions}
           onViewportChange={handleViewportChange}
-          onMapReady={(map) => {
-            mapRef.current = map;
-          }}
         />
       </div>
 
@@ -536,10 +521,17 @@ export default function FlightPage() {
       {/* Boutons flottants */}
       <FlightControls
         isTracking={isTracking}
+        followPosition={followPosition}
+        mapOptionsOpen={isMapOptionsOpen}
+        mapDisplayCustomized={mapDisplayCustomized}
         withNavigation
         onRecenterMap={handleRecenterMap}
         onFitProjection={handleFitProjection}
-        onOpenLayers={() => setIsLayersPanelOpen(true)}
+        onToggleMapOptions={() =>
+          setIsMapOptionsOpen((isOpen) =>
+            getMapOptionsOpenAfterAction(isOpen, "TOGGLE"),
+          )
+        }
         onStartTracking={handleStartTracking}
         onStopTracking={() => setStopConfirmationOpen(true)}
       />
@@ -673,9 +665,8 @@ export default function FlightPage() {
         />
       )}
 
-      {/* Panneau des couches */}
-      <LayersPanel
-        isOpen={isLayersPanelOpen}
+      <MapOptionsPopover
+        isOpen={isMapOptionsOpen}
         settings={layerSettings}
         baseMap={baseMap}
         satelliteAvailable={satelliteConfigured && satelliteError === null}
@@ -689,7 +680,7 @@ export default function FlightPage() {
         airspacesError={airspaceCoverage.statusMessage}
         onBaseMapChange={handleBaseMapChange}
         onSettingsChange={handleLayerSettingsChange}
-        onClose={() => setIsLayersPanelOpen(false)}
+        onClose={handleCloseMapOptions}
       />
 
       {selectedAirspace && verticalContext && (
