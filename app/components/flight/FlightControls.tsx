@@ -1,6 +1,7 @@
 "use client";
 
 import { LocateFixed, Map, Maximize2, Play, Square } from "lucide-react";
+import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
 
 interface FlightControlsProps {
   isTracking: boolean;
@@ -71,9 +72,9 @@ export default function FlightControls({
     <div
       style={{
         position: "fixed",
-        bottom: `calc(max(6px, env(safe-area-inset-bottom)) + ${
-          withNavigation ? "192px" : "124px"
-        })`,
+        bottom: withNavigation
+          ? `calc(max(16px, env(safe-area-inset-bottom)) + ${FLIGHT_BOTTOM_LAYOUT.controlsBottomOffset}px)`
+          : "calc(max(6px, env(safe-area-inset-bottom)) + 124px)",
         right: "16px",
         display: "flex",
         flexDirection: "column" as const,

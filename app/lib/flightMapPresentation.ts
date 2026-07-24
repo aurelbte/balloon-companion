@@ -13,6 +13,27 @@ export const GPS_PROJECTION_STYLE = {
   lineWidth: 5.5,
 } as const;
 
+export const CURRENT_POSITION_MARKER_STYLE = {
+  containerSize: 66,
+  haloSize: 64,
+  arrowSize: 40,
+  strokeWidth: 2.1,
+} as const;
+
+export const FLIGHT_BOTTOM_LAYOUT = {
+  navigationTopAndContentHeight: 60,
+  gapAboveNavigation: 10,
+  instrumentsHeight: 112,
+  instrumentsBottomOffset: 70,
+  controlsBottomOffset: 194,
+  popoverBottomClearance: 194,
+} as const;
+
+export const MAP_OPTIONS_POPOVER_LAYOUT = {
+  right: 76,
+  topSafeClearance: 54,
+} as const;
+
 export const MAP_USEFUL_AREA = {
   top: 72,
   bottom: 198,
@@ -122,6 +143,20 @@ export function toggleMapLayerSetting(
     ...settings,
     [key]: !settings[key],
   };
+}
+
+export function getPositionMarkerRotation(
+  heading: number | null,
+): number | null {
+  if (heading === null || !Number.isFinite(heading)) return null;
+  return ((heading % 360) + 360) % 360;
+}
+
+export function getPositionMarkerHaloOpacity(
+  accuracy: number | null,
+): number {
+  if (accuracy === null || !Number.isFinite(accuracy)) return 0.16;
+  return Math.min(0.26, Math.max(0.12, 0.12 + accuracy / 800));
 }
 
 export function getVisibleProjectionMinutes(

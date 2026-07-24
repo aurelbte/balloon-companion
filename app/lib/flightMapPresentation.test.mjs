@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CURRENT_POSITION_MARKER_STYLE,
+  FLIGHT_BOTTOM_LAYOUT,
   FLIGHT_TRACK_STYLE,
   GPS_PROJECTION_STYLE,
   getFollowCameraOffset,
   getFollowPositionAfterAction,
   getMapCameraInsets,
   getMapOptionsOpenAfterAction,
+  getPositionMarkerHaloOpacity,
+  getPositionMarkerRotation,
   getVisibleProjectionMinutes,
   isMapDisplayCustomized,
   shouldApplyInitialCenter,
@@ -137,4 +141,31 @@ test("le menu Carte s'ouvre, se referme et active les espaces aériens", () => {
   };
   assert.equal(toggleMapLayerSetting(settings, "airspaces").airspaces, true);
   assert.equal(settings.airspaces, false);
+});
+
+test("le marqueur est agrandi de 28 à 40 px sans dépendre du zoom", () => {
+  assert.equal(CURRENT_POSITION_MARKER_STYLE.arrowSize, 40);
+  assert.ok(CURRENT_POSITION_MARKER_STYLE.arrowSize / 28 >= 1.35);
+  assert.equal(CURRENT_POSITION_MARKER_STYLE.haloSize, 64);
+  assert.equal(getPositionMarkerRotation(725), 5);
+  assert.equal(getPositionMarkerRotation(null), null);
+  assert.equal(
+    getPositionMarkerHaloOpacity(20),
+    getPositionMarkerHaloOpacity(20),
+  );
+});
+
+test("la barre d'instruments laisse exactement 10 px de carte", () => {
+  assert.equal(FLIGHT_BOTTOM_LAYOUT.gapAboveNavigation, 10);
+  assert.equal(
+    FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset -
+      FLIGHT_BOTTOM_LAYOUT.navigationTopAndContentHeight,
+    10,
+  );
+  assert.equal(
+    FLIGHT_BOTTOM_LAYOUT.controlsBottomOffset,
+    FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset +
+      FLIGHT_BOTTOM_LAYOUT.instrumentsHeight +
+      12,
+  );
 });

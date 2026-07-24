@@ -4,6 +4,12 @@ import {
   type AirspaceCacheAdapter,
   type CachedAirspaceTile,
 } from "../lib/airspaceCache.ts";
+import {
+  AirspaceHttpError,
+  AirspaceOfflineError,
+  classifyAirspaceError,
+  type AirspaceFailure,
+} from "../lib/airspaceLoadState.ts";
 import type { AirspaceFeatureCollection } from "../lib/openaip.ts";
 import type { AirspaceTile } from "../lib/airspaceTiles.ts";
 
@@ -23,25 +29,14 @@ export interface AirspaceTileLoadResult {
   source: "NETWORK" | "CACHE" | null;
 }
 
-export class AirspaceHttpError extends Error {
-  readonly status: number;
-  readonly retryAfterMs: number | null;
-
-  constructor(
-    status: number,
-    retryAfterMs: number | null = null,
-  ) {
-    super(`OpenAIP HTTP ${status}`);
-    this.status = status;
-    this.retryAfterMs = retryAfterMs;
-  }
-}
+export { AirspaceHttpError };
 
 interface QueueItem {
   tile: AirspaceTile;
   priority: number;
   signal?: AbortSignal;
   fallback: CachedAirspaceTile | null;
+  fallbackStatus: AirspaceTileStatus | null;
   resolve: (result: AirspaceTileLoadResult) => void;
 }
 
@@ -57,16 +52,19 @@ interface AirspaceTileLoaderOptions {
     source: "CACHE" | "NETWORK",
   ) => void;
   onStatusChange?: (tileId: string, status: AirspaceTileStatus) => void;
+  onLoadError?: (tileId: string, failure: AirspaceFailure) => void;
   maxConcurrency?: number;
   maxAttempts?: number;
   now?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
+  isOnline?: () => boolean;
 }
 
 export class AirspaceTileLoader {
   private readonly queue: QueueItem[] = [];
   private readonly cacheRequests = new Map<string, Promise<AirspaceTileLoadResult>>();
   private readonly networkRequests = new Map<string, Promise<AirspaceTileLoadResult>>();
+  private readonly cacheRefreshAttempted = new Set<string>();
   private activeRequests = 0;
   private sequence = 0;
   private readonly options: AirspaceTileLoaderOptions;
@@ -112,14 +110,24 @@ export class AirspaceTileLoader {
       const status = freshness === "FRESH" ? "FRESH" : "STALE_USABLE";
       this.options.onTileUpdate?.(cached, status, "CACHE");
       this.options.onStatusChange?.(tile.tileId, status);
-      if (freshness === "FRESH") {
-        return { tile: cached, status, source: "CACHE" };
+      if (
+        (this.options.isOnline ?? (() => true))() &&
+        !this.cacheRefreshAttempted.has(tile.tileId)
+      ) {
+        this.cacheRefreshAttempted.add(tile.tileId);
+        void this.enqueueNetwork(tile, priority, signal, cached, status);
       }
-      void this.enqueueNetwork(tile, priority, signal, cached);
       return { tile: cached, status, source: "CACHE" };
     }
 
-    return this.enqueueNetwork(tile, priority, signal, null);
+    if (!(this.options.isOnline ?? (() => true))()) {
+      const failure = classifyAirspaceError(new AirspaceOfflineError(), false);
+      this.options.onLoadError?.(tile.tileId, failure);
+      this.options.onStatusChange?.(tile.tileId, "ERROR");
+      return { tile: null, status: "ERROR", source: null };
+    }
+
+    return this.enqueueNetwork(tile, priority, signal, null, null);
   }
 
   private enqueueNetwork(
@@ -127,6 +135,7 @@ export class AirspaceTileLoader {
     priority: AirspaceLoadPriority,
     signal: AbortSignal | undefined,
     fallback: CachedAirspaceTile | null,
+    fallbackStatus: AirspaceTileStatus | null,
   ): Promise<AirspaceTileLoadResult> {
     const existing = this.networkRequests.get(tile.tileId);
     if (existing) return existing;
@@ -138,10 +147,11 @@ export class AirspaceTileLoader {
         priority: (priority === "GPS" ? 0 : 10) * 1_000_000 + this.sequence,
         signal,
         fallback,
+        fallbackStatus,
         resolve,
       });
       this.queue.sort((left, right) => left.priority - right.priority);
-      this.options.onStatusChange?.(tile.tileId, "QUEUED");
+      if (!fallback) this.options.onStatusChange?.(tile.tileId, "QUEUED");
       this.processQueue();
     }).finally(() => {
       this.networkRequests.delete(tile.tileId);
@@ -156,9 +166,19 @@ export class AirspaceTileLoader {
       const item = this.queue.shift();
       if (!item) return;
       if (item.signal?.aborted) {
+        const abortedError = new Error("Airspace request aborted");
+        abortedError.name = "AbortError";
+        this.options.onLoadError?.(
+          item.tile.tileId,
+          classifyAirspaceError(abortedError, true),
+        );
+        this.options.onStatusChange?.(
+          item.tile.tileId,
+          item.fallbackStatus ?? "ERROR",
+        );
         item.resolve({
           tile: item.fallback,
-          status: item.fallback ? "STALE_USABLE" : "ERROR",
+          status: item.fallbackStatus ?? "ERROR",
           source: item.fallback ? "CACHE" : null,
         });
         continue;
@@ -175,7 +195,9 @@ export class AirspaceTileLoader {
     item: QueueItem,
     fallback: CachedAirspaceTile | null,
   ): Promise<void> {
-    this.options.onStatusChange?.(item.tile.tileId, "LOADING");
+    if (!fallback) {
+      this.options.onStatusChange?.(item.tile.tileId, "LOADING");
+    }
     const maxAttempts = this.options.maxAttempts ?? 3;
     const sleep =
       this.options.sleep ??
@@ -199,18 +221,34 @@ export class AirspaceTileLoader {
         item.resolve({ tile: cachedTile, status: "FRESH", source: "NETWORK" });
         return;
       } catch (error) {
-        const canRetry =
+        const failure = classifyAirspaceError(
+          error,
+          (this.options.isOnline ?? (() => true))(),
+        );
+        const retryableHttpError =
           error instanceof AirspaceHttpError &&
-          error.status === 429 &&
+          (error.status === 429 || error.status >= 500);
+        const canRetry =
+          (retryableHttpError ||
+            failure.category === "TIMEOUT" ||
+            failure.category === "UNKNOWN_ERROR") &&
           attempt < maxAttempts &&
           !item.signal?.aborted;
         if (canRetry) {
           const exponentialBackoff = 1_000 * 2 ** (attempt - 1);
-          await sleep(Math.max(exponentialBackoff, error.retryAfterMs ?? 0));
+          await sleep(
+            Math.max(
+              exponentialBackoff,
+              error instanceof AirspaceHttpError
+                ? (error.retryAfterMs ?? 0)
+                : 0,
+            ),
+          );
           continue;
         }
 
-        const status = fallback ? "STALE_USABLE" : "ERROR";
+        this.options.onLoadError?.(item.tile.tileId, failure);
+        const status = item.fallbackStatus ?? "ERROR";
         if (fallback) this.options.onTileUpdate?.(fallback, status, "CACHE");
         this.options.onStatusChange?.(item.tile.tileId, status);
         item.resolve({

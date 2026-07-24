@@ -17,6 +17,11 @@ export async function GET(request: Request) {
   const apiKey = process.env.OPENAIP_API_KEY;
 
   if (!apiKey) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[OpenAIP proxy] OPENAIP_API_KEY is missing", {
+        requestId,
+      });
+    }
     return Response.json(
       { error: "OpenAIP API key is not configured" },
       { status: 500 }
@@ -63,7 +68,10 @@ export async function GET(request: Request) {
     });
     const responseBody = await openAipResponse.arrayBuffer();
 
-    if (!openAipResponse.ok) {
+    if (
+      !openAipResponse.ok &&
+      process.env.NODE_ENV === "development"
+    ) {
       const usefulHeaders = Object.fromEntries(
         [
           "retry-after",
@@ -80,11 +88,7 @@ export async function GET(request: Request) {
       console.error("[OpenAIP proxy] request failed", {
         requestId,
         status: openAipResponse.status,
-        url: openAipUrl.toString(),
         parameters: { lat, lon, dist, page },
-        responseBody: new TextDecoder()
-          .decode(responseBody)
-          .slice(0, 2_000),
         rateLimitHeaders: usefulHeaders,
       });
     }
@@ -103,7 +107,14 @@ export async function GET(request: Request) {
       statusText: openAipResponse.statusText,
       headers: responseHeaders,
     });
-  } catch {
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[OpenAIP proxy] upstream unavailable", {
+        requestId,
+        category: error instanceof Error ? error.name : "UnknownError",
+        parameters: { lat, lon, dist, page },
+      });
+    }
     return Response.json(
       { error: "OpenAIP service is unavailable" },
       { status: 502 }

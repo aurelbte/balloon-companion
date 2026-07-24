@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { IndexedDbAirspaceCache, type CachedAirspaceTile } from "../lib/airspaceCache";
+import {
+  AirspaceHttpError,
+  AirspaceTimeoutError,
+  classifyAirspaceError,
+  getAirspaceUiPresentation,
+  type AirspaceFailure,
+  type AirspaceUiState,
+} from "../lib/airspaceLoadState";
 import { mergeAirspacesById } from "../lib/airspaceMerge";
 import {
   getAirspaceTileForPosition,
@@ -12,7 +20,6 @@ import {
 import type { GeoPoint } from "../types/flight";
 import type { LoadedAirspaceCoverage } from "../lib/flightContext";
 import {
-  AirspaceHttpError,
   AirspaceTileLoader,
   aggregateAirspaceCoverageStatus,
   type AirspaceCoverageStatus,
@@ -29,6 +36,7 @@ const MAX_VISIBLE_AIRSPACE_TILES = 24;
 const MAX_ACTIVE_AIRSPACE_TILES = 36;
 const EXPLORATION_MARGIN_DEGREES = 0.15;
 const EXPLORATION_DEBOUNCE_MS = 600;
+const AIRSPACE_REQUEST_TIMEOUT_MS = 12_000;
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
   features: [],
@@ -54,6 +62,7 @@ export interface UseAirspaceCoverageResult {
   visibleCoverage: AirspaceCoverageStatus;
   visibleLoading: boolean;
   statusMessage: string | null;
+  uiState: AirspaceUiState;
   lastUpdatedAt: number | null;
 }
 
@@ -80,16 +89,76 @@ async function fetchAirspaceTile(
 
   do {
     if (nextPage !== undefined) searchParams.set("page", String(nextPage));
-    const response = await fetch(`/api/openaip/airspaces?${searchParams}`, {
-      signal,
-    });
-    if (!response.ok) {
-      throw new AirspaceHttpError(
-        response.status,
-        parseRetryAfter(response.headers.get("retry-after")),
-      );
+    const requestUrl = `/api/openaip/airspaces?${searchParams}`;
+    const controller = new AbortController();
+    let timedOut = false;
+    const startedAt = Date.now();
+    const handleExternalAbort = () => controller.abort();
+    signal?.addEventListener("abort", handleExternalAbort, { once: true });
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, AIRSPACE_REQUEST_TIMEOUT_MS);
+
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[Airspaces] request", {
+        endpoint: "/api/openaip/airspaces",
+        tileId: tile.tileId,
+        page: nextPage ?? 1,
+        online: navigator.onLine,
+      });
     }
-    const payload = (await response.json()) as OpenAipAirspaceResponse;
+
+    let payload: OpenAipAirspaceResponse;
+    try {
+      const response = await fetch(requestUrl, {
+        signal: controller.signal,
+      });
+      if (process.env.NODE_ENV === "development") {
+        console.debug("[Airspaces] response", {
+          tileId: tile.tileId,
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+          online: navigator.onLine,
+        });
+      }
+      if (!response.ok) {
+        throw new AirspaceHttpError(
+          response.status,
+          parseRetryAfter(response.headers.get("retry-after")),
+        );
+      }
+      payload = (await response.json()) as OpenAipAirspaceResponse;
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !Array.isArray(payload.items)
+      ) {
+        throw new SyntaxError("Invalid OpenAIP response");
+      }
+    } catch (error) {
+      const classifiedError = timedOut
+        ? new AirspaceTimeoutError()
+        : error;
+      if (process.env.NODE_ENV === "development") {
+        const failure = classifyAirspaceError(
+          classifiedError,
+          navigator.onLine,
+        );
+        console.warn("[Airspaces] request failed", {
+          tileId: tile.tileId,
+          category: failure.category,
+          httpStatus: failure.httpStatus,
+          durationMs: Date.now() - startedAt,
+          online: navigator.onLine,
+        });
+      }
+      throw classifiedError;
+    } finally {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", handleExternalAbort);
+    }
+
     merged = mergeAirspaceFeatureCollections(
       merged,
       openAipAirspacesToGeoJson(payload),
@@ -133,7 +202,13 @@ export function useAirspaceCoverage({
   );
   const [visibleTileIds, setVisibleTileIds] = useState<string[]>([]);
   const [visibleCoverageTruncated, setVisibleCoverageTruncated] = useState(false);
-  const [cachedTileIds, setCachedTileIds] = useState<Set<string>>(new Set());
+  const [failures, setFailures] = useState<Map<string, AirspaceFailure>>(
+    new Map(),
+  );
+  const [networkRetryKey, setNetworkRetryKey] = useState(0);
+  const [isOnline, setIsOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine,
+  );
   const [loader] = useState(
     () =>
       new AirspaceTileLoader({
@@ -141,20 +216,47 @@ export function useAirspaceCoverage({
         fetchTile: fetchAirspaceTile,
         maxConcurrency: 2,
         maxAttempts: 3,
+        isOnline: () =>
+          typeof navigator === "undefined" || navigator.onLine,
         onStatusChange: (tileId, status) => {
+          if (status !== "ERROR") {
+            setFailures((current) => {
+              if (!current.has(tileId)) return current;
+              const next = new Map(current);
+              next.delete(tileId);
+              return next;
+            });
+          }
           setStatuses((current) => {
             const next = new Map(current);
             next.set(tileId, status);
             return next;
           });
         },
-        onTileUpdate: (tile, _status, source) => {
-          setCachedTileIds((current) => {
-            const next = new Set(current);
-            if (source === "CACHE") next.add(tile.tileId);
-            else next.delete(tile.tileId);
+        onLoadError: (tileId, failure) => {
+          setFailures((current) => {
+            const next = new Map(current);
+            next.set(tileId, failure);
             return next;
           });
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[Airspaces] fallback", {
+              tileId,
+              category: failure.category,
+              httpStatus: failure.httpStatus,
+              online: navigator.onLine,
+            });
+          }
+        },
+        onTileUpdate: (tile, _status, source) => {
+          if (process.env.NODE_ENV === "development") {
+            console.debug("[Airspaces] tile available", {
+              tileId: tile.tileId,
+              source,
+              featureCount: tile.airspaces.length,
+              ageMs: Date.now() - tile.fetchedAt,
+            });
+          }
           setActiveTiles((current) => {
             const next = new Map(current);
             next.delete(tile.tileId);
@@ -169,6 +271,27 @@ export function useAirspaceCoverage({
         },
       }),
   );
+
+  useEffect(() => {
+    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      setIsOnline(true);
+      window.setTimeout(() => {
+        setNetworkRetryKey((current) => current + 1);
+      }, 250);
+    };
+
+    const initialStatusTimeout = window.setTimeout(() => {
+      setIsOnline(navigator.onLine);
+    }, 0);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.clearTimeout(initialStatusTimeout);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   const gpsTileId =
     position && !isPositionStale
@@ -195,7 +318,7 @@ export function useAirspaceCoverage({
 
   useEffect(() => {
     for (const tile of gpsTiles) void loader.requestTile(tile, "GPS");
-  }, [gpsTiles, loader]);
+  }, [gpsTiles, loader, networkRetryKey]);
 
   useEffect(() => {
     if (!explorationEnabled || !viewport) {
@@ -223,7 +346,7 @@ export function useAirspaceCoverage({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [explorationEnabled, loader, viewport]);
+  }, [explorationEnabled, loader, networkRetryKey, viewport]);
   const effectiveVisibleTileIds = useMemo(
     () => (explorationEnabled ? visibleTileIds : []),
     [explorationEnabled, visibleTileIds],
@@ -273,21 +396,34 @@ export function useAirspaceCoverage({
     statuses,
     visibleCoverageTruncated,
   ]);
-  const usesCachedTiles = relevantTiles.some((tile) =>
-    cachedTileIds.has(tile.tileId),
-  );
   const lastUpdatedAt =
     relevantTiles.length > 0
       ? Math.max(...relevantTiles.map((tile) => tile.fetchedAt))
       : null;
-  const statusMessage =
-    visibleCoverage.status === "PARTIAL"
-      ? "Espaces partiellement disponibles"
-      : visibleCoverage.status === "UNAVAILABLE" && explorationEnabled
-        ? "Zone indisponible hors ligne"
-        : usesCachedTiles && lastUpdatedAt !== null
-          ? `Données en cache · Mise à jour : ${new Date(lastUpdatedAt).toLocaleString("fr-FR", { timeZone: "UTC" })} UTC`
-          : null;
+  const visibleIdSet = useMemo(
+    () => new Set(effectiveVisibleTileIds),
+    [effectiveVisibleTileIds],
+  );
+  const visibleHasData = relevantTiles.some(
+    (tile) =>
+      visibleIdSet.has(tile.tileId) && tile.airspaces.length > 0,
+  );
+  const visibleFailures = effectiveVisibleTileIds.flatMap((tileId) => {
+    const failure = failures.get(tileId);
+    return failure ? [failure] : [];
+  });
+  const effectiveFailures =
+    visibleFailures.length > 0 || isOnline
+      ? visibleFailures
+      : [{ category: "OFFLINE" as const, httpStatus: null }];
+  const uiPresentation = getAirspaceUiPresentation({
+    explorationEnabled,
+    coverageStatus: visibleCoverage.status,
+    failures: effectiveFailures,
+    hasData: visibleHasData,
+    staleCacheUsed: visibleCoverage.fromCache,
+  });
+  const statusMessage = uiPresentation.message;
   const loadedCoverage = useMemo(
     () =>
       relevantTiles.map((tile) => ({
@@ -305,6 +441,7 @@ export function useAirspaceCoverage({
     visibleCoverage,
     visibleLoading: visibleCoverage.status === "LOADING",
     statusMessage,
+    uiState: uiPresentation.state,
     lastUpdatedAt,
   };
 }

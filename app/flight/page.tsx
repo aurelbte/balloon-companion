@@ -678,6 +678,7 @@ export default function FlightPage() {
         }
         airspacesLoading={airspaceCoverage.visibleLoading}
         airspacesError={airspaceCoverage.statusMessage}
+        airspacesStatus={airspaceCoverage.uiState}
         onBaseMapChange={handleBaseMapChange}
         onSettingsChange={handleLayerSettingsChange}
         onClose={handleCloseMapOptions}

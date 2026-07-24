@@ -26,11 +26,14 @@ import {
 } from "../../lib/airspaceMapStyle";
 import { sortAirspacesForMapClick } from "../../lib/airspaceMapSelection";
 import {
+  CURRENT_POSITION_MARKER_STYLE,
   FLIGHT_TRACK_STYLE,
   GPS_PROJECTION_STYLE,
   getFollowCameraOffset,
   getFollowPositionAfterAction,
   getMapCameraInsets,
+  getPositionMarkerHaloOpacity,
+  getPositionMarkerRotation,
   getVisibleProjectionMinutes,
   shouldSuspendFollowForDrag,
   shouldApplyInitialCenter,
@@ -241,6 +244,7 @@ export default function FlightMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const lastMarkerHeadingRef = useRef<number | null>(null);
   const projectionTimeMarkersRef = useRef<ProjectionTimeMarker[]>([]);
   const sourceRef = useRef<boolean>(false);
   const onAirspacesSelectedRef = useRef(onAirspacesSelected);
@@ -1005,42 +1009,49 @@ export default function FlightMap({
         "[data-accuracy-halo]"
       );
       if (accuracyHalo) {
-        accuracyHalo.style.transform = `scale(${Math.min(
-          1.35,
-          Math.max(0.75, (currentPosition.accuracy ?? 20) / 20)
+        accuracyHalo.style.background = `rgba(245, 158, 66, ${getPositionMarkerHaloOpacity(
+          currentPosition.accuracy,
         )})`;
       }
       const arrow = markerContainer.querySelector("svg");
-      if (arrow) {
-        arrow.style.transform = `rotate(${currentPosition.heading ?? 0}deg)`;
+      const rotation = getPositionMarkerRotation(currentPosition.heading);
+      if (arrow && rotation !== null) {
+        lastMarkerHeadingRef.current = rotation;
+        arrow.style.transform = `rotate(${rotation}deg)`;
       }
     } else {
       // Créer un élément pour le marqueur (flèche SVG)
       const el = document.createElement("div");
-      el.style.width = "52px";
-      el.style.height = "52px";
+      el.setAttribute("role", "img");
+      el.setAttribute("aria-label", "Position actuelle du pilote");
+      el.style.width = `${CURRENT_POSITION_MARKER_STYLE.containerSize}px`;
+      el.style.height = `${CURRENT_POSITION_MARKER_STYLE.containerSize}px`;
       el.style.display = "flex";
       el.style.alignItems = "center";
       el.style.justifyContent = "center";
-      const accuracyScale = Math.min(
-        1.35,
-        Math.max(0.75, (currentPosition.accuracy ?? 20) / 20)
+      const markerRotation =
+        getPositionMarkerRotation(currentPosition.heading) ??
+        lastMarkerHeadingRef.current ??
+        0;
+      lastMarkerHeadingRef.current = markerRotation;
+      const haloOpacity = getPositionMarkerHaloOpacity(
+        currentPosition.accuracy,
       );
       el.innerHTML = `
         <div
           data-accuracy-halo
-          style="width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(245, 158, 66, 0.14); border: 1px solid rgba(245, 158, 66, 0.38); transform: scale(${accuracyScale}); transition: transform 0.25s ease;"
+          style="width: ${CURRENT_POSITION_MARKER_STYLE.haloSize}px; height: ${CURRENT_POSITION_MARKER_STYLE.haloSize}px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(245, 158, 66, ${haloOpacity}); border: 2px solid rgba(255, 247, 237, 0.72); box-shadow: 0 2px 9px rgba(0, 0, 0, 0.48); transition: background-color 0.25s ease;"
         >
           <svg
-            width="28"
-            height="28"
+            width="${CURRENT_POSITION_MARKER_STYLE.arrowSize}"
+            height="${CURRENT_POSITION_MARKER_STYLE.arrowSize}"
             viewBox="0 0 24 24"
-            fill="none"
+            fill="#f59e42"
             stroke="#fff7ed"
-            stroke-width="1.7"
+            stroke-width="${CURRENT_POSITION_MARKER_STYLE.strokeWidth}"
             stroke-linecap="round"
             stroke-linejoin="round"
-            style="filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.75)); transform: rotate(${currentPosition.heading ?? 0}deg); transition: transform 0.2s ease;"
+            style="display: block; flex: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)); transform: rotate(${markerRotation}deg); transform-origin: 50% 50%; transition: transform 0.2s linear;"
           >
             <path d="M12 2L17 20L12 16L7 20L12 2Z"/>
           </svg>

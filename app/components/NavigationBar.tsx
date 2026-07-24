@@ -16,6 +16,7 @@ export default function NavigationBar({
       style={{
         background: "rgb(7 17 31 / 92%)",
         borderColor: "var(--bc-border)",
+        paddingBottom: "max(16px, env(safe-area-inset-bottom))",
         zIndex: 60,
       }}
     >

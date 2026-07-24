@@ -2,6 +2,7 @@
 
 import type { FlightMetrics } from "../../types/flight";
 import { formatDuration, normalizeHeading } from "../../lib/geo";
+import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
 
 interface FlightInstrumentsProps {
   metrics: FlightMetrics;
@@ -49,7 +50,7 @@ export default function FlightInstruments({
     left: "6px",
     right: "6px",
     bottom: withNavigation
-      ? "calc(max(6px, env(safe-area-inset-bottom)) + 68px)"
+      ? `calc(max(16px, env(safe-area-inset-bottom)) + ${FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset}px)`
       : "max(6px, env(safe-area-inset-bottom))",
     zIndex: 20,
     display: "grid",

@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { toggleMapLayerSetting } from "../../lib/flightMapPresentation";
+import {
+  FLIGHT_BOTTOM_LAYOUT,
+  MAP_OPTIONS_POPOVER_LAYOUT,
+  toggleMapLayerSetting,
+} from "../../lib/flightMapPresentation";
+import type { AirspaceUiState } from "../../lib/airspaceLoadState";
 import type { BaseMap, FlightLayerSettings } from "../../types/flight";
 
 interface MapOptionsPopoverProps {
@@ -12,6 +17,7 @@ interface MapOptionsPopoverProps {
   satelliteMessage: string | null;
   airspacesLoading: boolean;
   airspacesError: string | null;
+  airspacesStatus: AirspaceUiState;
   onBaseMapChange: (baseMap: BaseMap) => void;
   onSettingsChange: (settings: FlightLayerSettings) => void;
   onClose: () => void;
@@ -34,6 +40,7 @@ export default function MapOptionsPopover({
   satelliteMessage,
   airspacesLoading,
   airspacesError,
+  airspacesStatus,
   onBaseMapChange,
   onSettingsChange,
   onClose,
@@ -77,31 +84,41 @@ export default function MapOptionsPopover({
           cursor: "default",
         }}
       />
-      <section
-        ref={panelRef}
-        role="dialog"
-        aria-label="Options de carte"
-        tabIndex={-1}
+      <div
         style={{
           position: "fixed",
-          top: "max(72px, calc(env(safe-area-inset-top) + 54px))",
-          right: "76px",
+          top: `max(64px, calc(env(safe-area-inset-top) + ${MAP_OPTIONS_POPOVER_LAYOUT.topSafeClearance}px))`,
+          right: `${MAP_OPTIONS_POPOVER_LAYOUT.right}px`,
+          bottom: `calc(max(16px, env(safe-area-inset-bottom)) + ${FLIGHT_BOTTOM_LAYOUT.popoverBottomClearance}px)`,
           zIndex: 42,
           width: "min(258px, calc(100vw - 92px))",
-          maxHeight:
-            "calc(100dvh - max(84px, env(safe-area-inset-top)) - 220px)",
-          overflowY: "auto",
-          border: "1px solid var(--bc-border-strong)",
-          borderRadius: "15px",
-          padding: "12px",
-          background: "rgba(7, 17, 31, 0.96)",
-          boxShadow: "0 12px 30px rgba(0, 0, 0, 0.4)",
-          color: "var(--bc-text-primary)",
-          backdropFilter: "blur(14px)",
-          outline: "none",
+          display: "flex",
+          alignItems: "center",
+          pointerEvents: "none",
         }}
-        onClick={(event) => event.stopPropagation()}
       >
+        <section
+          ref={panelRef}
+          role="dialog"
+          aria-label="Options de carte"
+          tabIndex={-1}
+          style={{
+            position: "relative",
+            width: "100%",
+            maxHeight: "100%",
+            overflowY: "auto",
+            border: "1px solid var(--bc-border-strong)",
+            borderRadius: "15px",
+            padding: "12px",
+            background: "rgba(7, 17, 31, 0.96)",
+            boxShadow: "0 12px 30px rgba(0, 0, 0, 0.4)",
+            color: "var(--bc-text-primary)",
+            backdropFilter: "blur(14px)",
+            outline: "none",
+            pointerEvents: "auto",
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
         <h2
           style={{
             margin: "0 0 10px",
@@ -215,7 +232,10 @@ export default function MapOptionsPopover({
             role="status"
             style={{
               margin: "8px 4px 0",
-              color: "var(--bc-warning)",
+              color:
+                airspacesStatus === "ERROR" || airspacesStatus === "OFFLINE"
+                  ? "var(--bc-warning)"
+                  : "var(--bc-text-muted)",
               fontSize: "10px",
               fontWeight: 700,
               lineHeight: 1.3,
@@ -237,7 +257,8 @@ export default function MapOptionsPopover({
             Données indicatives — vérifier AIP et NOTAM.
           </p>
         )}
-      </section>
+        </section>
+      </div>
     </>
   );
 }
