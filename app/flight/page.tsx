@@ -45,6 +45,10 @@ import type {
   FlightLayerSettings,
   ProjectionPoint,
 } from "../types/flight";
+import {
+  loadExportedPlannedTrajectories,
+  type ExportedPlannedTrajectory,
+} from "../lib/trajectory/weatherAnalysisStorage";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -62,6 +66,9 @@ export default function FlightPage() {
   const [fitProjectionRequest, setFitProjectionRequest] = useState(0);
   const [baseMap, setBaseMap] = useState<BaseMap>("plan");
   const [satelliteError, setSatelliteError] = useState<string | null>(null);
+  const [plannedTrajectories, setPlannedTrajectories] = useState<
+    ExportedPlannedTrajectory[]
+  >([]);
   const [airspaceViewport, setAirspaceViewport] =
     useState<AirspaceCoverageViewport | null>(null);
   const [airspaceSelectionOrigin, setAirspaceSelectionOrigin] = useState<
@@ -73,6 +80,13 @@ export default function FlightPage() {
     string | null
   >(null);
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPlannedTrajectories(loadExportedPlannedTrajectories());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const { geolocation, tracking } = useFlightRuntime();
   const {
@@ -448,6 +462,7 @@ export default function FlightPage() {
           flightPoints={points}
           gpsProjection={gpsProjection}
           weatherProjection={weatherProjection}
+          plannedTrajectories={plannedTrajectories}
           airspaces={airspaces}
           showAirspaces={layerSettings.airspaces}
           selectedAirspaceId={selectedAirspace?.airspaceId ?? null}

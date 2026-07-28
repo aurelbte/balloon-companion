@@ -39,6 +39,8 @@ import {
   shouldApplyInitialCenter,
 } from "../../lib/flightMapPresentation";
 import type { BaseMap, GeoPoint, ProjectionPoint } from "../../types/flight";
+import type { ExportedPlannedTrajectory } from "../../lib/trajectory/weatherAnalysisStorage";
+import { MODEL_LINE_STYLES } from "../../lib/trajectory/analysisStyles";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
@@ -46,6 +48,7 @@ const PLAN_LAYER_ID = "osm-tiles";
 const AIRSPACES_SOURCE_ID = "airspaces-source";
 const AIRSPACES_SELECTED_FILL_LAYER_ID = "airspaces-selected-fill";
 const AIRSPACES_SELECTED_OUTLINE_LAYER_ID = "airspaces-selected-outline";
+const PLANNED_TRAJECTORIES_SOURCE_ID = "planned-trajectories-source";
 const NO_SELECTED_AIRSPACE_ID = "__no_selected_airspace__";
 const SATELLITE_FAILURE_MESSAGE = "Satellite indisponible — fond Plan restauré";
 const SATELLITE_ERROR_WINDOW_MS = 10_000;
@@ -163,6 +166,7 @@ interface FlightMapProps {
   flightPoints: GeoPoint[];
   gpsProjection: ProjectionPoint[];
   weatherProjection: ProjectionPoint[];
+  plannedTrajectories: ExportedPlannedTrajectory[];
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
   selectedAirspaceId: string | null;
@@ -227,6 +231,7 @@ export default function FlightMap({
   flightPoints,
   gpsProjection,
   weatherProjection,
+  plannedTrajectories,
   airspaces,
   showAirspaces,
   selectedAirspaceId,
@@ -252,6 +257,7 @@ export default function FlightMap({
   const onFollowPositionChangeRef = useRef(onFollowPositionChange);
   const onMapPressRef = useRef(onMapPress);
   const flightPointsRef = useRef(flightPoints);
+  const plannedTrajectoriesRef = useRef(plannedTrajectories);
   const currentPositionRef = useRef(currentPosition);
   const gpsProjectionRef = useRef(gpsProjection);
   const showGpsProjectionRef = useRef(showGpsProjection);
@@ -319,6 +325,10 @@ export default function FlightMap({
   useEffect(() => {
     flightPointsRef.current = flightPoints;
   }, [flightPoints]);
+
+  useEffect(() => {
+    plannedTrajectoriesRef.current = plannedTrajectories;
+  }, [plannedTrajectories]);
 
   useEffect(() => {
     currentPositionRef.current = currentPosition;
@@ -699,6 +709,48 @@ export default function FlightMap({
             "line-color": AIRSPACE_MAP_PALETTE.SELECTED,
             "line-width": 3.2,
             "line-opacity": 1,
+          },
+        });
+      }
+
+      map.current.addSource(PLANNED_TRAJECTORIES_SOURCE_ID, {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: plannedTrajectoriesRef.current.map((trajectory) => ({
+            type: "Feature",
+            properties: {
+              modelId: trajectory.modelId,
+              color: trajectory.color,
+            },
+            geometry: {
+              type: "LineString",
+              coordinates: trajectory.geometry,
+            },
+          })),
+        },
+      });
+      map.current.addLayer({
+        id: "planned-trajectories-halo",
+        type: "line",
+        source: PLANNED_TRAJECTORIES_SOURCE_ID,
+        paint: {
+          "line-color": "#07111f",
+          "line-width": 7,
+          "line-opacity": 0.82,
+        },
+      });
+      for (const [modelId, style] of Object.entries(MODEL_LINE_STYLES)) {
+        map.current.addLayer({
+          id: `planned-trajectories-${modelId}`,
+          type: "line",
+          source: PLANNED_TRAJECTORIES_SOURCE_ID,
+          filter: ["==", ["get", "modelId"], modelId],
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 3,
+            "line-opacity": 0.9,
+            "line-dasharray": [...style.dasharray],
           },
         });
       }
@@ -1141,6 +1193,27 @@ export default function FlightMap({
       | undefined;
     source?.setData(buildFlightTrackData(flightPoints));
   }, [flightPoints]);
+
+  useEffect(() => {
+    if (!map.current) return;
+    const source = map.current.getSource(PLANNED_TRAJECTORIES_SOURCE_ID) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    source?.setData({
+      type: "FeatureCollection",
+      features: plannedTrajectories.map((trajectory) => ({
+        type: "Feature",
+        properties: {
+          modelId: trajectory.modelId,
+          color: trajectory.color,
+        },
+        geometry: {
+          type: "LineString",
+          coordinates: trajectory.geometry,
+        },
+      })),
+    });
+  }, [plannedTrajectories]);
 
   // Mettre à jour les projections GPS
   useEffect(() => {
