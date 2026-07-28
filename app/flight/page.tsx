@@ -31,6 +31,7 @@ import FlightRecoveryDialog from "../components/flight/FlightRecoveryDialog";
 import RecordedFlightScreen from "../components/flight/RecordedFlightScreen";
 import ActiveFlightNavigationDialog from "../components/flight/ActiveFlightNavigationDialog";
 import NavigationBar from "../components/NavigationBar";
+import PlannedTrajectoriesInfo from "../components/flight/PlannedTrajectoriesInfo";
 import {
   getFlightNavigationIntent,
   resolveFlightNavigationAction,
@@ -52,6 +53,7 @@ import {
 
 export default function FlightPage() {
   const router = useRouter();
+  const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
     gpsProjection: true,
     weatherProjection: false,
@@ -64,7 +66,9 @@ export default function FlightPage() {
   const [followPosition, setFollowPosition] = useState(true);
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [fitProjectionRequest, setFitProjectionRequest] = useState(0);
-  const [baseMap, setBaseMap] = useState<BaseMap>("plan");
+  const [baseMap, setBaseMap] = useState<BaseMap>(
+    satelliteConfigured ? "satellite" : "plan"
+  );
   const [satelliteError, setSatelliteError] = useState<string | null>(null);
   const [plannedTrajectories, setPlannedTrajectories] = useState<
     ExportedPlannedTrajectory[]
@@ -79,8 +83,6 @@ export default function FlightPage() {
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
-  const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPlannedTrajectories(loadExportedPlannedTrajectories());
@@ -492,6 +494,8 @@ export default function FlightPage() {
         presentation={airspaceBadgePresentation}
         onOpenCurrentAirspace={handleOpenCurrentAirspace}
       />
+
+      <PlannedTrajectoriesInfo trajectories={plannedTrajectories} />
 
       {geoState === "simulation" && (
         <span

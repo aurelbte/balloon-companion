@@ -36,6 +36,7 @@ const AIRSPACE_SOURCE = "analysis-airspaces";
 const TRACE_SOURCE = "analysis-trajectories";
 const TIME_SOURCE = "analysis-time-markers";
 const ARRIVAL_SOURCE = "analysis-arrivals";
+const START_SOURCE = "analysis-start";
 
 interface PreparationMapProps {
   traces: WeatherAnalysisTrace[];
@@ -46,6 +47,7 @@ interface PreparationMapProps {
   airspaces?: AirspaceFeatureCollection;
   recenterToken?: number;
   onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
+  onMapPress?: () => void;
   onViewportChange?: (viewport: AirspaceCoverageViewport) => void;
 }
 
@@ -138,6 +140,27 @@ function arrivalCollection(
   };
 }
 
+function startCollection(
+  traces: readonly WeatherAnalysisTrace[],
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  const point = traces[0]?.projection.points[0];
+  return {
+    type: "FeatureCollection",
+    features: point
+      ? [
+          {
+            type: "Feature",
+            properties: { kind: "start" },
+            geometry: {
+              type: "Point",
+              coordinates: [point.longitude, point.latitude],
+            },
+          },
+        ]
+      : [],
+  };
+}
+
 function boundsFor(
   traces: readonly WeatherAnalysisTrace[],
   visibleIds: readonly string[],
@@ -165,12 +188,14 @@ export default function PreparationMap({
   airspaces = EMPTY_AIRSPACES,
   recenterToken = 0,
   onAirspacesSelected,
+  onMapPress,
   onViewportChange,
 }: PreparationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
+  const mapPressRef = useRef(onMapPress);
   const airspacesRef = useRef(airspaces);
   const showAirspacesRef = useRef(layers.airspaces);
   const indexRef = useRef(createAirspaceSelectionIndex(airspaces));
@@ -190,14 +215,17 @@ export default function PreparationMap({
     () => arrivalCollection(traces, visibleTraceIds),
     [traces, visibleTraceIds],
   );
+  const startData = useMemo(() => startCollection(traces), [traces]);
   const initialTraceData = useRef(traceData);
   const initialTimeData = useRef(timeData);
   const initialArrivalData = useRef(arrivalData);
+  const initialStartData = useRef(startData);
 
   useEffect(() => {
     viewportRef.current = onViewportChange;
     selectionRef.current = onAirspacesSelected;
-  }, [onAirspacesSelected, onViewportChange]);
+    mapPressRef.current = onMapPress;
+  }, [onAirspacesSelected, onMapPress, onViewportChange]);
 
   useEffect(() => {
     airspacesRef.current = airspaces;
@@ -266,6 +294,7 @@ export default function PreparationMap({
     };
     map.on("moveend", notify);
     map.on("click", (event) => {
+      mapPressRef.current?.();
       if (!showAirspacesRef.current) return;
       const layerIds = AIRSPACE_RENDER_ORDER.flatMap((category) => [
         airspaceLayerId(category, "fill"),
@@ -397,6 +426,21 @@ export default function PreparationMap({
           "circle-stroke-width": 2,
         },
       });
+      map.addSource(START_SOURCE, {
+        type: "geojson",
+        data: initialStartData.current,
+      });
+      map.addLayer({
+        id: "analysis-start",
+        type: "circle",
+        source: START_SOURCE,
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#22c55e",
+          "circle-stroke-color": "#f8fafc",
+          "circle-stroke-width": 2,
+        },
+      });
       notify();
     });
     return () => {
@@ -417,6 +461,9 @@ export default function PreparationMap({
       );
       (map.getSource(ARRIVAL_SOURCE) as GeoJSONSource | undefined)?.setData(
         arrivalData,
+      );
+      (map.getSource(START_SOURCE) as GeoJSONSource | undefined)?.setData(
+        startData,
       );
       const trajectoryVisibility = layers.trajectories ? "visible" : "none";
       for (const id of [
@@ -446,7 +493,7 @@ export default function PreparationMap({
     return () => {
       map.off("load", sync);
     };
-  }, [arrivalData, layers.arrivalMarkers, layers.timeMarkers, layers.trajectories, timeData, traceData]);
+  }, [arrivalData, layers.arrivalMarkers, layers.timeMarkers, layers.trajectories, startData, timeData, traceData]);
 
   useEffect(() => {
     const map = mapRef.current;

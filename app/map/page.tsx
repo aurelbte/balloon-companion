@@ -3,12 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ChevronLeft,
-  ChevronRight,
   Download,
-  Layers3,
+  Maximize2,
+  PanelLeftOpen,
   LocateFixed,
-  X,
 } from "lucide-react";
 import PreparationMap from "../components/PreparationMap";
 import AirspaceDetails from "../components/flight/AirspaceDetails";
@@ -52,6 +50,14 @@ import type { BaseMap } from "../types/flight";
 
 const MAX_MODELS = 2;
 const MAX_ALTITUDES = 4;
+const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = {
+  ...DEFAULT_ANALYSIS_LAYERS,
+  trajectories: true,
+  airspaces: true,
+  aeronauticalMap: false,
+  timeMarkers: true,
+  arrivalMarkers: true,
+};
 
 function analysisSignature(models: readonly string[], altitudes: readonly AltitudeOption[]) {
   return `${[...models].sort().join(",")}|${altitudes.join(",")}`;
@@ -84,16 +90,15 @@ export default function MapPage() {
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedAltitudes, setSelectedAltitudes] = useState<AltitudeOption[]>([]);
   const [layers, setLayers] = useState<AnalysisLayerSettings>(
-    DEFAULT_ANALYSIS_LAYERS,
+    REQUIRED_ANALYSIS_LAYERS,
   );
   const [traces, setTraces] = useState<WeatherAnalysisTrace[]>([]);
   const [failures, setFailures] = useState<WeatherAnalysisState["failures"]>([]);
   const [visibleTraceIds, setVisibleTraceIds] = useState<string[]>([]);
   const [exportIds, setExportIds] = useState<string[]>([]);
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
-  const [legendOpen, setLegendOpen] = useState(true);
-  const [layersOpen, setLayersOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const [selectorsVisible, setSelectorsVisible] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [recenterToken, setRecenterToken] = useState(0);
@@ -142,7 +147,13 @@ export default function MapPage() {
         setSelectedModels(models.slice(0, MAX_MODELS));
         setSelectedAltitudes(altitudes);
         if (cached) {
-          setLayers(cached.layers);
+          setLayers({
+            ...cached.layers,
+            trajectories: true,
+            aeronauticalMap: false,
+            timeMarkers: true,
+            arrivalMarkers: true,
+          });
           setTraces(cached.traces);
           setFailures(cached.failures);
           setVisibleTraceIds(cached.traces.map((trace) => trace.traceId));
@@ -336,7 +347,14 @@ export default function MapPage() {
       );
     });
   };
-  const updateLayer = (key: keyof AnalysisLayerSettings, value: boolean) => {
+  const handleMapPress = () => {
+    setLegendOpen(false);
+    setDisplayOpen(false);
+  };
+  const updateDisplay = (
+    key: "satellite" | "airspaces",
+    value: boolean,
+  ) => {
     setLayers((current) => ({ ...current, [key]: value }));
     if (key === "airspaces" && !value) closeSelection();
   };
@@ -402,6 +420,7 @@ export default function MapPage() {
           airspaces={airspaceCoverage.airspaces}
           recenterToken={recenterToken}
           onAirspacesSelected={selectAirspaces}
+          onMapPress={handleMapPress}
           onViewportChange={setViewport}
         />
       ) : (
@@ -412,123 +431,119 @@ export default function MapPage() {
 
       <button
         type="button"
-        onClick={() => router.push("/prepare")}
+        onClick={() => setSelectorsVisible((value) => !value)}
         className="absolute left-3 top-[max(12px,env(safe-area-inset-top))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-[#07111feb] text-white"
-        aria-label="Fermer l’analyse"
+        aria-label={
+          selectorsVisible
+            ? "Afficher uniquement la carte"
+            : "Restaurer les sélecteurs"
+        }
+        aria-pressed={!selectorsVisible}
       >
-        <X size={24} />
+        {selectorsVisible ? <Maximize2 size={21} /> : <PanelLeftOpen size={21} />}
       </button>
 
-      <button
-        type="button"
-        onClick={() => setLeftOpen((value) => !value)}
-        className="absolute left-3 top-[max(72px,calc(env(safe-area-inset-top)+60px))] z-30 flex h-11 w-11 items-center justify-center rounded-xl border border-white/25 bg-[#07111feb] text-white"
-        aria-label="Modèles météo"
-      >
-        {leftOpen ? <ChevronLeft /> : <ChevronRight />}
-      </button>
-      {leftOpen && (
-        <aside className="absolute left-3 top-[max(122px,calc(env(safe-area-inset-top)+110px))] z-20 w-40 rounded-2xl border border-white/20 bg-[#07111ff0] p-2.5 text-white shadow-2xl">
-          <h2 className="mb-2 text-xs font-black uppercase">Modèles météo</h2>
-          <div className="grid gap-1.5">
-            {WEATHER_MODEL_REGISTRY.filter((model) => model.supported).map(
-              (model) => {
-                const selected = selectedModels.includes(model.id);
-                return (
-                  <button
-                    key={model.id}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => toggleModel(model.id)}
-                    className={`flex min-h-11 items-center justify-between gap-2 rounded-xl border px-2 text-xs font-black ${
-                      selected ? "border-white/70 bg-white/15" : "border-white/15"
-                    }`}
-                  >
-                    {model.label}
+      {selectorsVisible && (
+        <aside
+          aria-label="Modèles météo"
+          className="absolute left-2 top-[max(72px,calc(env(safe-area-inset-top)+60px))] z-20 grid gap-1"
+        >
+          {WEATHER_MODEL_REGISTRY.filter((model) => model.supported).map(
+            (model) => {
+              const selected = selectedModels.includes(model.id);
+              return (
+                <button
+                  key={model.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleModel(model.id)}
+                  className={`flex min-h-9 w-[98px] items-center justify-between gap-0.5 rounded-full border px-1.5 text-[9px] font-black text-white shadow-lg backdrop-blur-md ${
+                    selected
+                      ? "border-white/65 bg-[#07111fd9]"
+                      : "border-white/15 bg-[#07111f8f]"
+                  }`}
+                >
+                  <span>{model.label}</span>
+                  <span className="scale-[0.65]">
                     <ModelLinePreview model={model} />
-                  </button>
-                );
-              },
-            )}
-          </div>
+                  </span>
+                </button>
+              );
+            },
+          )}
         </aside>
       )}
 
-      <button
-        type="button"
-        onClick={() => setRightOpen((value) => !value)}
-        className="absolute right-3 top-[max(72px,calc(env(safe-area-inset-top)+60px))] z-30 flex h-11 w-11 items-center justify-center rounded-xl border border-white/25 bg-[#07111feb] text-white"
-        aria-label="Altitudes"
-      >
-        {rightOpen ? <ChevronRight /> : <ChevronLeft />}
-      </button>
-      {rightOpen && (
-        <aside className="absolute right-3 top-[max(122px,calc(env(safe-area-inset-top)+110px))] z-20 w-36 rounded-2xl border border-white/20 bg-[#07111ff0] p-2.5 text-white shadow-2xl">
-          <h2 className="mb-2 text-xs font-black uppercase">Altitudes</h2>
-          <div className="grid grid-cols-2 gap-1.5">
-            {ALTITUDE_OPTIONS.map((altitude) => {
-              const selected = selectedAltitudes.includes(altitude);
-              const color =
-                displayedTraces.find(
-                  (trace) => trace.altitudeKey === altitudeKey(altitude),
-                )?.color ?? "#ffffff";
-              return (
-                <button
-                  key={String(altitude)}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleAltitude(altitude)}
-                  className={`min-h-10 rounded-lg border text-[10px] font-black ${
-                    selected ? "bg-white/15" : ""
-                  }`}
-                  style={{
-                    borderColor: selected ? color : "rgb(255 255 255 / 15%)",
-                    color: selected ? color : "white",
-                  }}
-                >
-                  {altitudeLabel(altitude)}
-                </button>
-              );
-            })}
-          </div>
+      {selectorsVisible && (
+        <aside
+          aria-label="Altitudes"
+          className="absolute right-2 top-[max(72px,calc(env(safe-area-inset-top)+60px))] z-20 grid gap-1"
+        >
+          {ALTITUDE_OPTIONS.map((altitude) => {
+            const selected = selectedAltitudes.includes(altitude);
+            const color =
+              displayedTraces.find(
+                (trace) => trace.altitudeKey === altitudeKey(altitude),
+              )?.color ?? "#ffffff";
+            return (
+              <button
+                key={String(altitude)}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleAltitude(altitude)}
+                className="min-h-8 min-w-[58px] rounded-full border px-1.5 text-[9px] font-black shadow-lg backdrop-blur-md"
+                style={{
+                  borderColor: selected ? color : "rgb(255 255 255 / 16%)",
+                  background: selected
+                    ? "rgb(7 17 31 / 86%)"
+                    : "rgb(7 17 31 / 56%)",
+                  color: selected ? color : "rgb(255 255 255 / 78%)",
+                }}
+              >
+                {altitudeLabel(altitude)}
+              </button>
+            );
+          })}
         </aside>
       )}
 
       <div className="absolute right-3 top-[max(12px,env(safe-area-inset-top))] z-30">
         <button
           type="button"
-          onClick={() => setLayersOpen((value) => !value)}
-          className="flex min-h-12 items-center gap-2 rounded-xl border border-white/25 bg-[#07111feb] px-3 text-xs font-black text-white"
+          onClick={() => {
+            setLegendOpen(false);
+            setDisplayOpen((value) => !value);
+          }}
+          className="min-h-10 rounded-full border border-white/20 bg-[#07111fb8] px-3 text-[10px] font-black text-white shadow-lg backdrop-blur-md"
+          aria-expanded={displayOpen}
         >
-          <Layers3 size={18} /> Couches
+          🗺️ Affichage
         </button>
-        {layersOpen && (
-          <aside className="mt-1.5 w-56 rounded-xl border border-white/20 bg-[#07111ff5] p-2 text-white">
-            {(
-              [
-                ["trajectories", "Trajectoires prévues"],
-                ["airspaces", "Espaces aériens"],
-                ["aeronauticalMap", "Carte aéronautique"],
-                ["satellite", "Imagerie satellite"],
-                ["highContrast", "Contraste élevé"],
-                ["timeMarkers", "Marqueurs temporels"],
-                ["arrivalMarkers", "Marqueurs d’arrivée"],
-              ] as const
-            ).map(([key, label]) => (
-              <label
-                key={key}
-                className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold"
-              >
-                {label}
-                <input
-                  type="checkbox"
-                  checked={layers[key]}
-                  disabled={key === "satellite" && !satelliteAvailable}
-                  onChange={(event) => updateLayer(key, event.target.checked)}
-                  className="h-5 w-5 accent-[#f59e42]"
-                />
-              </label>
-            ))}
+        {displayOpen && (
+          <aside className="mt-1.5 w-44 rounded-xl border border-white/20 bg-[#07111feb] p-2 text-white shadow-2xl backdrop-blur-md">
+            <label className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold">
+              Vue satellite
+              <input
+                type="checkbox"
+                checked={layers.satellite && satelliteAvailable}
+                disabled={!satelliteAvailable}
+                onChange={(event) =>
+                  updateDisplay("satellite", event.target.checked)
+                }
+                className="h-5 w-5 accent-[#f59e42]"
+              />
+            </label>
+            <label className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold">
+              Espaces aériens
+              <input
+                type="checkbox"
+                checked={layers.airspaces}
+                onChange={(event) =>
+                  updateDisplay("airspaces", event.target.checked)
+                }
+                className="h-5 w-5 accent-[#f59e42]"
+              />
+            </label>
           </aside>
         )}
       </div>
@@ -542,54 +557,44 @@ export default function MapPage() {
         <LocateFixed size={20} />
       </button>
 
-      <section className="absolute bottom-[max(8px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(320px,calc(100vw-72px))] rounded-2xl border border-white/20 bg-[#07111ff2] text-white shadow-2xl">
+      <section className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-full border border-white/20 bg-[#07111fdc] text-white shadow-2xl backdrop-blur-md">
         <button
           type="button"
-          onClick={() => setLegendOpen((value) => !value)}
-          className="flex min-h-11 w-full items-center justify-between px-3 text-xs font-black"
+          onClick={() => {
+            setDisplayOpen(false);
+            setLegendOpen((value) => !value);
+          }}
+          className="flex min-h-9 w-full items-center gap-2 px-2.5 text-[10px] font-black"
         >
-          Légende · {displayedTraces.length} trajectoires
+          <span>{displayedTraces.length} trajectoires</span>
+          <span className="flex flex-1 items-center gap-1 overflow-hidden">
+            {selectedModels.map((modelId) => {
+              const model = WEATHER_MODEL_REGISTRY.find(
+                (item) => item.id === modelId,
+              );
+              return model ? (
+                <span key={model.id} className="scale-75">
+                  <ModelLinePreview model={model} />
+                </span>
+              ) : null;
+            })}
+            {selectedAltitudes.map((altitude) => {
+              const color =
+                displayedTraces.find(
+                  (trace) => trace.altitudeKey === altitudeKey(altitude),
+                )?.color ?? "white";
+              return (
+                <span key={String(altitude)} style={{ color }}>
+                  ●
+                </span>
+              );
+            })}
+          </span>
           <span>{legendOpen ? "−" : "+"}</span>
         </button>
         {legendOpen && (
-          <div className="grid max-h-[34vh] gap-2 overflow-y-auto border-t border-white/15 p-2.5">
+          <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-2xl border-t border-white/15 bg-[#07111ff2] p-2.5">
             <div>
-              <p className="mb-1 text-[9px] font-black uppercase text-white/55">
-                Altitudes
-              </p>
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                {selectedAltitudes.map((altitude) => {
-                  const trace = displayedTraces.find(
-                    (item) => item.altitudeKey === altitudeKey(altitude),
-                  );
-                  return (
-                    <span key={String(altitude)} className="text-[10px] font-bold">
-                      <span style={{ color: trace?.color ?? "white" }}>●</span>{" "}
-                      {altitudeLabel(altitude)}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <p className="mb-1 text-[9px] font-black uppercase text-white/55">
-                Modèles
-              </p>
-              {selectedModels.map((modelId) => {
-                const model = WEATHER_MODEL_REGISTRY.find(
-                  (item) => item.id === modelId,
-                );
-                return model ? (
-                  <div key={model.id} className="flex items-center gap-2 text-[10px] font-bold">
-                    <ModelLinePreview model={model} /> {model.label}
-                  </div>
-                ) : null;
-              })}
-            </div>
-            <div className="border-t border-white/15 pt-1">
-              <p className="mb-1 text-[9px] font-black uppercase text-white/55">
-                Export vers Vol
-              </p>
               <div className="grid grid-cols-2 gap-1">
                 {displayedTraces.map((trace) => (
                   <label

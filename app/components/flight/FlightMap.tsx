@@ -736,8 +736,8 @@ export default function FlightMap({
         source: PLANNED_TRAJECTORIES_SOURCE_ID,
         paint: {
           "line-color": "#07111f",
-          "line-width": 7,
-          "line-opacity": 0.82,
+          "line-width": 5,
+          "line-opacity": 0.52,
         },
       });
       for (const [modelId, style] of Object.entries(MODEL_LINE_STYLES)) {
@@ -748,8 +748,8 @@ export default function FlightMap({
           filter: ["==", ["get", "modelId"], modelId],
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 3,
-            "line-opacity": 0.9,
+            "line-width": 2,
+            "line-opacity": 0.68,
             "line-dasharray": [...style.dasharray],
           },
         });
