@@ -41,6 +41,12 @@ import {
 import type { BaseMap, GeoPoint, ProjectionPoint } from "../../types/flight";
 import type { ExportedPlannedTrajectory } from "../../lib/trajectory/weatherAnalysisStorage";
 import { MODEL_LINE_STYLES } from "../../lib/trajectory/analysisStyles";
+import {
+  CARTOGRAPHY_MARKER_STYLE,
+  CARTOGRAPHY_PALETTE,
+  PLANNED_TRAJECTORY_STYLE,
+  WEATHER_PROJECTION_CARTOGRAPHY_STYLE,
+} from "../../lib/cartographyStyle";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
@@ -89,7 +95,7 @@ function clearProjectionTimeMarkers(markers: ProjectionTimeMarker[]) {
 function syncProjectionTimeMarkers(
   map: maplibregl.Map,
   markers: ProjectionTimeMarker[],
-  projection: ProjectionPoint[],
+  projection: readonly ProjectionPoint[],
 ) {
   const existingByMinutes = new Map(
     markers.map((item) => [item.minutes, item]),
@@ -126,7 +132,7 @@ function syncProjectionTimeMarkers(
 function updateProjectionTimeMarkerVisibility(
   map: maplibregl.Map,
   markers: ProjectionTimeMarker[],
-  projection: ProjectionPoint[],
+  projection: readonly ProjectionPoint[],
 ) {
   const visibleMinutes = new Set(
     getVisibleProjectionMinutes(map.getZoom(), projection),
@@ -163,10 +169,10 @@ const AIRSPACE_BASE_LAYER_IDS = AIRSPACE_RENDER_ORDER.flatMap((category) => [
 interface FlightMapProps {
   currentPosition: GeoPoint | null;
   baseMap: BaseMap;
-  flightPoints: GeoPoint[];
-  gpsProjection: ProjectionPoint[];
-  weatherProjection: ProjectionPoint[];
-  plannedTrajectories: ExportedPlannedTrajectory[];
+  flightPoints: readonly GeoPoint[];
+  gpsProjection: readonly ProjectionPoint[];
+  weatherProjection: readonly ProjectionPoint[];
+  plannedTrajectories: readonly ExportedPlannedTrajectory[];
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
   selectedAirspaceId: string | null;
@@ -194,7 +200,9 @@ interface FlightMapViewport {
   };
 }
 
-function buildFlightTrackData(points: GeoPoint[]): GeoJSON.FeatureCollection {
+function buildFlightTrackData(
+  points: readonly GeoPoint[],
+): GeoJSON.FeatureCollection {
   if (points.length === 0) {
     return { type: "FeatureCollection", features: [] };
   }
@@ -734,10 +742,11 @@ export default function FlightMap({
         id: "planned-trajectories-halo",
         type: "line",
         source: PLANNED_TRAJECTORIES_SOURCE_ID,
+        layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "#07111f",
-          "line-width": 5,
-          "line-opacity": 0.52,
+          "line-color": PLANNED_TRAJECTORY_STYLE.haloColor,
+          "line-width": PLANNED_TRAJECTORY_STYLE.haloWidth,
+          "line-opacity": PLANNED_TRAJECTORY_STYLE.haloOpacity,
         },
       });
       for (const [modelId, style] of Object.entries(MODEL_LINE_STYLES)) {
@@ -746,10 +755,11 @@ export default function FlightMap({
           type: "line",
           source: PLANNED_TRAJECTORIES_SOURCE_ID,
           filter: ["==", ["get", "modelId"], modelId],
+          layout: { "line-cap": "round", "line-join": "round" },
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 2,
-            "line-opacity": 0.68,
+            "line-width": PLANNED_TRAJECTORY_STYLE.lineWidth,
+            "line-opacity": PLANNED_TRAJECTORY_STYLE.lineOpacity,
             "line-dasharray": [...style.dasharray],
           },
         });
@@ -769,9 +779,9 @@ export default function FlightMap({
           "line-cap": "round",
         },
         paint: {
-          "line-color": "rgba(2, 8, 23, 0.78)",
-          "line-width": FLIGHT_TRACK_STYLE.haloWidth,
-          "line-opacity": 0.86,
+          "line-color": FLIGHT_TRACK_STYLE.paint.haloColor,
+          "line-width": FLIGHT_TRACK_STYLE.paint.haloWidth,
+          "line-opacity": FLIGHT_TRACK_STYLE.paint.haloOpacity,
         },
       });
 
@@ -784,9 +794,23 @@ export default function FlightMap({
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#f59e42",
-          "line-width": FLIGHT_TRACK_STYLE.lineWidth,
-          "line-opacity": 0.96,
+          "line-color": FLIGHT_TRACK_STYLE.paint.lineColor,
+          "line-width": FLIGHT_TRACK_STYLE.paint.lineWidth,
+          "line-opacity": FLIGHT_TRACK_STYLE.paint.lineOpacity,
+        },
+      });
+
+      map.current.addLayer({
+        id: "flight-takeoff-halo",
+        type: "circle",
+        source: "flight-track-source",
+        filter: ["==", ["get", "kind"], "takeoff"],
+        paint: {
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.launchRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.launch,
+          "circle-opacity": 0.2,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.cloud,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.outerHaloWidth,
         },
       });
 
@@ -796,10 +820,10 @@ export default function FlightMap({
         source: "flight-track-source",
         filter: ["==", ["get", "kind"], "takeoff"],
         paint: {
-          "circle-radius": 6,
-          "circle-color": "#22c55e",
-          "circle-stroke-color": "#f4f7fb",
-          "circle-stroke-width": 2,
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.launchRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.launch,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.cloud,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.haloStrokeWidth,
         },
       });
 
@@ -822,9 +846,9 @@ export default function FlightMap({
           "line-cap": "round",
         },
         paint: {
-          "line-color": "rgba(2, 8, 23, 0.88)",
-          "line-width": GPS_PROJECTION_STYLE.haloWidth,
-          "line-opacity": 0.9,
+          "line-color": GPS_PROJECTION_STYLE.paint.haloColor,
+          "line-width": GPS_PROJECTION_STYLE.paint.haloWidth,
+          "line-opacity": GPS_PROJECTION_STYLE.paint.haloOpacity,
         },
       });
 
@@ -837,9 +861,9 @@ export default function FlightMap({
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#10b981",
-          "line-width": GPS_PROJECTION_STYLE.lineWidth,
-          "line-opacity": 0.96,
+          "line-color": GPS_PROJECTION_STYLE.paint.lineColor,
+          "line-width": GPS_PROJECTION_STYLE.paint.lineWidth,
+          "line-opacity": GPS_PROJECTION_STYLE.paint.lineOpacity,
         },
       });
 
@@ -849,11 +873,11 @@ export default function FlightMap({
         type: "circle",
         source: "gps-projection-source",
         paint: {
-          "circle-radius": 5.5,
-          "circle-color": "#10b981",
-          "circle-opacity": 0.96,
-          "circle-stroke-color": "rgba(2, 8, 23, 0.9)",
-          "circle-stroke-width": 2,
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.projectionPointRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.gpsProjection,
+          "circle-opacity": 0.92,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.ink,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.haloStrokeWidth,
         },
       });
 
@@ -876,10 +900,12 @@ export default function FlightMap({
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#3b82f6",
-          "line-width": 2,
-          "line-dasharray": [5, 5],
-          "line-opacity": 0.6,
+          "line-color": WEATHER_PROJECTION_CARTOGRAPHY_STYLE.lineColor,
+          "line-width": WEATHER_PROJECTION_CARTOGRAPHY_STYLE.lineWidth,
+          "line-dasharray": [
+            ...WEATHER_PROJECTION_CARTOGRAPHY_STYLE.dasharray,
+          ],
+          "line-opacity": WEATHER_PROJECTION_CARTOGRAPHY_STYLE.lineOpacity,
         },
       });
 
@@ -889,11 +915,23 @@ export default function FlightMap({
         type: "circle",
         source: "weather-projection-source",
         paint: {
-          "circle-radius": 4,
-          "circle-color": "#3b82f6",
-          "circle-opacity": 0.7,
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.projectionPointRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.weatherProjection,
+          "circle-opacity": 0.64,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.ink,
+          "circle-stroke-width": 1,
         },
       });
+
+      // La trace réelle et le décollage restent au-dessus des projections.
+      for (const layerId of [
+        "flight-track-halo",
+        "flight-track-line",
+        "flight-takeoff-halo",
+        "flight-takeoff-point",
+      ]) {
+        map.current.moveLayer(layerId);
+      }
 
       sourceRef.current = true;
       const initialPosition = currentPositionRef.current;
@@ -1061,7 +1099,7 @@ export default function FlightMap({
         "[data-accuracy-halo]"
       );
       if (accuracyHalo) {
-        accuracyHalo.style.background = `rgba(245, 158, 66, ${getPositionMarkerHaloOpacity(
+        accuracyHalo.style.background = `rgba(240, 163, 91, ${getPositionMarkerHaloOpacity(
           currentPosition.accuracy,
         )})`;
       }
@@ -1092,18 +1130,18 @@ export default function FlightMap({
       el.innerHTML = `
         <div
           data-accuracy-halo
-          style="width: ${CURRENT_POSITION_MARKER_STYLE.haloSize}px; height: ${CURRENT_POSITION_MARKER_STYLE.haloSize}px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(245, 158, 66, ${haloOpacity}); border: 2px solid rgba(255, 247, 237, 0.72); box-shadow: 0 2px 9px rgba(0, 0, 0, 0.48); transition: background-color 0.25s ease;"
+          style="width: ${CURRENT_POSITION_MARKER_STYLE.haloSize}px; height: ${CURRENT_POSITION_MARKER_STYLE.haloSize}px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(240, 163, 91, ${haloOpacity}); border: 2px solid rgba(243, 247, 251, 0.76); box-shadow: 0 4px 14px rgba(6, 17, 31, 0.48); transition: background-color 0.2s ease;"
         >
           <svg
             width="${CURRENT_POSITION_MARKER_STYLE.arrowSize}"
             height="${CURRENT_POSITION_MARKER_STYLE.arrowSize}"
             viewBox="0 0 24 24"
-            fill="#f59e42"
-            stroke="#fff7ed"
+            fill="${CARTOGRAPHY_PALETTE.flightTrack}"
+            stroke="${CARTOGRAPHY_PALETTE.cloud}"
             stroke-width="${CURRENT_POSITION_MARKER_STYLE.strokeWidth}"
             stroke-linecap="round"
             stroke-linejoin="round"
-            style="display: block; flex: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)); transform: rotate(${markerRotation}deg); transform-origin: 50% 50%; transition: transform 0.2s linear;"
+            style="display: block; flex: none; filter: drop-shadow(0 3px 5px rgba(6, 17, 31, 0.82)); transform: rotate(${markerRotation}deg); transform-origin: 50% 50%; transition: transform 0.2s linear;"
           >
             <path d="M12 2L17 20L12 16L7 20L12 2Z"/>
           </svg>
@@ -1376,11 +1414,11 @@ export default function FlightMap({
           pointer-events: none;
           min-width: 34px;
           padding: 4px 6px;
-          border: 1px solid rgba(167, 243, 208, 0.9);
-          border-radius: 9px;
-          background: rgba(2, 8, 23, 0.9);
-          color: #ecfdf5;
-          box-shadow: 0 2px 7px rgba(0, 0, 0, 0.42);
+          border: 1px solid rgba(88, 201, 154, 0.72);
+          border-radius: 18px;
+          background: rgba(6, 17, 31, 0.9);
+          color: #f3f7fb;
+          box-shadow: 0 4px 12px rgba(6, 17, 31, 0.38);
           font-size: 10px;
           font-weight: 900;
           line-height: 1;

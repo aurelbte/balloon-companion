@@ -3,6 +3,7 @@
 import {
   type AirspaceBadgePresentation,
 } from "../../lib/flightContext";
+import { Chip } from "../../design-system";
 
 interface CurrentAirspaceBadgeProps {
   presentation: AirspaceBadgePresentation;
@@ -48,35 +49,40 @@ export default function CurrentAirspaceBadge({
         gap: "7px",
       }}
     >
-      <button
-        type="button"
-        onClick={
-          presentation.interactive ? onOpenCurrentAirspace : undefined
-        }
-        disabled={!presentation.interactive}
-        aria-label={presentation.ariaLabel}
-        style={{
-          minWidth: 0,
-          maxWidth: "min(82vw, 440px)",
-          overflow: "hidden",
-          padding: "9px 11px",
-          borderRadius: "12px",
-          border: `1px solid ${tone.border}`,
-          background: tone.background,
-          color: tone.color,
-          fontSize: "12px",
-          fontWeight: 850,
-          lineHeight: 1.15,
-          letterSpacing: "0.025em",
-          textAlign: "left",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          cursor: presentation.interactive ? "pointer" : "default",
-          opacity: 1,
-        }}
-      >
-        {presentation.label}
-      </button>
+      {presentation.interactive ? (
+        <Chip
+          onClick={onOpenCurrentAirspace}
+          aria-label={presentation.ariaLabel}
+          style={{
+            maxWidth: "min(82vw, 440px)",
+            overflow: "hidden",
+            borderColor: tone.border,
+            background: tone.background,
+            color: tone.color,
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {presentation.label}
+        </Chip>
+      ) : (
+        <div
+          className="bc-chip"
+          aria-label={presentation.ariaLabel}
+          style={{
+            maxWidth: "min(82vw, 440px)",
+            overflow: "hidden",
+            borderColor: tone.border,
+            background: tone.background,
+            color: tone.color,
+            cursor: "default",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {presentation.label}
+        </div>
+      )}
     </div>
   );
 }

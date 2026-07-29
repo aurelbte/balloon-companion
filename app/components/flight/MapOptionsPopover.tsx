@@ -8,6 +8,11 @@ import {
 } from "../../lib/flightMapPresentation";
 import type { AirspaceUiState } from "../../lib/airspaceLoadState";
 import type { BaseMap, FlightLayerSettings } from "../../types/flight";
+import {
+  Chip,
+  FloatingPanel,
+  SegmentedControl,
+} from "../../design-system";
 
 interface MapOptionsPopoverProps {
   isOpen: boolean;
@@ -97,7 +102,7 @@ export default function MapOptionsPopover({
           pointerEvents: "none",
         }}
       >
-        <section
+        <FloatingPanel
           ref={panelRef}
           role="dialog"
           aria-label="Options de carte"
@@ -107,13 +112,6 @@ export default function MapOptionsPopover({
             width: "100%",
             maxHeight: "100%",
             overflowY: "auto",
-            border: "1px solid var(--bc-border-strong)",
-            borderRadius: "15px",
-            padding: "12px",
-            background: "rgba(7, 17, 31, 0.96)",
-            boxShadow: "0 12px 30px rgba(0, 0, 0, 0.4)",
-            color: "var(--bc-text-primary)",
-            backdropFilter: "blur(14px)",
             outline: "none",
             pointerEvents: "auto",
           }}
@@ -130,73 +128,35 @@ export default function MapOptionsPopover({
         </h2>
 
         <p style={sectionLabelStyle}>Fond</p>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "6px",
-            marginBottom: "10px",
-          }}
-        >
-          {(["plan", "satellite"] as const).map((option) => {
-            const disabled = option === "satellite" && !satelliteAvailable;
-            const selected = option === baseMap;
-            return (
-              <button
-                key={option}
-                type="button"
-                disabled={disabled}
-                aria-pressed={selected}
-                onClick={() => onBaseMapChange(option)}
-                style={{
-                  minHeight: "42px",
-                  borderRadius: "9px",
-                  border: `1px solid ${
-                    selected ? "var(--bc-accent)" : "var(--bc-border)"
-                  }`,
-                  background: selected
-                    ? "rgba(245, 158, 66, 0.16)"
-                    : "var(--bc-background-elevated)",
-                  color: selected
-                    ? "var(--bc-accent)"
-                    : "var(--bc-text-primary)",
-                  fontSize: "13px",
-                  fontWeight: 800,
-                  opacity: disabled ? 0.48 : 1,
-                }}
-              >
-                {option === "plan" ? "Standard" : "Satellite"}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          aria-label="Fond de carte"
+          className="mb-3"
+          value={baseMap}
+          onChange={onBaseMapChange}
+          options={[
+            { value: "plan", label: "Standard" },
+            {
+              value: "satellite",
+              label: "Satellite",
+              disabled: !satelliteAvailable,
+            },
+          ]}
+        />
 
         <p style={sectionLabelStyle}>Affichage</p>
         <div style={{ display: "grid", gap: "2px" }}>
           {optionKeys.map(([key, label]) => {
             const checked = settings[key];
             return (
-              <button
+              <Chip
                 key={key}
-                type="button"
                 role="checkbox"
                 aria-checked={checked}
+                selected={checked}
                 onClick={() => toggle(key)}
                 style={{
-                  display: "flex",
-                  minHeight: "38px",
-                  alignItems: "center",
+                  width: "100%",
                   justifyContent: "space-between",
-                  gap: "10px",
-                  border: 0,
-                  borderRadius: "8px",
-                  padding: "6px 8px",
-                  background: checked
-                    ? "rgba(245, 158, 66, 0.09)"
-                    : "transparent",
-                  color: "var(--bc-text-primary)",
-                  fontSize: "13px",
-                  fontWeight: 700,
                   textAlign: "left",
                 }}
               >
@@ -221,7 +181,7 @@ export default function MapOptionsPopover({
                 >
                   {checked ? "✓" : ""}
                 </span>
-              </button>
+              </Chip>
             );
           })}
         </div>
@@ -257,7 +217,7 @@ export default function MapOptionsPopover({
             Données indicatives — vérifier AIP et NOTAM.
           </p>
         )}
-        </section>
+        </FloatingPanel>
       </div>
     </>
   );

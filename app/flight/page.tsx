@@ -50,6 +50,8 @@ import {
   loadExportedPlannedTrajectories,
   type ExportedPlannedTrajectory,
 } from "../lib/trajectory/weatherAnalysisStorage";
+import { Button, FloatingPanel } from "../design-system";
+import { createFlightSession } from "../lib/flightCore";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -134,6 +136,7 @@ export default function FlightPage() {
     stopTracking,
     storageReady,
     storageError,
+    activeFlight,
     recoverableFlight,
     completedFlight,
     resumeInterruptedFlight,
@@ -437,6 +440,43 @@ export default function FlightPage() {
     airspaces: layerSettings.airspaces,
     highContrast: layerSettings.highContrast,
   });
+  const flightSession = useMemo(
+    () =>
+      createFlightSession({
+        status: tracking.status,
+        storageReady,
+        storageError,
+        activeFlight,
+        recoverableFlight,
+        completedFlight,
+        points,
+        metrics: displayedMetrics,
+        currentPosition,
+        geolocationState: geoState,
+        isPositionStale: isStale,
+        gpsProjection,
+        weatherProjection,
+        plannedTrajectories,
+        flightContext,
+      }),
+    [
+      activeFlight,
+      completedFlight,
+      currentPosition,
+      displayedMetrics,
+      flightContext,
+      geoState,
+      gpsProjection,
+      isStale,
+      plannedTrajectories,
+      points,
+      recoverableFlight,
+      storageError,
+      storageReady,
+      tracking.status,
+      weatherProjection,
+    ],
+  );
 
   return (
     <div
@@ -459,17 +499,25 @@ export default function FlightPage() {
       }}
     >
         <FlightMap
-          currentPosition={isStale ? null : currentPosition}
+          currentPosition={
+            flightSession.position.isStale
+              ? null
+              : flightSession.position.current
+          }
           baseMap={baseMap}
-          flightPoints={points}
-          gpsProjection={gpsProjection}
-          weatherProjection={weatherProjection}
-          plannedTrajectories={plannedTrajectories}
+          flightPoints={flightSession.trajectory.points}
+          gpsProjection={flightSession.projections.gps}
+          weatherProjection={flightSession.projections.weather}
+          plannedTrajectories={flightSession.projections.planned}
           airspaces={airspaces}
           showAirspaces={layerSettings.airspaces}
           selectedAirspaceId={selectedAirspace?.airspaceId ?? null}
-          showGpsProjection={layerSettings.gpsProjection && isTracking}
-          showWeatherProjection={layerSettings.weatherProjection && isTracking}
+          showGpsProjection={
+            layerSettings.gpsProjection && flightSession.state.isRecording
+          }
+          showWeatherProjection={
+            layerSettings.weatherProjection && flightSession.state.isRecording
+          }
           followPosition={followPosition}
           recenterRequest={recenterRequest}
           fitProjectionRequest={fitProjectionRequest}
@@ -483,8 +531,7 @@ export default function FlightPage() {
 
       {/* Panneau d'instruments */}
       <FlightInstruments
-        metrics={displayedMetrics}
-        isRecording={isTracking}
+        session={flightSession}
         highContrast={layerSettings.highContrast}
         geolocationState={geoState}
         withNavigation
@@ -495,7 +542,9 @@ export default function FlightPage() {
         onOpenCurrentAirspace={handleOpenCurrentAirspace}
       />
 
-      <PlannedTrajectoriesInfo trajectories={plannedTrajectories} />
+      <PlannedTrajectoriesInfo
+        trajectories={flightSession.projections.planned}
+      />
 
       {geoState === "simulation" && (
         <span
@@ -539,7 +588,7 @@ export default function FlightPage() {
 
       {/* Boutons flottants */}
       <FlightControls
-        isTracking={isTracking}
+        isTracking={flightSession.state.isRecording}
         followPosition={followPosition}
         mapOptionsOpen={isMapOptionsOpen}
         mapDisplayCustomized={mapDisplayCustomized}
@@ -612,55 +661,40 @@ export default function FlightPage() {
             background: "rgba(2,8,18,.78)",
           }}
         >
-          <section
+          <FloatingPanel
+            surface="overlay"
             style={{
               width: "min(100%, 380px)",
-              padding: "22px",
-              borderRadius: "20px",
-              background: "var(--bc-background-elevated)",
-              border: "1px solid var(--bc-border-strong)",
             }}
           >
             <h2 style={{ fontSize: "23px", fontWeight: 950 }}>
               Arrêter et enregistrer ce vol ?
             </h2>
             <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
-              <button
+              <Button
+                variant="secondary"
                 disabled={flightActionBusy}
                 onClick={() => setStopConfirmationOpen(false)}
-                style={{
-                  minHeight: "52px",
-                  borderRadius: "13px",
-                  border: "1px solid var(--bc-border)",
-                  background: "var(--bc-surface)",
-                  color: "var(--bc-text-primary)",
-                  fontWeight: 900,
-                }}
+                fullWidth
               >
                 CONTINUER LE VOL
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="danger"
                 disabled={flightActionBusy}
                 onClick={() => void handleConfirmStopTracking()}
-                style={{
-                  minHeight: "52px",
-                  borderRadius: "13px",
-                  border: 0,
-                  background: "var(--bc-danger)",
-                  color: "#fff",
-                  fontWeight: 900,
-                }}
+                fullWidth
               >
                 ARRÊTER ET ENREGISTRER
-              </button>
+              </Button>
             </div>
-          </section>
+          </FloatingPanel>
         </div>
       )}
 
-      {recoverableFlight && (
+      {flightSession.recovery.interruptedFlight && (
         <FlightRecoveryDialog
-          flight={recoverableFlight}
+          flight={flightSession.recovery.interruptedFlight}
           busy={flightActionBusy}
           onResume={resumeInterruptedFlight}
           onComplete={() => void handleCompleteInterruptedFlight()}
@@ -668,9 +702,9 @@ export default function FlightPage() {
         />
       )}
 
-      {completedFlight && (
+      {flightSession.recovery.completedFlight && (
         <RecordedFlightScreen
-          flight={completedFlight}
+          flight={flightSession.recovery.completedFlight}
           onReturn={dismissCompletedFlight}
         />
       )}

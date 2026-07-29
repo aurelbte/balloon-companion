@@ -1,22 +1,23 @@
 "use client";
 
-import type { FlightMetrics } from "../../types/flight";
 import { formatDuration, normalizeHeading } from "../../lib/geo";
 import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
+import type { FlightSession } from "../../lib/flightCore";
 
 interface FlightInstrumentsProps {
-  metrics: FlightMetrics;
-  isRecording: boolean;
+  session: FlightSession;
   highContrast?: boolean;
   geolocationState?: string;
   withNavigation?: boolean;
 }
 
 export default function FlightInstruments({
-  metrics,
+  session,
   highContrast = false,
   withNavigation = false,
 }: FlightInstrumentsProps) {
+  const metrics = session.statistics.metrics;
+  const phase = session.phase;
   const formatAltitudeValue = (altitude: number | null) => {
     if (altitude === null || !Number.isFinite(altitude)) {
       return "—";
@@ -25,58 +26,9 @@ export default function FlightInstruments({
     return Math.round(altitude).toString();
   };
 
-  const panelBackground = highContrast
-    ? "rgba(7, 17, 31, 0.97)"
-    : "rgba(7, 17, 31, 0.88)";
-
-  const altitudePanelStyle = {
-    position: "fixed" as const,
-    top: "max(16px, env(safe-area-inset-top))",
-    left: "16px",
-    zIndex: 20,
-    minWidth: "146px",
-    padding: "15px 17px",
-    borderRadius: "16px",
-    background: panelBackground,
-    border: "1px solid rgba(255, 255, 255, 0.18)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
-    boxShadow: "0 5px 18px rgba(0, 0, 0, 0.3)",
-    pointerEvents: "none" as const,
-  };
-
-  const bottomPanelStyle = {
-    position: "fixed" as const,
-    left: "6px",
-    right: "6px",
-    bottom: withNavigation
-      ? `calc(max(16px, env(safe-area-inset-bottom)) + ${FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset}px)`
-      : "max(6px, env(safe-area-inset-bottom))",
-    zIndex: 20,
-    display: "grid",
-    gridTemplateColumns: "0.9fr 1.35fr 1fr 0.85fr 1.15fr",
-    alignItems: "stretch",
-    minHeight: "112px",
-    padding: "13px 7px 12px",
-    borderRadius: "17px",
-    background: panelBackground,
-    border: "1px solid rgba(255, 255, 255, 0.18)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
-    boxShadow: "0 5px 18px rgba(0, 0, 0, 0.3)",
-    pointerEvents: "none" as const,
-  };
-
-  const labelStyle = {
-    fontSize: "10px",
-    fontWeight: "800",
-    lineHeight: "1",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.7px",
-    color: highContrast
-      ? "var(--bc-accent)"
-      : "var(--bc-text-muted)",
-  };
+  const bottomOffset = withNavigation
+    ? `calc(max(var(--bc-space-4), env(safe-area-inset-bottom)) + ${FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset}px)`
+    : "max(var(--bc-space-2), env(safe-area-inset-bottom))";
   const formatNumber = (value: number | null, decimals = 0) =>
     value === null || !Number.isFinite(value) ? "—" : value.toFixed(decimals);
 
@@ -99,6 +51,14 @@ export default function FlightInstruments({
     : varioIsDescent
       ? "var(--bc-danger)"
       : "var(--bc-text-primary)";
+  const visualPhase =
+    phase === "CLIMB"
+      ? "climb"
+      : phase === "DESCENT" || phase === "APPROACH"
+        ? "descent"
+        : phase === "CRUISE"
+          ? "cruise"
+          : "preflight";
 
   const instruments = [
     { label: "CAP", value: headingValue, unit: "°", priority: "cap" },
@@ -134,29 +94,113 @@ export default function FlightInstruments({
   return (
     <>
       <style>{`
+        .flight-altimeter {
+          position: fixed;
+          top: max(var(--bc-space-4), env(safe-area-inset-top));
+          left: var(--bc-space-4);
+          z-index: var(--bc-z-floating);
+          width: 168px;
+          padding: var(--bc-space-3) var(--bc-space-4);
+          pointer-events: none;
+        }
+        .flight-altimeter__primary {
+          display: flex;
+          align-items: baseline;
+          gap: var(--bc-space-1);
+          margin-top: var(--bc-space-1);
+        }
+        .flight-altimeter__value {
+          color: var(--bc-color-text);
+          font-size: 34px;
+          font-weight: var(--bc-font-weight-bold);
+          font-variant-numeric: tabular-nums;
+          letter-spacing: -0.045em;
+          line-height: 0.95;
+          transition:
+            font-size var(--bc-duration-normal) var(--bc-easing-standard),
+            opacity var(--bc-duration-normal) var(--bc-easing-standard);
+        }
+        .flight-altimeter__unit,
+        .flight-instrument__unit {
+          color: var(--bc-color-text-secondary);
+          font-size: var(--bc-font-size-label);
+          font-weight: var(--bc-font-weight-semibold);
+          line-height: 1;
+        }
+        .flight-altimeter__context {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--bc-space-3);
+          margin-top: var(--bc-space-3);
+          padding-top: var(--bc-space-2);
+          border-top: 1px solid var(--bc-color-border-glass);
+        }
+        .flight-altimeter__secondary {
+          margin-top: var(--bc-space-1);
+          color: var(--bc-color-text);
+          font-size: 15px;
+          font-weight: var(--bc-font-weight-bold);
+          font-variant-numeric: tabular-nums;
+          line-height: 1;
+          white-space: nowrap;
+        }
+        .flight-cockpit-dock {
+          position: fixed;
+          left: var(--bc-space-2);
+          right: var(--bc-space-2);
+          z-index: var(--bc-z-floating);
+          display: grid;
+          grid-template-columns: 0.86fr 1.32fr 1fr 0.82fr 1.08fr;
+          min-height: ${FLIGHT_BOTTOM_LAYOUT.instrumentsHeight}px;
+          padding: var(--bc-space-3) var(--bc-space-1);
+          pointer-events: none;
+          transition: opacity var(--bc-duration-normal) var(--bc-easing-standard);
+        }
         .flight-instrument {
           min-width: 0;
-          min-height: 86px;
+          min-height: 88px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 0 7px;
-          border-left: 1px solid rgba(255, 255, 255, 0.16);
+          padding-inline: var(--bc-space-2);
+          border-left: 1px solid var(--bc-color-border-glass);
+          transition:
+            opacity var(--bc-duration-normal) var(--bc-easing-standard),
+            background-color var(--bc-duration-normal) var(--bc-easing-standard);
         }
         .flight-instrument:first-child { border-left: 0; }
+        .flight-instrument__label,
+        .flight-altimeter__label {
+          color: ${highContrast ? "var(--bc-color-action)" : "var(--bc-color-text-muted)"};
+          font-size: 10px;
+          font-weight: var(--bc-font-weight-bold);
+          line-height: 1;
+          letter-spacing: var(--bc-letter-spacing-label);
+          text-transform: uppercase;
+        }
         .flight-instrument__value {
-          margin-top: 8px;
-          color: var(--bc-text-primary);
+          margin-top: var(--bc-space-2);
+          color: var(--bc-color-text);
           font-size: clamp(23px, 6.8vw, 29px);
-          font-weight: 900;
+          font-weight: var(--bc-font-weight-bold);
           font-variant-numeric: tabular-nums;
           letter-spacing: -0.04em;
           line-height: 0.95;
           white-space: nowrap;
+          transition:
+            font-size var(--bc-duration-normal) var(--bc-easing-standard),
+            opacity var(--bc-duration-normal) var(--bc-easing-standard),
+            color var(--bc-duration-normal) var(--bc-easing-standard);
+        }
+        .flight-instrument--vario {
+          margin-block: calc(var(--bc-space-1) * -1);
+          border-radius: var(--bc-radius-control);
+          background: rgb(255 255 255 / 4%);
+          box-shadow: inset 0 1px 0 var(--bc-color-surface-highlight);
         }
         .flight-instrument--vario .flight-instrument__value {
-          font-size: clamp(26px, 7.4vw, 32px);
+          font-size: clamp(28px, 7.8vw, 34px);
         }
         .flight-instrument--speed .flight-instrument__value {
           font-size: clamp(24px, 7vw, 30px);
@@ -167,72 +211,89 @@ export default function FlightInstruments({
         .flight-instrument--distance .flight-instrument__value {
           font-size: clamp(21px, 6vw, 25px);
         }
+        .flight-cockpit-dock[data-flight-phase="preflight"] {
+          opacity: 0.86;
+        }
+        .flight-cockpit-dock[data-flight-phase="climb"]
+          .flight-instrument:not(.flight-instrument--vario) {
+          opacity: 0.76;
+        }
+        .flight-cockpit-dock[data-flight-phase="climb"]
+          .flight-instrument--vario .flight-instrument__value,
+        .flight-cockpit-dock[data-flight-phase="descent"]
+          .flight-instrument--vario .flight-instrument__value {
+          font-size: clamp(30px, 8.2vw, 36px);
+        }
+        .flight-altimeter[data-flight-phase="climb"]
+          .flight-altimeter__value,
+        .flight-altimeter[data-flight-phase="descent"]
+          .flight-altimeter__value {
+          font-size: 38px;
+        }
+        .flight-cockpit-dock[data-flight-phase="cruise"]
+          .flight-instrument--speed .flight-instrument__value {
+          font-size: clamp(26px, 7.2vw, 31px);
+        }
+        .flight-cockpit-dock[data-flight-phase="descent"]
+          .flight-instrument--cap,
+        .flight-cockpit-dock[data-flight-phase="descent"]
+          .flight-instrument--duration {
+          opacity: 0.78;
+        }
+        .flight-cockpit-dock[data-flight-phase="descent"]
+          .flight-instrument--distance .flight-instrument__value {
+          font-size: clamp(23px, 6.4vw, 27px);
+        }
         .flight-instrument__unit {
           min-height: 12px;
-          margin-top: 7px;
-          color: var(--bc-text-secondary);
-          font-size: 10px;
-          font-weight: 750;
-          line-height: 1;
+          margin-top: var(--bc-space-2);
           white-space: nowrap;
         }
         @media (max-width: 380px) {
-          .flight-instrument { padding-inline: 4px; }
+          .flight-cockpit-dock {
+            left: var(--bc-space-1);
+            right: var(--bc-space-1);
+          }
+          .flight-instrument { padding-inline: var(--bc-space-1); }
           .flight-instrument__label { font-size: 9px !important; letter-spacing: 0.45px !important; }
-          .flight-instrument__value { margin-top: 7px; }
-          .flight-instrument__unit { margin-top: 6px; font-size: 9px; }
+          .flight-instrument__value { margin-top: var(--bc-space-2); }
+          .flight-instrument__unit { margin-top: var(--bc-space-1); font-size: 9px; }
         }
       `}</style>
-      <section style={altitudePanelStyle} aria-label="Altitude actuelle">
-        {[
-          { label: "AMSL", value: formatAltitudeValue(metrics.altitude), unit: "m" },
-          { label: "GND", value: "—", unit: "m" },
-          { label: "QNH", value: "1013", unit: "hPa" },
-        ].map((item, index) => (
-          <div
-            key={item.label}
-            style={{
-              paddingTop: index === 0 ? 0 : "10px",
-              marginTop: index === 0 ? 0 : "10px",
-              borderTop:
-                index === 0 ? undefined : "1px solid rgba(255, 255, 255, 0.12)",
-            }}
-          >
-            <div style={{ ...labelStyle, fontSize: "10px" }}>{item.label}</div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: "5px",
-                marginTop: "4px",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: highContrast ? "28px" : "26px",
-                  fontWeight: "850",
-                  lineHeight: "1",
-                  color: "var(--bc-text-primary)",
-                }}
-              >
-                {item.value}
-              </span>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: "700",
-                  color: "var(--bc-text-muted)",
-                }}
-              >
-                {item.unit}
-              </span>
+      <section
+        className={`bc-floating-panel flight-altimeter ${
+          highContrast ? "bc-surface--overlay" : "bc-surface--floating"
+        }`}
+        data-flight-phase={visualPhase}
+        aria-label="Altitude actuelle"
+      >
+        <div className="flight-altimeter__label">AMSL</div>
+        <div className="flight-altimeter__primary">
+          <span className="flight-altimeter__value">
+            {formatAltitudeValue(metrics.altitude)}
+          </span>
+          <span className="flight-altimeter__unit">m</span>
+        </div>
+        <div className="flight-altimeter__context">
+          <div>
+            <div className="flight-altimeter__label">GND</div>
+            <div className="flight-altimeter__secondary">— m</div>
+          </div>
+          <div>
+            <div className="flight-altimeter__label">QNH</div>
+            <div className="flight-altimeter__secondary">
+              {session.altitude.qnhHpa} hPa
             </div>
           </div>
-        ))}
+        </div>
       </section>
 
       <section
-        style={bottomPanelStyle}
+        className={`bc-bottom-dock flight-cockpit-dock ${
+          highContrast ? "bc-surface--overlay" : ""
+        }`}
+        style={{ bottom: bottomOffset }}
+        data-flight-phase={visualPhase}
         aria-label="Instruments de vol"
       >
         {instruments.map((instrument) => (
@@ -240,7 +301,7 @@ export default function FlightInstruments({
             key={instrument.label}
             className={`flight-instrument flight-instrument--${instrument.priority}`}
           >
-            <div className="flight-instrument__label" style={labelStyle}>
+            <div className="flight-instrument__label">
               {instrument.label}
             </div>
             <div

@@ -12,12 +12,13 @@ export default function NavigationBar({
 }: NavigationBarProps) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 border-t px-4 pb-4 pt-3 backdrop-blur-xl"
+      className="fixed inset-x-0 bottom-0 border-t px-4 pt-3 backdrop-blur-xl"
       style={{
-        background: "rgb(7 17 31 / 92%)",
-        borderColor: "var(--bc-border)",
-        paddingBottom: "max(16px, env(safe-area-inset-bottom))",
-        zIndex: 60,
+        background: "var(--bc-color-surface-glass)",
+        borderColor: "var(--bc-color-border)",
+        paddingBottom:
+          "max(var(--bc-space-4), env(safe-area-inset-bottom))",
+        zIndex: "var(--bc-z-navigation)",
       }}
     >
       <div className="mx-auto grid max-w-md grid-cols-4">
@@ -29,7 +30,7 @@ export default function NavigationBar({
               style={{
                 background:
                   activeItem === item.label
-                    ? "var(--bc-accent)"
+                    ? "var(--bc-color-action)"
                     : "transparent",
               }}
             />
@@ -45,8 +46,8 @@ export default function NavigationBar({
               background: "transparent",
               color:
                 activeItem === item.label
-                  ? "var(--bc-accent)"
-                  : "var(--bc-text-muted)",
+                  ? "var(--bc-color-action)"
+                  : "var(--bc-color-text-muted)",
             },
           };
           return onNavigate ? (

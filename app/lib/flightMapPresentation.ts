@@ -2,15 +2,21 @@ import type {
   FlightLayerSettings,
   ProjectionPoint,
 } from "../types/flight";
+import {
+  FLIGHT_TRACK_CARTOGRAPHY_STYLE,
+  GPS_PROJECTION_CARTOGRAPHY_STYLE,
+} from "./cartographyStyle.ts";
 
 export const FLIGHT_TRACK_STYLE = {
-  haloWidth: 8,
-  lineWidth: 5.5,
+  haloWidth: 9.5,
+  lineWidth: 6,
+  paint: FLIGHT_TRACK_CARTOGRAPHY_STYLE,
 } as const;
 
 export const GPS_PROJECTION_STYLE = {
-  haloWidth: 9,
-  lineWidth: 5.5,
+  haloWidth: 8.5,
+  lineWidth: 5.25,
+  paint: GPS_PROJECTION_CARTOGRAPHY_STYLE,
 } as const;
 
 export const CURRENT_POSITION_MARKER_STYLE = {
@@ -161,7 +167,7 @@ export function getPositionMarkerHaloOpacity(
 
 export function getVisibleProjectionMinutes(
   zoom: number,
-  projection: ProjectionPoint[],
+  projection: readonly ProjectionPoint[],
 ): number[] {
   const available = new Set(
     projection

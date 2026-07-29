@@ -43,10 +43,12 @@ export default function TopStatusBar() {
 
   return (
     <div
-      className="mb-5 overflow-hidden rounded-lg border p-3"
+      className="mb-6 overflow-hidden border p-3"
       style={{
-        background: "var(--bc-surface)",
-        borderColor: "var(--bc-border)",
+        background: "var(--bc-color-surface)",
+        borderColor: "var(--bc-color-border)",
+        borderRadius: "var(--bc-radius-control)",
+        boxShadow: "var(--bc-shadow-low)",
       }}
     >
       <div className="grid grid-cols-5 gap-2">
@@ -69,7 +71,7 @@ function Status({ icon, title, value }: StatusProps) {
     <div className="flex flex-col items-center gap-1 text-center">
       {/* Icon */}
       <div
-        style={{ color: "var(--bc-success)" }}
+        style={{ color: "var(--bc-color-success)" }}
       >
         {icon}
       </div>
@@ -77,7 +79,7 @@ function Status({ icon, title, value }: StatusProps) {
       {/* Title */}
       <div
         className="text-xs font-semibold uppercase tracking-tight"
-        style={{ color: "var(--bc-text-primary)" }}
+        style={{ color: "var(--bc-color-text)" }}
       >
         {title}
       </div>
@@ -85,7 +87,7 @@ function Status({ icon, title, value }: StatusProps) {
       {/* Value */}
       <div
         className="text-[10px]"
-        style={{ color: "var(--bc-text-muted)" }}
+        style={{ color: "var(--bc-color-text-muted)" }}
       >
         {value}
       </div>

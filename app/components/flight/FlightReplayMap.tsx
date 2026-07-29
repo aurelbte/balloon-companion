@@ -4,6 +4,11 @@ import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { RecordedFlight } from "../../lib/recordedFlight";
+import {
+  CARTOGRAPHY_MARKER_STYLE,
+  CARTOGRAPHY_PALETTE,
+  FLIGHT_TRACK_CARTOGRAPHY_STYLE,
+} from "../../lib/cartographyStyle";
 
 export default function FlightReplayMap({ flight }: { flight: RecordedFlight }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,23 +56,82 @@ export default function FlightReplayMap({ flight }: { flight: RecordedFlight }) 
         },
       });
       map.addLayer({
+        id: "recorded-flight-halo",
+        type: "line",
+        source: "recorded-flight",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": FLIGHT_TRACK_CARTOGRAPHY_STYLE.haloColor,
+          "line-width": FLIGHT_TRACK_CARTOGRAPHY_STYLE.haloWidth,
+          "line-opacity": FLIGHT_TRACK_CARTOGRAPHY_STYLE.haloOpacity,
+        },
+      });
+      map.addLayer({
         id: "recorded-flight-line",
         type: "line",
         source: "recorded-flight",
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "#f59e42",
-          "line-width": 4,
-          "line-opacity": 0.95,
+          "line-color": FLIGHT_TRACK_CARTOGRAPHY_STYLE.lineColor,
+          "line-width": FLIGHT_TRACK_CARTOGRAPHY_STYLE.lineWidth,
+          "line-opacity": FLIGHT_TRACK_CARTOGRAPHY_STYLE.lineOpacity,
         },
       });
-      new maplibregl.Marker({ color: "#22c55e" })
-        .setLngLat(coordinates[0])
-        .addTo(map);
+      map.addSource("recorded-flight-endpoints", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: { kind: "launch" },
+              geometry: { type: "Point", coordinates: coordinates[0] },
+            },
+            ...(coordinates.length > 1
+              ? [
+                  {
+                    type: "Feature" as const,
+                    properties: { kind: "recovery" },
+                    geometry: {
+                      type: "Point" as const,
+                      coordinates: coordinates.at(-1)!,
+                    },
+                  },
+                ]
+              : []),
+          ],
+        },
+      });
+      map.addLayer({
+        id: "recorded-flight-endpoints-halo",
+        type: "circle",
+        source: "recorded-flight-endpoints",
+        paint: {
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.arrivalRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.ink,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.cloud,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.outerHaloWidth,
+          "circle-opacity": 0.8,
+        },
+      });
+      map.addLayer({
+        id: "recorded-flight-endpoints",
+        type: "circle",
+        source: "recorded-flight-endpoints",
+        paint: {
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.arrivalRadius,
+          "circle-color": [
+            "match",
+            ["get", "kind"],
+            "launch",
+            CARTOGRAPHY_PALETTE.launch,
+            CARTOGRAPHY_PALETTE.recovery,
+          ],
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.ink,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.haloStrokeWidth,
+        },
+      });
       if (coordinates.length > 1) {
-        new maplibregl.Marker({ color: "#ef6464" })
-          .setLngLat(coordinates.at(-1)!)
-          .addTo(map);
         const bounds = coordinates.reduce(
           (value, coordinate) => value.extend(coordinate),
           new maplibregl.LngLatBounds(coordinates[0], coordinates[0]),

@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Route } from "lucide-react";
+import { FloatingAction, FloatingPanel } from "../../design-system";
 import { MODEL_LINE_STYLES } from "../../lib/trajectory/analysisStyles";
 import type { ExportedPlannedTrajectory } from "../../lib/trajectory/weatherAnalysisStorage";
 
 interface PlannedTrajectoriesInfoProps {
-  trajectories: ExportedPlannedTrajectory[];
+  trajectories: readonly ExportedPlannedTrajectory[];
 }
 
 export default function PlannedTrajectoriesInfo({
@@ -33,10 +34,10 @@ export default function PlannedTrajectoriesInfo({
 
   return (
     <aside className="fixed bottom-[calc(205px+env(safe-area-inset-bottom))] left-3 z-20 text-white">
-      <button
-        type="button"
+      <FloatingAction
         onClick={() => setOpen((value) => !value)}
-        className="flex h-11 min-w-11 items-center justify-center rounded-full border border-white/25 bg-[#07111fd9] px-3 shadow-xl backdrop-blur-md"
+        className={open ? "w-auto grid-flow-col gap-2 px-3" : ""}
+        style={open ? { width: "auto" } : undefined}
         aria-label="Trajectoires prévues"
         aria-expanded={open}
       >
@@ -46,9 +47,9 @@ export default function PlannedTrajectoriesInfo({
             {trajectories.length} prévue{trajectories.length > 1 ? "s" : ""}
           </span>
         )}
-      </button>
+      </FloatingAction>
       {open && (
-        <div className="mt-1.5 w-56 rounded-xl border border-white/20 bg-[#07111feb] p-2.5 shadow-2xl backdrop-blur-md">
+        <FloatingPanel className="mt-2 w-56">
           <div className="grid gap-1">
             {models.map((model) => (
               <div
@@ -95,7 +96,7 @@ export default function PlannedTrajectoriesInfo({
               }).format(new Date(forecastAtIso))}
             </p>
           )}
-        </div>
+        </FloatingPanel>
       )}
     </aside>
   );

@@ -10,6 +10,11 @@ import {
 } from "lucide-react";
 import PreparationMap from "../components/PreparationMap";
 import AirspaceDetails from "../components/flight/AirspaceDetails";
+import {
+  Chip,
+  FloatingAction,
+  FloatingPanel,
+} from "../design-system";
 import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
 import {
   useAirspaceCoverage,
@@ -409,7 +414,7 @@ export default function MapPage() {
     layers.satellite && satelliteAvailable ? "satellite" : "plan";
 
   return (
-    <main className="relative h-dvh overflow-hidden bg-[#07111f]">
+    <main className="relative h-dvh overflow-hidden bg-[var(--bc-color-canvas)]">
       {displayedTraces.length > 0 ? (
         <PreparationMap
           traces={displayedTraces}
@@ -429,10 +434,9 @@ export default function MapPage() {
         </div>
       )}
 
-      <button
-        type="button"
+      <FloatingAction
         onClick={() => setSelectorsVisible((value) => !value)}
-        className="absolute left-3 top-[max(12px,env(safe-area-inset-top))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-[#07111feb] text-white"
+        className="absolute left-3 top-[max(12px,env(safe-area-inset-top))] z-30 rounded-full"
         aria-label={
           selectorsVisible
             ? "Afficher uniquement la carte"
@@ -441,7 +445,7 @@ export default function MapPage() {
         aria-pressed={!selectorsVisible}
       >
         {selectorsVisible ? <Maximize2 size={21} /> : <PanelLeftOpen size={21} />}
-      </button>
+      </FloatingAction>
 
       {selectorsVisible && (
         <aside
@@ -452,22 +456,17 @@ export default function MapPage() {
             (model) => {
               const selected = selectedModels.includes(model.id);
               return (
-                <button
+                <Chip
                   key={model.id}
-                  type="button"
-                  aria-pressed={selected}
+                  selected={selected}
                   onClick={() => toggleModel(model.id)}
-                  className={`flex min-h-9 w-[98px] items-center justify-between gap-0.5 rounded-full border px-1.5 text-[9px] font-black text-white shadow-lg backdrop-blur-md ${
-                    selected
-                      ? "border-white/65 bg-[#07111fd9]"
-                      : "border-white/15 bg-[#07111f8f]"
-                  }`}
+                  className="w-[98px] justify-between text-[9px] font-bold"
                 >
                   <span>{model.label}</span>
                   <span className="scale-[0.65]">
                     <ModelLinePreview model={model} />
                   </span>
-                </button>
+                </Chip>
               );
             },
           )}
@@ -484,43 +483,39 @@ export default function MapPage() {
             const color =
               displayedTraces.find(
                 (trace) => trace.altitudeKey === altitudeKey(altitude),
-              )?.color ?? "#ffffff";
+              )?.color ?? "var(--bc-color-cloud)";
             return (
-              <button
+              <Chip
                 key={String(altitude)}
-                type="button"
-                aria-pressed={selected}
+                selected={selected}
                 onClick={() => toggleAltitude(altitude)}
-                className="min-h-8 min-w-[58px] rounded-full border px-1.5 text-[9px] font-black shadow-lg backdrop-blur-md"
+                className="min-w-[58px] text-[9px] font-bold"
                 style={{
                   borderColor: selected ? color : "rgb(255 255 255 / 16%)",
-                  background: selected
-                    ? "rgb(7 17 31 / 86%)"
-                    : "rgb(7 17 31 / 56%)",
                   color: selected ? color : "rgb(255 255 255 / 78%)",
                 }}
               >
                 {altitudeLabel(altitude)}
-              </button>
+              </Chip>
             );
           })}
         </aside>
       )}
 
       <div className="absolute right-3 top-[max(12px,env(safe-area-inset-top))] z-30">
-        <button
-          type="button"
+        <Chip
           onClick={() => {
             setLegendOpen(false);
             setDisplayOpen((value) => !value);
           }}
-          className="min-h-10 rounded-full border border-white/20 bg-[#07111fb8] px-3 text-[10px] font-black text-white shadow-lg backdrop-blur-md"
+          selected={displayOpen}
+          className="text-[10px] font-bold"
           aria-expanded={displayOpen}
         >
           🗺️ Affichage
-        </button>
+        </Chip>
         {displayOpen && (
-          <aside className="mt-1.5 w-44 rounded-xl border border-white/20 bg-[#07111feb] p-2 text-white shadow-2xl backdrop-blur-md">
+          <FloatingPanel className="mt-2 w-44 text-white">
             <label className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold">
               Vue satellite
               <input
@@ -530,7 +525,7 @@ export default function MapPage() {
                 onChange={(event) =>
                   updateDisplay("satellite", event.target.checked)
                 }
-                className="h-5 w-5 accent-[#f59e42]"
+                className="h-5 w-5 accent-[var(--bc-color-action)]"
               />
             </label>
             <label className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold">
@@ -541,23 +536,22 @@ export default function MapPage() {
                 onChange={(event) =>
                   updateDisplay("airspaces", event.target.checked)
                 }
-                className="h-5 w-5 accent-[#f59e42]"
+                className="h-5 w-5 accent-[var(--bc-color-action)]"
               />
             </label>
-          </aside>
+          </FloatingPanel>
         )}
       </div>
 
-      <button
-        type="button"
+      <FloatingAction
         onClick={() => setRecenterToken((value) => value + 1)}
-        className="absolute bottom-[max(96px,calc(82px+env(safe-area-inset-bottom)))] right-3 z-20 flex h-11 w-11 items-center justify-center rounded-xl border border-white/25 bg-[#07111feb] text-white"
+        className="absolute bottom-[max(96px,calc(82px+env(safe-area-inset-bottom)))] right-3 z-20"
         aria-label="Recentrer toutes les trajectoires"
       >
         <LocateFixed size={20} />
-      </button>
+      </FloatingAction>
 
-      <section className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-full border border-white/20 bg-[#07111fdc] text-white shadow-2xl backdrop-blur-md">
+      <section className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-[var(--bc-radius-dock)] border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
         <button
           type="button"
           onClick={() => {
@@ -593,7 +587,7 @@ export default function MapPage() {
           <span>{legendOpen ? "−" : "+"}</span>
         </button>
         {legendOpen && (
-          <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-2xl border-t border-white/15 bg-[#07111ff2] p-2.5">
+          <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-[var(--bc-color-surface-glass)] p-2.5">
             <div>
               <div className="grid grid-cols-2 gap-1">
                 {displayedTraces.map((trace) => (
@@ -632,7 +626,7 @@ export default function MapPage() {
       </section>
 
       {(notice || loading) && (
-        <p className="absolute left-1/2 top-[max(14px,env(safe-area-inset-top))] z-40 -translate-x-1/2 rounded-full border border-white/20 bg-[#07111ff0] px-3 py-2 text-[10px] font-bold text-white">
+        <p className="absolute left-1/2 top-[max(14px,env(safe-area-inset-top))] z-40 -translate-x-1/2 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] px-3 py-2 text-[10px] font-bold text-white shadow-[var(--bc-shadow-low)]">
           {loading ? "Mise à jour météo…" : notice}
         </p>
       )}

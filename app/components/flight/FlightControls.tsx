@@ -2,6 +2,7 @@
 
 import { LocateFixed, Map, Maximize2, Play, Square } from "lucide-react";
 import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
+import { Button, FloatingAction } from "../../design-system";
 
 interface FlightControlsProps {
   isTracking: boolean;
@@ -28,48 +29,9 @@ export default function FlightControls({
   onStartTracking,
   onStopTracking,
 }: FlightControlsProps) {
-  const buttonStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "48px",
-    height: "48px",
-    borderRadius: "50%",
-    border: "none",
-    backgroundColor: "var(--bc-accent)",
-    color: "var(--bc-accent-foreground)",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    fontSize: "20px",
-  };
-
-  const secondaryButtonStyle = {
-    ...buttonStyle,
-    backgroundColor: "var(--bc-surface)",
-    color: "var(--bc-text-primary)",
-    border: "1px solid var(--bc-border)",
-  };
-
-  const primaryButtonStyle = {
-    ...buttonStyle,
-    width: isTracking ? "132px" : "118px",
-    borderRadius: "24px",
-    gap: "7px",
-    fontSize: "11px",
-    fontWeight: "900",
-    letterSpacing: "0.04em",
-  };
-
-  const activeSecondaryButtonStyle = {
-    ...secondaryButtonStyle,
-    borderColor: "var(--bc-accent)",
-    color: "var(--bc-accent)",
-    backgroundColor: "rgba(7, 17, 31, 0.96)",
-  };
-
   return (
     <div
+      className="flight-control-cluster"
       style={{
         position: "fixed",
         bottom: withNavigation
@@ -78,83 +40,92 @@ export default function FlightControls({
         right: "16px",
         display: "flex",
         flexDirection: "column" as const,
-        gap: "12px",
+        gap: "var(--bc-space-2)",
         alignItems: "flex-end",
-        zIndex: 44,
+        zIndex: "var(--bc-z-panel)",
       }}
     >
-      {/* Bouton recentrer */}
-      <button
-        type="button"
-        onClick={onRecenterMap}
-        style={
-          followPosition ? activeSecondaryButtonStyle : secondaryButtonStyle
-        }
-        title="Suivre ma position"
-        aria-label={
-          followPosition
-            ? "Suivi de position actif"
-            : "Réactiver le suivi de position"
-        }
-        aria-pressed={followPosition}
+      <div
+        className="bc-surface--floating"
+        style={{
+          display: "grid",
+          gap: "var(--bc-space-1)",
+          padding: "var(--bc-space-1)",
+          border: "1px solid var(--bc-color-border-glass)",
+          borderRadius: "var(--bc-radius-dock)",
+          boxShadow: "var(--bc-shadow-floating)",
+          backdropFilter: "blur(20px)",
+        }}
       >
-        <LocateFixed size={20} />
-      </button>
+        <FloatingAction
+          onClick={onRecenterMap}
+          title="Suivre ma position"
+          aria-label={
+            followPosition
+              ? "Suivi de position actif"
+              : "Réactiver le suivi de position"
+          }
+          aria-pressed={followPosition}
+          style={
+            followPosition
+              ? {
+                  borderColor: "var(--bc-color-action)",
+                  color: "var(--bc-color-action)",
+                }
+              : undefined
+          }
+        >
+          <LocateFixed size={20} />
+        </FloatingAction>
 
-      {/* Bouton cadrer projection */}
-      <button
-        type="button"
-        onClick={onFitProjection}
-        style={secondaryButtonStyle}
-        title="Vue élargie de la trajectoire"
-        aria-label="Afficher une vue élargie de la trajectoire projetée"
-      >
-        <Maximize2 size={20} />
-      </button>
+        <FloatingAction
+          onClick={onFitProjection}
+          title="Vue élargie de la trajectoire"
+          aria-label="Afficher une vue élargie de la trajectoire projetée"
+        >
+          <Maximize2 size={20} />
+        </FloatingAction>
 
-      {/* Options de carte */}
-      <button
-        type="button"
-        onClick={onToggleMapOptions}
-        style={
-          mapOptionsOpen || mapDisplayCustomized
-            ? activeSecondaryButtonStyle
-            : secondaryButtonStyle
-        }
-        title="Carte"
-        aria-label="Options de carte"
-        aria-expanded={mapOptionsOpen}
-        aria-pressed={mapDisplayCustomized}
-      >
-        <Map size={20} />
-      </button>
+        <FloatingAction
+          onClick={onToggleMapOptions}
+          title="Carte"
+          aria-label="Options de carte"
+          aria-expanded={mapOptionsOpen}
+          aria-pressed={mapDisplayCustomized}
+          style={
+            mapOptionsOpen || mapDisplayCustomized
+              ? {
+                  borderColor: "var(--bc-color-action)",
+                  color: "var(--bc-color-action)",
+                }
+              : undefined
+          }
+        >
+          <Map size={20} />
+        </FloatingAction>
+      </div>
 
-      {/* Bouton principal : démarrer/arrêter le suivi */}
       {!isTracking ? (
-        <button
-          type="button"
+        <Button
           onClick={onStartTracking}
-          style={primaryButtonStyle}
+          className="text-[11px] tracking-[0.04em]"
           title="Démarrer le suivi"
           aria-label="Démarrer l'enregistrement du vol"
         >
-          <Play size={24} fill="currentColor" />
+          <Play size={20} fill="currentColor" />
           DÉMARRER
-        </button>
+        </Button>
       ) : (
-        <button
-          type="button"
+        <Button
+          variant="danger"
           onClick={onStopTracking}
-          style={{
-            ...primaryButtonStyle,
-            backgroundColor: "#ef6464",
-          }}
+          className="text-[11px] tracking-[0.04em]"
           title="Arrêter le suivi"
           aria-label="Arrêter l'enregistrement du vol"
         >
-          <Square size={20} fill="currentColor" />
+          <Square size={18} fill="currentColor" />
           ARRÊTER
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -21,6 +21,12 @@ import type {
 } from "../lib/openaip";
 import { buildTrajectoryTimeMarkers } from "../lib/trajectory/mapProjection";
 import { MODEL_LINE_STYLES } from "../lib/trajectory/analysisStyles";
+import {
+  ANALYSIS_TRAJECTORY_STYLE,
+  CARTOGRAPHY_MARKER_STYLE,
+  CARTOGRAPHY_PALETTE,
+  TIME_MARKER_STYLE,
+} from "../lib/cartographyStyle";
 import type {
   AnalysisLayerSettings,
   WeatherAnalysisTrace,
@@ -376,7 +382,12 @@ export default function PreparationMap({
         id: "analysis-trajectory-halo",
         type: "line",
         source: TRACE_SOURCE,
-        paint: { "line-color": "#07111f", "line-width": 8, "line-opacity": 0.9 },
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": ANALYSIS_TRAJECTORY_STYLE.haloColor,
+          "line-width": ANALYSIS_TRAJECTORY_STYLE.haloWidth,
+          "line-opacity": ANALYSIS_TRAJECTORY_STYLE.haloOpacity,
+        },
       });
       for (const [modelId, lineStyle] of Object.entries(MODEL_LINE_STYLES)) {
         map.addLayer({
@@ -384,9 +395,11 @@ export default function PreparationMap({
           type: "line",
           source: TRACE_SOURCE,
           filter: ["==", ["get", "modelId"], modelId],
+          layout: { "line-cap": "round", "line-join": "round" },
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 4,
+            "line-width": ANALYSIS_TRAJECTORY_STYLE.lineWidth,
+            "line-opacity": ANALYSIS_TRAJECTORY_STYLE.lineOpacity,
             "line-dasharray": [...lineStyle.dasharray],
           },
         });
@@ -401,14 +414,15 @@ export default function PreparationMap({
         source: TIME_SOURCE,
         layout: {
           "text-field": ["get", "label"],
-          "text-size": 11,
+          "text-size": TIME_MARKER_STYLE.textSize,
           "text-font": ["Open Sans Bold"],
           "text-allow-overlap": false,
         },
         paint: {
-          "text-color": "#07111f",
+          "text-color": TIME_MARKER_STYLE.textColor,
           "text-halo-color": ["get", "color"],
-          "text-halo-width": 4,
+          "text-halo-width": TIME_MARKER_STYLE.haloWidth,
+          "text-halo-blur": 0.5,
         },
       });
       map.addSource(ARRIVAL_SOURCE, {
@@ -416,14 +430,26 @@ export default function PreparationMap({
         data: initialArrivalData.current,
       });
       map.addLayer({
+        id: "analysis-arrivals-halo",
+        type: "circle",
+        source: ARRIVAL_SOURCE,
+        paint: {
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.arrivalRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.ink,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.cloud,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.outerHaloWidth,
+          "circle-opacity": 0.78,
+        },
+      });
+      map.addLayer({
         id: "analysis-arrivals",
         type: "circle",
         source: ARRIVAL_SOURCE,
         paint: {
-          "circle-radius": 7,
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.arrivalRadius,
           "circle-color": ["get", "color"],
-          "circle-stroke-color": "#07111f",
-          "circle-stroke-width": 2,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.ink,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.haloStrokeWidth,
         },
       });
       map.addSource(START_SOURCE, {
@@ -431,14 +457,26 @@ export default function PreparationMap({
         data: initialStartData.current,
       });
       map.addLayer({
+        id: "analysis-start-halo",
+        type: "circle",
+        source: START_SOURCE,
+        paint: {
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.launchRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.launch,
+          "circle-opacity": 0.24,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.cloud,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.outerHaloWidth,
+        },
+      });
+      map.addLayer({
         id: "analysis-start",
         type: "circle",
         source: START_SOURCE,
         paint: {
-          "circle-radius": 7,
-          "circle-color": "#22c55e",
-          "circle-stroke-color": "#f8fafc",
-          "circle-stroke-width": 2,
+          "circle-radius": CARTOGRAPHY_MARKER_STYLE.launchRadius,
+          "circle-color": CARTOGRAPHY_PALETTE.launch,
+          "circle-stroke-color": CARTOGRAPHY_PALETTE.cloud,
+          "circle-stroke-width": CARTOGRAPHY_MARKER_STYLE.haloStrokeWidth,
         },
       });
       notify();
@@ -484,6 +522,12 @@ export default function PreparationMap({
       if (map.getLayer("analysis-arrivals"))
         map.setLayoutProperty(
           "analysis-arrivals",
+          "visibility",
+          layers.arrivalMarkers ? "visible" : "none",
+        );
+      if (map.getLayer("analysis-arrivals-halo"))
+        map.setLayoutProperty(
+          "analysis-arrivals-halo",
           "visibility",
           layers.arrivalMarkers ? "visible" : "none",
         );
