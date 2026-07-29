@@ -663,7 +663,7 @@ export default function PreparePage() {
         </p>
       </div>
 
-      <NavigationBar activeItem="Préparer" />
+      <NavigationBar activeItem="Prépa" />
 
       {customDurationOpen && (
         <div className="fixed inset-0 z-[80] flex items-end bg-black/60 p-3">

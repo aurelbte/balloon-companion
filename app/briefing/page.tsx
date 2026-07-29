@@ -61,7 +61,7 @@ export default function BriefingPage() {
           </div>
         </div>
 
-        <NavigationBar activeItem="Préparer" />
+        <NavigationBar activeItem="Prépa" />
       </main>
     );
   }
@@ -425,7 +425,7 @@ export default function BriefingPage() {
         </div>
       </div>
 
-      <NavigationBar activeItem="Préparer" />
+      <NavigationBar activeItem="Prépa" />
     </main>
   );
 }

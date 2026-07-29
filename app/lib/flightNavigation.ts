@@ -1,9 +1,17 @@
+type MainNavigationItem = {
+  label: string;
+  href: string;
+  icon: "cockpit" | "prepare" | "flight" | "journal" | "more";
+  disabled?: boolean;
+};
+
 export const MAIN_NAVIGATION_ITEMS = [
-  { label: "Accueil", href: "/" },
-  { label: "Préparer", href: "/prepare" },
-  { label: "Vol", href: "/flight" },
-  { label: "Journal", href: "/flights" },
-] as const;
+  { label: "Cockpit", href: "/", icon: "cockpit" },
+  { label: "Prépa", href: "/prepare", icon: "prepare" },
+  { label: "Vol", href: "/flight", icon: "flight" },
+  { label: "Journal", href: "/flights", icon: "journal" },
+  { label: "Plus", href: "#plus", icon: "more", disabled: true },
+] as const satisfies readonly MainNavigationItem[];
 
 export type FlightNavigationAction = "STAY" | "CONTINUE" | "FINALIZE";
 
