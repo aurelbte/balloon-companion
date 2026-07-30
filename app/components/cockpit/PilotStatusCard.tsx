@@ -8,11 +8,9 @@ type PilotStatusCardProps = {
 };
 
 export default function PilotStatusCard({ data }: PilotStatusCardProps) {
-  const rows = [
-    ["Licence", data.licence, "valid"],
-    ["Médical", data.medical, "valid"],
-    ["Prochain contrôle", data.nextCheck, "information"],
-  ] as const;
+  const rows = [data.flightTest, data.medical].filter(
+    (status) => status !== null,
+  );
 
   return (
     <Card className={styles.card}>
@@ -21,12 +19,14 @@ export default function PilotStatusCard({ data }: PilotStatusCardProps) {
         Statut pilote
       </h2>
       <div className={styles.rows}>
-        {rows.map(([label, value, status]) => (
-          <div className={styles.row} key={label}>
-            <span className={styles.label}>{label}</span>
-            <span className={styles.statusValue} data-status={status}>
-              <span className={styles.statusDot} aria-hidden="true" />
-              <strong>{value}</strong>
+        {rows.map((status) => (
+          <div className={styles.credentialRow} key={status.label}>
+            <span className={styles.credentialLabel}>{status.label}</span>
+            <strong className={styles.credentialRemaining}>
+              {status.remainingMonths} mois restants
+            </strong>
+            <span className={styles.credentialDueDate}>
+              Échéance&nbsp;: {status.dueDate}
             </span>
           </div>
         ))}

@@ -1,36 +1,34 @@
 export type HeroRingData = {
-  totalHours: string;
+  totalHours: number;
+  displayHours: string;
   flights: number;
-  terrains: number;
-  countries: number;
+};
+
+export type PilotCredentialStatus = {
+  label: string;
+  dueDate: string;
+  remainingMonths: number;
 };
 
 export type PilotStatusData = {
-  licence: string;
-  medical: string;
-  nextCheck: string;
+  flightTest: PilotCredentialStatus | null;
+  medical: PilotCredentialStatus | null;
 };
 
 export type ConditionsData = {
-  meanWind: string;
+  windDirectionDeg: number;
+  wind: string;
   gusts: string;
+  temperature: string;
   sunrise: string;
-  modelName: string;
-  modelTime: string;
-};
-
-export type RoutePoint = {
-  latitude: number;
-  longitude: number;
+  sunset: string;
 };
 
 export type LastFlightData = {
   date: string;
   duration: string;
-  distance: string;
   departure: string;
   arrival: string;
-  route: RoutePoint[];
 };
 
 /** Retained for potential journal summaries; no longer rendered in Cockpit. */

@@ -10,8 +10,9 @@
 
 .layout {
   display: grid;
-  grid-template-rows: auto minmax(156px, 1fr) auto auto auto;
-  gap: var(--bc-space-2);
+  grid-template-rows: repeat(5, auto);
+  align-content: start;
+  gap: 7px;
   width: 100%;
   max-width: 440px;
   height: 100%;
@@ -49,75 +50,202 @@
 }
 
 .hero {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 0;
+  isolation: isolate;
+  overflow: visible;
+  margin-top: -12px;
+  margin-bottom: 2px;
+}
+
+.hero::before {
+  position: absolute;
+  z-index: -1;
+  width: min(112vw, 570px);
+  height: 100%;
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgb(91 155 213 / 4%) 0,
+      rgb(11 23 40 / 2%) 45%,
+      transparent 72%
+    );
+  content: "";
+  pointer-events: none;
 }
 
 .ringInstrument {
   position: relative;
   display: grid;
   place-items: center;
-  width: clamp(150px, 42vw, 184px);
-  aspect-ratio: 1;
-  border-radius: var(--bc-radius-round);
-  background: var(--bc-color-canvas-elevated);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 4%);
+  width: min(92vw, 420px);
+  height: min(81vw, 370px);
+  max-width: 100%;
 }
 
 .ringDial {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 50%;
+  left: 50%;
+  width: min(76vw, 348px);
+  height: min(76vw, 348px);
+  transform: translate(-50%, -50%);
 }
 
+.ringBackdrop {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(110vw, 560px);
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.ringPlate,
+.ringBezelOuter,
+.ringBezel,
 .ringOuter,
+.ringCrown,
+.ringTrack,
 .ringInner,
+.ringInnerHalo,
 .ringAccent {
   fill: none;
   transform: rotate(-90deg);
   transform-origin: center;
 }
 
+.ringPlate {
+  stroke: rgb(59 88 120 / 22%);
+  stroke-width: 2;
+}
+
+.ringBezelOuter {
+  stroke: rgb(3 10 19 / 62%);
+  stroke-width: 8;
+}
+
+.ringBezel {
+  stroke: rgb(7 17 31 / 92%);
+  stroke-width: 11;
+}
+
 .ringOuter {
-  stroke: var(--bc-color-border-strong);
+  stroke: rgb(59 88 120 / 72%);
+  stroke-width: 2;
+}
+
+.ringBackdropBase,
+.ringRadials,
+.ringSideStructures {
+  fill: none;
+  stroke: var(--bc-color-text-muted);
+}
+
+.ringBackdropBase {
+  stroke-dasharray: 54 18 20 24;
   stroke-width: 1;
+  opacity: 0.08;
+}
+
+.ringBackdropBase path {
+  stroke-dasharray: inherit;
+}
+
+.ringRadials {
+  stroke-linecap: round;
+}
+
+.ringRadials path {
+  stroke-width: 1;
+  opacity: 0.1;
+}
+
+.ringSideStructures {
+  stroke-linecap: round;
+  opacity: 0.13;
+}
+
+.ringSideMass {
+  stroke-width: 10;
+}
+
+.ringSideInset {
+  stroke-width: 3;
+  opacity: 0.65;
+}
+
+.ringCrown {
+  stroke: rgb(181 193 209 / 24%);
+  stroke-width: 3;
 }
 
 .ringInner {
-  stroke: rgb(181 193 209 / 16%);
-  stroke-width: 1;
+  stroke: rgb(181 193 209 / 28%);
+  stroke-width: 2;
+}
+
+.ringInnerHalo {
+  stroke: rgb(255 255 255 / 4%);
+  stroke-width: 6;
+}
+
+.ringTrack {
+  stroke: rgb(3 10 19 / 72%);
+  stroke-width: 14;
 }
 
 .ringAccent {
   stroke: var(--bc-color-action);
-  stroke-dasharray: 118 410;
   stroke-linecap: round;
-  stroke-width: 2.5;
+  stroke-width: 9;
+  transition: stroke-dasharray 800ms ease-in-out;
 }
 
 .ringTick,
-.ringMajorTick {
+.ringMediumTick,
+.ringStrongTick,
+.ringCardinalTick {
   stroke: var(--bc-color-text-muted);
   stroke-width: 1;
-  opacity: 0.32;
+  opacity: 0.42;
 }
 
-.ringMajorTick {
+.ringMediumTick {
   stroke: var(--bc-color-text-secondary);
-  stroke-width: 1.5;
-  opacity: 0.68;
+  stroke-width: 1.4;
+  opacity: 0.62;
+}
+
+.ringStrongTick {
+  stroke: var(--bc-color-text);
+  stroke-width: 2;
+  opacity: 0.78;
+}
+
+.ringCardinalTick {
+  stroke: var(--bc-color-text);
+  stroke-width: 2.6;
+  opacity: 0.92;
 }
 
 .ringNorthMarker {
-  position: absolute;
-  top: 1px;
-  width: 0;
-  height: 0;
-  border-right: 4px solid transparent;
-  border-bottom: 7px solid var(--bc-color-action);
-  border-left: 4px solid transparent;
+  fill: var(--bc-color-action);
+}
+
+.ringCardinals {
+  fill: var(--bc-color-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-bold);
+  letter-spacing: 0.04em;
+  text-anchor: middle;
+}
+
+.ringCardinals text {
+  dominant-baseline: middle;
 }
 
 .ringContent {
@@ -127,28 +255,25 @@
   text-align: center;
 }
 
-.ringValue {
-  font-size: clamp(2.45rem, 11vw, 3.25rem);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--bc-font-weight-bold);
-  letter-spacing: -0.045em;
-  line-height: 0.9;
+.ringBalloon {
+  margin-bottom: 4px;
+  color: var(--bc-color-text-muted);
+  opacity: 0.62;
 }
 
-.ringUnit {
-  margin-top: var(--bc-space-1);
-  color: var(--bc-color-text-secondary);
-  font-size: 0.72rem;
+.ringValue {
+  font-size: clamp(2.6rem, 12vw, 3.7rem);
+  font-variant-numeric: tabular-nums;
   font-weight: var(--bc-font-weight-semibold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
 }
 
 .ringStats {
   display: flex;
   align-items: center;
   gap: var(--bc-space-1);
-  margin-top: var(--bc-space-2);
+  margin-top: 10px;
   color: var(--bc-color-text-muted);
   font-size: 0.65rem;
   font-weight: var(--bc-font-weight-semibold);
@@ -168,7 +293,7 @@
 
 .card {
   min-width: 0;
-  padding: var(--bc-space-3);
+  padding: 10px var(--bc-space-3);
   border-radius: var(--bc-radius-control);
   border-color: rgb(59 88 120 / 74%);
   box-shadow: 0 4px 12px rgb(1 7 16 / 9%);
@@ -178,7 +303,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: var(--bc-space-2);
+  margin-bottom: 7px;
   color: var(--bc-color-text-secondary);
   font-size: 0.7rem;
   font-weight: var(--bc-font-weight-semibold);
@@ -191,6 +316,18 @@
   color: var(--bc-color-action);
 }
 
+.unavailableValue,
+.unavailableCard {
+  color: var(--bc-color-text-muted);
+  font-size: 0.68rem;
+  font-weight: var(--bc-font-weight-regular);
+  line-height: 1.3;
+}
+
+.unavailableCard {
+  margin-block: auto;
+}
+
 .rows {
   display: grid;
 }
@@ -201,7 +338,7 @@
   justify-content: space-between;
   gap: var(--bc-space-2);
   min-width: 0;
-  padding-block: 5px;
+  padding-block: 4px;
   border-top: 1px solid rgb(38 59 85 / 58%);
 }
 
@@ -254,6 +391,10 @@
   background: var(--bc-color-success);
 }
 
+.statusValue[data-status="attention"] .statusDot {
+  background: #d6c75f;
+}
+
 .statusValue[data-status="warning"] .statusDot,
 .documentStatus[data-status="warning"] .statusDot {
   background: var(--bc-color-warning);
@@ -264,25 +405,224 @@
   background: var(--bc-color-danger);
 }
 
-.gustRow .value {
+.credentialRow {
+  display: grid;
+  gap: 3px;
+  padding-block: 6px;
+  border-top: 1px solid rgb(38 59 85 / 58%);
+}
+
+.credentialRow:first-child {
+  padding-top: 1px;
+  border-top: 0;
+}
+
+.credentialLabel {
+  color: var(--bc-color-text-muted);
+  font-size: 0.65rem;
+  line-height: 1.1;
+}
+
+.credentialRemaining {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.15;
+}
+
+.credentialDueDate {
+  color: var(--bc-color-text-muted);
+  font-size: 0.61rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.conditionDirection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bc-space-2);
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgb(38 59 85 / 58%);
+}
+
+.conditionDirection > span,
+.conditionMetrics span,
+.sunEvent span {
+  color: var(--bc-color-text-muted);
+  font-size: 0.6rem;
+  line-height: 1.1;
+}
+
+.conditionDirection strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-semibold);
+}
+
+.conditionDirection svg {
+  color: var(--bc-color-action);
+}
+
+.conditionMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  padding-block: 7px;
+  border-bottom: 1px solid rgb(38 59 85 / 58%);
+}
+
+.conditionMetrics div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.conditionMetrics strong {
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sunEvent {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bc-space-2);
+  padding-top: 7px;
+}
+
+.sunEvent strong {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-semibold);
+}
+
+.windGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.windReading {
+  display: grid;
+  min-width: 0;
+  padding-right: 6px;
+  border-right: 1px solid rgb(38 59 85 / 58%);
+}
+
+.windReading:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.windDirection {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--bc-color-text-secondary);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1;
+}
+
+.windDirection svg {
+  color: var(--bc-color-action);
+}
+
+.windLabel {
+  margin-top: 4px;
+  color: var(--bc-color-text-muted);
+  font-size: 0.61rem;
+  line-height: 1.1;
+}
+
+.windValue {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gustReading .windValue {
   color: var(--bc-color-thermal-strong);
-  font-size: 0.81rem;
+  font-size: 0.8rem;
+}
+
+.conditionFooter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(38 59 85 / 58%);
+}
+
+.conditionFooter div {
+  display: grid;
+  min-width: 0;
+}
+
+.conditionFooter span {
+  overflow: hidden;
+  color: var(--bc-color-text-muted);
+  font-size: 0.59rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conditionFooter strong {
+  margin-top: 2px;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 
 .cta {
-  min-height: 50px;
-  border: 1px solid rgb(120 175 224 / 36%);
-  box-shadow: 0 6px 16px rgb(1 7 16 / 14%);
+  min-height: 52px;
+  border: 1px solid rgb(158 200 236 / 34%);
+  background: var(--bc-color-navigation);
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 7px 16px rgb(1 7 16 / 17%),
+    inset 0 1px 0 rgb(255 255 255 / 22%),
+    inset 0 -1px 0 rgb(3 10 19 / 16%);
 }
 
 .cta svg {
   flex: none;
+  transform: translateY(-0.5px);
+}
+
+.cta:hover {
+  box-shadow:
+    0 8px 18px rgb(1 7 16 / 18%),
+    inset 0 1px 0 rgb(255 255 255 / 24%);
+}
+
+.cta:active {
+  box-shadow:
+    0 3px 8px rgb(1 7 16 / 15%),
+    inset 0 1px 2px rgb(3 10 19 / 12%);
 }
 
 .summaryCard {
   display: grid;
-  align-content: start;
-  min-height: 132px;
+  grid-template-rows: auto 1fr auto;
+  align-content: stretch;
+  min-height: 142px;
   height: 100%;
 }
 
@@ -317,7 +657,7 @@
 .routeThumbnail {
   overflow: hidden;
   height: 48px;
-  margin: -2px 0 var(--bc-space-2);
+  margin: -1px 0 7px;
   border: 1px solid rgb(59 88 120 / 64%);
   border-radius: 11px;
   background: var(--bc-color-canvas-elevated);
@@ -381,6 +721,61 @@
   min-width: 0;
 }
 
+.lastFlightDetails {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.lastFlightDetails div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.lastFlightDetails span {
+  color: var(--bc-color-text-muted);
+  font-size: 0.59rem;
+  line-height: 1.1;
+}
+
+.lastFlightDetails strong {
+  overflow: hidden;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardAction {
+  align-self: end;
+  margin-top: 7px;
+  color: var(--bc-color-action);
+  font-size: 0.66rem;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.15;
+}
+
+.activeBalloon {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.activeBalloon strong {
+  font-size: 0.96rem;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.15;
+}
+
+.activeBalloon span {
+  color: var(--bc-color-text-muted);
+  font-size: 0.66rem;
+  line-height: 1.15;
+}
+
 .routeLabel,
 .balloonModel {
   overflow: hidden;
@@ -396,7 +791,7 @@
   display: flex;
   align-items: center;
   gap: var(--bc-space-1);
-  margin-top: 5px;
+  margin-top: 4px;
   color: var(--bc-color-text-secondary);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
@@ -421,8 +816,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: var(--bc-space-3);
-  padding-block: var(--bc-space-2);
+  margin-top: 9px;
+  padding-block: 7px;
   border-block: 1px solid rgb(38 59 85 / 58%);
   color: var(--bc-color-text-secondary);
   font-size: 0.68rem;
@@ -434,7 +829,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--bc-space-2);
-  margin-top: var(--bc-space-2);
+  margin-top: 6px;
   color: var(--bc-color-text-muted);
   font-size: 0.64rem;
 }
@@ -457,16 +852,36 @@
   }
 
   .layout {
-    grid-template-rows: auto minmax(122px, 1fr) auto auto auto;
-    gap: var(--bc-space-1);
+    grid-template-rows: repeat(5, auto);
+    gap: 4px;
   }
 
   .ringInstrument {
-    width: 138px;
+    width: min(76vw, 280px);
+    height: min(66vw, 240px);
+  }
+
+  .hero {
+    margin-top: -6px;
+    margin-bottom: 4px;
+  }
+
+  .ringDial {
+    width: min(62vw, 226px);
+    height: min(62vw, 226px);
+  }
+
+  .ringValue {
+    font-size: clamp(2rem, 10vw, 2.6rem);
+  }
+
+  .ringStats {
+    margin-top: 5px;
+    font-size: 0.58rem;
   }
 
   .card {
-    padding: 9px var(--bc-space-3);
+    padding: 8px var(--bc-space-3);
   }
 
   .cardTitle {
@@ -477,8 +892,12 @@
     padding-block: 3px;
   }
 
+  .credentialRow {
+    padding-block: 4px;
+  }
+
   .summaryCard {
-    min-height: 112px;
+    min-height: 120px;
   }
 
   .routeThumbnail {

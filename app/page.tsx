@@ -26,7 +26,7 @@ export default function CockpitPage() {
             />
             <span>Balloon Companion</span>
           </div>
-          <h1 className={styles.welcome}>Bonjour Aurélien</h1>
+          <h1 className={styles.welcome}>Bonjour Aurélien 👋</h1>
         </header>
 
         <HeroRing data={MOCK_COCKPIT_DATA.hero} />
@@ -40,10 +40,10 @@ export default function CockpitPage() {
           className={styles.cta}
           href="/prepare"
           fullWidth
-          aria-label="Préparer le vol"
+          aria-label="Préparer mon vol"
         >
           <ClipboardCheck size={19} aria-hidden="true" />
-          Préparer le vol
+          Préparer mon vol
         </Button>
 
         <div className={styles.pair}>

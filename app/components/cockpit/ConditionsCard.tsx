@@ -1,4 +1,7 @@
-import { CloudSun } from "lucide-react";
+"use client";
+
+import { ArrowUp, CloudSun } from "lucide-react";
+import { useSyncExternalStore } from "react";
 import { Card } from "../../design-system";
 import type { ConditionsData } from "./types";
 import styles from "./Cockpit.module.css";
@@ -7,13 +10,26 @@ type ConditionsCardProps = {
   data: ConditionsData;
 };
 
+function timeToMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function subscribeToMinute(callback: () => void) {
+  const interval = window.setInterval(callback, 60_000);
+  return () => window.clearInterval(interval);
+}
+
 export default function ConditionsCard({ data }: ConditionsCardProps) {
-  const rows = [
-    ["Vent moyen", data.meanWind],
-    ["Rafales", data.gusts],
-    ["Lever soleil", data.sunrise],
-    [data.modelName, data.modelTime],
-  ] as const;
+  const isSunrise = useSyncExternalStore(
+    subscribeToMinute,
+    () => {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      return currentMinutes < timeToMinutes(data.sunrise);
+    },
+    () => false,
+  );
 
   return (
     <Card className={styles.card}>
@@ -21,16 +37,37 @@ export default function ConditionsCard({ data }: ConditionsCardProps) {
         <CloudSun size={15} aria-hidden="true" />
         Conditions
       </h2>
-      <div className={styles.rows}>
-        {rows.map(([label, value], index) => (
-          <div
-            className={`${styles.row} ${index === 1 ? styles.gustRow : ""}`}
-            key={label}
-          >
-            <span className={styles.label}>{label}</span>
-            <strong className={styles.value}>{value}</strong>
-          </div>
-        ))}
+
+      <div className={styles.conditionDirection}>
+        <span>Direction du vent</span>
+        <strong>
+          <ArrowUp
+            size={18}
+            style={{ transform: `rotate(${data.windDirectionDeg}deg)` }}
+            aria-hidden="true"
+          />
+          {data.windDirectionDeg}°
+        </strong>
+      </div>
+
+      <div className={styles.conditionMetrics}>
+        <div>
+          <span>Vent</span>
+          <strong>{data.wind}</strong>
+        </div>
+        <div>
+          <span>Rafales</span>
+          <strong>{data.gusts}</strong>
+        </div>
+        <div>
+          <span>Température</span>
+          <strong>{data.temperature}</strong>
+        </div>
+      </div>
+
+      <div className={styles.sunEvent}>
+        <span>{isSunrise ? "Lever" : "Coucher"}</span>
+        <strong>{isSunrise ? data.sunrise : data.sunset}</strong>
       </div>
     </Card>
   );
