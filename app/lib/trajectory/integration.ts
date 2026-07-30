@@ -158,6 +158,7 @@ export type TrajectoryFormState = {
   climbRateMps: string;
   descentRateMps: string;
   balloonName: string;
+  passengerWeightKg: string;
 };
 
 export type TrajectoryTimeMarker = {

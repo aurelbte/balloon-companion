@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, LocateFixed, MapPin, Search, X } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  LocateFixed,
+  MapPin,
+  Search,
+  Timer,
+  X,
+} from "lucide-react";
 import NavigationBar from "../components/NavigationBar";
 import {
   getFlightPreparation,
@@ -11,9 +21,7 @@ import {
 } from "../lib/flightStorage";
 import {
   combineLocalDateAndTime,
-  ALTITUDE_OPTIONS,
   DEFAULT_ALTITUDE_OPTIONS,
-  altitudeLabel,
   durationMinutesToSeconds,
   optionalVerticalRate,
   WEATHER_MODEL_REGISTRY,
@@ -54,6 +62,7 @@ function initialForm(): TrajectoryFormState {
     climbRateMps: "0",
     descentRateMps: "0",
     balloonName: "",
+    passengerWeightKg: "",
   };
 }
 
@@ -63,10 +72,31 @@ function parseNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function displayRate(value: string): string {
-  return Number(value).toLocaleString("fr-FR", {
-    maximumFractionDigits: 1,
-  });
+function displayPreparationDate(value: string): string {
+  if (!value) return "Aujourd’hui";
+  const today = new Date();
+  const parsed = new Date(`${value}T12:00:00`);
+  if (
+    parsed.getFullYear() === today.getFullYear() &&
+    parsed.getMonth() === today.getMonth() &&
+    parsed.getDate() === today.getDate()
+  ) {
+    return "Aujourd’hui";
+  }
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "short",
+  }).format(parsed);
+}
+
+function displayDuration(value: string): string {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return "—";
+  const hours = Math.floor(minutes / 60);
+  const remainder = Math.round(minutes % 60);
+  return hours > 0
+    ? `${hours}h${String(remainder).padStart(2, "0")}`
+    : `${remainder} min`;
 }
 
 export default function PreparePage() {
@@ -119,6 +149,10 @@ export default function PreparePage() {
           climbRateMps: String(stored.climbRateMps ?? 0),
           descentRateMps: String(stored.descentRateMps ?? 0),
           balloonName: stored.balloonName ?? "",
+          passengerWeightKg:
+            stored.passengerWeightKg === undefined
+              ? ""
+              : String(stored.passengerWeightKg),
         });
       } else {
         const now = new Date();
@@ -145,6 +179,7 @@ export default function PreparePage() {
     const altitude = parseNumber(form.targetAltitudeAmslM);
     const climbRate = parseNumber(form.climbRateMps);
     const descentRate = parseNumber(form.descentRateMps);
+    const passengerWeight = parseNumber(form.passengerWeightKg);
     const timer = window.setTimeout(() => {
       saveFlightPreparation({
         storageVersion: PREPARATION_STORAGE_VERSION,
@@ -177,6 +212,9 @@ export default function PreparePage() {
           : {}),
         ...(form.balloonName.trim()
           ? { balloonName: form.balloonName.trim() }
+          : {}),
+        ...(passengerWeight !== null && passengerWeight >= 0
+          ? { passengerWeightKg: passengerWeight }
           : {}),
         createdAt: previous?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
@@ -323,6 +361,18 @@ export default function PreparePage() {
     setSubmitting(true);
     setError(null);
     try {
+      const passengerWeight = parseNumber(form.passengerWeightKg);
+      const storedPreparation = getFlightPreparation();
+      if (storedPreparation) {
+        saveFlightPreparation({
+          ...storedPreparation,
+          passengerWeightKg:
+            passengerWeight !== null && passengerWeight >= 0
+              ? passengerWeight
+              : undefined,
+          updatedAt: Date.now(),
+        });
+      }
       if (!saveTrajectoryAnalysisRequest(request)) {
         setError("Les paramètres ne peuvent pas être ouverts sur la carte.");
         return;
@@ -339,300 +389,268 @@ export default function PreparePage() {
   };
 
   return (
-    <main className="h-dvh overflow-hidden px-3 pb-[calc(76px+env(safe-area-inset-bottom))] pt-[max(8px,env(safe-area-inset-top))]">
-      <div className="relative mx-auto flex h-full w-full max-w-md flex-col gap-1.5">
-        <header className="flex h-8 shrink-0 items-baseline gap-2">
+    <main className="min-h-dvh pb-[calc(92px+env(safe-area-inset-bottom))] pt-[max(18px,env(safe-area-inset-top))]">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+        <header className="mb-6">
           <p
-            className="text-[10px] font-black uppercase tracking-[0.18em]"
+            className="mb-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
             style={{ color: "var(--bc-accent)" }}
           >
             Prépa
           </p>
-          <h1 className="text-xl font-black tracking-tight">Projection</h1>
+          <h1 className="text-[clamp(1.75rem,7vw,2.5rem)] font-semibold tracking-[-0.035em]">
+            Préparation du vol
+          </h1>
+          <p
+            className="mt-2 max-w-lg text-sm leading-relaxed"
+            style={{ color: "var(--bc-color-text-secondary)" }}
+          >
+            Définissez le contexte, puis ouvrez l’analyse des trajectoires.
+          </p>
         </header>
 
         <section
-          className="relative shrink-0 rounded-xl border p-2"
+          className="relative rounded-[28px] border p-4 sm:p-5"
           style={{
-            background: "var(--bc-surface)",
+            background:
+              "linear-gradient(145deg, var(--bc-color-surface), var(--bc-color-canvas-elevated))",
             borderColor: "var(--bc-border)",
+            boxShadow: "var(--bc-shadow-panel)",
           }}
+          aria-labelledby="flight-context-title"
         >
-          <div className="flex gap-1.5">
-            <input
-              value={form.launchSearch}
-              onChange={(event) => {
-                update("launchSearch", event.target.value);
-                update("launchSite", null);
-                setSuggestions([]);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void searchLaunchSite();
-              }}
-              className="h-11 min-w-0 flex-1 truncate rounded-lg border px-3 text-sm font-bold outline-none focus:border-[var(--bc-accent)]"
-              placeholder="Point de départ"
-              aria-label="Rechercher un point de départ"
-            />
-            <button
-              type="button"
-              onClick={() => void searchLaunchSite()}
-              disabled={searching}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
-              style={{
-                background: "var(--bc-accent)",
-                color: "var(--bc-accent-foreground)",
-              }}
-              aria-label="Rechercher le lieu"
-            >
-              <Search size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={useCurrentPosition}
-              disabled={locating}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border"
-              style={{ borderColor: "var(--bc-border)" }}
-              aria-label="Utiliser ma position"
-            >
-              {form.launchSite ? (
-                <Check size={19} style={{ color: "var(--bc-success)" }} />
-              ) : (
-                <LocateFixed size={19} />
-              )}
-            </button>
-          </div>
-          {suggestions.length > 0 && (
-            <div
-              className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border p-1.5 shadow-2xl"
-              style={{
-                background: "var(--bc-background-elevated)",
-                borderColor: "var(--bc-border)",
-              }}
-            >
-              {suggestions.map((suggestion) => (
-                <button
-                  key={suggestion.id}
-                  type="button"
-                  onClick={() => {
-                    setForm((current) => ({
-                      ...current,
-                      launchSite: suggestion,
-                      launchSearch: suggestion.name,
-                    }));
-                    setSuggestions([]);
-                  }}
-                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold"
-                >
-                  <MapPin size={15} className="shrink-0" />
-                  <span className="line-clamp-2">{suggestion.name}</span>
-                </button>
-              ))}
-              <p
-                className="px-2 py-1 text-[9px]"
-                style={{ color: "var(--bc-text-muted)" }}
-              >
-                © OpenStreetMap contributors
-              </p>
-            </div>
-          )}
-        </section>
+          <h2
+            id="flight-context-title"
+            className="mb-4 text-xs font-semibold uppercase tracking-[0.16em]"
+            style={{ color: "var(--bc-color-text-muted)" }}
+          >
+            Contexte du vol
+          </h2>
 
-        <section className="grid shrink-0 grid-cols-2 gap-1.5">
-          <label className="text-[10px] font-black uppercase">
-            Date
-            <input
-              type="date"
-              value={form.date}
-              onChange={(event) => update("date", event.target.value)}
-              className="mt-0.5 h-10 w-full rounded-lg border px-2 text-sm font-bold"
-            />
-          </label>
-          <label className="text-[10px] font-black uppercase">
-            Heure
-            <input
-              type="time"
-              value={form.time}
-              onChange={(event) => update("time", event.target.value)}
-              className="mt-0.5 h-10 w-full rounded-lg border px-2 text-sm font-bold"
-            />
-          </label>
-        </section>
-
-        <section className="shrink-0">
-          <p className="mb-0.5 text-[10px] font-black uppercase">Durée</p>
-          <div className="grid grid-cols-6 gap-1">
-            {DURATION_PRESETS.map((minutes) => (
-              <button
-                key={minutes}
-                type="button"
-                onClick={() => update("durationMinutes", String(minutes))}
-                className="h-9 rounded-lg border text-[11px] font-black"
+          <div className="relative mb-3">
+            <div className="flex gap-2">
+              <label
+                className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-2xl border px-3"
                 style={{
-                  borderColor:
-                    form.durationMinutes === String(minutes)
-                      ? "var(--bc-accent)"
-                      : "var(--bc-border)",
-                  background:
-                    form.durationMinutes === String(minutes)
-                      ? "rgb(245 158 66 / 14%)"
-                      : "var(--bc-surface)",
+                  background: "rgb(255 255 255 / 3%)",
+                  borderColor: "var(--bc-border)",
                 }}
               >
-                {minutes}
+                <MapPin size={19} style={{ color: "var(--bc-accent)" }} />
+                <span className="min-w-0 flex-1">
+                  <span
+                    className="block text-[10px] font-semibold uppercase tracking-[0.12em]"
+                    style={{ color: "var(--bc-color-text-muted)" }}
+                  >
+                    Terrain
+                  </span>
+                  <input
+                    value={form.launchSearch}
+                    onChange={(event) => {
+                      update("launchSearch", event.target.value);
+                      update("launchSite", null);
+                      setSuggestions([]);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void searchLaunchSite();
+                    }}
+                    className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-base font-semibold outline-none"
+                    placeholder="Bondues"
+                    aria-label="Rechercher un terrain"
+                  />
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => void searchLaunchSite()}
+                disabled={searching}
+                className="flex h-16 w-12 shrink-0 items-center justify-center rounded-2xl border"
+                style={{ borderColor: "var(--bc-border)" }}
+                aria-label="Rechercher le terrain"
+              >
+                <Search size={18} />
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={useCurrentPosition}
+                disabled={locating}
+                className="flex h-16 w-12 shrink-0 items-center justify-center rounded-2xl border"
+                style={{ borderColor: "var(--bc-border)" }}
+                aria-label="Utiliser ma position"
+              >
+                {form.launchSite ? (
+                  <Check size={19} style={{ color: "var(--bc-success)" }} />
+                ) : (
+                  <LocateFixed size={19} />
+                )}
+              </button>
+            </div>
+            {suggestions.length > 0 && (
+              <div
+                className="absolute left-0 right-0 top-full z-50 mt-2 max-h-56 overflow-y-auto rounded-2xl border p-2 shadow-2xl"
+                style={{
+                  background: "var(--bc-background-elevated)",
+                  borderColor: "var(--bc-border)",
+                }}
+              >
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    onClick={() => {
+                      setForm((current) => ({
+                        ...current,
+                        launchSite: suggestion,
+                        launchSearch: suggestion.name,
+                      }));
+                      setSuggestions([]);
+                    }}
+                    className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold"
+                  >
+                    <MapPin size={16} className="shrink-0" />
+                    <span className="line-clamp-2">{suggestion.name}</span>
+                  </button>
+                ))}
+                <p
+                  className="px-3 py-1 text-[10px]"
+                  style={{ color: "var(--bc-color-text-muted)" }}
+                >
+                  © OpenStreetMap contributors
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              {
+                label: "Date",
+                value: displayPreparationDate(form.date),
+                icon: CalendarDays,
+                inputType: "date",
+                inputValue: form.date,
+                onChange: (value: string) => update("date", value),
+              },
+              {
+                label: "Heure",
+                value: form.time || "06:30",
+                icon: Clock3,
+                inputType: "time",
+                inputValue: form.time,
+                onChange: (value: string) => update("time", value),
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <label
+                  key={item.label}
+                  className="relative flex min-h-20 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-3"
+                  style={{
+                    background: "rgb(255 255 255 / 3%)",
+                    borderColor: "var(--bc-border)",
+                  }}
+                >
+                  <Icon size={17} style={{ color: "var(--bc-accent)" }} />
+                  <span>
+                    <span
+                      className="block text-[9px] font-semibold uppercase tracking-[0.12em]"
+                      style={{ color: "var(--bc-color-text-muted)" }}
+                    >
+                      {item.label}
+                    </span>
+                    <span className="block truncate text-sm font-semibold">
+                      {item.value}
+                    </span>
+                  </span>
+                  <input
+                    type={item.inputType}
+                    value={item.inputValue}
+                    onChange={(event) => item.onChange(event.target.value)}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label={item.label}
+                  />
+                </label>
+              );
+            })}
             <button
               type="button"
               onClick={() => {
                 setCustomDuration(form.durationMinutes);
                 setCustomDurationOpen(true);
               }}
-              className="h-9 rounded-lg border text-sm font-black"
+              className="flex min-h-20 flex-col justify-between rounded-2xl border p-3 text-left"
               style={{
+                background: "rgb(255 255 255 / 3%)",
                 borderColor: selectedDurationIsPreset
                   ? "var(--bc-border)"
                   : "var(--bc-accent)",
               }}
-              aria-label="Durée personnalisée"
             >
-              {selectedDurationIsPreset ? "+" : form.durationMinutes}
-            </button>
-          </div>
-        </section>
-
-        <section className="grid shrink-0 grid-cols-[1fr_118px] gap-1.5">
-          <div>
-            <p className="text-[10px] font-black uppercase">Altitudes AMSL</p>
-            <div className="mt-0.5 grid grid-cols-5 gap-1">
-              {ALTITUDE_OPTIONS.map((option) => {
-                const selected = form.selectedAltitudes.includes(option);
-                return (
-                  <button
-                    key={String(option)}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() =>
-                      update(
-                        "selectedAltitudes",
-                        selected
-                          ? form.selectedAltitudes.filter(
-                              (current) => current !== option,
-                            )
-                          : [...form.selectedAltitudes, option],
-                      )
-                    }
-                    className="h-8 rounded-lg border text-[10px] font-black"
-                    style={{
-                      borderColor: selected
-                        ? "var(--bc-accent)"
-                        : "var(--bc-border)",
-                      background: selected
-                        ? "rgb(245 158 66 / 16%)"
-                        : "var(--bc-surface)",
-                    }}
-                  >
-                    {option === "ground" ? "Sol" : option}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-0.5 text-[9px] text-[var(--bc-text-muted)]">
-              Sol = altitude terrain, vent 10 m AGL approximé.
-            </p>
-          </div>
-          <label className="text-[10px] font-black uppercase">
-            Modèle
-            <select
-              value={form.weatherModel}
-              onChange={(event) => update("weatherModel", event.target.value)}
-              className="mt-0.5 h-10 w-full rounded-lg border px-2 text-sm font-bold"
-            >
-              {WEATHER_MODEL_REGISTRY.map((model) => (
-                <option
-                  key={model.id}
-                  value={model.providerModelId}
-                  disabled={!model.supported}
-                >
-                  {model.label}
-                  {model.supported ? "" : " — indisponible"}
-                </option>
-              ))}
-            </select>
-            <span className="mt-1 block">
-              Profil
-              <select
-                value={form.targetAltitudeAmslM}
-                onChange={(event) =>
-                  update("targetAltitudeAmslM", event.target.value)
-                }
-                className="mt-0.5 h-9 w-full rounded-lg border px-1 text-xs font-bold"
-                aria-label="Altitude principale du profil de vol"
-              >
-                <option value="">Aucun</option>
-                {form.selectedAltitudes
-                  .filter(
-                    (option): option is NumericAltitudeOption =>
-                      typeof option === "number",
-                  )
-                  .map((option) => (
-                    <option key={option} value={option}>
-                      {altitudeLabel(option)}
-                    </option>
-                  ))}
-              </select>
-            </span>
-          </label>
-        </section>
-
-        <section
-          className="grid shrink-0 gap-1 rounded-xl border px-2.5 py-1.5"
-          style={{
-            background: "var(--bc-surface)",
-            borderColor: "var(--bc-border)",
-          }}
-        >
-          {[
-            {
-              key: "climbRateMps" as const,
-              label: "Montée",
-              value: form.climbRateMps,
-            },
-            {
-              key: "descentRateMps" as const,
-              label: "Descente",
-              value: form.descentRateMps,
-            },
-          ].map((slider) => (
-            <label key={slider.key} className="block">
-              <span className="flex items-center justify-between text-xs font-black">
-                <span>
-                  {slider.label} — {displayRate(slider.value)} m/s
-                </span>
+              <Timer size={17} style={{ color: "var(--bc-accent)" }} />
+              <span>
                 <span
-                  className="text-[9px]"
-                  style={{ color: "var(--bc-text-muted)" }}
+                  className="block text-[9px] font-semibold uppercase tracking-[0.12em]"
+                  style={{ color: "var(--bc-color-text-muted)" }}
                 >
-                  0 · 7 m/s
+                  Durée
+                </span>
+                <span className="block text-sm font-semibold">
+                  {displayDuration(form.durationMinutes)}
                 </span>
               </span>
+            </button>
+          </div>
+
+          <label
+            className="mt-3 flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-4"
+            style={{
+              background: "rgb(255 255 255 / 3%)",
+              borderColor: "var(--bc-border)",
+            }}
+          >
+            <span>
+              <span
+                className="block text-[10px] font-semibold uppercase tracking-[0.12em]"
+                style={{ color: "var(--bc-color-text-muted)" }}
+              >
+                Poids total embarqué
+              </span>
+              <span
+                className="mt-0.5 block text-xs"
+                style={{ color: "var(--bc-color-text-secondary)" }}
+              >
+                Passagers uniquement
+              </span>
+            </span>
+            <span className="flex shrink-0 items-baseline gap-1">
               <input
-                type="range"
+                type="number"
+                inputMode="decimal"
                 min="0"
-                max="7"
-                step="0.5"
-                value={slider.value}
-                onChange={(event) => update(slider.key, event.target.value)}
-                className="h-7 w-full accent-[var(--bc-accent)]"
-                aria-label={`${slider.label}, de 0 à 7 mètres par seconde`}
+                step="1"
+                value={form.passengerWeightKg}
+                onChange={(event) =>
+                  update("passengerWeightKg", event.target.value)
+                }
+                className="w-20 border-0 bg-transparent p-0 text-right text-xl font-semibold outline-none"
+                placeholder="0"
+                aria-label="Poids total des passagers en kilogrammes"
               />
-            </label>
-          ))}
+              <span
+                className="text-sm"
+                style={{ color: "var(--bc-color-text-muted)" }}
+              >
+                kg
+              </span>
+            </span>
+          </label>
+
         </section>
 
         {error && (
           <p
             role="alert"
-            className="shrink-0 rounded-lg border px-2 py-1 text-[11px] font-bold leading-tight"
+            className="mt-5 rounded-2xl border px-4 py-3 text-sm font-semibold"
             style={{
               borderColor: "var(--bc-danger)",
               color: "var(--bc-danger)",
@@ -646,21 +664,23 @@ export default function PreparePage() {
           type="button"
           onClick={() => void submitProjection()}
           disabled={submitting}
-          className="mt-auto min-h-12 w-full shrink-0 rounded-xl px-4 text-base font-black disabled:opacity-60"
+          className="mt-5 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-semibold transition-[transform,background-color] active:scale-[0.99] disabled:opacity-60"
           style={{
             background: "var(--bc-accent)",
             color: "var(--bc-accent-foreground)",
             boxShadow: "var(--bc-shadow-action)",
           }}
         >
-          {submitting ? "Calcul de la projection…" : "Voir la projection"}
+          {submitting ? "Ouverture de l’analyse…" : "Ouvrir l’analyse"}
+          {!submitting && <ChevronRight size={19} />}
         </button>
         <p
-          className="shrink-0 text-center text-[9px] leading-3"
-          style={{ color: "var(--bc-text-muted)" }}
+          className="mt-2 text-center text-[11px]"
+          style={{ color: "var(--bc-color-text-muted)" }}
         >
           Projection indicative — la décision reste celle du pilote.
         </p>
+
       </div>
 
       <NavigationBar activeItem="Prépa" />

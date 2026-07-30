@@ -38,6 +38,8 @@ export interface StoredFlightPreparationV2 {
    */
   descentRateMps?: number;
   balloonName?: string;
+  /** Poids total déclaré des passagers, sans équipement ni aéronef. */
+  passengerWeightKg?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -188,6 +190,10 @@ function parseV2Preparation(
     ...(typeof value.balloonName === "string"
       ? { balloonName: value.balloonName }
       : {}),
+    ...(isFiniteNumber(value.passengerWeightKg) &&
+    value.passengerWeightKg >= 0
+      ? { passengerWeightKg: value.passengerWeightKg }
+      : {}),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   };
@@ -296,6 +302,9 @@ export function saveCurrentFlight(flight: Flight): boolean {
       ? { descentRateMps: existing.descentRateMps }
       : {}),
     ...(flight.ballon.trim() ? { balloonName: flight.ballon.trim() } : {}),
+    ...(existing?.passengerWeightKg !== undefined
+      ? { passengerWeightKg: existing.passengerWeightKg }
+      : {}),
     createdAt: existing?.createdAt ?? flight.createdAt ?? now,
     updatedAt: now,
   });
