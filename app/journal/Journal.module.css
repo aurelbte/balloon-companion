@@ -1,0 +1,395 @@
+.screen {
+  min-height: 100dvh;
+  padding: max(18px, env(safe-area-inset-top)) 16px
+    calc(92px + env(safe-area-inset-bottom));
+}
+
+.layout {
+  width: min(100%, 760px);
+  margin-inline: auto;
+}
+
+.eyebrow {
+  color: var(--bc-accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin-top: 3px;
+  font-size: clamp(1.8rem, 7vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.subtitle {
+  margin-top: 5px;
+  color: var(--bc-text-secondary);
+  font-size: 0.82rem;
+}
+
+.flightList {
+  display: grid;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.flightCard {
+  display: grid;
+  min-height: 104px;
+  grid-template-columns: minmax(0, 1fr) 128px;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px 12px 14px;
+  overflow: hidden;
+  border: 1px solid var(--bc-border);
+  border-radius: 22px;
+  background: linear-gradient(145deg, var(--bc-surface), var(--bc-color-canvas-elevated));
+  color: var(--bc-text-primary);
+  text-decoration: none;
+  box-shadow: var(--bc-shadow-xs);
+  transition: transform var(--bc-duration-fast) var(--bc-easing-standard), border-color var(--bc-duration-fast) var(--bc-easing-standard);
+}
+
+.swipeShell {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bc-danger) 35%, var(--bc-color-night));
+}
+
+.swipeSurface {
+  position: relative;
+  z-index: 1;
+  background: var(--bc-color-canvas);
+  touch-action: pan-y;
+  transition: transform 180ms var(--bc-easing-standard);
+  will-change: transform;
+}
+
+.swipeSurface:active {
+  transition-duration: 0ms;
+}
+
+.deleteAction {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: grid;
+  width: 82px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #f3d4d5;
+}
+
+.flightCard:active {
+  transform: scale(0.988);
+}
+
+.emptyState {
+  padding: 30px 16px;
+  border: 1px solid var(--bc-border);
+  border-radius: 22px;
+  color: var(--bc-text-secondary);
+  text-align: center;
+}
+
+.toast {
+  position: fixed;
+  z-index: var(--bc-z-toast);
+  bottom: calc(94px + env(safe-area-inset-bottom));
+  left: 50%;
+  padding: 9px 14px;
+  border: 1px solid var(--bc-border-glass);
+  border-radius: 999px;
+  background: var(--bc-color-surface-floating);
+  color: var(--bc-text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 6px);
+  transition: opacity 150ms var(--bc-easing-standard), transform 150ms var(--bc-easing-standard);
+}
+
+.toastVisible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.flightDate {
+  color: var(--bc-text-muted);
+  font-size: 0.67rem;
+}
+
+.flightRoute {
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: clamp(0.9rem, 4vw, 1.05rem);
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flightMetrics {
+  display: flex;
+  gap: 10px;
+  margin-top: 9px;
+  color: var(--bc-text-secondary);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.thumbnail {
+  width: 100%;
+  height: 72px;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 3%);
+}
+
+.backLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--bc-accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.detailHeader {
+  margin: 5px 0 14px;
+}
+
+.routeTitle {
+  font-size: clamp(1.65rem, 7vw, 2.4rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+
+.dateLine {
+  margin-top: 5px;
+  color: var(--bc-text-secondary);
+  font-size: 0.8rem;
+}
+
+.primaryMetrics {
+  display: flex;
+  gap: 20px;
+  margin-top: 12px;
+}
+
+.primaryMetrics span,
+.statGrid span {
+  display: block;
+  color: var(--bc-text-muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.primaryMetrics strong {
+  display: block;
+  margin-top: 1px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.moduleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.moduleCard {
+  min-height: 128px;
+  padding: 14px;
+  border: 1px solid var(--bc-border);
+  border-radius: 22px;
+  background: var(--bc-surface);
+  color: var(--bc-text-primary);
+  text-decoration: none;
+  box-shadow: var(--bc-shadow-xs);
+}
+
+.moduleLink {
+  cursor: pointer;
+  transition: background-color 150ms var(--bc-easing-standard), border-color 150ms var(--bc-easing-standard), transform 150ms var(--bc-easing-standard);
+}
+
+.moduleLink:active {
+  border-color: var(--bc-border-strong);
+  background: var(--bc-surface-hover);
+  transform: scale(0.987);
+}
+
+.moduleAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--bc-accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.moduleTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--bc-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.moduleValue {
+  margin-top: 18px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.moduleHint {
+  margin-top: 5px;
+  color: var(--bc-text-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 8px;
+  margin-top: 15px;
+}
+
+.statGrid strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.graphs {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: 190px 28px;
+  margin-top: 14px;
+}
+
+.chartYAxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1px 7px 0 0;
+  color: var(--bc-text-muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.chartPlot {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chartPlot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.chartXAxis {
+  position: relative;
+  grid-column: 2;
+  color: var(--bc-text-muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.chartXAxis span {
+  position: absolute;
+  top: 9px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.chartXAxis span:first-child {
+  transform: none;
+}
+
+.chartXAxis span:last-child {
+  transform: translateX(-100%);
+}
+
+.statisticsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.statisticCard {
+  min-height: 90px;
+  padding: 13px;
+  border: 1px solid var(--bc-border);
+  border-radius: 20px;
+  background: var(--bc-surface);
+  box-shadow: var(--bc-shadow-xs);
+}
+
+.statisticLabel {
+  color: var(--bc-text-muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.statisticValue {
+  margin-top: 9px;
+  font-size: clamp(0.96rem, 4vw, 1.15rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+@media (min-width: 760px) {
+  .flightList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .moduleGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 370px) {
+  .flightCard {
+    grid-template-columns: minmax(0, 1fr) 104px;
+  }
+
+  .moduleCard {
+    min-height: 118px;
+    padding: 12px;
+  }
+}

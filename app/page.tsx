@@ -49,7 +49,7 @@ export default function CockpitPage() {
         <div className={styles.pair}>
           <LastFlightCard
             data={MOCK_COCKPIT_DATA.lastFlight}
-            href="/flights"
+            href="/journal/lfqo-merignies"
           />
           <MyBalloonsCard
             balloons={MOCK_COCKPIT_DATA.balloons}

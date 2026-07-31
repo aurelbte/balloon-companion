@@ -9,7 +9,7 @@ export const MAIN_NAVIGATION_ITEMS = [
   { label: "Cockpit", href: "/", icon: "cockpit" },
   { label: "Prépa", href: "/prepare", icon: "prepare" },
   { label: "Vol", href: "/flight", icon: "flight" },
-  { label: "Journal", href: "/flights", icon: "journal" },
+  { label: "Journal", href: "/journal", icon: "journal" },
   { label: "Plus", href: "#plus", icon: "more", disabled: true },
 ] as const satisfies readonly MainNavigationItem[];
 

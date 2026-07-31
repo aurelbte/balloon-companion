@@ -27,6 +27,10 @@ import {
   CARTOGRAPHY_PALETTE,
   TIME_MARKER_STYLE,
 } from "../lib/cartographyStyle";
+import {
+  REFERENCE_ORIENTATION,
+  TWO_DIMENSIONAL_MAP_OPTIONS,
+} from "../lib/mapInteraction";
 import type {
   AnalysisLayerSettings,
   WeatherAnalysisTrace,
@@ -298,9 +302,18 @@ export default function PreparationMap({
       style: { version: 8, sources, layers: styleLayers },
       center: [initialLongitude, initialLatitude],
       zoom: 11,
+      ...TWO_DIMENSIONAL_MAP_OPTIONS,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+    map.addControl(
+      new maplibregl.NavigationControl({
+        showCompass: true,
+        showZoom: false,
+        visualizePitch: false,
+      }),
+      "bottom-right",
+    );
     const notify = () => {
       const center = map.getCenter();
       const bounds = map.getBounds();
@@ -642,6 +655,9 @@ export default function PreparationMap({
         map.fitBounds(bounds, {
           padding: { top: 64, right: 76, bottom: 104, left: 106 },
           maxZoom: 14,
+          ...(recenterToken
+            ? REFERENCE_ORIENTATION
+            : { bearing: map.getBearing(), pitch: 0 }),
           duration:
             recenterToken || hasCompletedInitialFit.current ? 320 : 0,
         });

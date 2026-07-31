@@ -8,10 +8,10 @@ import {
 import { createRecordedFlight } from "./recordedFlight.ts";
 import { MemoryRecordedFlightStorage } from "./recordedFlightStorage.ts";
 
-test("Journal construit l’URL /flights", () => {
+test("Journal construit l’URL /journal", () => {
   assert.equal(
     MAIN_NAVIGATION_ITEMS.find((item) => item.label === "Journal")?.href,
-    "/flights",
+    "/journal",
   );
 });
 

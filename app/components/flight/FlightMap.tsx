@@ -47,6 +47,10 @@ import {
   PLANNED_TRAJECTORY_STYLE,
   WEATHER_PROJECTION_CARTOGRAPHY_STYLE,
 } from "../../lib/cartographyStyle";
+import {
+  REFERENCE_ORIENTATION,
+  TWO_DIMENSIONAL_MAP_OPTIONS,
+} from "../../lib/mapInteraction";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
@@ -463,8 +467,7 @@ export default function FlightMap({
 },
       center: [3.058, 50.631],
       zoom: 12,
-      pitch: 0,
-      bearing: 0,
+      ...TWO_DIMENSIONAL_MAP_OPTIONS,
       attributionControl: {
         compact: true,
       },
@@ -475,6 +478,7 @@ export default function FlightMap({
       new maplibregl.NavigationControl({
         showCompass: true,
         showZoom: true,
+        visualizePitch: false,
       }),
       "bottom-right"
     );
@@ -1163,17 +1167,22 @@ export default function FlightMap({
   }, [currentPosition]);
 
   useEffect(() => {
-    if (
-      !map.current ||
-      !currentPosition ||
-      recenterRequest === lastRecenterRequestRef.current
-    ) {
+    if (!map.current || recenterRequest === lastRecenterRequestRef.current) {
       return;
     }
 
     lastRecenterRequestRef.current = recenterRequest;
+    if (!currentPosition) {
+      map.current.easeTo({ ...REFERENCE_ORIENTATION, duration: 220 });
+      return;
+    }
     followPositionRef.current = true;
-    followMapPosition(map.current, currentPosition, 220);
+    map.current.easeTo({
+      center: [currentPosition.longitude, currentPosition.latitude],
+      offset: getFollowCameraOffset(getMapViewportSize(map.current)),
+      ...REFERENCE_ORIENTATION,
+      duration: 220,
+    });
   }, [currentPosition, recenterRequest]);
 
   useEffect(() => {
