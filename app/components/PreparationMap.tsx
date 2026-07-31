@@ -19,7 +19,7 @@ import type {
   AirspaceFeatureCollection,
   AirspaceGeoJsonProperties,
 } from "../lib/openaip";
-import { buildTrajectoryTimeMarkers } from "../lib/trajectory/mapProjection";
+import { interpolateTrajectoryPoint } from "../lib/trajectory/mapProjection";
 import { MODEL_LINE_STYLES } from "../lib/trajectory/analysisStyles";
 import {
   ANALYSIS_TRAJECTORY_STYLE,
@@ -97,10 +97,26 @@ function timeMarkerCollection(
     type: "FeatureCollection",
     features: traces
       .filter((trace) => visible.has(trace.traceId))
-      .flatMap((trace) =>
-        buildTrajectoryTimeMarkers(trace.projection)
-          .filter((marker) => [15, 30, 45, 60].includes(marker.minutes))
-          .map((marker) => ({
+      .flatMap((trace) => {
+        const markers = [];
+        for (
+          let minutes = 15;
+          minutes * 60 < trace.projection.durationSeconds;
+          minutes += 15
+        ) {
+          const point = interpolateTrajectoryPoint(
+            trace.projection.points,
+            minutes * 60,
+          );
+          if (point) {
+            markers.push({
+              minutes,
+              latitude: point.latitude,
+              longitude: point.longitude,
+            });
+          }
+        }
+        return markers.map((marker) => ({
             type: "Feature" as const,
             properties: {
               traceId: trace.traceId,
@@ -111,8 +127,8 @@ function timeMarkerCollection(
               type: "Point" as const,
               coordinates: [marker.longitude, marker.latitude],
             },
-          })),
-      ),
+          }));
+      }),
   };
 }
 
@@ -199,6 +215,7 @@ export default function PreparationMap({
 }: PreparationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const hasCompletedInitialFit = useRef(false);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
   const mapPressRef = useRef(onMapPress);
@@ -623,10 +640,12 @@ export default function PreparationMap({
       const bounds = boundsFor(traces, visibleTraceIds);
       if (bounds)
         map.fitBounds(bounds, {
-          padding: { top: 82, right: 70, bottom: 150, left: 70 },
+          padding: { top: 64, right: 76, bottom: 104, left: 106 },
           maxZoom: 14,
-          duration: recenterToken ? 300 : 0,
+          duration:
+            recenterToken || hasCompletedInitialFit.current ? 320 : 0,
         });
+      hasCompletedInitialFit.current = true;
     };
     if (map.loaded()) fit();
     else map.once("load", fit);

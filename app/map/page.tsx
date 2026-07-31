@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Download,
-  LocateFixed,
-  Maximize2,
+  Layers3,
+  Navigation,
+  PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
 import PreparationMap from "../components/PreparationMap";
@@ -26,7 +27,6 @@ import { getFlightPreparation } from "../lib/flightStorage";
 import {
   ALTITUDE_OPTIONS,
   altitudeKey,
-  altitudeLabel,
   type AltitudeOption,
   type MultiAltitudeProjectionApiResponse,
   type MultiAltitudeProjectionRequest,
@@ -49,14 +49,14 @@ import {
   type WeatherAnalysisState,
   type WeatherAnalysisTrace,
 } from "../lib/trajectory/weatherAnalysisStorage";
-import {
-  WEATHER_MODEL_REGISTRY,
-  type WeatherModelDefinition,
-} from "../lib/weather/models";
+import { WEATHER_MODEL_REGISTRY } from "../lib/weather/models";
 import type { BaseMap } from "../types/flight";
 
 const MAX_MODELS = 2;
 const MAX_ALTITUDES = 4;
+const ANALYSIS_ALTITUDE_OPTIONS = ALTITUDE_OPTIONS.filter(
+  (altitude) => altitude !== 2500,
+);
 const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = {
   ...DEFAULT_ANALYSIS_LAYERS,
   trajectories: true,
@@ -66,26 +66,19 @@ const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = {
   arrivalMarkers: true,
 };
 
-function analysisSignature(models: readonly string[], altitudes: readonly AltitudeOption[]) {
-  return `${[...models].sort().join(",")}|${altitudes.join(",")}`;
-}
-
-function ModelLinePreview({ model }: { model: WeatherModelDefinition }) {
-  const style = MODEL_LINE_STYLES[model.id];
-  return (
-    <svg aria-hidden="true" width="48" height="8" viewBox="0 0 48 8">
-      <line
-        x1="1"
-        y1="4"
-        x2="47"
-        y2="4"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeDasharray={style.dasharray.join(" ")}
-      />
-    </svg>
-  );
+function analysisSignature(
+  models: readonly string[],
+  altitudes: readonly AltitudeOption[],
+  request: MultiAltitudeProjectionRequest,
+) {
+  return [
+    [...models].sort().join(","),
+    altitudes.join(","),
+    request.launchSite.latitude,
+    request.launchSite.longitude,
+    request.launchDateTimeIso,
+    request.durationSeconds,
+  ].join("|");
 }
 
 export default function MapPage() {
@@ -108,10 +101,7 @@ export default function MapPage() {
   const [selectorsVisible, setSelectorsVisible] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [recenterToken, setRecenterToken] = useState(0);
-  const [passengerWeightKg, setPassengerWeightKg] = useState<number | null>(
-    null,
-  );
+  const [selectedBalloonId, setSelectedBalloonId] = useState("");
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
@@ -143,7 +133,7 @@ export default function MapPage() {
           : null);
       const cached = loadWeatherAnalysis();
       setConfig(stored);
-      setPassengerWeightKg(preparation?.passengerWeightKg ?? null);
+      setSelectedBalloonId(preparation?.balloonName ?? "");
       if (stored) {
         const defaultModel =
           WEATHER_MODEL_REGISTRY.find(
@@ -153,9 +143,13 @@ export default function MapPage() {
         const models = cached?.selectedModelIds.length
           ? cached.selectedModelIds
           : [defaultModel];
-        const altitudes = cached?.selectedAltitudes.length
-          ? cached.selectedAltitudes.slice(0, MAX_ALTITUDES)
-          : stored.request.altitudesAmslM.slice(0, MAX_ALTITUDES);
+        const altitudes = (
+          cached?.selectedAltitudes.length
+            ? cached.selectedAltitudes
+            : stored.request.altitudesAmslM
+        )
+          .filter((altitude) => altitude !== 2500)
+          .slice(0, MAX_ALTITUDES);
         setSelectedModels(models.slice(0, MAX_MODELS));
         setSelectedAltitudes(altitudes);
         if (cached) {
@@ -170,7 +164,20 @@ export default function MapPage() {
           setFailures(cached.failures);
           setVisibleTraceIds(cached.traces.map((trace) => trace.traceId));
           if (cached.traces.length > 0) {
-            signatureRef.current = analysisSignature(models, altitudes);
+            const cachedDuration =
+              cached.traces[0]?.projection.points.at(-1)?.elapsedSeconds;
+            const cacheMatchesRequest =
+              cached.traces.every(
+                (trace) =>
+                  trace.forecastAtIso === stored.request.launchDateTimeIso,
+              ) && cachedDuration === stored.request.durationSeconds;
+            if (cacheMatchesRequest) {
+              signatureRef.current = analysisSignature(
+                models,
+                altitudes,
+                stored.request,
+              );
+            }
           }
         }
       }
@@ -187,7 +194,11 @@ export default function MapPage() {
       selectedAltitudes.length === 0
     )
       return;
-    const signature = analysisSignature(selectedModels, selectedAltitudes);
+    const signature = analysisSignature(
+      selectedModels,
+      selectedAltitudes,
+      config.request,
+    );
     if (signature === signatureRef.current) return;
     const controller = new AbortController();
     requestAbortRef.current?.abort();
@@ -419,49 +430,43 @@ export default function MapPage() {
 
   const baseMap: BaseMap =
     layers.satellite && satelliteAvailable ? "satellite" : "plan";
-  const highestSelectedAltitude = selectedAltitudes.reduce<number | null>(
-    (highest, altitude) =>
-      typeof altitude === "number" && (highest === null || altitude > highest)
-        ? altitude
-        : highest,
-    null,
-  );
+  const launchSiteShortName =
+    config.request.launchSite.name.split(",")[0]?.trim() ||
+    config.request.launchSite.name;
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-[var(--bc-color-canvas)]">
       <header
-        className="sticky top-0 z-40 border-b px-3 pb-3 pt-[max(10px,env(safe-area-inset-top))]"
+        className="sticky top-0 z-40 border-b px-3 pb-1 pt-[max(4px,env(safe-area-inset-top))]"
         style={{
           background: "var(--bc-color-canvas-elevated)",
           borderColor: "var(--bc-border)",
         }}
       >
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
+        <div className="mx-auto flex max-w-3xl items-center gap-2">
           <button
             type="button"
             onClick={() => router.push("/prepare")}
-            className="flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-sm font-semibold"
+            className="flex min-h-9 shrink-0 items-center gap-1 rounded-full px-1.5 text-xs font-semibold"
             style={{ color: "var(--bc-accent)" }}
             aria-label="Revenir à la préparation"
           >
-            <ArrowLeft size={19} />
+            <ArrowLeft size={17} />
             Préparation
           </button>
-          <div className="min-w-0 border-l pl-3" style={{ borderColor: "var(--bc-border)" }}>
-            <p
-              className="text-[9px] font-semibold uppercase tracking-[0.14em]"
-              style={{ color: "var(--bc-color-text-muted)" }}
-            >
-              {config.request.launchSite.name}
-            </p>
-            <h1 className="truncate text-lg font-semibold tracking-tight">
-              Analyse des trajectoires
+          <div
+            className="min-w-0 border-l pl-2.5"
+            style={{ borderColor: "var(--bc-border)" }}
+          >
+            <h1 className="truncate text-sm font-semibold tracking-tight">
+              {launchSiteShortName}
             </h1>
+            <span className="sr-only">Analyse des trajectoires</span>
           </div>
         </div>
       </header>
 
-      <div className="relative h-[clamp(430px,68dvh,720px)]">
+      <div className="relative h-[clamp(460px,74dvh,760px)]">
         {displayedTraces.length > 0 ? (
           <PreparationMap
             traces={displayedTraces}
@@ -470,7 +475,6 @@ export default function MapPage() {
             baseMap={baseMap}
             layers={layers}
             airspaces={airspaceCoverage.airspaces}
-            recenterToken={recenterToken}
             onAirspacesSelected={selectAirspaces}
             onMapPress={handleMapPress}
             onViewportChange={setViewport}
@@ -486,37 +490,41 @@ export default function MapPage() {
           className="absolute left-3 top-3 z-30 rounded-full"
           aria-label={
             selectorsVisible
-              ? "Afficher uniquement la carte"
-              : "Restaurer les sélecteurs"
+              ? "Masquer les sélecteurs latéraux"
+              : "Afficher les sélecteurs latéraux"
           }
           aria-pressed={!selectorsVisible}
         >
           {selectorsVisible ? (
-            <Maximize2 size={21} />
+            <PanelLeftClose size={20} />
           ) : (
-            <PanelLeftOpen size={21} />
+            <PanelLeftOpen size={20} />
           )}
         </FloatingAction>
 
         {selectorsVisible && (
           <aside
             aria-label="Modèles météo"
-            className="absolute left-2 top-[72px] z-20 grid gap-1"
+            className="absolute left-2 top-1/2 z-20 grid -translate-y-1/2 gap-0.5"
           >
             {WEATHER_MODEL_REGISTRY.filter((model) => model.supported).map(
               (model) => {
                 const selected = selectedModels.includes(model.id);
+                const selectionOrder = selectedModels.indexOf(model.id);
                 return (
                   <Chip
                     key={model.id}
                     selected={selected}
                     onClick={() => toggleModel(model.id)}
-                    className="w-[98px] justify-between text-[9px] font-bold"
+                    className="!min-h-[22px] w-fit max-w-[68px] !justify-start !px-1.5 !py-0 text-[8px] font-bold"
+                    style={{
+                      borderStyle:
+                        selectionOrder === 1 ? "dashed" : "solid",
+                      borderWidth:
+                        selectionOrder === 1 ? "2px" : selected ? "1.5px" : "1px",
+                    }}
                   >
                     <span>{model.label}</span>
-                    <span className="scale-[0.65]">
-                      <ModelLinePreview model={model} />
-                    </span>
                   </Chip>
                 );
               },
@@ -527,9 +535,9 @@ export default function MapPage() {
         {selectorsVisible && (
           <aside
             aria-label="Altitudes"
-            className="absolute right-2 top-[72px] z-20 grid gap-1"
+            className="absolute right-2 top-1/2 z-20 grid -translate-y-1/2 gap-0.5"
           >
-            {ALTITUDE_OPTIONS.map((altitude) => {
+            {ANALYSIS_ALTITUDE_OPTIONS.map((altitude) => {
               const selected = selectedAltitudes.includes(altitude);
               const color =
                 displayedTraces.find(
@@ -540,7 +548,7 @@ export default function MapPage() {
                   key={String(altitude)}
                   selected={selected}
                   onClick={() => toggleAltitude(altitude)}
-                  className="min-w-[58px] text-[9px] font-bold"
+                  className="!min-h-[22px] w-[38px] !px-0.5 !py-0 text-[9px] font-bold"
                   style={{
                     borderColor: selected
                       ? color
@@ -548,61 +556,63 @@ export default function MapPage() {
                     color: selected ? color : "rgb(255 255 255 / 78%)",
                   }}
                 >
-                  {altitudeLabel(altitude)}
+                  {altitude === "ground" ? "Sol" : altitude}
                 </Chip>
               );
             })}
           </aside>
         )}
 
-      <div className="absolute right-3 top-[max(12px,env(safe-area-inset-top))] z-30">
-        <Chip
-          onClick={() => {
-            setLegendOpen(false);
-            setDisplayOpen((value) => !value);
-          }}
-          selected={displayOpen}
-          className="text-[10px] font-bold"
-          aria-expanded={displayOpen}
-        >
-          🗺️ Affichage
-        </Chip>
-        {displayOpen && (
-          <FloatingPanel className="mt-2 w-44 text-white">
-            <label className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold">
-              Vue satellite
-              <input
-                type="checkbox"
-                checked={layers.satellite && satelliteAvailable}
-                disabled={!satelliteAvailable}
-                onChange={(event) =>
-                  updateDisplay("satellite", event.target.checked)
-                }
-                className="h-5 w-5 accent-[var(--bc-color-action)]"
-              />
-            </label>
-            <label className="flex min-h-10 items-center justify-between gap-2 text-xs font-bold">
-              Espaces aériens
-              <input
-                type="checkbox"
-                checked={layers.airspaces}
-                onChange={(event) =>
-                  updateDisplay("airspaces", event.target.checked)
-                }
-                className="h-5 w-5 accent-[var(--bc-color-action)]"
-              />
-            </label>
-          </FloatingPanel>
-        )}
-      </div>
-
-      <FloatingAction
-        onClick={() => setRecenterToken((value) => value + 1)}
-        className="absolute bottom-[max(96px,calc(82px+env(safe-area-inset-bottom)))] right-3 z-20"
-        aria-label="Recentrer toutes les trajectoires"
-      >
-        <LocateFixed size={20} />
-      </FloatingAction>
+        <div className="absolute right-3 top-3 z-30">
+          <FloatingAction
+            onClick={() => {
+              setLegendOpen(false);
+              setDisplayOpen((value) => !value);
+            }}
+            aria-label="Couches de la carte"
+            aria-expanded={displayOpen}
+          >
+            <Layers3 size={19} />
+          </FloatingAction>
+          {displayOpen && (
+            <FloatingPanel className="absolute right-0 mt-2 w-48 text-white">
+              <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
+                Espaces aériens
+                <input
+                  type="checkbox"
+                  checked={layers.airspaces}
+                  onChange={(event) =>
+                    updateDisplay("airspaces", event.target.checked)
+                  }
+                  className="h-5 w-5 accent-[var(--bc-color-action)]"
+                />
+              </label>
+              <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
+                Vue satellite
+                <input
+                  type="checkbox"
+                  checked={layers.satellite && satelliteAvailable}
+                  disabled={!satelliteAvailable}
+                  onChange={(event) =>
+                    updateDisplay("satellite", event.target.checked)
+                  }
+                  className="h-5 w-5 accent-[var(--bc-color-action)]"
+                />
+              </label>
+              <label
+                className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold opacity-45"
+                title="Relief bientôt disponible"
+              >
+                Relief
+                <input
+                  type="checkbox"
+                  disabled
+                  className="h-5 w-5"
+                />
+              </label>
+            </FloatingPanel>
+          )}
+        </div>
 
       <section className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-[var(--bc-radius-dock)] border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
         <button
@@ -611,32 +621,11 @@ export default function MapPage() {
             setDisplayOpen(false);
             setLegendOpen((value) => !value);
           }}
-          className="flex min-h-9 w-full items-center gap-2 px-2.5 text-[10px] font-black"
+          className="flex min-h-10 w-full items-center gap-2 px-3 text-[11px] font-semibold"
         >
-          <span>{displayedTraces.length} trajectoires</span>
-          <span className="flex flex-1 items-center gap-1 overflow-hidden">
-            {selectedModels.map((modelId) => {
-              const model = WEATHER_MODEL_REGISTRY.find(
-                (item) => item.id === modelId,
-              );
-              return model ? (
-                <span key={model.id} className="scale-75">
-                  <ModelLinePreview model={model} />
-                </span>
-              ) : null;
-            })}
-            {selectedAltitudes.map((altitude) => {
-              const color =
-                displayedTraces.find(
-                  (trace) => trace.altitudeKey === altitudeKey(altitude),
-                )?.color ?? "white";
-              return (
-                <span key={String(altitude)} style={{ color }}>
-                  ●
-                </span>
-              );
-            })}
-          </span>
+          <Navigation size={15} style={{ color: "var(--bc-accent)" }} />
+          <span>Utiliser cette analyse en Vol</span>
+          <span className="flex-1" />
           <span>{legendOpen ? "−" : "+"}</span>
         </button>
         {legendOpen && (
@@ -694,145 +683,96 @@ export default function MapPage() {
         aria-label="Paramètres des trajectoires"
       >
         <div className="mx-auto max-w-3xl">
-          <div className="grid gap-4">
-            <article
-              className="rounded-[28px] border p-5"
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setNotice("Marge de charge indisponible.")
+              }
+              className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
                 borderColor: "var(--bc-border)",
                 boxShadow: "var(--bc-shadow-xs)",
               }}
             >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p
-                    className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                    style={{ color: "var(--bc-color-text-muted)" }}
-                  >
-                    Charge
-                  </p>
-                  <h2 className="mt-1 text-lg font-semibold">
-                    Courbe de charge
-                  </h2>
-                </div>
-                <span
-                  className="rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em]"
-                  style={{
-                    borderColor: "var(--bc-border)",
-                    color: "var(--bc-color-text-muted)",
-                  }}
-                >
-                  {highestSelectedAltitude === null
-                    ? "Sol"
-                    : `${highestSelectedAltitude} m`}
-                </span>
-              </div>
-              <div
-                className="mt-5 h-3 overflow-hidden rounded-full border"
-                style={{
-                  background: "rgb(255 255 255 / 4%)",
-                  borderColor: "var(--bc-border)",
-                }}
-                aria-label="Charge embarquée"
-              >
-                <div
-                  className="h-full w-full opacity-20"
-                  style={{
-                    background:
-                      "repeating-linear-gradient(90deg, var(--bc-accent) 0 2px, transparent 2px 8px)",
-                  }}
-                />
-              </div>
-              <div className="mt-3 flex items-baseline justify-between gap-4">
-                <p className="text-xl font-semibold">
-                  {passengerWeightKg === null
-                    ? "Poids non renseigné"
-                    : `${passengerWeightKg.toLocaleString("fr-FR")} kg`}
-                </p>
-                <p
-                  className="text-right text-xs"
-                  style={{ color: "var(--bc-color-text-muted)" }}
-                >
-                  Passagers
-                </p>
-              </div>
-              <div
-                className="mt-4 border-t pt-4"
-                style={{ borderColor: "var(--bc-border)" }}
-              >
-                <p className="text-sm font-semibold">
-                  Marge disponible : information indisponible
-                </p>
-                <p
-                  className="mt-1 text-xs"
-                  style={{ color: "var(--bc-color-text-muted)" }}
-                >
-                  La capacité du ballon actif n’est pas renseignée.
-                </p>
-              </div>
-            </article>
-
-            <article
-              className="rounded-[28px] border p-5"
-              style={{
-                background: "var(--bc-surface)",
-                borderColor: "var(--bc-border)",
-                boxShadow: "var(--bc-shadow-xs)",
-              }}
-            >
-              <p
-                className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+              <h2
+                className="text-[10px] font-semibold uppercase tracking-[0.1em]"
                 style={{ color: "var(--bc-color-text-muted)" }}
               >
-                openAIP
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">
-                Espaces aériens rencontrés
+                Charge
               </h2>
-              <p className="mt-4 text-3xl font-semibold tracking-tight">
+              <p
+                className="mt-4 text-2xl font-semibold tracking-tight"
+                style={{ color: "var(--bc-color-text-muted)" }}
+                aria-label="Marge de charge indisponible"
+              >
+                — kg
+              </p>
+              {!selectedBalloonId && (
+                <p
+                  className="mt-1 text-[9px] leading-tight"
+                  style={{ color: "var(--bc-color-text-muted)" }}
+                >
+                  Ajoutez un ballon pour calculer la charge.
+                </p>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const airspaces =
+                  airspaceCoverage.airspaces.features.map(
+                    (feature) => feature.properties,
+                  );
+                if (airspaces.length > 0) selectAirspaces(airspaces);
+                else setNotice("Aucun espace chargé dans la zone visible.");
+              }}
+              className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
+              style={{
+                background: "var(--bc-surface)",
+                borderColor: "var(--bc-border)",
+                boxShadow: "var(--bc-shadow-xs)",
+              }}
+            >
+              <h2
+                className="text-[10px] font-semibold uppercase tracking-[0.1em]"
+                style={{ color: "var(--bc-color-text-muted)" }}
+              >
+                Espaces
+              </h2>
+              <p className="mt-4 text-2xl font-semibold tracking-tight">
                 {airspaceCoverage.visibleLoading
-                  ? "Chargement…"
+                  ? "…"
                   : `${airspaceCoverage.airspaces.features.length}`}
               </p>
-              <p
-                className="mt-1 text-sm"
-                style={{ color: "var(--bc-color-text-secondary)" }}
-              >
-                {airspaceCoverage.statusMessage ??
-                  "Espaces visibles dans la zone cartographique chargée."}
-              </p>
-            </article>
+            </button>
 
-            <article
-              className="rounded-[28px] border p-5"
+            <button
+              type="button"
+              onClick={() => setNotice("Information NOTAM indisponible.")}
+              className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
                 borderColor: "var(--bc-border)",
                 boxShadow: "var(--bc-shadow-xs)",
               }}
             >
-              <p
-                className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+              <h2
+                className="text-[10px] font-semibold uppercase tracking-[0.1em]"
                 style={{ color: "var(--bc-color-text-muted)" }}
               >
-                Information aéronautique
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">
-                NOTAM impactant la trajectoire
+                NOTAM
               </h2>
               <p
-                className="mt-4 text-sm"
-                style={{ color: "var(--bc-color-text-secondary)" }}
-              >
-                Information indisponible.
-              </p>
-              <p
-                className="mt-1 text-xs"
+                className="mt-4 text-2xl font-semibold tracking-tight"
                 style={{ color: "var(--bc-color-text-muted)" }}
+                aria-label="Nombre de NOTAM indisponible"
               >
-                Vérifier les publications officielles avant le vol.
+                —
               </p>
-            </article>
+            </button>
           </div>
         </div>
       </section>
