@@ -28,7 +28,7 @@ export default function BalloonSelector({
 
   return (
     <section
-      className="rounded-[28px] border p-4 sm:p-5"
+      className="rounded-[24px] border p-3 sm:p-4"
       style={{
         background:
           "linear-gradient(145deg, var(--bc-color-surface), var(--bc-color-canvas-elevated))",
@@ -39,7 +39,7 @@ export default function BalloonSelector({
     >
       <h2
         id="balloon-selector-title"
-        className="mb-3 text-xs font-semibold uppercase tracking-[0.16em]"
+        className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
         style={{ color: "var(--bc-color-text-muted)" }}
       >
         Ballon
@@ -47,7 +47,7 @@ export default function BalloonSelector({
 
       {balloons.length > 0 ? (
         <label
-          className="relative flex min-h-16 items-center gap-3 rounded-2xl border px-4"
+          className="relative flex min-h-12 items-center gap-3 rounded-2xl border px-3"
           style={{
             background: "rgb(255 255 255 / 3%)",
             borderColor: "var(--bc-border)",

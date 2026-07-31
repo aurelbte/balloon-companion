@@ -23,7 +23,8 @@ import {
   type AirspaceCoverageViewport,
 } from "../hooks/useAirspaceCoverage";
 import { getAirspaceFrequencyPresentations } from "../lib/operationalFrequency";
-import { getFlightPreparation } from "../lib/flightStorage";
+import { loadPreparationDraft } from "../lib/preparationDraftStorage";
+import { selectIntersectedAirspaces } from "../lib/trajectoryAirspaces";
 import {
   ALTITUDE_OPTIONS,
   altitudeKey,
@@ -120,7 +121,7 @@ export default function MapPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const analysisRequest = getTrajectoryAnalysisRequest();
-      const preparation = getFlightPreparation();
+      const preparation = loadPreparationDraft();
       const legacyProjection = getTrajectoryProjectionV2();
       const stored =
         analysisRequest ??
@@ -333,6 +334,14 @@ export default function MapPage() {
           ),
       ),
     [selectedAltitudes, selectedModels, traces],
+  );
+  const intersectedAirspaces = useMemo(
+    () =>
+      selectIntersectedAirspaces(
+        displayedTraces,
+        airspaceCoverage.airspaces,
+      ),
+    [airspaceCoverage.airspaces, displayedTraces],
   );
   const selectedAirspaceFrequencies = useMemo(
     () =>
@@ -626,7 +635,6 @@ export default function MapPage() {
           <Navigation size={15} style={{ color: "var(--bc-accent)" }} />
           <span>Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
-          <span>{legendOpen ? "−" : "+"}</span>
         </button>
         {legendOpen && (
           <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-[var(--bc-color-surface-glass)] p-2.5">
@@ -722,12 +730,11 @@ export default function MapPage() {
             <button
               type="button"
               onClick={() => {
-                const airspaces =
-                  airspaceCoverage.airspaces.features.map(
-                    (feature) => feature.properties,
-                  );
-                if (airspaces.length > 0) selectAirspaces(airspaces);
-                else setNotice("Aucun espace chargé dans la zone visible.");
+                if (intersectedAirspaces.length > 0) {
+                  selectAirspaces(intersectedAirspaces);
+                } else {
+                  setNotice("Aucun espace intersecté par les trajectoires.");
+                }
               }}
               className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
               style={{
@@ -745,7 +752,7 @@ export default function MapPage() {
               <p className="mt-4 text-2xl font-semibold tracking-tight">
                 {airspaceCoverage.visibleLoading
                   ? "…"
-                  : `${airspaceCoverage.airspaces.features.length}`}
+                  : `${intersectedAirspaces.length}`}
               </p>
             </button>
 

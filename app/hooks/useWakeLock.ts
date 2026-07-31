@@ -5,7 +5,7 @@ export function useWakeLock(enabled: boolean): {
   supported: boolean;
 } {
   const sentinelRef = useRef<WakeLockSentinel | null>(null);
-  const [active, setActive] = useState(false);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
   const supported =
     typeof navigator !== "undefined" && "wakeLock" in navigator;
 
@@ -13,7 +13,6 @@ export function useWakeLock(enabled: boolean): {
     if (!enabled || !supported) {
       void sentinelRef.current?.release();
       sentinelRef.current = null;
-      setActive(false);
       return;
     }
 
@@ -33,19 +32,19 @@ export function useWakeLock(enabled: boolean): {
           return;
         }
         sentinelRef.current = sentinel;
-        setActive(true);
+        setWakeLockActive(true);
         sentinel.addEventListener(
           "release",
           () => {
             if (sentinelRef.current === sentinel) {
               sentinelRef.current = null;
-              setActive(false);
+              setWakeLockActive(false);
             }
           },
           { once: true },
         );
       } catch {
-        setActive(false);
+        setWakeLockActive(false);
       }
     };
     const handleVisibilityChange = () => {
@@ -61,5 +60,5 @@ export function useWakeLock(enabled: boolean): {
     };
   }, [enabled, supported]);
 
-  return { active, supported };
+  return { active: enabled && supported && wakeLockActive, supported };
 }

@@ -16,11 +16,13 @@ import BalloonSelector, {
 import LaunchPointMapDialog from "../components/prepare/LaunchPointMapDialog";
 import TerrainSelector from "../components/prepare/TerrainSelector";
 import {
-  getFlightPreparation,
   PREPARATION_STORAGE_VERSION,
-  saveFlightPreparation,
   type StoredFlightPreparationV2,
 } from "../lib/flightStorage";
+import {
+  loadPreparationDraft,
+  savePreparationDraft,
+} from "../lib/preparationDraftStorage";
 import {
   combineLocalDateAndTime,
   DEFAULT_ALTITUDE_OPTIONS,
@@ -207,9 +209,7 @@ export default function PreparePage() {
   const submissionRef = useRef(false);
 
   useEffect(() => {
-    const shouldResumeDraft =
-      new URLSearchParams(window.location.search).get("resume") === "1";
-    const stored = shouldResumeDraft ? getFlightPreparation() : null;
+    const stored = loadPreparationDraft();
     const timer = window.setTimeout(() => {
       if (stored) {
         const departure = localDateParts(stored.departureTime);
@@ -262,9 +262,9 @@ export default function PreparePage() {
 
   useEffect(() => {
     if (!storageReady || !formDirty) return;
-    const previous = getFlightPreparation();
+    const previous = loadPreparationDraft();
     const timer = window.setTimeout(() => {
-      saveFlightPreparation(preparationSnapshot(form, previous, Date.now()));
+      savePreparationDraft(preparationSnapshot(form, previous, Date.now()));
     }, 350);
     return () => window.clearTimeout(timer);
   }, [form, formDirty, storageReady]);
@@ -430,8 +430,8 @@ export default function PreparePage() {
     setSubmitting(true);
     setError(null);
     try {
-      const storedPreparation = getFlightPreparation();
-      saveFlightPreparation(
+      const storedPreparation = loadPreparationDraft();
+      savePreparationDraft(
         preparationSnapshot(form, storedPreparation, Date.now()),
       );
       if (!saveTrajectoryAnalysisRequest(request)) {
@@ -450,9 +450,9 @@ export default function PreparePage() {
   };
 
   return (
-    <main className="min-h-dvh pb-[calc(92px+env(safe-area-inset-bottom))] pt-[max(18px,env(safe-area-inset-top))]">
+    <main className="min-h-dvh pb-[calc(82px+env(safe-area-inset-bottom))] pt-[max(8px,env(safe-area-inset-top))]">
       <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
-        <header className="mb-6">
+        <header className="mb-2">
           <p
             className="mb-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
             style={{ color: "var(--bc-accent)" }}
@@ -463,7 +463,7 @@ export default function PreparePage() {
             Préparation du vol
           </h1>
           <p
-            className="mt-2 max-w-lg text-sm leading-relaxed"
+            className="mt-0.5 max-w-lg text-xs leading-snug"
             style={{ color: "var(--bc-color-text-secondary)" }}
           >
             Définissez le contexte, puis ouvrez l’analyse des trajectoires.
@@ -471,7 +471,7 @@ export default function PreparePage() {
         </header>
 
         <section
-          className="relative rounded-[28px] border p-4 sm:p-5"
+          className="relative rounded-[24px] border p-3 sm:p-4"
           style={{
             background:
               "linear-gradient(145deg, var(--bc-color-surface), var(--bc-color-canvas-elevated))",
@@ -482,7 +482,7 @@ export default function PreparePage() {
         >
           <h2
             id="flight-context-title"
-            className="mb-4 text-xs font-semibold uppercase tracking-[0.16em]"
+            className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]"
             style={{ color: "var(--bc-color-text-muted)" }}
           >
             Contexte du vol
@@ -522,7 +522,7 @@ export default function PreparePage() {
 
           <div className="grid grid-cols-3 gap-2">
             <label
-              className="relative flex min-h-20 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-3"
+              className="relative flex min-h-16 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-2.5"
               style={{
                 background: "rgb(255 255 255 / 3%)",
                 borderColor: "var(--bc-border)",
@@ -553,7 +553,7 @@ export default function PreparePage() {
             </label>
 
             <label
-              className="flex min-h-20 cursor-text flex-col justify-between rounded-2xl border p-3 text-left"
+              className="flex min-h-16 cursor-text flex-col justify-between rounded-2xl border p-2.5 text-left"
               style={{
                 background: "rgb(255 255 255 / 3%)",
                 borderColor: timeError
@@ -600,7 +600,7 @@ export default function PreparePage() {
                 setCustomDuration(form.durationMinutes);
                 setCustomDurationOpen(true);
               }}
-              className="flex min-h-20 flex-col justify-between rounded-2xl border p-3 text-left"
+              className="flex min-h-16 flex-col justify-between rounded-2xl border p-2.5 text-left"
               style={{
                 background: "rgb(255 255 255 / 3%)",
                 borderColor:
@@ -635,7 +635,7 @@ export default function PreparePage() {
 
         </section>
 
-        <div className="mt-4">
+        <div className="mt-2">
           <BalloonSelector
             balloons={PREPARATION_BALLOONS}
             selectedBalloonId={
@@ -659,7 +659,7 @@ export default function PreparePage() {
         </div>
 
         <section
-          className="mt-4 rounded-[28px] border p-4 transition-opacity sm:p-5"
+          className="mt-2 rounded-[24px] border p-3 transition-opacity sm:p-4"
           style={{
             background: "var(--bc-surface)",
             borderColor: "var(--bc-border)",
@@ -669,12 +669,12 @@ export default function PreparePage() {
         >
           <h2
             id="charge-title"
-            className="mb-3 text-xs font-semibold uppercase tracking-[0.16em]"
+            className={`${form.balloonName ? "mb-2" : "mb-1"} text-[10px] font-semibold uppercase tracking-[0.16em]`}
             style={{ color: "var(--bc-color-text-muted)" }}
           >
             Charge
           </h2>
-          <label className="flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-4">
+          {form.balloonName && <label className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border px-3">
             <span>
               <span className="block text-sm font-semibold">
                 Poids total embarqué
@@ -710,10 +710,10 @@ export default function PreparePage() {
                 kg
               </span>
             </span>
-          </label>
+          </label>}
           {!form.balloonName && (
             <p
-              className="mt-3 text-xs"
+              className="text-xs leading-snug"
               style={{ color: "var(--bc-color-text-muted)" }}
             >
               Sélectionnez un ballon pour calculer la charge.
@@ -738,7 +738,7 @@ export default function PreparePage() {
           type="button"
           onClick={() => void submitProjection()}
           disabled={submitting}
-          className="mt-5 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-semibold transition-[transform,background-color] active:scale-[0.99] disabled:opacity-60"
+          className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-semibold transition-[transform,background-color] active:scale-[0.99] disabled:opacity-60"
           style={{
             background: "var(--bc-accent)",
             color: "var(--bc-accent-foreground)",

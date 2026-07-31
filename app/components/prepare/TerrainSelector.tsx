@@ -35,10 +35,10 @@ export default function TerrainSelector({
   onRequestMapSelection,
 }: TerrainSelectorProps) {
   return (
-    <div className="relative mb-3">
+    <div className="relative mb-2">
       <div className="flex gap-2">
         <label
-          className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-2xl border px-3"
+          className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-2xl border px-3"
           style={{
             background: "rgb(255 255 255 / 3%)",
             borderColor: "var(--bc-border)",
@@ -68,7 +68,7 @@ export default function TerrainSelector({
           type="button"
           onClick={onSearch}
           disabled={searching}
-          className="flex h-16 w-12 shrink-0 items-center justify-center rounded-2xl border"
+          className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border"
           style={{ borderColor: "var(--bc-border)" }}
           aria-label="Rechercher le terrain"
         >
@@ -78,7 +78,7 @@ export default function TerrainSelector({
           type="button"
           onClick={onLocate}
           disabled={locating}
-          className="flex h-16 w-12 shrink-0 items-center justify-center rounded-2xl border"
+          className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border"
           style={{ borderColor: "var(--bc-border)" }}
           aria-label="Utiliser ma position"
         >
@@ -119,20 +119,20 @@ export default function TerrainSelector({
       )}
 
       {favoriteTerrains.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-2 flex items-center gap-2">
           <p
-            className="mb-2 text-[9px] font-semibold uppercase tracking-[0.12em]"
+            className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.1em]"
             style={{ color: "var(--bc-color-text-muted)" }}
           >
             Terrains favoris
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {favoriteTerrains.map((terrain) => (
               <button
                 key={terrain.id}
                 type="button"
                 onClick={() => onSelectFavorite(terrain)}
-                className="flex min-h-10 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold"
+                className="flex min-h-11 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold"
                 style={{
                   background: "rgb(255 255 255 / 3%)",
                   borderColor: "var(--bc-border)",
@@ -151,7 +151,7 @@ export default function TerrainSelector({
           type="button"
           onClick={onRequestMapSelection}
           disabled={!hasSelectedTerrain}
-          className="mt-3 flex min-h-10 items-center gap-2 text-xs font-semibold disabled:opacity-40"
+          className="mt-1 flex min-h-11 items-center gap-2 text-xs font-semibold disabled:opacity-40"
           style={{ color: "var(--bc-accent)" }}
         >
           <Map size={15} /> Préciser le point sur la carte
