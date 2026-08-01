@@ -23,6 +23,8 @@ export type JournalFlight = {
   departure: string;
   arrival: string;
   date: string;
+  dateIso: string;
+  balloonRegistration: string;
   durationMinutes: number;
   distanceKm: number;
   takeoffTime: string;
@@ -85,6 +87,8 @@ const JOURNAL_FLIGHT_DEFINITIONS: readonly JournalFlight[] = [
     departure: "LFQO",
     arrival: "Mérignies",
     date: "29 juillet 2026",
+    dateIso: "2026-07-29",
+    balloonRegistration: "F-HLFM",
     durationMinutes: 52,
     distanceKm: 17.8,
     takeoffTime: "06:31",
@@ -125,6 +129,8 @@ const JOURNAL_FLIGHT_DEFINITIONS: readonly JournalFlight[] = [
     departure: "Bondues",
     arrival: "Templeuve",
     date: "18 juillet 2026",
+    dateIso: "2026-07-18",
+    balloonRegistration: "F-GTET",
     durationMinutes: 47,
     distanceKm: 15.2,
     takeoffTime: "06:18",
@@ -158,6 +164,8 @@ const JOURNAL_FLIGHT_DEFINITIONS: readonly JournalFlight[] = [
     departure: "Hesdin",
     arrival: "Aire-sur-la-Lys",
     date: "6 juillet 2026",
+    dateIso: "2026-07-06",
+    balloonRegistration: "F-HOBA",
     durationMinutes: 64,
     distanceKm: 24.6,
     takeoffTime: "06:42",
@@ -192,6 +200,8 @@ const JOURNAL_FLIGHT_DEFINITIONS: readonly JournalFlight[] = [
     departure: "Chambley",
     arrival: "Metz",
     date: "21 juin 2026",
+    dateIso: "2026-06-21",
+    balloonRegistration: "F-HMIG",
     durationMinutes: 58,
     distanceKm: 21.3,
     takeoffTime: "05:56",
@@ -231,4 +241,8 @@ export const JOURNAL_FLIGHTS: readonly JournalFlight[] =
 
 export function getJournalFlight(id: string): JournalFlight | null {
   return JOURNAL_FLIGHTS.find((flight) => flight.id === id) ?? null;
+}
+
+export function getJournalFlightAutomaticName(flight: JournalFlight): string {
+  return `${flight.departure} → ${flight.arrival}`;
 }

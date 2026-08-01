@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import JournalChart from "../../../components/journal/JournalChart";
+import JournalFlightTitle from "../../../components/journal/JournalFlightTitle";
 import NavigationBar from "../../../components/NavigationBar";
 import {
+  getJournalFlightAutomaticName,
   getJournalFlight,
   JOURNAL_FLIGHTS,
 } from "../../../lib/journalMockData";
@@ -31,9 +33,12 @@ export default async function JournalGraphsPage({
         </Link>
         <header className={styles.detailHeader}>
           <p className={styles.eyebrow}>Graphiques</p>
-          <h1 className={styles.routeTitle}>
-            {flight.departure} → {flight.arrival}
-          </h1>
+          <JournalFlightTitle
+            flightId={flight.id}
+            automaticName={getJournalFlightAutomaticName(flight)}
+            availableFlightIds={JOURNAL_FLIGHTS.map((item) => item.id)}
+            className={styles.routeTitle}
+          />
           <p className={styles.dateLine}>{flight.date}</p>
         </header>
 

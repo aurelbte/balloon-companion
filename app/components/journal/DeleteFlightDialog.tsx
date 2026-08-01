@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { JournalFlight } from "../../lib/journalMockData";
-
 type DeleteFlightDialogProps = {
-  flight: JournalFlight;
+  flightName: string;
   returnFocusTo: HTMLElement | null;
   onCancel: () => void;
   onConfirm: () => void;
 };
 
 export default function DeleteFlightDialog({
-  flight,
+  flightName,
   returnFocusTo,
   onCancel,
   onConfirm,
@@ -48,7 +46,7 @@ export default function DeleteFlightDialog({
         id="delete-flight-description"
         className="mt-2 text-sm leading-relaxed text-[var(--bc-text-secondary)]"
       >
-        Le vol {flight.departure} → {flight.arrival} et ses données seront
+        Le vol « {flightName} » et ses données seront
         définitivement supprimés.
       </p>
       <div className="mt-5 grid grid-cols-2 gap-2">

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  loadDeletedDemoFlightIds,
-  persistDeletedDemoFlightIds,
+  loadJournalDemoState,
+  saveJournalDemoState,
 } from "./journalDemoStorage.ts";
 
 function memoryStorage() {
@@ -13,20 +13,33 @@ function memoryStorage() {
   };
 }
 
-test("persiste et déduplique les suppressions de démonstration", () => {
+test("persiste suppressions et noms personnalisés dans une source unique", () => {
   globalThis.window = { localStorage: memoryStorage() };
-  assert.equal(persistDeletedDemoFlightIds(["a", "a", "b"]), true);
-  assert.deepEqual(loadDeletedDemoFlightIds(["a", "b", "c"]), ["a", "b"]);
+  const state = {
+    version: 2,
+    deletedFlightIds: ["a"],
+    customNames: { b: "  Vol du matin  " },
+  };
+  assert.equal(saveJournalDemoState(state), true);
+  assert.deepEqual(loadJournalDemoState(["a", "b", "c"]), {
+    version: 2,
+    deletedFlightIds: ["a"],
+    customNames: { b: "Vol du matin" },
+  });
   delete globalThis.window;
 });
 
-test("ignore les identifiants inconnus ou un stockage invalide", () => {
+test("migre l’ancien tableau de suppressions et ignore les identifiants inconnus", () => {
   const localStorage = memoryStorage();
   globalThis.window = { localStorage };
   localStorage.setItem(
     "balloon-companion-journal-demo-deleted-v1",
-    JSON.stringify(["known", "obsolete", 42]),
+    JSON.stringify(["known", "known", "obsolete", 42]),
   );
-  assert.deepEqual(loadDeletedDemoFlightIds(["known"]), ["known"]);
+  assert.deepEqual(loadJournalDemoState(["known"]), {
+    version: 2,
+    deletedFlightIds: ["known"],
+    customNames: {},
+  });
   delete globalThis.window;
 });
