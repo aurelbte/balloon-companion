@@ -1,4 +1,5 @@
 import { createOpenMeteoClient, getOpenMeteoServerConfig } from "../../../lib/weather/openMeteo/client";
+import { selectNearestGroundTemperature } from "../../../lib/weather/openMeteo/groundTemperatureSelection";
 
 type TemperaturePayload = { hourly?: { time?: unknown; temperature_2m?: unknown } };
 
@@ -19,16 +20,10 @@ export async function GET(request: Request) {
     const times = raw.hourly?.time;
     const values = raw.hourly?.temperature_2m;
     if (!Array.isArray(times) || !Array.isArray(values)) throw new Error("Réponse horaire Open-Meteo invalide.");
-    let selected = -1;
-    let minimumDelta = Number.POSITIVE_INFINITY;
-    times.forEach((time, index) => {
-      if (typeof time !== "string" || typeof values[index] !== "number") return;
-      const delta = Math.abs(new Date(`${time}Z`).getTime() - target.getTime());
-      if (delta < minimumDelta) { selected = index; minimumDelta = delta; }
-    });
-    if (selected < 0 || minimumDelta > 30 * 60 * 1000) throw new Error("Échéance horaire indisponible.");
+    const selected = selectNearestGroundTemperature(selectedValidAt, times, values);
+    if (!selected) throw new Error("Aucune température horaire exploitable.");
     const fetchedAt = new Date().toISOString();
-    return Response.json({ data: { temperatureC: values[selected], sourceModel: selectedWeatherModel, forecastRun: "Non communiqué par Open-Meteo", validTime: `${times[selected]}Z`, fetchedAt } });
+    return Response.json({ data: { temperatureC: selected.temperatureC, sourceModel: selectedWeatherModel, forecastRun: "Non communiqué par Open-Meteo", validTime: selected.validTime, forecastOffsetMinutes: selected.offsetMinutes, provider: "Open-Meteo", fetchedAt } });
   } catch (error) {
     return Response.json({ error: { message: error instanceof Error ? error.message : "Température au sol indisponible" } }, { status: 502 });
   }

@@ -80,7 +80,7 @@ function initialForm(): TrajectoryFormState {
     climbRateMps: "0",
     descentRateMps: "0",
     balloonName: "",
-    passengerWeightKg: "",
+    occupantsWeightKg: "",
   };
 }
 
@@ -99,7 +99,7 @@ function preparationSnapshot(
   const altitude = parseNumber(form.targetAltitudeAmslM);
   const climbRate = parseNumber(form.climbRateMps);
   const descentRate = parseNumber(form.descentRateMps);
-  const passengerWeight = parseNumber(form.passengerWeightKg);
+  const occupantsWeight = parseNumber(form.occupantsWeightKg);
   return {
     storageVersion: PREPARATION_STORAGE_VERSION,
     launchSite: form.launchSite
@@ -129,8 +129,8 @@ function preparationSnapshot(
     ...(form.balloonName.trim()
       ? { balloonName: form.balloonName.trim() }
       : {}),
-    ...(form.balloonName && passengerWeight !== null && passengerWeight >= 0
-      ? { passengerWeightKg: passengerWeight }
+    ...(form.balloonName && occupantsWeight !== null && occupantsWeight > 0
+      ? { occupantsWeightKg: occupantsWeight }
       : {}),
     createdAt: previous?.createdAt ?? now,
     updatedAt: now,
@@ -224,10 +224,10 @@ export default function PreparePage() {
           climbRateMps: String(stored.climbRateMps ?? 0),
           descentRateMps: String(stored.descentRateMps ?? 0),
           balloonName: stored.balloonName ?? "",
-          passengerWeightKg:
-            !stored.balloonName || stored.passengerWeightKg === undefined
+          occupantsWeightKg:
+            !stored.balloonName || stored.occupantsWeightKg === undefined
               ? ""
-              : String(stored.passengerWeightKg),
+              : String(stored.occupantsWeightKg),
         });
       }
       setStorageReady(true);
@@ -625,8 +625,8 @@ export default function PreparePage() {
               setForm((current) => ({
                 ...current,
                 balloonName: balloonId,
-                passengerWeightKg: balloonId
-                  ? current.passengerWeightKg
+                occupantsWeightKg: balloonId
+                  ? current.occupantsWeightKg
                   : "",
               }));
             }}
@@ -667,10 +667,10 @@ export default function PreparePage() {
                 inputMode="numeric"
                 pattern="[0-9]*"
                 disabled={!form.balloonName}
-                value={form.passengerWeightKg}
+                value={form.occupantsWeightKg}
                 onChange={(event) =>
                   update(
-                    "passengerWeightKg",
+                    "occupantsWeightKg",
                     event.target.value.replace(/\D/g, ""),
                   )
                 }

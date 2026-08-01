@@ -16,6 +16,21 @@ function memoryStorage() {
   };
 }
 
+function validDraft(overrides = {}) {
+  return {
+    storageVersion: 2,
+    launchSite: { name: "LFQO", latitude: 50.686341, longitude: 3.079865 },
+    departureTime: "2026-08-01T06:00:00.000Z",
+    durationMinutes: 60,
+    weatherModel: "arome_seamless",
+    targetAltitudeAmslM: null,
+    balloonName: "F-HLFM",
+    createdAt: 1,
+    updatedAt: 2,
+    ...overrides,
+  };
+}
+
 test("conserve un brouillon validé dans la session puis le supprime", () => {
   const sessionStorage = memoryStorage();
   globalThis.window = { sessionStorage };
@@ -28,7 +43,7 @@ test("conserve un brouillon validé dans la session puis le supprime", () => {
     targetAltitudeAmslM: null,
     selectedAltitudes: ["ground", 300],
     balloonName: "F-HLFM",
-    passengerWeightKg: 250,
+    occupantsWeightKg: 250,
     createdAt: 1,
     updatedAt: 2,
   };
@@ -38,6 +53,27 @@ test("conserve un brouillon validé dans la session puis le supprime", () => {
   assert.ok(sessionStorage.getItem(PREPARATION_DRAFT_STORAGE_KEY));
   clearPreparationDraft();
   assert.equal(loadPreparationDraft(), null);
+  delete globalThis.window;
+});
+
+test("Prépa transmet et recharge exactement occupantsWeightKg", () => {
+  const sessionStorage = memoryStorage();
+  globalThis.window = { sessionStorage };
+  const draft = validDraft({ occupantsWeightKg: 250 });
+  assert.equal(savePreparationDraft(draft), true);
+  assert.equal(loadPreparationDraft()?.occupantsWeightKg, 250);
+  assert.equal(loadPreparationDraft()?.occupantsWeightKg, 250);
+  delete globalThis.window;
+});
+
+test("un ancien passengerWeightKg est migré vers la propriété canonique", () => {
+  const sessionStorage = memoryStorage();
+  globalThis.window = { sessionStorage };
+  const legacyNamedDraft = { ...validDraft(), passengerWeightKg: 250 };
+  assert.equal(savePreparationDraft(legacyNamedDraft), true);
+  const loaded = loadPreparationDraft();
+  assert.equal(loaded?.occupantsWeightKg, 250);
+  assert.equal("passengerWeightKg" in (loaded ?? {}), false);
   delete globalThis.window;
 });
 

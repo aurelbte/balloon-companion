@@ -17,6 +17,8 @@ export type GroundTemperature = {
   sourceModel: string;
   forecastRun: string;
   validTime: string;
+  forecastOffsetMinutes?: number;
+  provider?: string;
 };
 
 export type LoadCalculationInput = {

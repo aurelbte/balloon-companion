@@ -133,7 +133,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("hourly", "temperature_2m");
       url.searchParams.set("timezone", "UTC");
       url.searchParams.set("start_date", datePart(requestedAt));
-      url.searchParams.set("end_date", datePart(requestedAt));
+      url.searchParams.set("end_date", datePart(addUtcDays(requestedAt, 1)));
       url.searchParams.set("models", request.weatherModel);
       addApiKey(url);
       return fetchJson(fetchImpl, url);

@@ -8,6 +8,8 @@ type ApiPayload = {
     sourceModel: string;
     forecastRun: string;
     validTime: string;
+    forecastOffsetMinutes: number;
+    provider: string;
     fetchedAt: string;
   };
   error?: { message?: string };

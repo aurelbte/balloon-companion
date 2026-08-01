@@ -31,6 +31,7 @@ import { calculateOfficialLoad } from "../lib/loadPerformance/engine";
 import { displayLoadMarginKg, loadMarginTone } from "../lib/loadPerformance/engine";
 import { calculateDemoLoad, DEMO_LOAD_BADGE } from "../lib/loadPerformance/demoEngine";
 import { resolveLoadDemoMode } from "../lib/loadPerformance/demoMode";
+import { formatDemoLoadDiagnostic } from "../lib/loadPerformance/demoDiagnostic";
 import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
 import { OpenMeteoGroundTemperatureProvider } from "../lib/loadPerformance/groundTemperatureProvider";
 import type { GroundTemperature } from "../lib/loadPerformance/types";
@@ -119,6 +120,7 @@ export default function MapPage() {
   const [maximumAltitudeInput, setMaximumAltitudeInput] = useState("");
   const [launchElevationMslM, setLaunchElevationMslM] = useState<number | null>(null);
   const [groundTemperatureState, setGroundTemperatureState] = useState<{ key: string; value: GroundTemperature & { fetchedAt: string } } | null>(null);
+  const [groundTemperatureError, setGroundTemperatureError] = useState<string | null>(null);
   const [testLoadEnabled, setTestLoadEnabled] = useState(false);
   const [loadDetailOpen, setLoadDetailOpen] = useState(false);
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
@@ -233,8 +235,8 @@ export default function MapPage() {
       longitude: config.request.launchSite.longitude,
       dateTime: config.request.launchDateTimeIso,
       weatherModel: config.request.weatherModel,
-    }).then((value) => { if (active) setGroundTemperatureState({ key, value }); })
-      .catch(() => undefined);
+    }).then((value) => { if (active) { setGroundTemperatureState({ key, value }); setGroundTemperatureError(null); } })
+      .catch((error) => { if (active) setGroundTemperatureError(error instanceof Error ? error.message : "Température au sol indisponible"); });
     return () => { active = false; };
   }, [config, testLoadEnabled]);
 
@@ -414,7 +416,7 @@ export default function MapPage() {
       volumeM3: selectedBalloon.volumeM3,
       balloonEquipmentWeightKg: balloonEquipmentWeightForLoad(selectedBalloon) ?? undefined,
     } : {}),
-    occupantsWeightKg: preparation?.passengerWeightKg,
+    occupantsWeightKg: preparation?.occupantsWeightKg,
     launchLatitude: config?.request.launchSite.latitude,
     launchLongitude: config?.request.launchSite.longitude,
     launchElevationMslM: launchElevationMslM ?? undefined,
@@ -432,6 +434,27 @@ export default function MapPage() {
     ? plannedMaximumAltitudeMslM - launchElevationMslM
     : null;
   const maximumAltitudeBelowTerrain = heightAboveTerrainM !== null && heightAboveTerrainM < 0;
+  const demoDiagnostic = formatDemoLoadDiagnostic({
+    terrain: launchElevationMslM !== null,
+    temperature: Boolean(groundTemperature),
+    balloon: Boolean(selectedBalloon),
+    occupantsWeight: typeof preparation?.occupantsWeightKg === "number" && preparation.occupantsWeightKg > 0,
+    maximumAltitude: typeof plannedMaximumAltitudeMslM === "number" && Number.isFinite(plannedMaximumAltitudeMslM),
+  });
+  const blockingMessage = loadResult.status === "AVAILABLE" ? null : ({
+    NO_BALLOON: "Ballon non sélectionné",
+    INCOMPLETE_BALLOON_MASSES: "Complétez les masses du ballon",
+    NO_OCCUPANTS_WEIGHT: "Renseignez Pilote + passagers",
+    NO_MAXIMUM_ALTITUDE: "Saisissez l’altitude maximale",
+    NO_LAUNCH_ELEVATION: "Altitude terrain indisponible",
+    NO_GROUND_TEMPERATURE: groundTemperatureLoading ? "Température sol : récupération…" : "Température au sol indisponible",
+    UNSUPPORTED_MODEL: "Modèle DEMO non pris en charge",
+    UNSUPPORTED_OFFICIAL_DATASET: "Calcul impossible",
+    OUTSIDE_OFFICIAL_TABLE: loadResult.message,
+    OUTSIDE_DEMO_TABLE: loadResult.message,
+    MISSING_MTOW: "Calcul impossible",
+    CONFIGURATION_LIMIT_MISSING: "Calcul impossible",
+  } as const)[loadResult.reasonCode] ?? "Calcul impossible";
 
   const updateMaximumAltitude = (value: string) => {
     const digits = value.replace(/\D/g, "");
@@ -803,9 +826,10 @@ export default function MapPage() {
                 Charge
               </h2>
               {testLoadEnabled && loadResult.status === "AVAILABLE" && <span className="mt-1 inline-block rounded px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white" style={{ background: marginColor }}>{DEMO_LOAD_BADGE}</span>}
-              <p className="mt-1 text-2xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={displayedMargin === null ? "Marge de charge indisponible" : `Marge de charge ${displayedMargin} kilogrammes`}>
-                {groundTemperatureLoading && testLoadEnabled ? "Calcul…" : displayedMargin === null ? "—" : `${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}
+              <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>
+                {blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}
               </p>
+              {testLoadEnabled && <p className="mt-1 whitespace-nowrap text-[8px] font-semibold tracking-tight text-[var(--bc-color-text-muted)]">{demoDiagnostic}</p>}
               <label className="mt-2 block">
                 <span className="block text-[10px] font-semibold leading-tight">Altitude maximale prévue</span>
                 <span className="mt-1 flex items-center gap-1">
@@ -818,7 +842,7 @@ export default function MapPage() {
                 {heightAboveTerrainM !== null && heightAboveTerrainM >= 0 && <p>Hauteur prévue : {Math.round(heightAboveTerrainM).toLocaleString("fr-FR")} m</p>}
                 {maximumAltitudeBelowTerrain && <p className="font-semibold text-red-500">L’altitude prévue est inférieure à l’altitude du terrain.</p>}
                 {!maximumAltitudeBelowTerrain && maximumAltitudeInput === "" && <p>Altitude maximale requise.</p>}
-                {!maximumAltitudeBelowTerrain && maximumAltitudeInput !== "" && loadResult.status === "UNAVAILABLE" && <p>{groundTemperatureLoading && testLoadEnabled ? "Calcul…" : loadResult.message}</p>}
+                {!maximumAltitudeBelowTerrain && maximumAltitudeInput !== "" && !groundTemperatureLoading && groundTemperatureError && <p title={groundTemperatureError}>Température au sol indisponible</p>}
               </div>
             </div>
 
@@ -876,16 +900,6 @@ export default function MapPage() {
               </p>
             </button>
           </div>
-          {testLoadEnabled && (
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 rounded-xl border border-dashed border-orange-400/40 px-3 py-2 text-[10px] text-[var(--bc-color-text-muted)] sm:grid-cols-3" aria-label="Diagnostic temporaire du calcul de charge">
-              <span>Altitude terrain : <strong>{launchElevationMslM !== null ? "OK" : "KO"}</strong></span>
-              <span>Température sol : <strong>{groundTemperature ? "OK" : "KO"}</strong></span>
-              <span>Ballon : <strong>{selectedBalloon ? "OK" : "KO"}</strong></span>
-              <span>Pilote + passagers : <strong>{typeof preparation?.passengerWeightKg === "number" ? "OK" : "KO"}</strong></span>
-              <span>Altitude max : <strong>{typeof plannedMaximumAltitudeMslM === "number" && Number.isFinite(plannedMaximumAltitudeMslM) ? "OK" : "KO"}</strong></span>
-              <span>Mode DEMO : <strong className="text-orange-400">ON</strong></span>
-            </div>
-          )}
         </div>
       </section>
 
@@ -913,10 +927,12 @@ export default function MapPage() {
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse réelle</dt><dd>{Math.round(loadResult.actualTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude terrain</dt><dd>{Math.round(loadResult.launchElevationMslM)} m AMSL</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude maximale prévue</dt><dd>{Math.round(loadInput.plannedMaximumAltitudeMslM!)} m AMSL</dd></div>
-                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température au sol</dt><dd>{Math.round(loadResult.groundTemperatureC)} °C</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température utilisée</dt><dd>{Math.round(loadResult.groundTemperatureC)} °C</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse autorisée de démonstration</dt><dd>{Math.floor(loadResult.permittedTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Marge de démonstration</dt><dd style={{ color: marginColor }}>{displayedMargin! >= 0 ? "+" : "−"}{Math.abs(displayedMargin!)} kg</dd></div>
-                <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Source météo</dt><dd>{groundTemperature.sourceModel} · échéance {new Date(groundTemperature.validTime).toLocaleString("fr-FR")}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Prévision</dt><dd>{new Date(groundTemperature.validTime).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Décalage</dt><dd>{(groundTemperature.forecastOffsetMinutes ?? 0) >= 0 ? "+" : "−"}{Math.abs(Math.round(groundTemperature.forecastOffsetMinutes ?? 0))} min</dd></div>
+                <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Source</dt><dd>{groundTemperature.provider ?? "Open-Meteo"} · {groundTemperature.sourceModel}</dd></div>
                 <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Dataset</dt><dd>Données synthétiques pour test UX</dd></div>
               </dl>
               <p className="mt-4 text-xs leading-relaxed text-[var(--bc-color-text-muted)]">Calcul de démonstration — non utilisable pour la préparation réelle d’un vol. Ce résultat sert uniquement à vérifier le fonctionnement de l’interface. Il ne reproduit pas encore la table officielle du manuel de vol.</p>

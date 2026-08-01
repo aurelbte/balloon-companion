@@ -6,15 +6,28 @@ export const DEMO_LOAD_BADGE = "TEST" as const;
 
 const unavailable = (reasonCode: Extract<DemoLoadCalculationResult, { status: "UNAVAILABLE" }>['reasonCode'], message: string): DemoLoadCalculationResult => ({ status: "UNAVAILABLE", reasonCode, message });
 
+function normalizeManufacturer(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ").toLocaleLowerCase("fr-FR") ?? "";
+}
+
+function normalizeModel(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, "").toUpperCase() ?? "";
+}
+
+export function isDemoCameronZ105(input: Pick<LoadCalculationInput, "manufacturer" | "model">): boolean {
+  return normalizeManufacturer(input.manufacturer) === "cameron" && normalizeModel(input.model) === "Z105";
+}
+
 export function calculateDemoLoad(input: LoadCalculationInput, demoAllowed: boolean): DemoLoadCalculationResult {
   if (!demoAllowed) return unavailable("UNSUPPORTED_OFFICIAL_DATASET", "Calcul de démonstration désactivé.");
-  if (!input.balloonId || input.manufacturer !== "Cameron" || input.model !== "Z105") return unavailable("UNSUPPORTED_MODEL", "Le test UX est limité au Cameron Z105.");
+  if (!input.balloonId) return unavailable("NO_BALLOON", "Ballon non sélectionné");
   if (!(typeof input.balloonEquipmentWeightKg === "number" && input.balloonEquipmentWeightKg > 0)) return unavailable("INCOMPLETE_BALLOON_MASSES", "Complétez les masses du ballon.");
-  if (!(typeof input.occupantsWeightKg === "number" && input.occupantsWeightKg >= 0)) return unavailable("NO_OCCUPANTS_WEIGHT", "Renseignez Pilote + passagers.");
+  if (!(typeof input.occupantsWeightKg === "number" && Number.isFinite(input.occupantsWeightKg) && input.occupantsWeightKg > 0)) return unavailable("NO_OCCUPANTS_WEIGHT", "Renseignez Pilote + passagers.");
   if (!(typeof input.plannedMaximumAltitudeMslM === "number" && Number.isFinite(input.plannedMaximumAltitudeMslM))) return unavailable("NO_MAXIMUM_ALTITUDE", "Altitude max requise");
   if (!(typeof input.launchElevationMslM === "number" && Number.isFinite(input.launchElevationMslM))) return unavailable("NO_LAUNCH_ELEVATION", "Altitude du terrain indisponible.");
   if (input.plannedMaximumAltitudeMslM < input.launchElevationMslM) return unavailable("OUTSIDE_DEMO_TABLE", "L’altitude maximale prévue doit être supérieure ou égale à l’altitude du terrain.");
   if (!input.groundTemperature) return unavailable("NO_GROUND_TEMPERATURE", "Température au sol indisponible");
+  if (!isDemoCameronZ105(input)) return unavailable("UNSUPPORTED_MODEL", "Modèle DEMO non pris en charge");
   const permittedTotalMassKg = interpolateDemoPermittedMass(demoCameronZ105.table, input.groundTemperature.temperatureC, input.plannedMaximumAltitudeMslM);
   if (permittedTotalMassKg === null) return unavailable("OUTSIDE_DEMO_TABLE", "Conditions hors de la table de démonstration.");
   const actualTotalMassKg = input.balloonEquipmentWeightKg + input.occupantsWeightKg;

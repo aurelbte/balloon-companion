@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { balloonEquipmentWeightForLoad } from "./loadPerformance/balloonInput.ts";
 import { calculateOfficialLoad, displayLoadMarginKg, loadMarginTone } from "./loadPerformance/engine.ts";
-import { calculateDemoLoad, demoLoadCacheKey, DEMO_LOAD_BADGE } from "./loadPerformance/demoEngine.ts";
+import { calculateDemoLoad, demoLoadCacheKey, DEMO_LOAD_BADGE, isDemoCameronZ105 } from "./loadPerformance/demoEngine.ts";
 import { interpolateDemoPermittedMass } from "./loadPerformance/demoInterpolation.ts";
+import { formatDemoLoadDiagnostic } from "./loadPerformance/demoDiagnostic.ts";
 import { demoCameronZ105, enabledDemoLoadDatasets } from "./loadPerformance/datasets/demoCameronZ105.ts";
 import { enabledOfficialLoadDatasets, officialLoadDatasets, validateOfficialLoadDatasets } from "./loadPerformance/manufacturerDatasets.ts";
 import { createBalloon } from "./balloons.ts";
@@ -96,6 +97,11 @@ test("le moteur DEMO est impossible à utiliser hors activation explicite", () =
   assert.equal(result.reasonCode, "UNSUPPORTED_OFFICIAL_DATASET");
 });
 
+test("le Cameron Z105 est reconnu par ses champs structurés normalisés", () => {
+  assert.equal(isDemoCameronZ105({ manufacturer: " cameron ", model: " z 105 " }), true);
+  assert.equal(isDemoCameronZ105({ manufacturer: "Cameron", model: "Z120" }), false);
+});
+
 test("l'interpolation DEMO est bilinéaire et n'extrapole jamais", () => {
   assert.equal(interpolateDemoPermittedMass(demoCameronZ105.table, 0, 0), 1450);
   assert.equal(interpolateDemoPermittedMass(demoCameronZ105.table, 5, 250), 1370);
@@ -139,4 +145,8 @@ test("la clé de cache est invalidée à chaque entrée métier ou échéance mo
   assert.notEqual(initial, demoLoadCacheKey({ ...completeInput, occupantsWeightKg: 341 }));
   assert.notEqual(initial, demoLoadCacheKey({ ...completeInput, plannedMaximumAltitudeMslM: 1600 }));
   assert.notEqual(initial, demoLoadCacheKey({ ...completeInput, launchDateTime: "2026-08-02T05:30:00.000Z" }));
+});
+
+test("le diagnostic compact reflète exactement les données disponibles", () => {
+  assert.equal(formatDemoLoadDiagnostic({ terrain: true, temperature: false, balloon: true, occupantsWeight: true, maximumAltitude: true }), "TERRAIN ✓ · TEMP ✕ · BALLON ✓ · POIDS ✓ · ALT ✓");
 });
