@@ -2,9 +2,7 @@ import type {
   ConditionsData,
   HeroRingData,
   LastFlightData,
-  PilotStatusData,
 } from "./types";
-import { REGISTERED_BALLOONS } from "../../lib/balloons";
 
 /**
  * Temporary presentation data. Keeping it outside the components makes the
@@ -16,18 +14,6 @@ export const MOCK_COCKPIT_DATA = {
     displayHours: "136 h",
     flights: 108,
   } satisfies HeroRingData,
-  pilotStatus: {
-    flightTest: {
-      label: "Vol test",
-      dueDate: "30/04/2027",
-      remainingMonths: 9,
-    },
-    medical: {
-      label: "Médical",
-      dueDate: "04/05/2031",
-      remainingMonths: 57,
-    },
-  } satisfies PilotStatusData,
   conditions: {
     windDirectionDeg: 130,
     wind: "12 km/h",
@@ -42,5 +28,4 @@ export const MOCK_COCKPIT_DATA = {
     departure: "Bondues",
     arrival: "Templeuve",
   } satisfies LastFlightData,
-  balloons: REGISTERED_BALLOONS,
 } as const;

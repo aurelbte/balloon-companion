@@ -6,8 +6,8 @@ export type HeroRingData = {
 
 export type PilotCredentialStatus = {
   label: string;
-  dueDate: string;
-  remainingMonths: number;
+  dueDate: string | null;
+  remainingMonths: number | null;
 };
 
 export type PilotStatusData = {

@@ -14,16 +14,23 @@ import {
   loadFlightCompletionState,
   persistOfficialAscension,
 } from "../../../lib/flightCompletionStorage";
+import { loadBalloonRegistry } from "../../../lib/balloonStorage";
+import { officialFieldsForBalloon, resolveBalloonForFlight } from "../../../lib/balloons";
+import { loadPreparationDraft } from "../../../lib/preparationDraftStorage";
 
 function toFormValues(): OfficialAscensionFormValues {
   const defaults = defaultOfficialAscensionInput();
   const existing = loadFlightCompletionState().officialAscensions.find(
     ({ sourceFlightId }) => sourceFlightId === DEMO_COMPLETION_FLIGHT_ID,
   );
-  const value = existing ?? defaults;
+  const preparationBalloonId = loadPreparationDraft()?.balloonName;
+  const registry = loadBalloonRegistry();
+  const selectedBalloon = resolveBalloonForFlight(registry.balloons, preparationBalloonId, registry.activeBalloonId);
+  const value = existing ?? (selectedBalloon ? { ...defaults, ...officialFieldsForBalloon(selectedBalloon) } : defaults);
   return {
     dateIso: value.dateIso,
     balloonModel: value.balloonModel,
+    balloonManufacturer: value.balloonManufacturer ?? "",
     registration: value.registration,
     departure: value.departure,
     arrival: value.arrival,

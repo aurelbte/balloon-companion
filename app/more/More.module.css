@@ -26,5 +26,28 @@
 .balloonForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
 .balloonForm label { min-width: 0; }
 .balloonForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .64rem; font-weight: 650; text-transform: uppercase; }
-.balloonForm input { width: 100%; min-height: 48px; padding: 0 11px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-primary); font-size: .88rem; }
+.balloonForm input, .balloonForm select { width: 100%; min-height: 48px; padding: 0 11px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-primary); font-size: .88rem; }
 .balloonFormWide { grid-column: 1 / -1; }
+.balloonList { display: grid; gap: 9px; margin-top: 16px; }
+.balloonCard { display: flex; min-height: 92px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); color: inherit; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
+.balloonCard span { min-width: 0; }
+.balloonCard strong, .balloonCard small { display: block; }
+.balloonCard strong { font-size: .95rem; }
+.balloonCard small { margin-top: 3px; color: var(--bc-text-secondary); font-size: .72rem; }
+.balloonCard em { display: inline-block; margin-top: 6px; color: var(--bc-accent); font-size: .66rem; font-style: normal; font-weight: 650; }
+.addBalloon { display: inline-flex; min-height: 48px; align-items: center; gap: 7px; margin-top: 14px; color: var(--bc-accent); font-size: .78rem; font-weight: 650; text-decoration: none; }
+.detailSection { margin-top: 11px; padding: 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); }
+.detailSection h2 { margin-bottom: 8px; color: var(--bc-text-secondary); font-size: .72rem; font-weight: 650; text-transform: uppercase; }
+.detailSection p { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 29px; color: var(--bc-text-secondary); font-size: .72rem; }
+.detailSection strong { color: var(--bc-text-primary); text-align: right; }
+.detailSection button { min-height: 44px; border: 0; background: transparent; color: var(--bc-accent); font-size: .76rem; font-weight: 650; }
+.dangerAction { display: block; margin-top: 3px; color: var(--bc-danger) !important; }
+.profileForm { display: grid; gap: 10px; margin-top: 16px; }
+.profileForm section { padding: 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); }
+.profileForm section h2 { margin-bottom: 10px; color: var(--bc-text-secondary); font-size: .72rem; font-weight: 650; text-transform: uppercase; }
+.profileGrid, .profileGridThree { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.profileGridThree { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.profileForm label { min-width: 0; }
+.profileForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
+.profileForm input, .profileForm select { width: 100%; min-height: 46px; padding: 0 10px; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-canvas); color: var(--bc-text-primary); font-size: .82rem; }
+@media (max-width: 390px) { .balloonForm, .profileGrid { grid-template-columns: 1fr; } .balloonFormWide, .balloonForm .actions { grid-column: 1 !important; } }

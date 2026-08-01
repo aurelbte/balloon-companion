@@ -1,24 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { balloonDisplayName, createBalloon, officialFieldsForBalloon, REGISTERED_BALLOONS } from "./balloons.ts";
+import { balloonDisplayName, balloonSnapshot, createBalloon, officialFieldsForBalloon, REGISTERED_BALLOONS, resolveBalloonForFlight, theoreticalCapacityKg } from "./balloons.ts";
+import { addBalloonToRegistry, createDefaultBalloonRegistry, getActiveBalloon, migrateBalloonRegistry, removeBalloonFromRegistry, setActiveBalloonInRegistry, updateBalloonInRegistry } from "./balloonStorage.ts";
 
-test("les ballons enregistrés partagent un format opérationnel unique", () => {
-  assert.equal(REGISTERED_BALLOONS.length, 4);
-  assert.equal(balloonDisplayName(REGISTERED_BALLOONS[0]), "F-HLFM • Cameron Z105");
-});
-
-test("la sélection d’un ballon remplit les deux champs officiels", () => {
-  assert.deepEqual(officialFieldsForBalloon(REGISTERED_BALLOONS[1]), {
-    registration: "F-HOBA",
-    balloonModel: "Cameron Z350",
-  });
-});
-
-test("un nouveau ballon normalise son immatriculation sans inventer les champs facultatifs", () => {
-  const balloon = createBalloon({ registration: " f-abcd ", manufacturer: " Cameron ", model: " Z90 ", volumeM3: 2_550 });
-  assert.equal(balloon.id, "F-ABCD");
-  assert.equal(balloon.registration, "F-ABCD");
-  assert.equal(balloon.manufacturer, "Cameron");
-  assert.equal(balloon.model, "Z90");
-  assert.equal(balloon.color, undefined);
-});
+const input = { registration: " f-abcd ", manufacturer: " Cameron ", model: " Z90 ", category: "Libre à air chaud", volumeM3: 2_550, emptyWeightKg: 300, maximumAuthorizedWeightKg: 900 };
+test("les ballons de démonstration proviennent du registre central", () => { assert.equal(REGISTERED_BALLOONS.length, 4); assert.equal(balloonDisplayName(REGISTERED_BALLOONS[0]), "F-HLFM • Cameron Z105"); assert.equal(REGISTERED_BALLOONS[0].volumeM3, 2_973); assert.equal(REGISTERED_BALLOONS[0].emptyWeightKg, undefined); });
+test("création et normalisation d’un ballon", () => { const balloon = createBalloon(input); assert.equal(balloon.registration, "F-ABCD"); assert.equal(balloon.color, undefined); assert.equal(theoreticalCapacityKg(balloon), 600); });
+test("le premier ballon devient actif et le second ne remplace pas l’actif", () => { const empty = { version: 2, balloons: [], activeBalloonId: null }; const first = addBalloonToRegistry(empty, input); assert.equal(first.registry.activeBalloonId, first.balloon.id); const second = addBalloonToRegistry(first.registry, { ...input, registration: "F-EFGH" }); assert.equal(second.registry.activeBalloonId, first.balloon.id); });
+test("changement de ballon actif", () => { const registry = createDefaultBalloonRegistry(); assert.equal(setActiveBalloonInRegistry(registry, "F-HOBA").activeBalloonId, "F-HOBA"); });
+test("le Cockpit lit exclusivement le ballon actif du registre", () => { const registry = setActiveBalloonInRegistry(createDefaultBalloonRegistry(), "F-HMIG"); assert.equal(getActiveBalloon(registry)?.registration, "F-HMIG"); });
+test("modification sans changement d’identité technique", () => { const registry = createDefaultBalloonRegistry(); const current = registry.balloons[0]; const updated = updateBalloonInRegistry(registry, current.id, { ...input, registration: "F-NEWW" }); assert.equal(updated.balloons[0].id, current.id); assert.equal(updated.balloons[0].registration, "F-NEWW"); });
+test("suppression non active puis suppression active", () => { const registry = createDefaultBalloonRegistry(); const withoutSecondary = removeBalloonFromRegistry(registry, "F-HOBA"); assert.equal(withoutSecondary.activeBalloonId, "F-HLFM"); const withoutActive = removeBalloonFromRegistry(withoutSecondary, "F-HLFM"); assert.equal(withoutActive.activeBalloonId, null); });
+test("le snapshot d’ascension ne change pas avec le profil", () => { const original = createBalloon(input); const snapshot = balloonSnapshot(original); const modified = createBalloon({ ...input, model: "Z90-NEW" }, original.id); assert.equal(snapshot.model, "Z90"); assert.equal(modified.model, "Z90-NEW"); });
+test("Carnet remplit automatiquement les données officielles", () => { assert.deepEqual(officialFieldsForBalloon(REGISTERED_BALLOONS[1]), { registration: "F-HOBA", balloonModel: "Cameron Z350", balloonManufacturer: "Cameron", category: "Libre à air chaud" }); });
+test("la fin de vol privilégie le ballon choisi au ballon actif", () => { assert.equal(resolveBalloonForFlight(REGISTERED_BALLOONS, "F-HOBA", "F-HLFM")?.id, "F-HOBA"); assert.equal(resolveBalloonForFlight(REGISTERED_BALLOONS, undefined, "F-HLFM")?.id, "F-HLFM"); });
+test("migration de l’ancien registre et persistance de l’actif historique", () => { const migrated = migrateBalloonRegistry({ version: 1, balloons: [{ id: "F-OLD", registration: "F-OLD", manufacturer: "Cameron", model: "Z105", volumeM3: 2973, isFavorite: true, documents: [], weights: {} }] }); assert.equal(migrated.version, 2); assert.equal(migrated.activeBalloonId, "F-OLD"); assert.equal(migrated.balloons[0].category, "Libre à air chaud"); });
+test("le registre survit à une sérialisation de rechargement", () => { const registry = setActiveBalloonInRegistry(createDefaultBalloonRegistry(), "F-GTET"); const restored = migrateBalloonRegistry(JSON.parse(JSON.stringify(registry))); assert.deepEqual(restored, registry); });

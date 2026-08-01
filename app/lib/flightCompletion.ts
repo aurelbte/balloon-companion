@@ -25,6 +25,7 @@ export type OfficialAscension = {
   dateIso: string;
   date: string;
   balloonModel: string;
+  balloonManufacturer?: string;
   registration: string;
   departure: string;
   arrival: string;
@@ -258,6 +259,7 @@ export function defaultOfficialAscensionInput(): OfficialAscensionInput {
     dateIso: "2026-08-01",
     date: "1 août 2026",
     balloonModel: "Z105",
+    balloonManufacturer: "Cameron",
     registration: "F-HLFM",
     departure: "LFQO",
     arrival: "Mérignies",

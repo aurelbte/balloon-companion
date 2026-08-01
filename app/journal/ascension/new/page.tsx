@@ -9,6 +9,7 @@ import { persistManualOfficialAscension } from "../../../lib/flightCompletionSto
 const EMPTY_VALUES: OfficialAscensionFormValues = {
   dateIso: "",
   balloonModel: "",
+  balloonManufacturer: "",
   registration: "",
   departure: "",
   arrival: "",

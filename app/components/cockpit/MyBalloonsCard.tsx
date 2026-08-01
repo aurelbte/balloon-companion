@@ -1,20 +1,17 @@
+"use client";
+
 import Link from "next/link";
 import { Balloon as BalloonIcon } from "lucide-react";
 import { Card } from "../../design-system";
-import type { Balloon } from "./types";
+import { useActiveBalloon } from "../../hooks/useBalloons";
 import styles from "./Cockpit.module.css";
 
-type MyBalloonsCardProps = {
-  balloons: readonly Balloon[];
-  href: string;
-};
+type MyBalloonsCardProps = { href: string };
 
 export default function MyBalloonsCard({
-  balloons,
   href,
 }: MyBalloonsCardProps) {
-  const primary =
-    balloons.find((balloon) => balloon.isFavorite) ?? balloons.at(0);
+  const primary = useActiveBalloon();
 
   if (!primary) {
     return (
@@ -32,7 +29,7 @@ export default function MyBalloonsCard({
     <Link
       className={styles.cardLink}
       href={href}
-      aria-label={`Ouvrir Mes ballons, ${balloons.length} ballon${balloons.length > 1 ? "s" : ""}`}
+      aria-label={`Ouvrir Mes ballons, ${primary.registration}`}
     >
       <Card className={`${styles.card} ${styles.summaryCard}`}>
         <h2 className={styles.cardTitle}>

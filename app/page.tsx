@@ -34,7 +34,7 @@ export default function CockpitPage() {
         <CockpitExperiencePrompt />
 
         <div className={styles.pair}>
-          <PilotStatusCard data={MOCK_COCKPIT_DATA.pilotStatus} />
+          <PilotStatusCard />
           <ConditionsCard data={MOCK_COCKPIT_DATA.conditions} />
         </div>
 
@@ -54,8 +54,7 @@ export default function CockpitPage() {
             href="/journal/lfqo-merignies"
           />
           <MyBalloonsCard
-            balloons={MOCK_COCKPIT_DATA.balloons}
-            href="/prepare"
+            href="/more/profile/balloons"
           />
         </div>
       </div>

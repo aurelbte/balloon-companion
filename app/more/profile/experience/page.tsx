@@ -1,43 +1,15 @@
 "use client";
-
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadFlightCompletionState, persistPilotExperience } from "../../../lib/flightCompletionStorage";
+import { type PilotProfile, type PilotUsualFunction } from "../../../lib/pilotProfile";
+import { loadPilotProfile, savePilotProfile } from "../../../lib/pilotProfileStorage";
 import styles from "../../More.module.css";
-
-type Values = { hours: string; minutes: string; ascensions: string; confirmed: boolean };
-
-export default function PilotExperiencePage() {
-  const router = useRouter();
-  const [values, setValues] = useState<Values | null>(null);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const balance = loadFlightCompletionState().openingBalance;
-      const total = balance.officialDurationMinutes;
-      setValues({
-        hours: balance.confirmed && total !== null ? String(Math.floor(total / 60)) : "",
-        minutes: balance.confirmed && total !== null ? String(total % 60) : "",
-        ascensions: balance.confirmed && balance.ascensions !== null ? String(balance.ascensions) : "",
-        confirmed: balance.confirmed,
-      });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-  if (!values) return null;
-  const hours = values.hours === "" ? Number.NaN : Number(values.hours);
-  const minutes = values.minutes === "" ? Number.NaN : Number(values.minutes);
-  const ascensions = values.ascensions === "" ? Number.NaN : Number(values.ascensions);
-  const valid = Number.isInteger(hours) && hours >= 0 && Number.isInteger(minutes) && minutes >= 0 && minutes <= 59 && Number.isInteger(ascensions) && ascensions >= 0;
-  const setNumeric = (key: "hours" | "minutes" | "ascensions", value: string) => setValues((current) => current ? { ...current, [key]: value.replace(/\D/g, "") } : current);
-  return <main className={styles.screen}><div className={styles.layout}>
-    <button type="button" className={styles.back} onClick={() => router.push("/more/profile")}><ChevronLeft size={18} aria-hidden="true" /> Profil pilote</button>
-    <header><p className={styles.eyebrow}>Profil pilote</p><h1 className={styles.title}>Votre expérience de pilote</h1><p className={styles.subtitle}>Indiquez simplement votre expérience acquise avant Balloon Companion.</p></header>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); if (!valid) return; persistPilotExperience({ hours, minutes, ascensions }); router.push("/more/profile"); }}>
-      <label><span>Heures</span><input autoFocus inputMode="numeric" pattern="[0-9]*" value={values.hours} onChange={(e) => setNumeric("hours", e.target.value)} /></label>
-      <label><span>Minutes</span><input inputMode="numeric" pattern="[0-9]*" aria-invalid={minutes > 59} value={values.minutes} onChange={(e) => setNumeric("minutes", e.target.value)} /></label>
-      <label><span>Ascensions</span><input inputMode="numeric" pattern="[0-9]*" value={values.ascensions} onChange={(e) => setNumeric("ascensions", e.target.value)} /></label>
-      <div className={styles.actions} style={{ gridColumn: "1 / -1" }}><button type="submit" disabled={!valid}>Enregistrer mon expérience</button>{!values.confirmed && <button type="button" className={styles.later} onClick={() => router.push("/more")}>Plus tard</button>}</div>
-    </form>
-  </div></main>;
-}
+type Values = PilotProfile & { hours: string; minutes: string; ascensions: string; experienceConfirmed: boolean };
+export default function PilotInformationPage() { const router = useRouter(); const [values, setValues] = useState<Values | null>(null); useEffect(() => { const timer = window.setTimeout(() => { const profile = loadPilotProfile(); const balance = loadFlightCompletionState().openingBalance; const total = balance.officialDurationMinutes; setValues({ ...profile, hours: balance.confirmed && total !== null ? String(Math.floor(total / 60)) : "", minutes: balance.confirmed && total !== null ? String(total % 60) : "", ascensions: balance.confirmed && balance.ascensions !== null ? String(balance.ascensions) : "", experienceConfirmed: balance.confirmed }); }, 0); return () => window.clearTimeout(timer); }, []); if (!values) return null; const hours = values.hours === "" ? Number.NaN : Number(values.hours); const minutes = values.minutes === "" ? Number.NaN : Number(values.minutes); const ascensions = values.ascensions === "" ? Number.NaN : Number(values.ascensions); const experienceBlank = values.hours === "" && values.minutes === "" && values.ascensions === ""; const experienceValid = Number.isInteger(hours) && hours >= 0 && Number.isInteger(minutes) && minutes >= 0 && minutes <= 59 && Number.isInteger(ascensions) && ascensions >= 0; const valid = experienceBlank || experienceValid; const set = <K extends keyof Values>(key: K, value: Values[K]) => setValues((current) => current ? { ...current, [key]: value } : current); const numeric = (key: "hours" | "minutes" | "ascensions", value: string) => set(key, value.replace(/\D/g, "")); return <main className={styles.screen}><div className={styles.layout}><button type="button" className={styles.back} onClick={() => router.push("/more/profile")}><ChevronLeft size={18} /> Profil pilote</button><header><p className={styles.eyebrow}>Profil pilote</p><h1 className={styles.title}>Mes informations</h1><p className={styles.subtitle}>Informations personnelles, expérience initiale et échéances.</p></header><form className={styles.profileForm} onSubmit={(event) => { event.preventDefault(); if (!valid) return; savePilotProfile({ version: 1, firstName: values.firstName, lastName: values.lastName, licenseNumber: values.licenseNumber, usualFunction: values.usualFunction, flightTestDueDateIso: values.flightTestDueDateIso, medicalDueDateIso: values.medicalDueDateIso }); if (experienceValid) persistPilotExperience({ hours, minutes, ascensions }); router.push("/more/profile"); }}>
+  <section><h2>Identité</h2><div className={styles.profileGrid}><label><span>Prénom</span><input value={values.firstName} onChange={(e) => set("firstName", e.target.value)} /></label><label><span>Nom</span><input value={values.lastName} onChange={(e) => set("lastName", e.target.value)} /></label><label><span>Numéro de licence</span><input autoCapitalize="characters" value={values.licenseNumber} onChange={(e) => set("licenseNumber", e.target.value.toUpperCase())} /></label><label><span>Fonction habituelle</span><select value={values.usualFunction ?? ""} onChange={(e) => set("usualFunction", e.target.value ? e.target.value as PilotUsualFunction : null)}><option value="">Non renseignée</option><option>Pilote</option><option>Élève</option></select></label></div></section>
+  <section><h2>Expérience avant Balloon Companion</h2><div className={styles.profileGridThree}><label><span>Heures</span><input inputMode="numeric" value={values.hours} onChange={(e) => numeric("hours", e.target.value)} /></label><label><span>Minutes</span><input inputMode="numeric" aria-invalid={minutes > 59} value={values.minutes} onChange={(e) => numeric("minutes", e.target.value)} /></label><label><span>Ascensions</span><input inputMode="numeric" value={values.ascensions} onChange={(e) => numeric("ascensions", e.target.value)} /></label></div><p className={styles.experienceHint}>Laissez les trois champs vides si cette expérience est inconnue. Zéro enregistré reste une valeur confirmée.</p></section>
+  <section><h2>Échéances</h2><div className={styles.profileGrid}><label><span>Prochain vol test</span><input type="date" value={values.flightTestDueDateIso} onChange={(e) => set("flightTestDueDateIso", e.target.value)} /></label><label><span>Validité médicale</span><input type="date" value={values.medicalDueDateIso} onChange={(e) => set("medicalDueDateIso", e.target.value)} /></label></div><p className={styles.experienceHint}>Ces dates sont facultatives et affichées factuellement dans le Cockpit.</p></section>
+  <div className={styles.actions}><button type="submit" disabled={!valid}>Enregistrer mes informations</button></div>
+ </form></div></main>; }

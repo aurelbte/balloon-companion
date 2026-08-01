@@ -17,6 +17,7 @@ const DRAFT_KEY = "balloon-companion-official-ascension-draft";
 export type OfficialAscensionFormValues = {
   dateIso: string;
   balloonModel: string;
+  balloonManufacturer: string;
   registration: string;
   departure: string;
   arrival: string;
@@ -89,7 +90,7 @@ export default function OfficialAscensionForm({ title, subtitle, backLabel, subm
     setValues((current) => ({ ...current, ...officialFieldsForBalloon(balloon) }));
     setDirty(true);
   };
-  const submit = () => { if (!valid || !values.category || !values.pilotFunction) return; onSubmit({ dateIso: values.dateIso, date: new Date(`${values.dateIso}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }), balloonModel: values.balloonModel.trim(), registration: values.registration.trim().toUpperCase(), departure: values.departure.trim(), arrival: values.arrival.trim(), category: values.category, pilotFunction: values.pilotFunction, nightFlight: values.nightFlight ?? false, maximumAltitudeM: altitude, officialDurationMinutes: duration, observations: values.observations.trim() }); setDirty(false); };
+  const submit = () => { if (!valid || !values.category || !values.pilotFunction) return; onSubmit({ dateIso: values.dateIso, date: new Date(`${values.dateIso}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }), balloonModel: values.balloonModel.trim(), ...(values.balloonManufacturer.trim() ? { balloonManufacturer: values.balloonManufacturer.trim() } : {}), registration: values.registration.trim().toUpperCase(), departure: values.departure.trim(), arrival: values.arrival.trim(), category: values.category, pilotFunction: values.pilotFunction, nightFlight: values.nightFlight ?? false, maximumAltitudeM: altitude, officialDurationMinutes: duration, observations: values.observations.trim() }); setDirty(false); };
   const moveToNextField = (event: KeyboardEvent<HTMLFormElement>) => { if (event.key !== "Enter" || event.shiftKey || event.target instanceof HTMLTextAreaElement) return; event.preventDefault(); const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])")]; const index = controls.indexOf(event.target as HTMLElement); controls[index + 1]?.focus(); };
 
   return <main className={styles.screen}><div className={styles.layout}>

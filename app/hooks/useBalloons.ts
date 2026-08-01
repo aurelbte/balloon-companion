@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { loadBalloons } from "../lib/balloonStorage";
-import { REGISTERED_BALLOONS, type Balloon } from "../lib/balloons";
-export function useBalloons(): readonly Balloon[] { const [balloons, setBalloons] = useState<readonly Balloon[]>(REGISTERED_BALLOONS); useEffect(() => { const refresh = () => setBalloons(loadBalloons()); const timer = window.setTimeout(refresh, 0); window.addEventListener("storage", refresh); window.addEventListener("balloon-companion:balloons-changed", refresh); return () => { window.clearTimeout(timer); window.removeEventListener("storage", refresh); window.removeEventListener("balloon-companion:balloons-changed", refresh); }; }, []); return balloons; }
+import { useEffect, useMemo, useState } from "react";
+import { BALLOON_REGISTRY_EVENT, createDefaultBalloonRegistry, getActiveBalloon, loadBalloonRegistry, type BalloonRegistry } from "../lib/balloonStorage";
+export function useBalloonRegistry(): BalloonRegistry { const [registry, setRegistry] = useState(createDefaultBalloonRegistry); useEffect(() => { const refresh = () => setRegistry(loadBalloonRegistry()); const timer = window.setTimeout(refresh, 0); window.addEventListener("storage", refresh); window.addEventListener(BALLOON_REGISTRY_EVENT, refresh); return () => { window.clearTimeout(timer); window.removeEventListener("storage", refresh); window.removeEventListener(BALLOON_REGISTRY_EVENT, refresh); }; }, []); return registry; }
+export function useBalloons() { return useBalloonRegistry().balloons; }
+export function useActiveBalloon() { const registry = useBalloonRegistry(); return useMemo(() => getActiveBalloon(registry), [registry]); }

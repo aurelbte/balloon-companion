@@ -17,6 +17,7 @@ export default function CompletionAscensionDetail({ ascensionId }: { ascensionId
   const fields = [
     ["Date", ascension.date],
     ["Type de ballon", `${ascension.balloonModel} · ${ascension.category}`],
+    ["Constructeur", ascension.balloonManufacturer || "—"],
     ["Immatriculation", ascension.registration],
     ["Lieu d’envol", ascension.departure],
     ["Lieu d’atterrissage", ascension.arrival],
