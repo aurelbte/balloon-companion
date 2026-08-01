@@ -21,6 +21,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
   const [category, setCategory] = useState<BalloonCategory>(balloon?.category ?? "Libre à air chaud");
   const [volume, setVolume] = useState(balloon ? String(balloon.volumeM3) : "");
   const [volumeFromCatalog, setVolumeFromCatalog] = useState(false);
+  const [applicableMtow, setApplicableMtow] = useState(balloon?.applicableMtowKg === undefined ? "" : String(balloon.applicableMtowKg));
   const [envelope, setEnvelope] = useState(balloon?.weights.envelopeKg === undefined ? "" : String(balloon.weights.envelopeKg));
   const [burner, setBurner] = useState(balloon?.weights.burnerKg === undefined ? "" : String(balloon.weights.burnerKg));
   const [basket, setBasket] = useState(balloon?.weights.basketKg === undefined ? "" : String(balloon.weights.basketKg));
@@ -38,7 +39,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
   }, [focusCylinderId]);
   const manufacturer = manufacturerChoice === OTHER ? manualManufacturer.trim() : manufacturerChoice;
   const model = manufacturerChoice === OTHER || modelChoice === OTHER ? manualModel.trim() : modelChoice;
-  const volumeM3 = parseDecimal(volume); const envelopeKg = parseDecimal(envelope); const burnerKg = parseDecimal(burner); const basketKg = parseDecimal(basket);
+  const volumeM3 = parseDecimal(volume); const parsedApplicableMtowKg = parseDecimal(applicableMtow); const applicableMtowKg = parsedApplicableMtowKg && parsedApplicableMtowKg > 0 ? parsedApplicableMtowKg : undefined; const envelopeKg = parseDecimal(envelope); const burnerKg = parseDecimal(burner); const basketKg = parseDecimal(basket);
   const parsedCylinders = cylinders.map(({ id, label, weight }) => ({ id, ...(label.trim() ? { label: label.trim() } : {}), fullWeightKg: parseDecimal(weight) ?? 0 }));
   const weights = { ...(envelopeKg === undefined ? {} : { envelopeKg }), ...(burnerKg === undefined ? {} : { burnerKg }), ...(basketKg === undefined ? {} : { basketKg }), fullCylinders: parsedCylinders };
   const total = calculateBalloonWeight(weights);
@@ -46,13 +47,14 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
   const chooseManufacturer = (choice: string) => { setManufacturerChoice(choice); setModelChoice(""); setManualModel(""); setVolumeFromCatalog(false); if (choice !== OTHER) setManualManufacturer(""); };
   const chooseModel = (choice: string) => { setModelChoice(choice); setVolumeFromCatalog(false); if (choice !== OTHER) { setManualModel(""); const knownVolume = catalogVolume(manufacturerChoice, choice); if (knownVolume !== null) { setVolume(String(knownVolume)); setVolumeFromCatalog(true); } } };
   const addCylinder = () => { const id = `cylinder-${Date.now()}-${cylinders.length + 1}`; setCylinders((current) => [...current, { id, label: `Cylindre ${current.length + 1}`, weight: "" }]); setFocusCylinderId(id); };
-  return <form className={styles.balloonForm} onSubmit={(event) => { event.preventDefault(); if (!valid || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, ...(color.trim() ? { color } : {}) }); }}>
+  return <form className={styles.balloonForm} onSubmit={(event) => { event.preventDefault(); if (!valid || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, ...(applicableMtowKg === undefined ? {} : { applicableMtowKg }), ...(color.trim() ? { color } : {}) }); }}>
     <label><span>Immatriculation</span><input autoFocus autoCapitalize="characters" value={registration} onChange={(e) => setRegistration(e.target.value.toUpperCase().replace(/\s/g, ""))} /></label>
     <label><span>Fabricant</span><select value={manufacturerChoice} onChange={(e) => chooseManufacturer(e.target.value)}><option value="">Choisir</option>{catalogManufacturers().map((item) => <option key={item}>{item}</option>)}<option value={OTHER}>Autre fabricant</option></select></label>
     {manufacturerChoice === OTHER && <label><span>Fabricant libre</span><input value={manualManufacturer} onChange={(e) => setManualManufacturer(e.target.value)} /></label>}
     {manufacturerChoice && manufacturerChoice !== OTHER && <label><span>Modèle / type</span><select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}><option value="">Choisir</option>{catalogModels(manufacturer).map((item) => <option key={item.model}>{item.model}</option>)}<option value={OTHER}>Autre modèle</option></select></label>}
     {(manufacturerChoice === OTHER || modelChoice === OTHER) && <label><span>Modèle / type</span><input value={manualModel} onChange={(e) => setManualModel(e.target.value)} /></label>}
     <label><span>Volume</span><span className={styles.technicalInput}><input inputMode="decimal" value={volume} onChange={(e) => { setVolume(decimalInput(e.target.value)); setVolumeFromCatalog(false); }} /><i>m³</i></span>{volumeFromCatalog && <small className={styles.catalogHint}>Volume issu du catalogue constructeur — modifiable</small>}</label>
+    <label><span>MTOM applicable</span><span className={styles.technicalInput}><input inputMode="decimal" value={applicableMtow} onChange={(e) => setApplicableMtow(decimalInput(e.target.value))} /><i>kg</i></span><small className={styles.catalogHint}>À confirmer avec le manuel de vol du ballon.</small></label>
     <label><span>Catégorie</span><select value={category} onChange={(e) => setCategory(e.target.value as BalloonCategory)}><option>Libre à air chaud</option><option>Libre à gaz</option></select></label>
     <label className={styles.balloonFormWide}><span>Couleur (facultatif)</span><input value={color} onChange={(e) => setColor(e.target.value)} /></label>
     <fieldset className={styles.massSection}><legend>Masses du ballon</legend>

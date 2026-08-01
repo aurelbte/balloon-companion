@@ -1,0 +1,10 @@
+{
+  "datasetId": "CAMERON_Z105_OFFICIAL",
+  "status": "PENDING_VERIFICATION",
+  "verifiedNumericSeries": [],
+  "verifiedSourcePages": [],
+  "verifiedInterpolationMethod": null,
+  "verifiedMtomRules": [],
+  "reviewers": [],
+  "note": "Structure d'audit uniquement. Aucune donnée numérique constructeur n'est activée."
+}

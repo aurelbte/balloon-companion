@@ -42,3 +42,13 @@ test("une série absente ou NaN reste indisponible", () => {
   assert.equal(selectNearestGroundTemperature("2026-08-01T20:10:00.000Z", [], []), null);
   assert.equal(selectNearestGroundTemperature("2026-08-01T20:10:00.000Z", ["2026-08-01T20:00"], [Number.NaN]), null);
 });
+
+test("l'heure locale Europe/Paris est cohérente en été", () => {
+  const selected = selectNearestGroundTemperature("2026-08-01T18:10:00.000Z", ["2026-08-01T20:00", "2026-08-01T21:00"], [14, 13], "Europe/Paris");
+  assert.deepEqual(selected, { validTime: "2026-08-01T18:00:00.000Z", temperatureC: 14, offsetMinutes: -10 });
+});
+
+test("l'heure locale Europe/Paris est cohérente en hiver", () => {
+  const selected = selectNearestGroundTemperature("2026-01-01T19:10:00.000Z", ["2026-01-01T20:00", "2026-01-01T21:00"], [8, 7], "Europe/Paris");
+  assert.deepEqual(selected, { validTime: "2026-01-01T19:00:00.000Z", temperatureC: 8, offsetMinutes: -10 });
+});

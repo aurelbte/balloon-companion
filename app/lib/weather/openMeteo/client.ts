@@ -18,6 +18,10 @@ function datePart(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
+function datePartInTimeZone(value: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(value);
+}
+
 function addUtcDays(value: Date, days: number): Date {
   return new Date(value.getTime() + days * 86_400_000);
 }
@@ -45,7 +49,13 @@ async function fetchJson(
   url: URL,
 ): Promise<unknown> {
   let response: Response;
+  const isGroundTemperatureRequest = url.searchParams.get("hourly") === "temperature_2m";
   try {
+    if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) {
+      const safeUrl = new URL(url);
+      safeUrl.searchParams.delete("apikey");
+      console.info("[ground-weather] Open-Meteo request", safeUrl.toString());
+    }
     response = await fetchImpl(url, {
       headers: { accept: "application/json" },
       cache: "no-store",
@@ -57,6 +67,8 @@ async function fetchJson(
       { cause: error instanceof Error ? error.name : "UnknownError" },
     );
   }
+
+  if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) console.info("[ground-weather] Open-Meteo status", response.status);
 
   let payload: unknown;
   try {
@@ -77,6 +89,7 @@ async function fetchJson(
       typeof payload.reason === "string"
         ? payload.reason
         : `Open-Meteo a répondu avec le statut ${response.status}.`;
+    if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) console.error("[ground-weather] Open-Meteo error", { status: response.status, reason });
     throw new TrajectoryDomainError("UPSTREAM_UNAVAILABLE", reason, {
       status: response.status,
     });
@@ -131,10 +144,11 @@ export function createOpenMeteoClient(
       url.searchParams.set("latitude", String(request.latitude));
       url.searchParams.set("longitude", String(request.longitude));
       url.searchParams.set("hourly", "temperature_2m");
-      url.searchParams.set("timezone", "UTC");
-      url.searchParams.set("start_date", datePart(requestedAt));
-      url.searchParams.set("end_date", datePart(addUtcDays(requestedAt, 1)));
-      url.searchParams.set("models", request.weatherModel);
+      url.searchParams.set("timezone", "Europe/Paris");
+      url.searchParams.set("start_date", datePartInTimeZone(requestedAt, "Europe/Paris"));
+      url.searchParams.set("end_date", datePartInTimeZone(addUtcDays(requestedAt, 1), "Europe/Paris"));
+      // Le flux de température DEMO utilise la prévision générique Open-Meteo,
+      // indépendamment du modèle vertical choisi pour les trajectoires.
       addApiKey(url);
       return fetchJson(fetchImpl, url);
     },

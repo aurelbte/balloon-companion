@@ -1,0 +1,17 @@
+.page { min-height: 100dvh; max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; color: #eef4fb; background: #07111f; }
+.page header p { margin: 0; color: #6db8ff; font-size: .72rem; letter-spacing: .12em; }
+.page header h1 { margin: 6px 0; font-size: 2rem; }
+.page header span, .page small { color: #9aaabe; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 28px 0 18px; }
+.grid label { display: grid; gap: 6px; color: #aebdce; font-size: .78rem; }
+.grid input { min-height: 44px; border: 1px solid #2a3b50; border-radius: 10px; padding: 0 12px; color: inherit; background: #101d2d; }
+.results { margin: 12px 0; border: 1px solid #26384d; border-radius: 14px; padding: 16px; background: #0d1928; }
+.results h2 { margin: 0 0 12px; font-size: 1rem; }
+.results dl { margin: 0; }
+.results dl div { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; }
+.results dd { margin: 0; font-weight: 650; }
+.page button { min-height: 46px; border: 0; border-radius: 12px; padding: 0 18px; color: #04101d; background: #74bdff; font-weight: 700; }
+.page button:disabled { opacity: .4; }
+.ok { color: #6fd19a; }
+.error { color: #ff958e; }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }

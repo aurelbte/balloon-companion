@@ -1,5 +1,7 @@
 import { officialLoadDatasets, validateOfficialLoadDatasets } from "../app/lib/loadPerformance/manufacturerDatasets.ts";
 import { enabledDemoLoadDatasets } from "../app/lib/loadPerformance/datasets/demoCameronZ105.ts";
+import { cameronZ105Official } from "../app/lib/loadPerformance/datasets/cameronZ105Official.ts";
+import { auditCameronZ105ReferenceCoverage, cameronZ105References } from "../app/lib/loadPerformance/referenceCases/cameronZ105References.ts";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +17,12 @@ function sourceFiles(directory) {
 }
 
 const errors = validateOfficialLoadDatasets(officialLoadDatasets);
+if (cameronZ105Official.enabled) {
+  if (!cameronZ105Official.documentedData.loadTable) errors.push("CAMERON_Z105_OFFICIAL: table officielle absente");
+  if (!cameronZ105Official.source.manualRevision || cameronZ105Official.source.tablePages.length === 0) errors.push("CAMERON_Z105_OFFICIAL: source ou pages exactes absentes");
+  if (!cameronZ105Official.calculationMethod.interpolationPolicy) errors.push("CAMERON_Z105_OFFICIAL: méthode d’interpolation absente");
+  errors.push(...auditCameronZ105ReferenceCoverage(cameronZ105References).map((error) => `CAMERON_Z105_OFFICIAL: ${error}`));
+}
 for (const dataset of enabledDemoLoadDatasets) {
   if (dataset.official !== false) errors.push(`${dataset.id}: un dataset DEMO ne peut jamais être officiel`);
   if (dataset.authorityStatus !== "DEMO_ONLY") errors.push(`${dataset.id}: statut DEMO_ONLY requis`);

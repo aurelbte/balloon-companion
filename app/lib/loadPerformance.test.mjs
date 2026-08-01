@@ -8,6 +8,14 @@ import { formatDemoLoadDiagnostic } from "./loadPerformance/demoDiagnostic.ts";
 import { demoCameronZ105, enabledDemoLoadDatasets } from "./loadPerformance/datasets/demoCameronZ105.ts";
 import { enabledOfficialLoadDatasets, officialLoadDatasets, validateOfficialLoadDatasets } from "./loadPerformance/manufacturerDatasets.ts";
 import { createBalloon } from "./balloons.ts";
+import { cameronZ105Official } from "./loadPerformance/datasets/cameronZ105Official.ts";
+import {
+  CAMERON_Z105_REFERENCE_001,
+  applyApplicableMtowLimit,
+  auditCameronZ105ReferenceCoverage,
+  cameronZ105References,
+  validateCameronZ105Reference,
+} from "./loadPerformance/referenceCases/cameronZ105References.ts";
 
 const completeInput = {
   balloonId: "F-TEST",
@@ -149,4 +157,66 @@ test("la clé de cache est invalidée à chaque entrée métier ou échéance mo
 
 test("le diagnostic compact reflète exactement les données disponibles", () => {
   assert.equal(formatDemoLoadDiagnostic({ terrain: true, temperature: false, balloon: true, occupantsWeight: true, maximumAltitude: true }), "TERRAIN ✓ · TEMP ✕ · BALLON ✓ · POIDS ✓ · ALT ✓");
+});
+
+test("CAMERON_Z105_REFERENCE_001 reproduit exactement le golden case pilote", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const validation = validateCameronZ105Reference(reference);
+  assert.equal(reference.volumeM3, 2974);
+  assert.equal(reference.applicableMtowKg, 952);
+  assert.equal(reference.balloonEquipmentWeightKg, 415);
+  assert.equal(reference.occupantsWeightKg, 330);
+  assert.equal(validation.actualTotalMassKg, 745);
+  assert.equal(validation.permittedTotalMassFromCapacityKg, 825);
+  assert.equal(validation.marginFromCapacityKg, 80);
+  assert.equal(validation.marginFromTotalsKg, 80);
+  assert.equal(validation.coherent, true);
+});
+
+test("la capacité occupants et la marge réagissent aux masses sans formule constructeur implicite", () => {
+  const base = applyApplicableMtowLimit({ tablePermittedTotalMassKg: 825, applicableMtowKg: 952, balloonEquipmentWeightKg: 415, occupantsWeightKg: 330 });
+  const heavierOccupants = applyApplicableMtowLimit({ tablePermittedTotalMassKg: 825, applicableMtowKg: 952, balloonEquipmentWeightKg: 415, occupantsWeightKg: 350 });
+  const heavierEquipment = applyApplicableMtowLimit({ tablePermittedTotalMassKg: 825, applicableMtowKg: 952, balloonEquipmentWeightKg: 435, occupantsWeightKg: 330 });
+  assert.deepEqual(base, { tablePermittedTotalMassKg: 825, permittedTotalMassKg: 825, occupantsCapacityKg: 410, actualTotalMassKg: 745, marginKg: 80, limitingRule: "CHARGE_CONDITIONS" });
+  assert.equal(heavierOccupants.marginKg, 60);
+  assert.equal(heavierEquipment.occupantsCapacityKg, 390);
+  assert.equal(heavierEquipment.marginKg, 60);
+});
+
+test("la MTOM applicable limite toujours une masse de table supérieure", () => {
+  const result = applyApplicableMtowLimit({ tablePermittedTotalMassKg: 825, applicableMtowKg: 780, balloonEquipmentWeightKg: 415, occupantsWeightKg: 330 });
+  assert.equal(result.permittedTotalMassKg, 780);
+  assert.equal(result.occupantsCapacityKg, 365);
+  assert.equal(result.marginKg, 35);
+  assert.equal(result.limitingRule, "APPLICABLE_MTOW");
+});
+
+test("le dataset officiel Cameron reste impossible à activer avec un seul cas", () => {
+  assert.equal(cameronZ105Official.enabled, false);
+  assert.equal(cameronZ105Official.documentedData.loadTable, null);
+  assert.equal(cameronZ105Official.calculationMethod.interpolationPolicy, null);
+  assert.ok(auditCameronZ105ReferenceCoverage(cameronZ105References).length > 0);
+});
+
+test("le cas +80 n'active jamais un résultat officiel ni un fallback DEMO", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const input = {
+    ...completeInput,
+    volumeM3: reference.volumeM3,
+    applicableMtowKg: reference.applicableMtowKg,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg,
+    occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM,
+    plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { ...completeInput.groundTemperature, temperatureC: reference.groundTemperatureC },
+  };
+  const official = calculateOfficialLoad(input);
+  const demo = calculateDemoLoad(input, true);
+  assert.equal(official.status, "UNAVAILABLE");
+  assert.equal(official.reasonCode, "UNSUPPORTED_OFFICIAL_DATASET");
+  assert.equal(demo.status, "AVAILABLE");
+  if (demo.status === "AVAILABLE") {
+    assert.equal(demo.calculationMode, "DEMO");
+    assert.notEqual(demo.marginKg, reference.expectedMarginKg);
+  }
 });

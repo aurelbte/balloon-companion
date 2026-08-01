@@ -68,6 +68,7 @@ test("les ballons de démonstration restent incomplets sans masses inventées", 
   assert.equal(REGISTERED_BALLOONS.length, 4);
   assert.equal(balloonDisplayName(REGISTERED_BALLOONS[0]), "F-HLFM • Cameron Z105");
   assert.equal(REGISTERED_BALLOONS[0].volumeM3, 2_973);
+  assert.equal(REGISTERED_BALLOONS[0].applicableMtowKg, 952);
   assert.deepEqual(REGISTERED_BALLOONS[0].weights, { fullCylinders: [] });
   assert.equal(calculateBalloonWeight(REGISTERED_BALLOONS[0].weights), null);
 });
@@ -82,6 +83,8 @@ test("création, normalisation et conservation des saisies libres", () => {
   assert.equal(custom.registration, "F-ABCD");
   assert.equal(custom.model, "Prototype");
   assert.equal(custom.volumeM3, 3_111);
+  const configured = createBalloon({ ...input, applicableMtowKg: 952 });
+  assert.equal(configured.applicableMtowKg, 952);
 });
 
 test("le poids total est toujours dérivé des composants", () => {

@@ -121,6 +121,7 @@ export default function MapPage() {
   const [launchElevationMslM, setLaunchElevationMslM] = useState<number | null>(null);
   const [groundTemperatureState, setGroundTemperatureState] = useState<{ key: string; value: GroundTemperature & { fetchedAt: string } } | null>(null);
   const [groundTemperatureError, setGroundTemperatureError] = useState<string | null>(null);
+  const [groundTemperatureErrorCode, setGroundTemperatureErrorCode] = useState<string | null>(null);
   const [testLoadEnabled, setTestLoadEnabled] = useState(false);
   const [loadDetailOpen, setLoadDetailOpen] = useState(false);
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
@@ -235,8 +236,8 @@ export default function MapPage() {
       longitude: config.request.launchSite.longitude,
       dateTime: config.request.launchDateTimeIso,
       weatherModel: config.request.weatherModel,
-    }).then((value) => { if (active) { setGroundTemperatureState({ key, value }); setGroundTemperatureError(null); } })
-      .catch((error) => { if (active) setGroundTemperatureError(error instanceof Error ? error.message : "Température au sol indisponible"); });
+    }).then((value) => { if (active) { setGroundTemperatureState({ key, value }); setGroundTemperatureError(null); setGroundTemperatureErrorCode(null); } })
+      .catch((error) => { if (active) { setGroundTemperatureError(error instanceof Error ? error.message : "Température au sol indisponible"); setGroundTemperatureErrorCode(error instanceof Error ? error.name : "INVALID_OPEN_METEO_RESPONSE"); } });
     return () => { active = false; };
   }, [config, testLoadEnabled]);
 
@@ -414,6 +415,7 @@ export default function MapPage() {
       manufacturer: selectedBalloon.manufacturer,
       model: selectedBalloon.model,
       volumeM3: selectedBalloon.volumeM3,
+      applicableMtowKg: selectedBalloon.applicableMtowKg,
       balloonEquipmentWeightKg: balloonEquipmentWeightForLoad(selectedBalloon) ?? undefined,
     } : {}),
     occupantsWeightKg: preparation?.occupantsWeightKg,
@@ -434,13 +436,13 @@ export default function MapPage() {
     ? plannedMaximumAltitudeMslM - launchElevationMslM
     : null;
   const maximumAltitudeBelowTerrain = heightAboveTerrainM !== null && heightAboveTerrainM < 0;
-  const demoDiagnostic = formatDemoLoadDiagnostic({
+  const demoDiagnostic = `${formatDemoLoadDiagnostic({
     terrain: launchElevationMslM !== null,
     temperature: Boolean(groundTemperature),
     balloon: Boolean(selectedBalloon),
     occupantsWeight: typeof preparation?.occupantsWeightKg === "number" && preparation.occupantsWeightKg > 0,
     maximumAltitude: typeof plannedMaximumAltitudeMslM === "number" && Number.isFinite(plannedMaximumAltitudeMslM),
-  });
+  })}${!groundTemperature && groundTemperatureErrorCode ? ` · ${groundTemperatureErrorCode}` : ""}`;
   const blockingMessage = loadResult.status === "AVAILABLE" ? null : ({
     NO_BALLOON: "Ballon non sélectionné",
     INCOMPLETE_BALLOON_MASSES: "Complétez les masses du ballon",
