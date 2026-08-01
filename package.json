@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "npm run validate:load-datasets",
     "build": "next build",
     "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test app/lib/*.test.mjs",
+    "validate:load-datasets": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/validate-load-datasets.mjs",
     "audit:weather-models": "node scripts/audit-weather-models.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "start": "next start",

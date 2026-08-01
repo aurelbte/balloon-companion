@@ -651,13 +651,13 @@ export default function PreparePage() {
           {form.balloonName && <label className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border px-3">
             <span>
               <span className="block text-sm font-semibold">
-                Poids total embarqué
+                Pilote + passagers
               </span>
               <span
                 className="mt-0.5 block text-xs"
                 style={{ color: "var(--bc-color-text-secondary)" }}
               >
-                Passagers uniquement
+                Toutes les personnes embarquées
               </span>
             </span>
             <span className="flex shrink-0 items-baseline gap-1">
@@ -675,7 +675,7 @@ export default function PreparePage() {
                 }
                 className="w-20 border-0 bg-transparent p-0 text-right text-xl font-semibold outline-none disabled:cursor-not-allowed"
                 placeholder="—"
-                aria-label="Poids total des passagers en kilogrammes"
+                aria-label="Poids total du pilote et des passagers en kilogrammes"
               />
               <span
                 className="text-sm"

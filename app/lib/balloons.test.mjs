@@ -42,12 +42,26 @@ const input = {
 };
 
 test("le catalogue central ne contient que les modèles documentés", () => {
-  assert.equal(BALLOON_CATALOG.length, 1);
-  assert.deepEqual(catalogModels("Cameron").map(({ model }) => model), ["Z105", "Z150", "Z350"]);
+  assert.equal(BALLOON_CATALOG.length, 3);
+  assert.deepEqual(catalogModels("Cameron").map(({ model }) => model), ["Z90", "Z105", "Z120", "Z133", "Z150", "Z160", "Z180", "Z210", "Z250", "Z300", "Z350", "Z425"]);
+  assert.equal(catalogVolume("Cameron", "Z90"), 2_549);
   assert.equal(catalogVolume("Cameron", "Z105"), 2_973);
+  assert.equal(catalogVolume("Cameron", "Z120"), 3_398);
+  assert.equal(catalogVolume("Cameron", "Z133"), 3_766);
   assert.equal(catalogVolume("Cameron", "Z150"), 4_247);
+  assert.equal(catalogVolume("Cameron", "Z160"), 4_531);
+  assert.equal(catalogVolume("Cameron", "Z180"), 5_097);
+  assert.equal(catalogVolume("Cameron", "Z210"), 5_947);
+  assert.equal(catalogVolume("Cameron", "Z250"), 7_079);
+  assert.equal(catalogVolume("Cameron", "Z300"), 8_495);
   assert.equal(catalogVolume("Cameron", "Z350"), 9_911);
+  assert.equal(catalogVolume("Cameron", "Z425"), 12_035);
+  assert.equal(catalogVolume("Ultramagic", "S105"), 2_950);
+  assert.equal(catalogVolume("Ultramagic", "N415"), 11_750);
+  assert.equal(catalogVolume("Kubíček", "BB26M"), 2_600);
+  assert.equal(catalogVolume("Kubíček", "BB100Z"), 10_000);
   assert.equal(catalogVolume("Autre", "Libre"), null);
+  assert.equal(BALLOON_CATALOG.every(({ models }) => models.every((model) => !("weights" in model))), true);
 });
 
 test("les ballons de démonstration restent incomplets sans masses inventées", () => {

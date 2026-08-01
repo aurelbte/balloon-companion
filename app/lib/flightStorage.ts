@@ -38,7 +38,7 @@ export interface StoredFlightPreparationV2 {
    */
   descentRateMps?: number;
   balloonName?: string;
-  /** Poids total déclaré des passagers, sans équipement ni aéronef. */
+  /** Poids total déclaré du pilote et des passagers, sans équipement ni aéronef. */
   passengerWeightKg?: number;
   createdAt: number;
   updatedAt: number;

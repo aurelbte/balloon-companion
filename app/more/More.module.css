@@ -31,6 +31,7 @@
 .technicalInput { position: relative; display: block !important; margin: 0 !important; }
 .technicalInput input { padding-right: 38px; }
 .technicalInput i { position: absolute; top: 50%; right: 11px; color: var(--bc-text-muted); font-size: .7rem; font-style: normal; transform: translateY(-50%); }
+.catalogHint { display: block; margin: 5px 2px 0; color: var(--bc-accent); font-size: .65rem; line-height: 1.3; }
 .massSection { grid-column: 1 / -1; min-width: 0; padding: 13px; border: 1px solid var(--bc-border); border-radius: 19px; }
 .massSection legend { padding-inline: 5px; color: var(--bc-text-secondary); font-size: .7rem; font-weight: 650; text-transform: uppercase; }
 .massSection h3 { margin: 13px 0 7px; color: var(--bc-text-secondary); font-size: .72rem; }

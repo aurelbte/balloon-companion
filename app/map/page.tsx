@@ -18,12 +18,17 @@ import {
   FloatingPanel,
 } from "../design-system";
 import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
+import { useBalloonRegistry } from "../hooks/useBalloons";
 import {
   useAirspaceCoverage,
   type AirspaceCoverageViewport,
 } from "../hooks/useAirspaceCoverage";
 import { getAirspaceFrequencyPresentations } from "../lib/operationalFrequency";
-import { loadPreparationDraft } from "../lib/preparationDraftStorage";
+import { loadPreparationDraft, savePreparationDraft } from "../lib/preparationDraftStorage";
+import { balloonEquipmentWeightForLoad } from "../lib/loadPerformance/balloonInput";
+import { calculateOfficialLoad } from "../lib/loadPerformance/engine";
+import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
+import type { StoredFlightPreparationV2 } from "../lib/flightStorage";
 import { selectIntersectedAirspaces } from "../lib/trajectoryAirspaces";
 import {
   ALTITUDE_OPTIONS,
@@ -103,10 +108,14 @@ export default function MapPage() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedBalloonId, setSelectedBalloonId] = useState("");
+  const [preparation, setPreparation] = useState<StoredFlightPreparationV2 | null>(null);
+  const [maximumAltitudeInput, setMaximumAltitudeInput] = useState("");
+  const [launchElevationMslM, setLaunchElevationMslM] = useState<number | null>(null);
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
   const satelliteAvailable = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim());
+  const balloonRegistry = useBalloonRegistry();
   const {
     selectedAirspaces,
     selectedAirspace,
@@ -135,6 +144,12 @@ export default function MapPage() {
       const cached = loadWeatherAnalysis();
       setConfig(stored);
       setSelectedBalloonId(preparation?.balloonName ?? "");
+      setPreparation(preparation);
+      setMaximumAltitudeInput(
+        preparation?.targetAltitudeAmslM === null || preparation?.targetAltitudeAmslM === undefined
+          ? ""
+          : String(preparation.targetAltitudeAmslM),
+      );
       if (stored) {
         const defaultModel =
           WEATHER_MODEL_REGISTRY.find(
@@ -186,6 +201,16 @@ export default function MapPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    let active = true;
+    const provider = new ApiElevationProvider();
+    void provider.getElevation(config.request.launchSite)
+      .then(({ elevationMslM }) => { if (active) setLaunchElevationMslM(elevationMslM); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [config]);
 
   useEffect(() => {
     if (
@@ -350,6 +375,36 @@ export default function MapPage() {
         : [],
     [selectedAirspace],
   );
+  const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
+  const plannedMaximumAltitudeMslM = maximumAltitudeInput.trim() === "" ? undefined : Number(maximumAltitudeInput);
+  const loadResult = calculateOfficialLoad({
+    ...(selectedBalloon ? {
+      balloonId: selectedBalloon.id,
+      manufacturer: selectedBalloon.manufacturer,
+      model: selectedBalloon.model,
+      volumeM3: selectedBalloon.volumeM3,
+      balloonEquipmentWeightKg: balloonEquipmentWeightForLoad(selectedBalloon) ?? undefined,
+    } : {}),
+    occupantsWeightKg: preparation?.passengerWeightKg,
+    launchLatitude: config?.request.launchSite.latitude,
+    launchLongitude: config?.request.launchSite.longitude,
+    launchElevationMslM: launchElevationMslM ?? undefined,
+    launchDateTime: config?.request.launchDateTimeIso,
+    plannedMaximumAltitudeMslM,
+  });
+  const heightAboveTerrainM = plannedMaximumAltitudeMslM !== undefined && launchElevationMslM !== null
+    ? plannedMaximumAltitudeMslM - launchElevationMslM
+    : null;
+
+  const updateMaximumAltitude = (value: string) => {
+    const digits = value.replace(/\D/g, "");
+    setMaximumAltitudeInput(digits);
+    if (!preparation) return;
+    const altitude = digits === "" ? null : Number(digits);
+    const next = { ...preparation, targetAltitudeAmslM: altitude, updatedAt: Date.now() };
+    setPreparation(next);
+    savePreparationDraft(next);
+  };
 
   const toggleModel = (modelId: string) => {
     setSelectedModels((current) => {
@@ -692,11 +747,7 @@ export default function MapPage() {
       >
         <div className="mx-auto max-w-3xl">
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                setNotice("Marge de charge indisponible.")
-              }
+            <div
               className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
@@ -711,21 +762,25 @@ export default function MapPage() {
                 Charge
               </h2>
               <p
-                className="mt-4 text-2xl font-semibold tracking-tight"
+                className="mt-2 text-2xl font-semibold tracking-tight"
                 style={{ color: "var(--bc-color-text-muted)" }}
                 aria-label="Marge de charge indisponible"
               >
-                — kg
+                —
               </p>
-              {!selectedBalloonId && (
-                <p
-                  className="mt-1 text-[9px] leading-tight"
-                  style={{ color: "var(--bc-color-text-muted)" }}
-                >
-                  Ajoutez un ballon pour calculer la charge.
-                </p>
-              )}
-            </button>
+              <label className="mt-1 block">
+                <span className="block text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>Altitude maximale prévue</span>
+                <span className="mt-1 flex items-baseline gap-1">
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={maximumAltitudeInput} onChange={(event) => updateMaximumAltitude(event.target.value)} placeholder="—" aria-label="Altitude maximale prévue en mètres AMSL" className="min-w-0 w-full border-0 bg-transparent p-0 text-base font-semibold outline-none" />
+                  <span className="text-[9px]" style={{ color: "var(--bc-color-text-muted)" }}>m AMSL</span>
+                </span>
+              </label>
+              <p className="mt-1 text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>
+                {heightAboveTerrainM !== null && heightAboveTerrainM >= 0
+                  ? `Hauteur terrain : ${Math.round(heightAboveTerrainM)} m`
+                  : loadResult.status === "UNAVAILABLE" ? loadResult.message : "Calcul…"}
+              </p>
+            </div>
 
             <button
               type="button"
