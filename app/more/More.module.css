@@ -28,6 +28,22 @@
 .balloonForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .64rem; font-weight: 650; text-transform: uppercase; }
 .balloonForm input, .balloonForm select { width: 100%; min-height: 48px; padding: 0 11px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-primary); font-size: .88rem; }
 .balloonFormWide { grid-column: 1 / -1; }
+.technicalInput { position: relative; display: block !important; margin: 0 !important; }
+.technicalInput input { padding-right: 38px; }
+.technicalInput i { position: absolute; top: 50%; right: 11px; color: var(--bc-text-muted); font-size: .7rem; font-style: normal; transform: translateY(-50%); }
+.massSection { grid-column: 1 / -1; min-width: 0; padding: 13px; border: 1px solid var(--bc-border); border-radius: 19px; }
+.massSection legend { padding-inline: 5px; color: var(--bc-text-secondary); font-size: .7rem; font-weight: 650; text-transform: uppercase; }
+.massSection h3 { margin: 13px 0 7px; color: var(--bc-text-secondary); font-size: .72rem; }
+.massGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cylinderList { display: grid; gap: 7px; }
+.cylinderRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(92px, .65fr) 42px; gap: 7px; }
+.cylinderRow button { min-height: 46px; border: 1px solid var(--bc-border); border-radius: 13px; background: transparent; color: var(--bc-danger); }
+.addCylinder { display: inline-flex; min-height: 44px; align-items: center; gap: 6px; margin-top: 7px; border: 0; background: transparent; color: var(--bc-accent); font-size: .75rem; font-weight: 650; }
+.totalWeight { margin-top: 12px; padding: 13px; border-radius: 16px; background: var(--bc-canvas-elevated); }
+.totalWeight span, .totalWeight strong, .totalWeight small { display: block; }
+.totalWeight span { color: var(--bc-text-secondary); font-size: .7rem; }
+.totalWeight strong { margin-top: 4px; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.totalWeight small, .incompleteHint { margin-top: 5px; color: var(--bc-text-muted); font-size: .68rem; }
 .balloonList { display: grid; gap: 9px; margin-top: 16px; }
 .balloonCard { display: flex; min-height: 92px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); color: inherit; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
 .balloonCard span { min-width: 0; }
@@ -42,6 +58,9 @@
 .detailSection strong { color: var(--bc-text-primary); text-align: right; }
 .detailSection button { min-height: 44px; border: 0; background: transparent; color: var(--bc-accent); font-size: .76rem; font-weight: 650; }
 .dangerAction { display: block; margin-top: 3px; color: var(--bc-danger) !important; }
+.detailTotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 5px; padding-top: 9px; border-top: 1px solid var(--bc-border); }
+.detailTotal span { color: var(--bc-text-secondary); font-size: .72rem; }
+.detailTotal strong { font-size: 1.2rem; }
 .profileForm { display: grid; gap: 10px; margin-top: 16px; }
 .profileForm section { padding: 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); }
 .profileForm section h2 { margin-bottom: 10px; color: var(--bc-text-secondary); font-size: .72rem; font-weight: 650; text-transform: uppercase; }
@@ -50,4 +69,4 @@
 .profileForm label { min-width: 0; }
 .profileForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
 .profileForm input, .profileForm select { width: 100%; min-height: 46px; padding: 0 10px; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-canvas); color: var(--bc-text-primary); font-size: .82rem; }
-@media (max-width: 390px) { .balloonForm, .profileGrid { grid-template-columns: 1fr; } .balloonFormWide, .balloonForm .actions { grid-column: 1 !important; } }
+@media (max-width: 390px) { .balloonForm, .profileGrid, .massGrid { grid-template-columns: 1fr; } .balloonFormWide, .balloonForm .actions { grid-column: 1 !important; } .cylinderRow { grid-template-columns: minmax(0, 1fr) 108px 42px; } }
