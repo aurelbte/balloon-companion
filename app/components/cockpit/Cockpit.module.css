@@ -846,6 +846,24 @@
   color: var(--bc-color-text-secondary);
 }
 
+.experiencePrompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--bc-border);
+  border-radius: 16px;
+  background: var(--bc-surface);
+}
+
+.experiencePrompt strong { font-size: 0.72rem; font-weight: 600; }
+.experiencePrompt p { margin-top: 2px; color: var(--bc-text-muted); font-size: 0.62rem; }
+.experiencePrompt a,
+.experiencePrompt button { min-height: 40px; padding: 0 7px; border: 0; background: transparent; color: var(--bc-accent); font-size: 0.67rem; font-weight: 600; text-decoration: none; }
+.experiencePrompt a { display: inline-flex; align-items: center; }
+.experiencePrompt button { color: var(--bc-text-secondary); }
+
 @media (max-height: 760px) {
   .screen {
     padding-top: max(var(--bc-space-2), env(safe-area-inset-top));

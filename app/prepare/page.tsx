@@ -10,9 +10,8 @@ import {
   X,
 } from "lucide-react";
 import NavigationBar from "../components/NavigationBar";
-import BalloonSelector, {
-  type PreparationBalloonOption,
-} from "../components/prepare/BalloonSelector";
+import BalloonSelector from "../components/prepare/BalloonSelector";
+import { useBalloons } from "../hooks/useBalloons";
 import LaunchPointMapDialog from "../components/prepare/LaunchPointMapDialog";
 import TerrainSelector from "../components/prepare/TerrainSelector";
 import {
@@ -37,32 +36,6 @@ import {
 import { saveTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
-const PREPARATION_BALLOONS: readonly PreparationBalloonOption[] = [
-  {
-    id: "F-HLFM",
-    registration: "F-HLFM",
-    manufacturer: "Cameron",
-    model: "Z105",
-  },
-  {
-    id: "F-HOBA",
-    registration: "F-HOBA",
-    manufacturer: "Cameron",
-    model: "Z350",
-  },
-  {
-    id: "F-HMIG",
-    registration: "F-HMIG",
-    manufacturer: "Cameron",
-    model: "Z350",
-  },
-  {
-    id: "F-GTET",
-    registration: "F-GTET",
-    manufacturer: "Cameron",
-    model: "Z150",
-  },
-] as const;
 const FAVORITE_TERRAINS: readonly GeocodingResult[] = [
   {
     id: "favorite-lfqo",
@@ -191,6 +164,7 @@ function displayDuration(value: string): string {
 }
 
 export default function PreparePage() {
+  const balloons = useBalloons();
   const router = useRouter();
   const [form, setForm] = useState<TrajectoryFormState>(initialForm);
   const [storageReady, setStorageReady] = useState(false);
@@ -637,9 +611,9 @@ export default function PreparePage() {
 
         <div className="mt-2">
           <BalloonSelector
-            balloons={PREPARATION_BALLOONS}
+            balloons={balloons}
             selectedBalloonId={
-              PREPARATION_BALLOONS.some(
+              balloons.some(
                 (balloon) => balloon.id === form.balloonName,
               )
                 ? form.balloonName

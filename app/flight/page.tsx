@@ -82,6 +82,7 @@ export default function FlightPage() {
   >("manual");
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [flightActionBusy, setFlightActionBusy] = useState(false);
+  const [demoFlightEnding, setDemoFlightEnding] = useState(false);
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -91,6 +92,12 @@ export default function FlightPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!demoFlightEnding) return;
+    const timer = window.setTimeout(() => router.push("/flight/complete"), 850);
+    return () => window.clearTimeout(timer);
+  }, [demoFlightEnding, router]);
 
   const { geolocation, tracking } = useFlightRuntime();
   const {
@@ -232,6 +239,14 @@ export default function FlightPage() {
     startTracking,
     storageReady,
   ]);
+
+  const handleDemoFlightEnd = useCallback(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      router.push("/flight/complete");
+      return;
+    }
+    setDemoFlightEnding(true);
+  }, [router]);
 
   const handleConfirmStopTracking = useCallback(async () => {
     setFlightActionBusy(true);
@@ -547,21 +562,36 @@ export default function FlightPage() {
       />
 
       {geoState === "simulation" && (
-        <span
-          aria-label="Mode test, position GPS simulée"
+        <div
           style={{
             position: "fixed",
             top: "max(58px, calc(env(safe-area-inset-top) + 42px))",
             right: "16px",
             zIndex: 19,
-            color: "rgba(253, 230, 138, 0.82)",
-            fontSize: "8px",
-            fontWeight: 800,
-            letterSpacing: "0.08em",
+            display: "grid",
+            justifyItems: "end",
+            gap: "7px",
           }}
         >
-          TEST
-        </span>
+          <span aria-label="Mode test, position GPS simulée" style={{ color: "rgba(253, 230, 138, 0.82)", fontSize: "8px", fontWeight: 800, letterSpacing: "0.08em" }}>TEST</span>
+          <button
+            type="button"
+            onClick={handleDemoFlightEnd}
+            style={{ minHeight: "44px", padding: "0 12px", border: "1px solid rgba(253,230,138,.35)", borderRadius: "999px", background: "rgba(7,17,31,.9)", color: "#fde68a", fontSize: "10px", fontWeight: 750 }}
+          >
+            Simuler la fin du vol
+          </button>
+        </div>
+      )}
+
+      {demoFlightEnding && (
+        <div role="status" aria-live="polite" style={{ position: "fixed", inset: 0, zIndex: 120, display: "grid", placeItems: "center", background: "var(--bc-background)" }}>
+          <div style={{ textAlign: "center" }}>
+            <p style={{ color: "var(--bc-accent)", fontSize: "11px", fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase" }}>Vol terminé</p>
+            <strong style={{ display: "block", marginTop: "8px", fontSize: "34px", fontWeight: 600 }}>57 min</strong>
+            <p style={{ marginTop: "7px", color: "var(--bc-text-secondary)", fontSize: "14px" }}>17,8 km · 982 m max</p>
+          </div>
+        </div>
       )}
 
       {layerSettings.airspaces && airspaceCoverage.visibleLoading && (

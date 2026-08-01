@@ -3,7 +3,8 @@ import { ClipboardCheck } from "lucide-react";
 import { Button } from "./design-system";
 import NavigationBar from "./components/NavigationBar";
 import ConditionsCard from "./components/cockpit/ConditionsCard";
-import HeroRing from "./components/cockpit/HeroRing";
+import CockpitHeroRing from "./components/cockpit/CockpitHeroRing";
+import CockpitExperiencePrompt from "./components/cockpit/CockpitExperiencePrompt";
 import LastFlightCard from "./components/cockpit/LastFlightCard";
 import { MOCK_COCKPIT_DATA } from "./components/cockpit/mockCockpitData";
 import MyBalloonsCard from "./components/cockpit/MyBalloonsCard";
@@ -29,7 +30,8 @@ export default function CockpitPage() {
           <h1 className={styles.welcome}>Bonjour Aurélien 👋</h1>
         </header>
 
-        <HeroRing data={MOCK_COCKPIT_DATA.hero} />
+        <CockpitHeroRing />
+        <CockpitExperiencePrompt />
 
         <div className={styles.pair}>
           <PilotStatusCard data={MOCK_COCKPIT_DATA.pilotStatus} />

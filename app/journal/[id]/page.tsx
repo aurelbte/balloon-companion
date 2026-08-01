@@ -16,20 +16,25 @@ import {
   JOURNAL_FLIGHTS,
 } from "../../lib/journalMockData";
 import styles from "../Journal.module.css";
+import {
+  createDemoCompletionJournalFlight,
+  DEMO_COMPLETION_FLIGHT_ID,
+} from "../../lib/flightCompletion";
 
 type JournalFlightPageProps = {
   params: Promise<{ id: string }>;
 };
 
 export function generateStaticParams() {
-  return JOURNAL_FLIGHTS.map((flight) => ({ id: flight.id }));
+  return [...JOURNAL_FLIGHTS.map((flight) => ({ id: flight.id })), { id: DEMO_COMPLETION_FLIGHT_ID }];
 }
 
 export default async function JournalFlightPage({
   params,
 }: JournalFlightPageProps) {
   const { id } = await params;
-  const flight = getJournalFlight(id);
+  const flight = getJournalFlight(id) ??
+    (id === DEMO_COMPLETION_FLIGHT_ID ? createDemoCompletionJournalFlight() : null);
   if (!flight) notFound();
 
   return (
@@ -43,7 +48,7 @@ export default async function JournalFlightPage({
           <JournalFlightTitle
             flightId={flight.id}
             automaticName={getJournalFlightAutomaticName(flight)}
-            availableFlightIds={JOURNAL_FLIGHTS.map((item) => item.id)}
+            availableFlightIds={[...JOURNAL_FLIGHTS.map((item) => item.id), DEMO_COMPLETION_FLIGHT_ID]}
             className={styles.routeTitle}
           />
           <p className={styles.dateLine}>{flight.date}</p>

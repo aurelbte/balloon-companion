@@ -1,13 +1,9 @@
 "use client";
 
 import { Balloon, ChevronDown } from "lucide-react";
+import type { Balloon as BalloonRecord } from "../../lib/balloons";
 
-export type PreparationBalloonOption = {
-  id: string;
-  registration: string;
-  manufacturer: string;
-  model: string;
-};
+export type PreparationBalloonOption = Pick<BalloonRecord, "id" | "registration" | "manufacturer" | "model">;
 
 type BalloonSelectorProps = {
   balloons: readonly PreparationBalloonOption[];

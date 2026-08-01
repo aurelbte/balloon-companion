@@ -1,7 +1,7 @@
 export type HeroRingData = {
   totalHours: number;
   displayHours: string;
-  flights: number;
+  flights: number | "—";
 };
 
 export type PilotCredentialStatus = {
@@ -38,38 +38,4 @@ export type WeeklyActivityData = {
   cumulativeTime: string;
 };
 
-export type BalloonDocument = {
-  id: string;
-  type:
-    | "insurance"
-    | "cdn"
-    | "cen"
-    | "maintenance"
-    | "registration"
-    | "other";
-  label: string;
-  expirationDate?: string;
-  status: "valid" | "expiring" | "expired" | "missing";
-};
-
-export type BalloonWeights = {
-  envelopeKg?: number;
-  basketKg?: number;
-  burnerKg?: number;
-  cylinderKg?: number;
-  cylinderCount?: number;
-  equipmentKg?: number;
-  emptyOperatingWeightKg?: number;
-};
-
-export type Balloon = {
-  id: string;
-  registration: string;
-  manufacturer: string;
-  model: string;
-  volumeM3?: number;
-  isFavorite?: boolean;
-  lastUsedAt?: string;
-  documents: BalloonDocument[];
-  weights: BalloonWeights;
-};
+export type { Balloon, BalloonDocument, BalloonWeights } from "../../lib/balloons";

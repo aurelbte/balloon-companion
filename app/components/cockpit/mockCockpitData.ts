@@ -1,10 +1,10 @@
 import type {
-  Balloon,
   ConditionsData,
   HeroRingData,
   LastFlightData,
   PilotStatusData,
 } from "./types";
+import { REGISTERED_BALLOONS } from "../../lib/balloons";
 
 /**
  * Temporary presentation data. Keeping it outside the components makes the
@@ -42,15 +42,5 @@ export const MOCK_COCKPIT_DATA = {
     departure: "Bondues",
     arrival: "Templeuve",
   } satisfies LastFlightData,
-  balloons: [
-    {
-      id: "active-balloon",
-      registration: "",
-      manufacturer: "Cameron",
-      model: "Z-105",
-      isFavorite: true,
-      documents: [],
-      weights: {},
-    },
-  ] satisfies Balloon[],
+  balloons: REGISTERED_BALLOONS,
 } as const;

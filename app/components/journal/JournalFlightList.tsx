@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import {
   loadJournalDemoState,
   saveJournalDemoState,
@@ -218,6 +219,9 @@ function InteractiveFlightCard({
           <div className={styles.flightMetrics}>
             <span>{flight.durationMinutes} min</span>
             <span>{flight.distanceKm.toFixed(1)} km</span>
+            {"logbookStatus" in flight && flight.logbookStatus === "PENDING" && (
+              <span className={styles.pendingLogbook}>Carnet à valider</span>
+            )}
           </div>
         </div>
         <div className={styles.thumbnail}>
@@ -240,6 +244,7 @@ function InteractiveFlightCard({
 }
 
 export default function JournalFlightList({ flights }: JournalFlightListProps) {
+  const completionState = useFlightCompletionState();
   const [demoState, setDemoState] = useState<JournalDemoState>(EMPTY_STATE);
   const [storageReady, setStorageReady] = useState(false);
   const [query, setQuery] = useState("");
@@ -257,13 +262,23 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   const [actionTrigger, setActionTrigger] = useState<HTMLElement | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
 
+  const allFlights = useMemo(
+    () => [
+      ...completionState.journalFlights,
+      ...flights.filter(
+        (flight) => !completionState.journalFlights.some(({ id }) => id === flight.id),
+      ),
+    ],
+    [completionState.journalFlights, flights],
+  );
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setDemoState(loadJournalDemoState(flights.map((flight) => flight.id)));
+      setDemoState(loadJournalDemoState(allFlights.map((flight) => flight.id)));
       setStorageReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [flights]);
+  }, [allFlights]);
 
   useEffect(() => {
     if (!toastVisible) return;
@@ -273,10 +288,10 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
 
   const availableFlights = useMemo(
     () =>
-      flights.filter(
+      allFlights.filter(
         (flight) => !demoState.deletedFlightIds.includes(flight.id),
       ),
-    [demoState.deletedFlightIds, flights],
+    [allFlights, demoState.deletedFlightIds],
   );
   const departureTerrains = useMemo(
     () => [...new Set(availableFlights.map((flight) => flight.departure))].sort(),

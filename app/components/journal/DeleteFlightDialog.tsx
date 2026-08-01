@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 type DeleteFlightDialogProps = {
   flightName: string;
+  entityLabel?: "vol" | "ascension";
   returnFocusTo: HTMLElement | null;
   onCancel: () => void;
   onConfirm: () => void;
@@ -10,6 +11,7 @@ type DeleteFlightDialogProps = {
 
 export default function DeleteFlightDialog({
   flightName,
+  entityLabel = "vol",
   returnFocusTo,
   onCancel,
   onConfirm,
@@ -40,13 +42,13 @@ export default function DeleteFlightDialog({
       }}
     >
       <h2 id="delete-flight-title" className="text-xl font-semibold tracking-tight">
-        Supprimer ce vol ?
+        Supprimer {entityLabel === "ascension" ? "cette ascension" : "ce vol"} ?
       </h2>
       <p
         id="delete-flight-description"
         className="mt-2 text-sm leading-relaxed text-[var(--bc-text-secondary)]"
       >
-        Le vol « {flightName} » et ses données seront
+        {entityLabel === "ascension" ? "L’ascension" : "Le vol"} « {flightName} » et ses données seront
         définitivement supprimés.
       </p>
       <div className="mt-5 grid grid-cols-2 gap-2">

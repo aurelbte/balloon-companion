@@ -10,7 +10,7 @@ export const MAIN_NAVIGATION_ITEMS = [
   { label: "Prépa", href: "/prepare", icon: "prepare" },
   { label: "Vol", href: "/flight", icon: "flight" },
   { label: "Journal", href: "/journal", icon: "journal" },
-  { label: "Plus", href: "#plus", icon: "more", disabled: true },
+  { label: "Plus", href: "/more", icon: "more" },
 ] as const satisfies readonly MainNavigationItem[];
 
 export type FlightNavigationAction = "STAY" | "CONTINUE" | "FINALIZE";
