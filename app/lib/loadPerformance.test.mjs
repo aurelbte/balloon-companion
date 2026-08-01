@@ -129,6 +129,9 @@ test("les données obligatoires et les limites DEMO restent explicites", () => {
   assert.equal(calculateDemoLoad({ ...completeInput, occupantsWeightKg: undefined }, true).reasonCode, "NO_OCCUPANTS_WEIGHT");
   assert.equal(calculateDemoLoad({ ...completeInput, balloonEquipmentWeightKg: undefined }, true).reasonCode, "INCOMPLETE_BALLOON_MASSES");
   assert.equal(calculateDemoLoad({ ...completeInput, plannedMaximumAltitudeMslM: 2500 }, true).reasonCode, "OUTSIDE_DEMO_TABLE");
+  const belowTerrain = calculateDemoLoad({ ...completeInput, plannedMaximumAltitudeMslM: 40 }, true);
+  assert.equal(belowTerrain.reasonCode, "OUTSIDE_DEMO_TABLE");
+  assert.match(belowTerrain.message, /altitude du terrain/);
 });
 
 test("la clé de cache est invalidée à chaque entrée métier ou échéance modifiée", () => {

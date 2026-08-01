@@ -13,6 +13,7 @@ export function calculateDemoLoad(input: LoadCalculationInput, demoAllowed: bool
   if (!(typeof input.occupantsWeightKg === "number" && input.occupantsWeightKg >= 0)) return unavailable("NO_OCCUPANTS_WEIGHT", "Renseignez Pilote + passagers.");
   if (!(typeof input.plannedMaximumAltitudeMslM === "number" && Number.isFinite(input.plannedMaximumAltitudeMslM))) return unavailable("NO_MAXIMUM_ALTITUDE", "Altitude max requise");
   if (!(typeof input.launchElevationMslM === "number" && Number.isFinite(input.launchElevationMslM))) return unavailable("NO_LAUNCH_ELEVATION", "Altitude du terrain indisponible.");
+  if (input.plannedMaximumAltitudeMslM < input.launchElevationMslM) return unavailable("OUTSIDE_DEMO_TABLE", "L’altitude maximale prévue doit être supérieure ou égale à l’altitude du terrain.");
   if (!input.groundTemperature) return unavailable("NO_GROUND_TEMPERATURE", "Température au sol indisponible");
   const permittedTotalMassKg = interpolateDemoPermittedMass(demoCameronZ105.table, input.groundTemperature.temperatureC, input.plannedMaximumAltitudeMslM);
   if (permittedTotalMassKg === null) return unavailable("OUTSIDE_DEMO_TABLE", "Conditions hors de la table de démonstration.");

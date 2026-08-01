@@ -30,6 +30,7 @@ import { balloonEquipmentWeightForLoad } from "../lib/loadPerformance/balloonInp
 import { calculateOfficialLoad } from "../lib/loadPerformance/engine";
 import { displayLoadMarginKg, loadMarginTone } from "../lib/loadPerformance/engine";
 import { calculateDemoLoad, DEMO_LOAD_BADGE } from "../lib/loadPerformance/demoEngine";
+import { resolveLoadDemoMode } from "../lib/loadPerformance/demoMode";
 import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
 import { OpenMeteoGroundTemperatureProvider } from "../lib/loadPerformance/groundTemperatureProvider";
 import type { GroundTemperature } from "../lib/loadPerformance/types";
@@ -139,7 +140,7 @@ export default function MapPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const analysisRequest = getTrajectoryAnalysisRequest();
-      setTestLoadEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("testLoad") === "1");
+      setTestLoadEnabled(resolveLoadDemoMode(window.location.search));
       const preparation = loadPreparationDraft();
       const legacyProjection = getTrajectoryProjectionV2();
       const stored =
@@ -430,6 +431,7 @@ export default function MapPage() {
   const heightAboveTerrainM = plannedMaximumAltitudeMslM !== undefined && launchElevationMslM !== null
     ? plannedMaximumAltitudeMslM - launchElevationMslM
     : null;
+  const maximumAltitudeBelowTerrain = heightAboveTerrainM !== null && heightAboveTerrainM < 0;
 
   const updateMaximumAltitude = (value: string) => {
     const digits = value.replace(/\D/g, "");
@@ -804,18 +806,20 @@ export default function MapPage() {
               <p className="mt-1 text-2xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={displayedMargin === null ? "Marge de charge indisponible" : `Marge de charge ${displayedMargin} kilogrammes`}>
                 {groundTemperatureLoading && testLoadEnabled ? "Calcul…" : displayedMargin === null ? "—" : `${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}
               </p>
-              <label className="mt-1 block">
-                <span className="block text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>Altitude maximale prévue</span>
-                <span className="mt-1 flex items-baseline gap-1">
-                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={maximumAltitudeInput} onChange={(event) => updateMaximumAltitude(event.target.value)} placeholder="—" aria-label="Altitude maximale prévue en mètres AMSL" className="min-w-0 w-full border-0 bg-transparent p-0 text-base font-semibold outline-none" />
-                  <span className="text-[9px]" style={{ color: "var(--bc-color-text-muted)" }}>m AMSL</span>
+              <label className="mt-2 block">
+                <span className="block text-[10px] font-semibold leading-tight">Altitude maximale prévue</span>
+                <span className="mt-1 flex items-center gap-1">
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={maximumAltitudeInput} onClick={(event) => event.stopPropagation()} onChange={(event) => updateMaximumAltitude(event.target.value)} placeholder="Ex. 1500" aria-label="Altitude maximale prévue en mètres AMSL" aria-invalid={maximumAltitudeBelowTerrain} className="min-w-0 w-full rounded-lg border bg-black/10 px-2 py-1.5 text-base font-semibold outline-none focus:border-[var(--bc-accent)]" style={{ borderColor: maximumAltitudeBelowTerrain ? "#ef4444" : "var(--bc-border)" }} />
+                  <span className="shrink-0 text-[9px]" style={{ color: "var(--bc-color-text-muted)" }}>m AMSL</span>
                 </span>
               </label>
-              <p className="mt-1 text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>
-                {heightAboveTerrainM !== null && heightAboveTerrainM >= 0
-                  ? `Hauteur terrain : ${Math.round(heightAboveTerrainM)} m`
-                  : groundTemperatureLoading && testLoadEnabled ? "Calcul…" : loadResult.status === "UNAVAILABLE" ? loadResult.message : "Calcul…"}
-              </p>
+              <div className="mt-1.5 space-y-0.5 text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>
+                <p>Terrain : {launchElevationMslM === null ? "récupération…" : `${Math.round(launchElevationMslM)} m AMSL`}</p>
+                {heightAboveTerrainM !== null && heightAboveTerrainM >= 0 && <p>Hauteur prévue : {Math.round(heightAboveTerrainM).toLocaleString("fr-FR")} m</p>}
+                {maximumAltitudeBelowTerrain && <p className="font-semibold text-red-500">L’altitude prévue est inférieure à l’altitude du terrain.</p>}
+                {!maximumAltitudeBelowTerrain && maximumAltitudeInput === "" && <p>Altitude maximale requise.</p>}
+                {!maximumAltitudeBelowTerrain && maximumAltitudeInput !== "" && loadResult.status === "UNAVAILABLE" && <p>{groundTemperatureLoading && testLoadEnabled ? "Calcul…" : loadResult.message}</p>}
+              </div>
             </div>
 
             <button
@@ -872,6 +876,16 @@ export default function MapPage() {
               </p>
             </button>
           </div>
+          {testLoadEnabled && (
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 rounded-xl border border-dashed border-orange-400/40 px-3 py-2 text-[10px] text-[var(--bc-color-text-muted)] sm:grid-cols-3" aria-label="Diagnostic temporaire du calcul de charge">
+              <span>Altitude terrain : <strong>{launchElevationMslM !== null ? "OK" : "KO"}</strong></span>
+              <span>Température sol : <strong>{groundTemperature ? "OK" : "KO"}</strong></span>
+              <span>Ballon : <strong>{selectedBalloon ? "OK" : "KO"}</strong></span>
+              <span>Pilote + passagers : <strong>{typeof preparation?.passengerWeightKg === "number" ? "OK" : "KO"}</strong></span>
+              <span>Altitude max : <strong>{typeof plannedMaximumAltitudeMslM === "number" && Number.isFinite(plannedMaximumAltitudeMslM) ? "OK" : "KO"}</strong></span>
+              <span>Mode DEMO : <strong className="text-orange-400">ON</strong></span>
+            </div>
+          )}
         </div>
       </section>
 

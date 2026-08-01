@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { analysisPathWithLoadDemo } from "../lib/loadPerformance/demoMode";
 import {
   CalendarDays,
   ChevronRight,
@@ -412,7 +413,7 @@ export default function PreparePage() {
         setError("Les paramètres ne peuvent pas être ouverts sur la carte.");
         return;
       }
-      router.push("/map");
+      router.push(analysisPathWithLoadDemo());
     } catch {
       setError(
         "La projection n’a pas pu être calculée. Vérifiez la connexion et réessayez.",
