@@ -4,15 +4,14 @@ export type LoadUnavailableReasonCode =
   | "NO_OCCUPANTS_WEIGHT"
   | "NO_MAXIMUM_ALTITUDE"
   | "NO_LAUNCH_ELEVATION"
-  | "NO_TEMPERATURE_PROFILE"
+  | "NO_GROUND_TEMPERATURE"
   | "UNSUPPORTED_MODEL"
   | "UNSUPPORTED_OFFICIAL_DATASET"
   | "OUTSIDE_OFFICIAL_TABLE"
   | "MISSING_MTOW"
   | "CONFIGURATION_LIMIT_MISSING";
 
-export type TemperatureProfilePoint = {
-  altitudeMslM: number;
+export type GroundTemperature = {
   temperatureC: number;
   sourceModel: string;
   forecastRun: string;
@@ -34,7 +33,7 @@ export type LoadCalculationInput = {
   launchElevationMslM?: number;
   launchDateTime?: string;
   plannedMaximumAltitudeMslM?: number;
-  temperatureProfile?: readonly TemperatureProfilePoint[];
+  groundTemperature?: GroundTemperature;
   applicableMtowKg?: number;
   basketMaximumLoadKg?: number;
 };
@@ -53,8 +52,9 @@ export type LoadCalculationResult =
       launchElevationMslM: number;
       maximumAltitudeMslM: number;
       limitingAltitudeMslM: number;
-      limitingTemperatureC: number;
-      weatherSource: string;
+      groundTemperatureC: number;
+      groundTemperatureSource: string;
+      manufacturerTemperatureMethod: string;
       calculatedAt: string;
     }
   | {
@@ -95,12 +95,10 @@ export interface ElevationProvider {
   }): Promise<ElevationResult>;
 }
 
-export interface LoadWeatherProvider {
-  getTemperatureProfile(input: {
+export interface GroundTemperatureProvider {
+  getGroundTemperature(input: {
     latitude: number;
     longitude: number;
-    launchDateTime: string;
-    launchElevationMslM: number;
-    plannedMaximumAltitudeMslM: number;
-  }): Promise<readonly TemperatureProfilePoint[]>;
+    dateTime: string;
+  }): Promise<GroundTemperature & { fetchedAt: string }>;
 }

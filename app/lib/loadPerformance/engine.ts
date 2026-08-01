@@ -10,7 +10,7 @@ export function calculateOfficialLoad(input: LoadCalculationInput): LoadCalculat
   if (!(typeof input.plannedMaximumAltitudeMslM === "number" && Number.isFinite(input.plannedMaximumAltitudeMslM))) return unavailable("NO_MAXIMUM_ALTITUDE", "Saisissez l’altitude maximale prévue.");
   if (!(typeof input.launchElevationMslM === "number" && Number.isFinite(input.launchElevationMslM))) return unavailable("NO_LAUNCH_ELEVATION", "Altitude du terrain indisponible.");
   if (input.plannedMaximumAltitudeMslM < input.launchElevationMslM) return unavailable("OUTSIDE_OFFICIAL_TABLE", "L’altitude maximale prévue est inférieure à l’altitude du terrain.");
-  if (!input.temperatureProfile?.length) return unavailable("NO_TEMPERATURE_PROFILE", "Prévision de température indisponible.");
+  if (!input.groundTemperature) return unavailable("NO_GROUND_TEMPERATURE", "Température au sol indisponible.");
   const adapter = manufacturerLoadAdapters.find(
     (candidate) => candidate.manufacturer === input.manufacturer,
   );

@@ -20,7 +20,7 @@ const completeInput = {
   launchElevationMslM: 47,
   launchDateTime: "2026-08-02T04:30:00.000Z",
   plannedMaximumAltitudeMslM: 1_500,
-  temperatureProfile: [{ altitudeMslM: 1_500, temperatureC: 11, sourceModel: "AROME", forecastRun: "2026-08-02T00:00:00.000Z", validTime: "2026-08-02T05:00:00.000Z" }],
+  groundTemperature: { temperatureC: 11, sourceModel: "AROME", forecastRun: "2026-08-02T00:00:00.000Z", validTime: "2026-08-02T05:00:00.000Z" },
 };
 
 test("aucun dataset constructeur non vérifié n'est activé", () => {
@@ -43,7 +43,7 @@ test("le moteur explique chaque donnée manquante sans utiliser zéro", () => {
   assert.equal(calculateOfficialLoad({ ...completeInput, occupantsWeightKg: undefined }).reasonCode, "NO_OCCUPANTS_WEIGHT");
   assert.equal(calculateOfficialLoad({ ...completeInput, plannedMaximumAltitudeMslM: undefined }).reasonCode, "NO_MAXIMUM_ALTITUDE");
   assert.equal(calculateOfficialLoad({ ...completeInput, launchElevationMslM: undefined }).reasonCode, "NO_LAUNCH_ELEVATION");
-  assert.equal(calculateOfficialLoad({ ...completeInput, temperatureProfile: [] }).reasonCode, "NO_TEMPERATURE_PROFILE");
+  assert.equal(calculateOfficialLoad({ ...completeInput, groundTemperature: undefined }).reasonCode, "NO_GROUND_TEMPERATURE");
 });
 
 test("une altitude maximale sous le terrain est refusée", () => {
