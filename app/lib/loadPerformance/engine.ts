@@ -23,7 +23,7 @@ export function displayLoadMarginKg(marginKg: number): number {
   return Math.floor(marginKg);
 }
 
-export const LOAD_MARGIN_PRESENTATION = { positiveComfortKg: 20 } as const;
+export const LOAD_MARGIN_PRESENTATION = { positiveComfortKg: 25 } as const;
 
 export function loadMarginTone(marginKg: number): "positive" | "caution" | "negative" {
   if (marginKg < 0) return "negative";

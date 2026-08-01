@@ -1,4 +1,5 @@
 import { officialLoadDatasets, validateOfficialLoadDatasets } from "../app/lib/loadPerformance/manufacturerDatasets.ts";
+import { enabledDemoLoadDatasets } from "../app/lib/loadPerformance/datasets/demoCameronZ105.ts";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,13 @@ function sourceFiles(directory) {
 }
 
 const errors = validateOfficialLoadDatasets(officialLoadDatasets);
+for (const dataset of enabledDemoLoadDatasets) {
+  if (dataset.official !== false) errors.push(`${dataset.id}: un dataset DEMO ne peut jamais être officiel`);
+  if (dataset.authorityStatus !== "DEMO_ONLY") errors.push(`${dataset.id}: statut DEMO_ONLY requis`);
+  if (officialLoadDatasets.some(({ id }) => id === dataset.id)) errors.push(`${dataset.id}: dataset DEMO présent dans la liste officielle`);
+  if (dataset.sourceUrl !== null || dataset.manualRevision !== null || dataset.verifiedBy !== null) errors.push(`${dataset.id}: une source constructeur ne doit pas être revendiquée`);
+  if (dataset.extrapolationAllowed !== false) errors.push(`${dataset.id}: extrapolation DEMO interdite`);
+}
 for (const file of sourceFiles(loadPerformanceRoot)) {
   const source = readFileSync(file, "utf8");
   for (const term of forbiddenArchitectureTerms) {

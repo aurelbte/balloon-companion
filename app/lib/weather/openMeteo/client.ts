@@ -125,6 +125,20 @@ export function createOpenMeteoClient(
       return fetchJson(fetchImpl, url);
     },
 
+    async fetchGroundTemperature(request) {
+      const requestedAt = new Date(request.validAt);
+      const url = new URL(forecastUrl);
+      url.searchParams.set("latitude", String(request.latitude));
+      url.searchParams.set("longitude", String(request.longitude));
+      url.searchParams.set("hourly", "temperature_2m");
+      url.searchParams.set("timezone", "UTC");
+      url.searchParams.set("start_date", datePart(requestedAt));
+      url.searchParams.set("end_date", datePart(requestedAt));
+      url.searchParams.set("models", request.weatherModel);
+      addApiKey(url);
+      return fetchJson(fetchImpl, url);
+    },
+
     async fetchElevation(latitude: number, longitude: number) {
       const url = new URL(elevationUrl);
       url.searchParams.set("latitude", String(latitude));

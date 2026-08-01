@@ -8,6 +8,7 @@ export type LoadUnavailableReasonCode =
   | "UNSUPPORTED_MODEL"
   | "UNSUPPORTED_OFFICIAL_DATASET"
   | "OUTSIDE_OFFICIAL_TABLE"
+  | "OUTSIDE_DEMO_TABLE"
   | "MISSING_MTOW"
   | "CONFIGURATION_LIMIT_MISSING";
 
@@ -100,5 +101,20 @@ export interface GroundTemperatureProvider {
     latitude: number;
     longitude: number;
     dateTime: string;
+    weatherModel: string;
   }): Promise<GroundTemperature & { fetchedAt: string }>;
 }
+
+export type DemoLoadCalculationResult =
+  | {
+      status: "AVAILABLE";
+      calculationMode: "DEMO";
+      permittedTotalMassKg: number;
+      actualTotalMassKg: number;
+      marginKg: number;
+      groundTemperatureC: number;
+      launchElevationMslM: number;
+      plannedMaximumAltitudeMslM: number;
+      datasetId: "DEMO_CAMERON_Z105_UI_TEST";
+    }
+  | Extract<LoadCalculationResult, { status: "UNAVAILABLE" }>;

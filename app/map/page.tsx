@@ -9,6 +9,7 @@ import {
   Navigation,
   PanelLeftClose,
   PanelLeftOpen,
+  X,
 } from "lucide-react";
 import PreparationMap from "../components/PreparationMap";
 import AirspaceDetails from "../components/flight/AirspaceDetails";
@@ -27,7 +28,12 @@ import { getAirspaceFrequencyPresentations } from "../lib/operationalFrequency";
 import { loadPreparationDraft, savePreparationDraft } from "../lib/preparationDraftStorage";
 import { balloonEquipmentWeightForLoad } from "../lib/loadPerformance/balloonInput";
 import { calculateOfficialLoad } from "../lib/loadPerformance/engine";
+import { displayLoadMarginKg, loadMarginTone } from "../lib/loadPerformance/engine";
+import { calculateDemoLoad, DEMO_LOAD_BADGE } from "../lib/loadPerformance/demoEngine";
 import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
+import { OpenMeteoGroundTemperatureProvider } from "../lib/loadPerformance/groundTemperatureProvider";
+import type { GroundTemperature } from "../lib/loadPerformance/types";
+import { balloonDisplayName } from "../lib/balloons";
 import type { StoredFlightPreparationV2 } from "../lib/flightStorage";
 import { selectIntersectedAirspaces } from "../lib/trajectoryAirspaces";
 import {
@@ -111,6 +117,9 @@ export default function MapPage() {
   const [preparation, setPreparation] = useState<StoredFlightPreparationV2 | null>(null);
   const [maximumAltitudeInput, setMaximumAltitudeInput] = useState("");
   const [launchElevationMslM, setLaunchElevationMslM] = useState<number | null>(null);
+  const [groundTemperatureState, setGroundTemperatureState] = useState<{ key: string; value: GroundTemperature & { fetchedAt: string } } | null>(null);
+  const [testLoadEnabled, setTestLoadEnabled] = useState(false);
+  const [loadDetailOpen, setLoadDetailOpen] = useState(false);
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
@@ -130,6 +139,7 @@ export default function MapPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const analysisRequest = getTrajectoryAnalysisRequest();
+      setTestLoadEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("testLoad") === "1");
       const preparation = loadPreparationDraft();
       const legacyProjection = getTrajectoryProjectionV2();
       const stored =
@@ -211,6 +221,21 @@ export default function MapPage() {
       .catch(() => undefined);
     return () => { active = false; };
   }, [config]);
+
+  useEffect(() => {
+    if (!testLoadEnabled || !config) return;
+    let active = true;
+    const key = JSON.stringify([config.request.launchSite.latitude, config.request.launchSite.longitude, config.request.launchDateTimeIso, config.request.weatherModel]);
+    const provider = new OpenMeteoGroundTemperatureProvider();
+    void provider.getGroundTemperature({
+      latitude: config.request.launchSite.latitude,
+      longitude: config.request.launchSite.longitude,
+      dateTime: config.request.launchDateTimeIso,
+      weatherModel: config.request.weatherModel,
+    }).then((value) => { if (active) setGroundTemperatureState({ key, value }); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [config, testLoadEnabled]);
 
   useEffect(() => {
     if (
@@ -377,7 +402,10 @@ export default function MapPage() {
   );
   const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
   const plannedMaximumAltitudeMslM = maximumAltitudeInput.trim() === "" ? undefined : Number(maximumAltitudeInput);
-  const loadResult = calculateOfficialLoad({
+  const groundTemperatureKey = config ? JSON.stringify([config.request.launchSite.latitude, config.request.launchSite.longitude, config.request.launchDateTimeIso, config.request.weatherModel]) : "";
+  const groundTemperature = groundTemperatureState?.key === groundTemperatureKey ? groundTemperatureState.value : null;
+  const groundTemperatureLoading = testLoadEnabled && Boolean(config) && groundTemperatureState?.key !== groundTemperatureKey;
+  const loadInput = {
     ...(selectedBalloon ? {
       balloonId: selectedBalloon.id,
       manufacturer: selectedBalloon.manufacturer,
@@ -391,7 +419,14 @@ export default function MapPage() {
     launchElevationMslM: launchElevationMslM ?? undefined,
     launchDateTime: config?.request.launchDateTimeIso,
     plannedMaximumAltitudeMslM,
-  });
+    groundTemperature: groundTemperature ?? undefined,
+  };
+  const loadResult = testLoadEnabled
+    ? calculateDemoLoad(loadInput, true)
+    : calculateOfficialLoad(loadInput);
+  const displayedMargin = loadResult.status === "AVAILABLE" ? displayLoadMarginKg(loadResult.marginKg) : null;
+  const marginTone = displayedMargin === null ? null : loadMarginTone(displayedMargin);
+  const marginColor = marginTone === "positive" ? "#37c978" : marginTone === "caution" ? "#f59e0b" : marginTone === "negative" ? "#ef4444" : "var(--bc-color-text-muted)";
   const heightAboveTerrainM = plannedMaximumAltitudeMslM !== undefined && launchElevationMslM !== null
     ? plannedMaximumAltitudeMslM - launchElevationMslM
     : null;
@@ -748,6 +783,10 @@ export default function MapPage() {
         <div className="mx-auto max-w-3xl">
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <div
+              role="button"
+              tabIndex={0}
+              onClick={() => { if (loadResult.status === "AVAILABLE") setLoadDetailOpen(true); }}
+              onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && loadResult.status === "AVAILABLE") setLoadDetailOpen(true); }}
               className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
@@ -761,12 +800,9 @@ export default function MapPage() {
               >
                 Charge
               </h2>
-              <p
-                className="mt-2 text-2xl font-semibold tracking-tight"
-                style={{ color: "var(--bc-color-text-muted)" }}
-                aria-label="Marge de charge indisponible"
-              >
-                —
+              {testLoadEnabled && loadResult.status === "AVAILABLE" && <span className="mt-1 inline-block rounded px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white" style={{ background: marginColor }}>{DEMO_LOAD_BADGE}</span>}
+              <p className="mt-1 text-2xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={displayedMargin === null ? "Marge de charge indisponible" : `Marge de charge ${displayedMargin} kilogrammes`}>
+                {groundTemperatureLoading && testLoadEnabled ? "Calcul…" : displayedMargin === null ? "—" : `${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}
               </p>
               <label className="mt-1 block">
                 <span className="block text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>Altitude maximale prévue</span>
@@ -778,7 +814,7 @@ export default function MapPage() {
               <p className="mt-1 text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>
                 {heightAboveTerrainM !== null && heightAboveTerrainM >= 0
                   ? `Hauteur terrain : ${Math.round(heightAboveTerrainM)} m`
-                  : loadResult.status === "UNAVAILABLE" ? loadResult.message : "Calcul…"}
+                  : groundTemperatureLoading && testLoadEnabled ? "Calcul…" : loadResult.status === "UNAVAILABLE" ? loadResult.message : "Calcul…"}
               </p>
             </div>
 
@@ -850,6 +886,29 @@ export default function MapPage() {
           onClose={closeSelection}
           frequencies={selectedAirspaceFrequencies}
         />
+      )}
+      {loadDetailOpen && testLoadEnabled && loadResult.status === "AVAILABLE" && selectedBalloon && groundTemperature && (
+        <div className="fixed inset-0 z-[80] flex items-end bg-black/45" onClick={() => setLoadDetailOpen(false)}>
+          <section className="w-full rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge de démonstration">
+            <div className="mx-auto max-w-xl">
+              <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-black text-orange-400">TEST — NON OPÉRATIONNEL</h2><button type="button" className="min-h-11 min-w-11 rounded-full" onClick={() => setLoadDetailOpen(false)} aria-label="Fermer"><X className="mx-auto" size={20} /></button></div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Ballon</dt><dd>{balloonDisplayName(selectedBalloon)}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Poids du ballon équipé</dt><dd>{loadInput.balloonEquipmentWeightKg} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Pilote + passagers</dt><dd>{loadInput.occupantsWeightKg} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse réelle</dt><dd>{Math.round(loadResult.actualTotalMassKg)} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude terrain</dt><dd>{Math.round(loadResult.launchElevationMslM)} m AMSL</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude maximale prévue</dt><dd>{Math.round(loadInput.plannedMaximumAltitudeMslM!)} m AMSL</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température au sol</dt><dd>{Math.round(loadResult.groundTemperatureC)} °C</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse autorisée de démonstration</dt><dd>{Math.floor(loadResult.permittedTotalMassKg)} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Marge de démonstration</dt><dd style={{ color: marginColor }}>{displayedMargin! >= 0 ? "+" : "−"}{Math.abs(displayedMargin!)} kg</dd></div>
+                <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Source météo</dt><dd>{groundTemperature.sourceModel} · échéance {new Date(groundTemperature.validTime).toLocaleString("fr-FR")}</dd></div>
+                <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Dataset</dt><dd>Données synthétiques pour test UX</dd></div>
+              </dl>
+              <p className="mt-4 text-xs leading-relaxed text-[var(--bc-color-text-muted)]">Calcul de démonstration — non utilisable pour la préparation réelle d’un vol. Ce résultat sert uniquement à vérifier le fonctionnement de l’interface. Il ne reproduit pas encore la table officielle du manuel de vol.</p>
+            </div>
+          </section>
+        </div>
       )}
     </main>
   );

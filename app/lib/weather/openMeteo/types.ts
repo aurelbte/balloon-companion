@@ -48,6 +48,12 @@ export type OpenMeteoClientConfig = {
 
 export interface OpenMeteoClient {
   fetchWindColumn(request: OpenMeteoWindColumnRequest): Promise<unknown>;
+  fetchGroundTemperature(request: {
+    latitude: number;
+    longitude: number;
+    validAt: string;
+    weatherModel: OpenMeteoWeatherModel;
+  }): Promise<unknown>;
   fetchElevation(latitude: number, longitude: number): Promise<unknown>;
 }
 

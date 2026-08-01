@@ -94,6 +94,7 @@ export function validateOfficialLoadDatasets(
   const errors: string[] = [];
   const ids = new Set<string>();
   for (const dataset of datasets) {
+    if ((dataset as { authorityStatus?: string }).authorityStatus === "DEMO_ONLY") errors.push(`${dataset.id}: un dataset DEMO est interdit dans la liste officielle`);
     if (ids.has(dataset.id)) errors.push(`Identifiant dupliqué : ${dataset.id}`);
     ids.add(dataset.id);
     if (!dataset.sourceUrl) errors.push(`${dataset.id}: source absente`);
