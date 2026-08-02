@@ -7,7 +7,7 @@ interface FlightRecoveryDialogProps {
   busy: boolean;
   onResume: () => void;
   onComplete: () => void;
-  onAbandon: () => void;
+  onIgnore: () => void;
 }
 
 export default function FlightRecoveryDialog({
@@ -15,7 +15,7 @@ export default function FlightRecoveryDialog({
   busy,
   onResume,
   onComplete,
-  onAbandon,
+  onIgnore,
 }: FlightRecoveryDialogProps) {
   const startTime = new Date(flight.startedAt).toLocaleTimeString("fr-FR", {
     hour: "2-digit",
@@ -67,7 +67,7 @@ export default function FlightRecoveryDialog({
           id="flight-recovery-title"
           style={{ marginTop: "8px", fontSize: "22px", fontWeight: 900 }}
         >
-          Un enregistrement est en cours depuis {startTime}.
+          Un vol non finalisé a été retrouvé
         </h2>
         <p
           style={{
@@ -76,7 +76,7 @@ export default function FlightRecoveryDialog({
             fontSize: "14px",
           }}
         >
-          {flight.points.length} points sont conservés sur cet appareil.
+          Début à {startTime} · {flight.points.length} points sont conservés sur cet appareil.
         </p>
         <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
           <button
@@ -104,14 +104,14 @@ export default function FlightRecoveryDialog({
           </button>
           <button
             disabled={busy}
-            onClick={onAbandon}
+            onClick={onIgnore}
             style={{
               ...buttonStyle,
               background: "transparent",
               color: "var(--bc-danger)",
             }}
           >
-            ABANDONNER
+            IGNORER SANS SUPPRIMER
           </button>
         </div>
       </section>

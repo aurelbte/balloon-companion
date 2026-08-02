@@ -23,6 +23,8 @@ import DeleteFlightDialog from "./DeleteFlightDialog";
 import JournalTraceThumbnail from "./JournalTraceThumbnail";
 import RenameFlightDialog from "./RenameFlightDialog";
 import styles from "../../journal/Journal.module.css";
+import { migrateCompletedRecordedFlightsToJournal } from "../../lib/flightCompletionStorage";
+import { journalFlightsForMode } from "../../lib/realFlightJournal";
 
 type JournalFlightListProps = { flights: readonly JournalFlight[] };
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
@@ -261,15 +263,26 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   const [pendingDelete, setPendingDelete] = useState<JournalFlight | null>(null);
   const [actionTrigger, setActionTrigger] = useState<HTMLElement | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const [demoEnabled, setDemoEnabled] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDemoEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1");
+      void migrateCompletedRecordedFlightsToJournal().catch((error: unknown) => {
+        console.error("Migration non destructive des vols GPS impossible", error);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const allFlights = useMemo(
     () => [
-      ...completionState.journalFlights,
-      ...flights.filter(
+      ...journalFlightsForMode(completionState.journalFlights, demoEnabled),
+      ...(demoEnabled ? flights : []).filter(
         (flight) => !completionState.journalFlights.some(({ id }) => id === flight.id),
       ),
     ],
-    [completionState.journalFlights, flights],
+    [completionState.journalFlights, demoEnabled, flights],
   );
 
   useEffect(() => {

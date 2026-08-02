@@ -7,9 +7,16 @@ import {
   type FlightCompletionState,
   type OfficialAscensionInput,
   validateOfficialAscension,
+  type CompletionJournalFlight,
 } from "./flightCompletion.ts";
+import type { RecordedFlight } from "./recordedFlight.ts";
+import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
+import { legacyFlightSessionToRecordedFlight } from "./realFlightJournal.ts";
+import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
+import { loadFlightSession } from "./flightSessionStorage.ts";
 
-const STORAGE_KEY = "balloon-companion-flight-completion-v1";
+export const FLIGHT_COMPLETION_STORAGE_KEY = "balloon-companion-flight-completion-v1";
+const STORAGE_KEY = FLIGHT_COMPLETION_STORAGE_KEY;
 export const FLIGHT_COMPLETION_EVENT = "balloon-companion-flight-completion-changed";
 
 function normalizeState(value: unknown): FlightCompletionState | null {
@@ -89,6 +96,38 @@ export function ensureDemoCompletionPersisted(): FlightCompletionState {
   const state = ensureCompletionJournalFlight(loadFlightCompletionState());
   saveFlightCompletionState(state);
   return state;
+}
+
+export function persistJournalFlight(flight: CompletionJournalFlight): FlightCompletionState {
+  const state = ensureCompletionJournalFlight(loadFlightCompletionState(), flight);
+  saveFlightCompletionState(state);
+  return state;
+}
+
+export function persistRecordedFlightInJournal(
+  flight: RecordedFlight,
+  options: Readonly<{ recovered?: boolean; balloonRegistration?: string }> = {},
+): FlightCompletionState {
+  return persistJournalFlight(recordedFlightToJournalFlight(flight, options));
+}
+
+/** Migration additive : la source IndexedDB historique est conservée intacte. */
+export async function migrateCompletedRecordedFlightsToJournal(): Promise<number> {
+  const storage = new IndexedDbRecordedFlightStorage();
+  const flights = await storage.listFlights();
+  const legacy = loadFlightSession();
+  if (legacy) {
+    const converted = legacyFlightSessionToRecordedFlight(legacy);
+    if (converted?.status === "COMPLETED" && !flights.some(({ id }) => id === converted.id)) flights.push(converted);
+  }
+  let migrated = 0;
+  for (const flight of flights) {
+    const state = loadFlightCompletionState();
+    if (state.journalFlights.some(({ id }) => id === flight.id)) continue;
+    persistRecordedFlightInJournal(flight);
+    migrated += 1;
+  }
+  return migrated;
 }
 
 export function persistOfficialAscension(

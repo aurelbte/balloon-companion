@@ -1,0 +1,30 @@
+"use client";
+
+import Link from "next/link";
+import { BarChart3, ChevronRight, FileDown, Gauge, NotebookPen } from "lucide-react";
+import NavigationBar from "../NavigationBar";
+import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
+import { getJournalFlightAutomaticName, type JournalFlight } from "../../lib/journalMockData";
+import styles from "../../journal/Journal.module.css";
+import JournalFlightMap from "./JournalFlightMap";
+import JournalFlightTitle from "./JournalFlightTitle";
+
+const measured = (value: number | null, unit: string) => value === null ? "—" : `${Math.round(value)} ${unit}`;
+
+export default function JournalFlightDetail({ flightId, initialFlight }: { flightId: string; initialFlight: JournalFlight | null }) {
+  const state = useFlightCompletionState();
+  const flight = state.journalFlights.find(({ id }) => id === flightId) ?? initialFlight;
+  if (!flight) return <main className={styles.screen}><div className={styles.layout}><Link href="/journal" className={styles.backLink}>← Journal</Link><p>Vol introuvable sur cet appareil.</p></div><NavigationBar activeItem="Journal" /></main>;
+  const ids = [...new Set([...state.journalFlights.map(({ id }) => id), flight.id])];
+  return <main className={styles.screen}><div className={styles.layout}>
+    <Link href="/journal" className={styles.backLink}>← Journal</Link>
+    <header className={styles.detailHeader}><JournalFlightTitle flightId={flight.id} automaticName={getJournalFlightAutomaticName(flight)} availableFlightIds={ids} className={styles.routeTitle} /><p className={styles.dateLine}>{flight.date}</p><div className={styles.primaryMetrics}><p><span>Durée</span><strong>{flight.durationMinutes} min</strong></p><p><span>Distance</span><strong>{flight.distanceKm.toFixed(1)} km</strong></p></div></header>
+    <JournalFlightMap flight={flight} />
+    <section className={styles.moduleGrid} aria-label="Informations du vol">
+      <Link href={`/journal/${flight.id}/graphs`} className={`${styles.moduleCard} ${styles.moduleLink}`}><h2 className={styles.moduleTitle}><BarChart3 size={16} /> Graphiques</h2><p className={styles.moduleValue}>Altitude · Vitesse</p><p className={styles.moduleAction}><span>Voir les graphiques</span><ChevronRight size={15} /></p></Link>
+      <Link href={`/journal/${flight.id}/statistics`} className={`${styles.moduleCard} ${styles.moduleLink}`}><h2 className={styles.moduleTitle}><Gauge size={16} /> Statistiques</h2><div className={styles.statGrid}><p><span>Départ</span><strong>{flight.takeoffTime}</strong></p><p><span>Arrivée</span><strong>{flight.landingTime}</strong></p><p><span>Altitude max</span><strong>{measured(flight.maxAltitudeM, "m")}</strong></p><p><span>Vitesse max</span><strong>{measured(flight.maxSpeedKmh, "km/h")}</strong></p></div><p className={styles.moduleAction}><span>Voir toutes les statistiques</span><ChevronRight size={15} /></p></Link>
+      <article className={styles.moduleCard}><h2 className={styles.moduleTitle}><NotebookPen size={16} /> Notes</h2><p className={styles.moduleValue}>{flight.notes ?? "Aucune note"}</p></article>
+      <article className={styles.moduleCard}><h2 className={styles.moduleTitle}><FileDown size={16} /> Export</h2><p className={styles.moduleValue}>GPX · PDF</p><p className={styles.moduleHint}>Formats du carnet de vol</p></article>
+    </section>
+  </div><NavigationBar activeItem="Journal" /></main>;
+}

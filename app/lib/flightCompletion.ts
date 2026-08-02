@@ -16,6 +16,8 @@ export type PilotExperienceBalance = {
 
 export type CompletionJournalFlight = JournalFlight & {
   logbookStatus: "PENDING" | "VALIDATED";
+  origin: "REAL_GPS" | "MANUAL" | "DEMO";
+  recovered?: boolean;
 };
 
 export type OfficialAscension = {
@@ -101,6 +103,7 @@ export function createDemoCompletionJournalFlight(): CompletionJournalFlight {
     },
     points: demoTrace(),
     logbookStatus: "PENDING",
+    origin: "DEMO",
   };
 }
 

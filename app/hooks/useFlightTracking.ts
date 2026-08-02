@@ -21,6 +21,9 @@ import {
   IndexedDbRecordedFlightStorage,
   type RecordedFlightStorage,
 } from "../lib/recordedFlightStorage";
+import { persistRecordedFlightInJournal } from "../lib/flightCompletionStorage";
+import { loadFlightSession } from "../lib/flightSessionStorage";
+import { legacyFlightSessionToRecordedFlight } from "../lib/realFlightJournal";
 
 interface UseFlightTrackingOptions {
   isEnabled?: boolean;
@@ -39,11 +42,12 @@ interface UseFlightTrackingResult {
   completedFlight: RecordedFlight | null;
   markAcquiring: () => void;
   markReady: () => void;
-  startTracking: (initialPoint?: GeoPoint | null) => void;
+  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string }) => void;
   stopTracking: () => Promise<RecordedFlight | null>;
   resumeInterruptedFlight: () => void;
   completeInterruptedFlight: () => Promise<RecordedFlight | null>;
   abandonInterruptedFlight: () => Promise<boolean>;
+  ignoreInterruptedFlight: () => void;
   dismissCompletedFlight: () => void;
   addPoint: (point: GeoPoint) => void;
 }
@@ -163,6 +167,11 @@ export function useFlightTracking(
     void storageRef.current
       .getActiveFlight()
       .then(async (storedFlight) => {
+        if (!storedFlight) {
+          const legacy = loadFlightSession();
+          storedFlight = legacy ? legacyFlightSessionToRecordedFlight(legacy) : null;
+          if (storedFlight) await storageRef.current.saveActiveFlight(storedFlight);
+        }
         if (!storedFlight || storedFlight.status === "COMPLETED") return;
         const interrupted = interruptRecordedFlight(storedFlight);
         await storageRef.current.saveActiveFlight(interrupted);
@@ -191,7 +200,7 @@ export function useFlightTracking(
   }, [updateStatus]);
 
   const startTracking = useCallback(
-    (initialPoint: GeoPoint | null = null) => {
+    (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string } = {}) => {
       if (
         !isEnabled ||
         statusRef.current === "recording" ||
@@ -206,6 +215,7 @@ export function useFlightTracking(
       const flight = createRecordedFlight({
         startedAt: now,
         firstPoint,
+        balloonRegistration: context.balloonRegistration,
       });
       setCompletedFlight(null);
       applyActiveFlight(flight);
@@ -225,6 +235,7 @@ export function useFlightTracking(
       try {
         await persistenceChainRef.current.catch(() => undefined);
         await storageRef.current.completeFlight(completed);
+        persistRecordedFlightInJournal(completed);
         activeFlightRef.current = null;
         setActiveFlight(null);
         setRecoverableFlight(null);
@@ -294,6 +305,11 @@ export function useFlightTracking(
       return false;
     }
   }, [recoverableFlight]);
+
+  const ignoreInterruptedFlight = useCallback(() => {
+    setRecoverableFlight(null);
+    updateStatus("ready");
+  }, [updateStatus]);
 
   const dismissCompletedFlight = useCallback(() => {
     setCompletedFlight(null);
@@ -393,6 +409,7 @@ export function useFlightTracking(
     resumeInterruptedFlight,
     completeInterruptedFlight,
     abandonInterruptedFlight,
+    ignoreInterruptedFlight,
     dismissCompletedFlight,
     addPoint,
   };

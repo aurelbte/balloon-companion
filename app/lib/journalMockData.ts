@@ -2,24 +2,25 @@ export type JournalFlightPoint = {
   longitude: number;
   latitude: number;
   elapsedMinutes: number;
-  altitudeM: number;
-  speedKmh: number;
+  altitudeM: number | null;
+  speedKmh: number | null;
 };
 
 export type JournalFlightStatistics = {
-  takeoffAltitudeAmslM: number;
-  landingAltitudeAmslM: number;
-  averageAltitudeAmslM: number;
-  averageSpeedKmh: number;
-  minimumInFlightSpeedKmh: number;
-  maximumClimbRateMps: number;
-  maximumDescentRateMps: number;
-  averageHeadingDeg: number;
+  takeoffAltitudeAmslM: number | null;
+  landingAltitudeAmslM: number | null;
+  averageAltitudeAmslM: number | null;
+  averageSpeedKmh: number | null;
+  minimumInFlightSpeedKmh: number | null;
+  maximumClimbRateMps: number | null;
+  maximumDescentRateMps: number | null;
+  averageHeadingDeg: number | null;
   directDistanceKm: number;
 };
 
 export type JournalFlight = {
   id: string;
+  title?: string;
   departure: string;
   arrival: string;
   date: string;
@@ -29,8 +30,9 @@ export type JournalFlight = {
   distanceKm: number;
   takeoffTime: string;
   landingTime: string;
-  maxAltitudeM: number;
-  maxSpeedKmh: number;
+  maxAltitudeM: number | null;
+  maxSpeedKmh: number | null;
+  origin?: "REAL_GPS" | "MANUAL" | "DEMO";
   notes: string | null;
   statistics: JournalFlightStatistics;
   points: readonly JournalFlightPoint[];
@@ -40,8 +42,8 @@ function point(
   longitude: number,
   latitude: number,
   elapsedMinutes: number,
-  altitudeM: number,
-  speedKmh: number,
+  altitudeM: number | null,
+  speedKmh: number | null,
 ): JournalFlightPoint {
   return { longitude, latitude, elapsedMinutes, altitudeM, speedKmh };
 }
@@ -73,10 +75,8 @@ function densifyPoints(
       before.longitude + (after.longitude - before.longitude) * ratio,
       before.latitude + (after.latitude - before.latitude) * ratio,
       elapsedMinutes,
-      Math.round(before.altitudeM + (after.altitudeM - before.altitudeM) * ratio),
-      Number(
-        (before.speedKmh + (after.speedKmh - before.speedKmh) * ratio).toFixed(1),
-      ),
+      before.altitudeM === null || after.altitudeM === null ? null : Math.round(before.altitudeM + (after.altitudeM - before.altitudeM) * ratio),
+      before.speedKmh === null || after.speedKmh === null ? null : Number((before.speedKmh + (after.speedKmh - before.speedKmh) * ratio).toFixed(1)),
     );
   });
 }
@@ -236,6 +236,7 @@ const JOURNAL_FLIGHT_DEFINITIONS: readonly JournalFlight[] = [
 export const JOURNAL_FLIGHTS: readonly JournalFlight[] =
   JOURNAL_FLIGHT_DEFINITIONS.map((flight) => ({
     ...flight,
+    origin: "DEMO",
     points: densifyPoints(flight.points, flight.durationMinutes),
   }));
 
@@ -244,5 +245,5 @@ export function getJournalFlight(id: string): JournalFlight | null {
 }
 
 export function getJournalFlightAutomaticName(flight: JournalFlight): string {
-  return `${flight.departure} → ${flight.arrival}`;
+  return flight.title ?? `${flight.departure} → ${flight.arrival}`;
 }

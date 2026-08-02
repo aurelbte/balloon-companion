@@ -32,6 +32,7 @@ export interface RecordedFlight {
   summary: RecordedFlightSummary;
   createdAt: number;
   updatedAt: number;
+  balloonRegistration?: string;
 }
 
 export type PointRejectionReason =
@@ -248,10 +249,12 @@ export function createRecordedFlight({
   startedAt = Date.now(),
   id = createFlightId(startedAt),
   firstPoint = null,
+  balloonRegistration,
 }: {
   startedAt?: number;
   id?: string;
   firstPoint?: RecordedFlightPoint | null;
+  balloonRegistration?: string;
 } = {}): RecordedFlight {
   const points =
     firstPoint && canAppendRecordedFlightPoint(firstPoint, null).accepted
@@ -267,6 +270,7 @@ export function createRecordedFlight({
     summary: calculateRecordedFlightSummary(points, startedAt, null),
     createdAt: startedAt,
     updatedAt: startedAt,
+    ...(balloonRegistration ? { balloonRegistration } : {}),
   };
 }
 

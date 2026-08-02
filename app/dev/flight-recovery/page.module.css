@@ -1,0 +1,15 @@
+.page { min-height: 100dvh; max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; color: #edf4fc; background: #07111f; }
+.page header p { margin: 0; color: #6db8ff; font-size: .72rem; letter-spacing: .12em; }
+.page header h1 { margin: 6px 0; }
+.page header span, .page article span { color: #9dacbe; }
+.page section { margin-top: 28px; }
+.card { display: grid; gap: 14px; margin: 12px 0; padding: 16px; border: 1px solid #293c53; border-radius: 14px; background: #0d1928; }
+.card > div { display: grid; gap: 3px; }
+.card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin: 0; }
+.card dl div { display: flex; justify-content: space-between; gap: 10px; }
+.card dd { margin: 0; text-align: right; }
+.card button { min-height: 44px; border: 0; border-radius: 10px; background: #74bdff; color: #061321; font-weight: 700; }
+.card button:disabled { opacity: .5; }
+.error { color: #ff958e; }
+.page li { margin: 7px 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .card dl { grid-template-columns: 1fr; } }

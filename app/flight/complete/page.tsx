@@ -19,8 +19,10 @@ export default function FlightCompletePage() {
   const storedFlight = state.journalFlights.find(({ id }) => id === DEMO_COMPLETION_FLIGHT_ID);
 
   useEffect(() => {
-    ensureDemoCompletionPersisted();
-  }, []);
+    const demoEnabled = process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1";
+    if (demoEnabled) ensureDemoCompletionPersisted();
+    else router.replace("/journal");
+  }, [router]);
 
   const leaveForLater = () => {
     window.sessionStorage.setItem("balloon-companion-journal-view", "flights");

@@ -52,6 +52,7 @@ import {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
+import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -148,7 +149,7 @@ export default function FlightPage() {
     completedFlight,
     resumeInterruptedFlight,
     completeInterruptedFlight,
-    abandonInterruptedFlight,
+    ignoreInterruptedFlight,
     dismissCompletedFlight,
     markAcquiring,
     markReady,
@@ -225,7 +226,8 @@ export default function FlightPage() {
   const handleStartTracking = useCallback(() => {
     if (!storageReady) return;
     if ((geoState === "active" || geoState === "simulation") && !isStale) {
-      startTracking(currentPosition);
+      const selectedBalloonId = loadPreparationDraft()?.balloonName;
+      startTracking(currentPosition, selectedBalloonId ? { balloonRegistration: selectedBalloonId } : undefined);
     } else {
       markAcquiring();
       requestPermission();
@@ -325,19 +327,6 @@ export default function FlightPage() {
     await completeInterruptedFlight();
     setFlightActionBusy(false);
   }, [completeInterruptedFlight]);
-
-  const handleAbandonInterruptedFlight = useCallback(async () => {
-    if (
-      !window.confirm(
-        "Abandonner définitivement cet enregistrement et tous ses points ?"
-      )
-    ) {
-      return;
-    }
-    setFlightActionBusy(true);
-    await abandonInterruptedFlight();
-    setFlightActionBusy(false);
-  }, [abandonInterruptedFlight]);
 
   const handleBaseMapChange = useCallback(
     (nextBaseMap: BaseMap) => {
@@ -728,7 +717,7 @@ export default function FlightPage() {
           busy={flightActionBusy}
           onResume={resumeInterruptedFlight}
           onComplete={() => void handleCompleteInterruptedFlight()}
-          onAbandon={() => void handleAbandonInterruptedFlight()}
+          onIgnore={ignoreInterruptedFlight}
         />
       )}
 
