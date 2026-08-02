@@ -5,6 +5,8 @@ import { calculateOfficialLoad, displayLoadMarginKg, loadMarginTone } from "./lo
 import { calculateDemoLoad, demoLoadCacheKey, DEMO_LOAD_BADGE, isDemoCameronZ105 } from "./loadPerformance/demoEngine.ts";
 import { interpolateDemoPermittedMass } from "./loadPerformance/demoInterpolation.ts";
 import { formatDemoLoadDiagnostic } from "./loadPerformance/demoDiagnostic.ts";
+import { loadDisplayPolicy } from "./loadPerformance/loadDisplayMode.ts";
+import { resolveSyntheticMarginMode } from "./loadPerformance/demoMode.ts";
 import { demoCameronZ105, enabledDemoLoadDatasets } from "./loadPerformance/datasets/demoCameronZ105.ts";
 import { enabledOfficialLoadDatasets, officialLoadDatasets, validateOfficialLoadDatasets } from "./loadPerformance/manufacturerDatasets.ts";
 import { createBalloon } from "./balloons.ts";
@@ -103,6 +105,23 @@ test("le moteur DEMO est impossible à utiliser hors activation explicite", () =
   const result = calculateDemoLoad(completeInput, false);
   assert.equal(result.status, "UNAVAILABLE");
   assert.equal(result.reasonCode, "UNSUPPORTED_OFFICIAL_DATASET");
+});
+
+test("la marge synthétique exige les deux paramètres explicites", () => {
+  assert.equal(resolveSyntheticMarginMode("?testLoad=1", true), false);
+  assert.equal(resolveSyntheticMarginMode("?showSyntheticMargin=1", true), false);
+  assert.equal(resolveSyntheticMarginMode("?testLoad=1&showSyntheticMargin=1", false), false);
+  assert.equal(resolveSyntheticMarginMode("?testLoad=1&showSyntheticMargin=1", true), true);
+});
+
+test("le flux DEMO peut être validé sans exposer de kilogrammes synthétiques", () => {
+  assert.deepEqual(loadDisplayPolicy({ demoEnabled: true, syntheticMarginRequested: false, resultAvailable: true }), {
+    showSyntheticBadge: true,
+    showSyntheticMargin: false,
+    openSyntheticDetail: false,
+  });
+  assert.equal(loadDisplayPolicy({ demoEnabled: true, syntheticMarginRequested: true, resultAvailable: true }).showSyntheticMargin, true);
+  assert.equal(loadDisplayPolicy({ demoEnabled: false, syntheticMarginRequested: true, resultAvailable: true }).showSyntheticMargin, false);
 });
 
 test("le Cameron Z105 est reconnu par ses champs structurés normalisés", () => {

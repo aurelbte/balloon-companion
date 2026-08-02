@@ -1,6 +1,7 @@
 import type { GroundTemperatureProvider } from "./types";
 
 const CACHE_PREFIX = "balloon-companion:ground-temperature:v1:";
+export const GROUND_TEMPERATURE_PROVIDER_ID = "open-meteo-generic";
 
 type ApiPayload = {
   ok?: boolean;
@@ -17,20 +18,32 @@ type ApiPayload = {
 
 type GroundTemperatureData = { temperatureC: number; sourceModel: string; forecastRun: string; validTime: string; forecastOffsetMinutes: number; provider: string; fetchedAt: string };
 
-function cacheKey(input: { latitude: number; longitude: number; dateTime: string; weatherModel: string }): string {
-  return `${CACHE_PREFIX}${JSON.stringify([input.latitude, input.longitude, input.dateTime, input.weatherModel])}`;
+export type GroundTemperatureRequestIdentity = { latitude: number; longitude: number; dateTime: string; provider?: string };
+
+export function canFetchGroundTemperature(input: Partial<GroundTemperatureRequestIdentity>): input is GroundTemperatureRequestIdentity {
+  return typeof input.latitude === "number" && Number.isFinite(input.latitude) && input.latitude >= -90 && input.latitude <= 90
+    && typeof input.longitude === "number" && Number.isFinite(input.longitude) && input.longitude >= -180 && input.longitude <= 180
+    && typeof input.dateTime === "string" && input.dateTime.trim() !== "" && Number.isFinite(Date.parse(input.dateTime));
+}
+
+export function groundTemperatureRequestKey(input: GroundTemperatureRequestIdentity): string {
+  return JSON.stringify([input.latitude, input.longitude, input.dateTime, input.provider ?? GROUND_TEMPERATURE_PROVIDER_ID]);
+}
+
+function cacheKey(input: GroundTemperatureRequestIdentity): string {
+  return `${CACHE_PREFIX}${groundTemperatureRequestKey(input)}`;
 }
 
 export class OpenMeteoGroundTemperatureProvider implements GroundTemperatureProvider {
-  async getGroundTemperature(input: { latitude: number; longitude: number; dateTime: string; weatherModel: string }) {
+  async getGroundTemperature(input: { latitude: number; longitude: number; dateTime: string; weatherModel: string; signal?: AbortSignal }) {
     const key = cacheKey(input);
     if (typeof window !== "undefined") {
       const resolvedKey = window.localStorage.getItem(`${key}:latest`);
       const cached = resolvedKey ? window.localStorage.getItem(resolvedKey) : null;
       if (cached) return JSON.parse(cached) as GroundTemperatureData;
     }
-    const params = new URLSearchParams({ lat: String(input.latitude), lon: String(input.longitude), validAt: input.dateTime, weatherModel: input.weatherModel });
-    const response = await fetch(`/api/weather/ground-temperature?${params}`, { headers: { accept: "application/json" } });
+    const params = new URLSearchParams({ lat: String(input.latitude), lon: String(input.longitude), validAt: input.dateTime });
+    const response = await fetch(`/api/weather/ground-temperature?${params}`, { headers: { accept: "application/json" }, signal: input.signal });
     const payload = await response.json() as ApiPayload;
     if (!response.ok || payload.ok !== true || typeof payload.temperatureC !== "number" || !Number.isFinite(payload.temperatureC) || !payload.validTime) {
       const error = new Error(payload.message ?? "Température au sol indisponible");

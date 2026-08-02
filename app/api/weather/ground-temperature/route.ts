@@ -18,16 +18,13 @@ export async function GET(request: Request) {
   const latitude = Number(rawLatitude);
   const longitude = Number(rawLongitude);
   const validAt = params.get("validAt")?.trim();
-  const weatherModel = params.get("weatherModel")?.trim();
   const target = validAt ? new Date(validAt) : null;
   if (!rawLatitude || !rawLongitude || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return failure("INVALID_COORDINATES", "Coordonnées du terrain invalides.", 400);
   if (!target || Number.isNaN(target.getTime())) return failure("INVALID_DATE_TIME", "Date ou heure du vol invalide.", 400);
-  if (!weatherModel) return failure("INVALID_OPEN_METEO_RESPONSE", "Modèle météo absent de la préparation.", 400);
-  const selectedWeatherModel = weatherModel;
   const selectedValidAt = validAt!;
   if (process.env.NODE_ENV === "development") console.info("[ground-weather] request", { latitude, longitude, requestedTime: selectedValidAt, timezone: TIMEZONE });
   try {
-    const raw = await createOpenMeteoClient(getOpenMeteoServerConfig()).fetchGroundTemperature({ latitude, longitude, validAt: selectedValidAt, weatherModel: selectedWeatherModel }) as TemperaturePayload;
+    const raw = await createOpenMeteoClient(getOpenMeteoServerConfig()).fetchGroundTemperature({ latitude, longitude, validAt: selectedValidAt, weatherModel: "best_match" }) as TemperaturePayload;
     const times = raw.hourly?.time;
     const values = raw.hourly?.temperature_2m;
     if (!Array.isArray(times) || !Array.isArray(values)) return failure("INVALID_OPEN_METEO_RESPONSE", "Réponse horaire Open-Meteo invalide.", 502);

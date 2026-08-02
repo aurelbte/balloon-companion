@@ -8,6 +8,14 @@ export function resolveLoadDemoMode(search: string): boolean {
   return explicitlyRequested || window.sessionStorage.getItem(SESSION_KEY) === "1";
 }
 
+/** La marge synthétique exige les deux paramètres explicites et n'est jamais mémorisée. */
+export function resolveSyntheticMarginMode(search: string, demoEnabled: boolean): boolean {
+  const parameters = new URLSearchParams(search);
+  return demoEnabled
+    && parameters.get("testLoad") === "1"
+    && parameters.get("showSyntheticMargin") === "1";
+}
+
 export function analysisPathWithLoadDemo(): string {
   return resolveLoadDemoMode(window.location.search) ? "/map?testLoad=1" : "/map";
 }
