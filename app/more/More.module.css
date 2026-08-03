@@ -23,11 +23,21 @@
 .actions button:first-child { border-color: transparent; background: var(--bc-accent); color: var(--bc-accent-foreground); }
 .actions button:disabled { opacity: .45; }
 .later { border: 0 !important; background: transparent !important; color: var(--bc-text-secondary) !important; }
-.balloonForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.balloonForm { display: grid; min-width: 0; gap: 8px; margin-top: 12px; overflow-x: clip; }
 .balloonForm label { min-width: 0; }
 .balloonForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .64rem; font-weight: 650; text-transform: uppercase; }
-.balloonForm input, .balloonForm select { width: 100%; min-height: 48px; padding: 0 11px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-primary); font-size: .88rem; }
+.balloonForm input, .balloonForm select { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-surface); color: var(--bc-text-primary); font-size: .84rem; }
 .balloonFormWide { grid-column: 1 / -1; }
+.formSection { min-width: 0; border: 1px solid var(--bc-border); border-radius: 17px; background: var(--bc-surface); }
+.formSection > summary { display: flex; min-height: 44px; align-items: center; justify-content: space-between; padding: 0 12px; color: var(--bc-text-secondary); cursor: pointer; font-size: .72rem; font-weight: 700; letter-spacing: .04em; list-style: none; text-transform: uppercase; }
+.formSection > summary::-webkit-details-marker { display: none; }
+.formSection > summary svg { flex: none; transition: transform 160ms ease; }
+.formSection[open] > summary svg { transform: rotate(180deg); }
+.sectionGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 11px 11px; }
+.formSection > .massGrid { padding: 0 11px; }
+.formSection > h3 { margin: 10px 11px 6px; color: var(--bc-text-secondary); font-size: .69rem; }
+.formSection > .cylinderList, .formSection > .addCylinder { margin-inline: 11px; }
+.formSection > .totalWeight { margin: 9px 11px 11px; }
 .technicalInput { position: relative; display: block !important; margin: 0 !important; }
 .technicalInput input { padding-right: 38px; }
 .technicalInput i { position: absolute; top: 50%; right: 11px; color: var(--bc-text-muted); font-size: .7rem; font-style: normal; transform: translateY(-50%); }
@@ -35,16 +45,20 @@
 .massSection { grid-column: 1 / -1; min-width: 0; padding: 13px; border: 1px solid var(--bc-border); border-radius: 19px; }
 .massSection legend { padding-inline: 5px; color: var(--bc-text-secondary); font-size: .7rem; font-weight: 650; text-transform: uppercase; }
 .massSection h3 { margin: 13px 0 7px; color: var(--bc-text-secondary); font-size: .72rem; }
-.massGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.massGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .cylinderList { display: grid; gap: 7px; }
-.cylinderRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(92px, .65fr) 42px; gap: 7px; }
-.cylinderRow button { min-height: 46px; border: 1px solid var(--bc-border); border-radius: 13px; background: transparent; color: var(--bc-danger); }
+.cylinderRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(84px, .58fr) 40px; gap: 6px; }
+.cylinderRow button { min-height: 44px; border: 1px solid var(--bc-border); border-radius: 12px; background: transparent; color: var(--bc-danger); }
 .addCylinder { display: inline-flex; min-height: 44px; align-items: center; gap: 6px; margin-top: 7px; border: 0; background: transparent; color: var(--bc-accent); font-size: .75rem; font-weight: 650; }
-.totalWeight { margin-top: 12px; padding: 13px; border-radius: 16px; background: var(--bc-canvas-elevated); }
+.totalWeight { display: flex; min-height: 44px; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 3px 10px; margin-top: 9px; padding: 8px 10px; border-radius: 13px; background: var(--bc-canvas-elevated); }
 .totalWeight span, .totalWeight strong, .totalWeight small { display: block; }
 .totalWeight span { color: var(--bc-text-secondary); font-size: .7rem; }
-.totalWeight strong { margin-top: 4px; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
-.totalWeight small, .incompleteHint { margin-top: 5px; color: var(--bc-text-muted); font-size: .68rem; }
+.totalWeight strong { font-size: 1.08rem; font-variant-numeric: tabular-nums; }
+.totalWeight small, .incompleteHint { flex-basis: 100%; color: var(--bc-text-muted); font-size: .65rem; }
+.balloonFormActions { position: sticky; z-index: 5; bottom: calc(70px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 8px 0; background: color-mix(in srgb, var(--bc-canvas) 94%, transparent); backdrop-filter: blur(10px); }
+.balloonFormActions button { min-height: 48px; padding-inline: 18px; border: 1px solid var(--bc-border); border-radius: 999px; background: var(--bc-accent); color: var(--bc-accent-foreground); font-weight: 700; }
+.balloonFormActions button:disabled { opacity: .45; }
+.balloonFormActions .later { padding-inline: 12px; }
 .balloonList { display: grid; gap: 9px; margin-top: 16px; }
 .balloonCard { display: flex; min-height: 92px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); color: inherit; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
 .balloonCard span { min-width: 0; }
@@ -70,7 +84,9 @@
 .profileForm label { min-width: 0; }
 .profileForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
 .profileForm input, .profileForm select { width: 100%; min-height: 46px; padding: 0 10px; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-canvas); color: var(--bc-text-primary); font-size: .82rem; }
-@media (max-width: 390px) { .balloonForm, .profileGrid, .massGrid { grid-template-columns: 1fr; } .balloonFormWide, .balloonForm .actions { grid-column: 1 !important; } .cylinderRow { grid-template-columns: minmax(0, 1fr) 108px 42px; } }
+@media (max-width: 390px) { .profileGrid { grid-template-columns: 1fr; } .sectionGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .massGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .cylinderRow { grid-template-columns: minmax(0, 1fr) minmax(80px, .55fr) 40px; } }
+@media (max-width: 340px) { .sectionGrid, .massGrid { grid-template-columns: 1fr; } .cylinderRow { grid-template-columns: minmax(0, 1fr) 86px 40px; } }
+@media (prefers-reduced-motion: reduce) { .formSection > summary svg { transition: none; } }
 .confirmationField {
   display: flex;
   align-items: flex-start;

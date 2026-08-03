@@ -21,6 +21,8 @@ import {
   officialLoadMethodMatrix,
   officialLoadValidationStrategy,
   ultramagicModelParameters,
+  applicableMtomCatalog,
+  applicableMtomCatalogEntry,
   proposedApplicableMtowKg,
   resolveApplicableMtowSuggestion,
 } from "./loadPerformance/modelParameters/index.ts";
@@ -404,6 +406,40 @@ test("la proposition MTOM catalogue ne concerne que le jeu de paramètres Camero
   assert.equal(proposedApplicableMtowKg("Ultramagic", "Z105"), null);
   assert.deepEqual(resolveApplicableMtowSuggestion(undefined, "Cameron", "Z105"), { valueKg: 952, proposed: true });
   assert.deepEqual(resolveApplicableMtowSuggestion(940, "Cameron", "Z105"), { valueKg: 940, proposed: false });
+});
+
+test("le catalogue MTOM distingue une valeur unique des limites multiples", () => {
+  const z105 = applicableMtomCatalogEntry("Cameron", "Z105");
+  const z90 = applicableMtomCatalogEntry("Cameron", "Z90");
+  const kubicek = applicableMtomCatalogEntry("Kubíček", "BB30Z");
+  const ultramagic = applicableMtomCatalogEntry("Ultramagic", "M105");
+  assert.deepEqual(z105?.options.map(({ mtomKg }) => mtomKg), [952]);
+  assert.deepEqual(z90?.options.map(({ mtomKg }) => mtomKg), [816, 499]);
+  assert.equal(kubicek?.aircraftSpecificReducedLimitPossible, true);
+  assert.deepEqual(ultramagic?.options.map(({ mtomKg }) => mtomKg), [1_032, 998]);
+  assert.equal(proposedApplicableMtowKg("Cameron", "Z90"), null);
+  assert.equal(proposedApplicableMtowKg("Kubíček", "BB30Z"), null);
+  assert.equal(proposedApplicableMtowKg("Ultramagic", "M105"), null);
+});
+
+test("chaque limite du catalogue MTOM reste traçable vers un manuel officiel", () => {
+  for (const entry of applicableMtomCatalog) {
+    assert.ok(entry.options.length > 0);
+    for (const option of entry.options) {
+      assert.equal(option.verificationStatus, "VERIFIED_FROM_OFFICIAL_MANUAL");
+      assert.ok(option.sourceDocument.length > 0);
+      assert.ok(option.manualRevision.length > 0);
+      assert.ok(option.sourcePage.length > 0);
+      assert.ok(option.mtomKg > 0);
+    }
+  }
+});
+
+test("une MTOM saisie par le pilote n'est jamais remplacée par le catalogue", () => {
+  assert.deepEqual(resolveApplicableMtowSuggestion(940, "Cameron", "Z105"), { valueKg: 940, proposed: false });
+  assert.deepEqual(resolveApplicableMtowSuggestion(undefined, "Cameron", "Z90"), { valueKg: undefined, proposed: false });
+  assert.equal(applicableMtomCatalogEntry("Cameron", "Z300"), null);
+  assert.equal(applicableMtomCatalogEntry("Cameron", "Z425"), null);
 });
 
 test("deux Z105 de même configuration produisent exactement la même marge", () => {
