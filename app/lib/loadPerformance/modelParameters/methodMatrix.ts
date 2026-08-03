@@ -1,7 +1,7 @@
 export const officialLoadMethodMatrix = Object.freeze([
   {
     manufacturer: "Cameron",
-    methodId: "CAMERON_HABFM_A2_DIRECT_FORMULA",
+    methodId: "CAMERON_METHOD_A2",
     coveredFamilies: ["Enveloppes couvertes par le manuel HABFM de base et sa table d'applicabilité"],
     modelParameters: ["modèle exact", "taille", "volume officiel"],
     aircraftLimits: ["MTOM ou MTOM réduite", "masse équipée réelle", "compatibilité enveloppe/nacelle/brûleur"],

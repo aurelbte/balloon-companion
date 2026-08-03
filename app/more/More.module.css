@@ -71,3 +71,19 @@
 .profileForm label span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
 .profileForm input, .profileForm select { width: 100%; min-height: 46px; padding: 0 10px; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-canvas); color: var(--bc-text-primary); font-size: .82rem; }
 @media (max-width: 390px) { .balloonForm, .profileGrid, .massGrid { grid-template-columns: 1fr; } .balloonFormWide, .balloonForm .actions { grid-column: 1 !important; } .cylinderRow { grid-template-columns: minmax(0, 1fr) 108px 42px; } }
+.confirmationField {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--bc-color-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.confirmationField input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  accent-color: var(--bc-accent);
+}

@@ -10,7 +10,16 @@ export type LoadUnavailableReasonCode =
   | "OUTSIDE_OFFICIAL_TABLE"
   | "OUTSIDE_DEMO_TABLE"
   | "MISSING_MTOW"
-  | "CONFIGURATION_LIMIT_MISSING";
+  | "CONFIGURATION_LIMIT_MISSING"
+  | "CONFIGURATION_LIMITS_UNCONFIRMED"
+  | "VOLUME_MISMATCH"
+  | "PENDING_VERIFICATION";
+
+export type ManufacturerCalculationStatus =
+  | "OFFICIAL_VALIDATED"
+  | "CANDIDATE_PILOT_VALIDATION"
+  | "PENDING_VERIFICATION"
+  | "UNSUPPORTED";
 
 export type GroundTemperature = {
   temperatureC: number;
@@ -39,6 +48,7 @@ export type LoadCalculationInput = {
   groundTemperature?: GroundTemperature;
   applicableMtowKg?: number;
   basketMaximumLoadKg?: number;
+  configurationLimitsConfirmed?: boolean;
 };
 
 export type LoadCalculationResult =
@@ -47,7 +57,12 @@ export type LoadCalculationResult =
       permittedTotalMassKg: number;
       actualTotalMassKg: number;
       marginKg: number;
+      availableOccupantsCapacityKg: number;
+      performanceLimitedMassKg: number;
       limitingRule: string;
+      calculationStatus: Extract<ManufacturerCalculationStatus, "OFFICIAL_VALIDATED" | "CANDIDATE_PILOT_VALIDATION">;
+      manufacturerMethodId: string;
+      modelParameterSetId: string;
       manufacturer: string;
       model: string;
       datasetId: string;

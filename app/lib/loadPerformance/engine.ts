@@ -1,4 +1,5 @@
 import { manufacturerLoadAdapters } from "./adapters.ts";
+import { calculatePilotValidationLoad, normalizeLoadIdentifier } from "./candidateEngine.ts";
 import type { LoadCalculationInput, LoadCalculationResult } from "./types.ts";
 
 const unavailable = (reasonCode: Extract<LoadCalculationResult, { status: "UNAVAILABLE" }>["reasonCode"], message: string): LoadCalculationResult => ({ status: "UNAVAILABLE", reasonCode, message });
@@ -12,10 +13,12 @@ export function calculateOfficialLoad(input: LoadCalculationInput): LoadCalculat
   if (input.plannedMaximumAltitudeMslM < input.launchElevationMslM) return unavailable("OUTSIDE_OFFICIAL_TABLE", "L’altitude maximale prévue est inférieure à l’altitude du terrain.");
   if (!input.groundTemperature) return unavailable("NO_GROUND_TEMPERATURE", "Température au sol indisponible.");
   const adapter = manufacturerLoadAdapters.find(
-    (candidate) => candidate.manufacturer === input.manufacturer,
+    (candidate) => normalizeLoadIdentifier(candidate.manufacturer) === normalizeLoadIdentifier(input.manufacturer),
   );
   if (!adapter) return unavailable("UNSUPPORTED_MODEL", "Constructeur non pris en charge.");
-  return adapter.calculate(input);
+  const officialSupport = adapter.canCalculate(input);
+  if (officialSupport.supported) return adapter.calculate(input);
+  return calculatePilotValidationLoad(input);
 }
 
 /** La marge affichée est arrondie vers le bas pour ne jamais embellir le résultat. */

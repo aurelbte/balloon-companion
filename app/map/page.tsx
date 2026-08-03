@@ -444,6 +444,7 @@ export default function MapPage() {
       model: selectedBalloon.model,
       volumeM3: selectedBalloon.volumeM3,
       applicableMtowKg: selectedBalloon.applicableMtowKg,
+      configurationLimitsConfirmed: selectedBalloon.configurationLimitsConfirmed,
       balloonEquipmentWeightKg: balloonEquipmentWeightForLoad(selectedBalloon) ?? undefined,
     } : {}),
     occupantsWeightKg: preparation?.occupantsWeightKg,
@@ -462,6 +463,8 @@ export default function MapPage() {
     syntheticMarginRequested: showSyntheticMargin,
     resultAvailable: loadResult.status === "AVAILABLE",
   });
+  const candidateLoadResult = loadResult.status === "AVAILABLE" && "calculationStatus" in loadResult
+    && loadResult.calculationStatus === "CANDIDATE_PILOT_VALIDATION" ? loadResult : null;
   const displayedMargin = loadResult.status === "AVAILABLE" && (!testLoadEnabled || loadDisplay.showSyntheticMargin)
     ? displayLoadMarginKg(loadResult.marginKg)
     : null;
@@ -491,13 +494,24 @@ export default function MapPage() {
     NO_MAXIMUM_ALTITUDE: "Saisissez l’altitude maximale",
     NO_LAUNCH_ELEVATION: "Altitude terrain indisponible",
     NO_GROUND_TEMPERATURE: groundTemperatureLoading ? "Température sol : récupération…" : "Température au sol indisponible",
-    UNSUPPORTED_MODEL: "Modèle DEMO non pris en charge",
+    UNSUPPORTED_MODEL: "Modèle non pris en charge",
     UNSUPPORTED_OFFICIAL_DATASET: "Données constructeur non encore intégrées",
     OUTSIDE_OFFICIAL_TABLE: loadResult.message,
     OUTSIDE_DEMO_TABLE: loadResult.message,
-    MISSING_MTOW: "Calcul impossible",
-    CONFIGURATION_LIMIT_MISSING: "Calcul impossible",
+    MISSING_MTOW: "MTOM non renseignée",
+    CONFIGURATION_LIMIT_MISSING: "Limite de configuration indisponible",
+    CONFIGURATION_LIMITS_UNCONFIRMED: "Limites du ballon non confirmées",
+    VOLUME_MISMATCH: "Volume incompatible avec le modèle",
+    PENDING_VERIFICATION: "Paramètres constructeur en attente de validation",
     } as const)[loadResult.reasonCode] ?? "Calcul impossible";
+
+  const openLoadCard = () => {
+    if (!testLoadEnabled && selectedBalloon && loadResult.status === "UNAVAILABLE" && loadResult.reasonCode === "CONFIGURATION_LIMITS_UNCONFIRMED") {
+      router.push(`/more/profile/balloons/${encodeURIComponent(selectedBalloon.id)}/edit`);
+      return;
+    }
+    if ((testLoadEnabled && loadDisplay.openSyntheticDetail) || (!testLoadEnabled && loadResult.status === "AVAILABLE")) setLoadDetailOpen(true);
+  };
 
   const updateMaximumAltitude = (value: string) => {
     const digits = value.replace(/\D/g, "");
@@ -853,8 +867,8 @@ export default function MapPage() {
             <div
               role="button"
               tabIndex={0}
-              onClick={() => { if (loadDisplay.openSyntheticDetail) setLoadDetailOpen(true); }}
-              onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && loadDisplay.openSyntheticDetail) setLoadDetailOpen(true); }}
+              onClick={openLoadCard}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openLoadCard(); }}
               className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
@@ -869,6 +883,7 @@ export default function MapPage() {
                 Charge
               </h2>
               {loadDisplay.showSyntheticBadge && <span className="mt-1 inline-block rounded bg-orange-600 px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white">{DEMO_LOAD_BADGE} — DONNÉES SYNTHÉTIQUES</span>}
+              {!testLoadEnabled && candidateLoadResult && <span className="mt-1 inline-block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
               <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>
                 {blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}
               </p>
@@ -972,6 +987,32 @@ export default function MapPage() {
           onClose={closeSelection}
           frequencies={selectedAirspaceFrequencies}
         />
+      )}
+      {loadDetailOpen && !testLoadEnabled && candidateLoadResult && selectedBalloon && groundTemperature && (
+        <div className="fixed inset-0 z-[80] flex items-end bg-black/45" onClick={() => setLoadDetailOpen(false)}>
+          <section className="w-full rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge Cameron">
+            <div className="mx-auto max-w-xl">
+              <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">Charge</h2><p className="text-xs text-[var(--bc-color-text-muted)]">Validation pilote</p></div><button type="button" className="min-h-11 min-w-11 rounded-full" onClick={() => setLoadDetailOpen(false)} aria-label="Fermer"><X className="mx-auto" size={20} /></button></div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Ballon</dt><dd>{selectedBalloon.manufacturer} {selectedBalloon.model}<br />{selectedBalloon.registration}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Poids du ballon équipé</dt><dd>{loadInput.balloonEquipmentWeightKg} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Pilote + passagers</dt><dd>{loadInput.occupantsWeightKg} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse réelle</dt><dd>{Math.floor(candidateLoadResult.actualTotalMassKg)} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude terrain</dt><dd>{Math.round(candidateLoadResult.launchElevationMslM)} m AMSL</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude maximale prévue</dt><dd>{Math.round(candidateLoadResult.maximumAltitudeMslM)} m AMSL</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température au sol</dt><dd>{candidateLoadResult.groundTemperatureC.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} °C</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Capacité maximale Pilote + passagers</dt><dd>{Math.floor(candidateLoadResult.availableOccupantsCapacityKg)} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse totale autorisée</dt><dd>{Math.floor(candidateLoadResult.permittedTotalMassKg)} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">MTOM applicable</dt><dd>{loadInput.applicableMtowKg} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Marge disponible</dt><dd style={{ color: marginColor }}>{displayedMargin! >= 0 ? "+" : "−"}{Math.abs(displayedMargin!)} kg</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Règle limitante</dt><dd>{candidateLoadResult.limitingRule === "APPLICABLE_MTOW" ? "MTOM applicable" : "Performance selon conditions"}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Méthode</dt><dd>Cameron A2-1</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Source</dt><dd>HABFM Issue 10 — Amendment 18</dd></div>
+              </dl>
+              <p className="mt-4 text-xs leading-relaxed text-[var(--bc-color-text-muted)]">Calcul fondé sur la méthode constructeur référencée et les informations enregistrées pour ce ballon. Vérifiez les limitations et la configuration avec le manuel de vol applicable.</p>
+            </div>
+          </section>
+        </div>
       )}
       {loadDetailOpen && loadDisplay.openSyntheticDetail && loadResult.status === "AVAILABLE" && selectedBalloon && groundTemperature && (
         <div className="fixed inset-0 z-[80] flex items-end bg-black/45" onClick={() => setLoadDetailOpen(false)}>

@@ -38,7 +38,7 @@ export function calculateCameronMethodA2Candidate(
   if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) return null;
   const normalizedInputModel = input.model?.replaceAll(/[^a-zA-Z0-9]/g, "").toUpperCase();
   const normalizedParameterModel = modelParameters.model.replaceAll(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  if (modelParameters.manufacturerMethodId !== "CAMERON_HABFM_A2_DIRECT_FORMULA") return null;
+  if (modelParameters.manufacturerMethodId !== "CAMERON_METHOD_A2") return null;
   if (normalizedInputModel !== normalizedParameterModel || input.volumeM3 !== modelParameters.volumeM3) return null;
   if (input.volumeM3! <= 0 || input.balloonEquipmentWeightKg! <= 0 || input.occupantsWeightKg! < 0 || input.applicableMtowKg! <= 0) return null;
   if (input.plannedMaximumAltitudeMslM! < input.launchElevationMslM!) return null;

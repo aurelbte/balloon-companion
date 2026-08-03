@@ -23,7 +23,8 @@ export default function BalloonDetailPage() {
       {info.map(([label, value]) => <p key={label}><span>{label}</span><strong>{value}</strong></p>)}
       <p><span>Volume</span><strong>{balloon.volumeM3.toLocaleString("fr-FR")} m³</strong></p>
       <p><span>MTOM applicable</span><strong>{balloon.applicableMtowKg === undefined ? "—" : `${balloon.applicableMtowKg.toLocaleString("fr-FR")} kg`}</strong></p>
-      <small className={styles.incompleteHint}>À confirmer avec le manuel de vol du ballon.</small>
+      <p><span>Limites vérifiées avec le manuel de vol</span><strong>{balloon.configurationLimitsConfirmed ? "Oui" : "Non"}</strong></p>
+      {!balloon.configurationLimitsConfirmed && <small className={styles.incompleteHint}>Modifiez la fiche pour confirmer volontairement la MTOM et la configuration.</small>}
     </section>
     <section className={styles.detailSection}><h2>Masses</h2>
       <p><span>Enveloppe</span><strong>{balloon.weights.envelopeKg === undefined ? "—" : `${balloon.weights.envelopeKg} kg`}</strong></p>

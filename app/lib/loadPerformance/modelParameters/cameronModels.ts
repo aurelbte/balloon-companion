@@ -1,7 +1,7 @@
 import type { LoadModelParameterSet } from "./types.ts";
 
-export const CAMERON_METHOD_A2_ID = "CAMERON_HABFM_A2_DIRECT_FORMULA";
-export const CAMERON_ISSUE_10_A18_REVISION = "Issue 10 Amendment 18";
+export const CAMERON_METHOD_A2_ID = "CAMERON_METHOD_A2";
+export const CAMERON_ISSUE_10_A18_REVISION = "ISSUE_10_AMENDMENT_18";
 
 const source = {
   manualId: "CAMERON_ISSUE_10_AMENDMENT_18",
@@ -11,7 +11,7 @@ const source = {
 
 function cameronModel(model: string, size: number, volumeM3: number): LoadModelParameterSet {
   return Object.freeze({
-    id: `CAMERON_${model.replaceAll("-", "_")}_${CAMERON_METHOD_A2_ID}`,
+    id: model === "Z-105" ? "CAMERON_Z105" : `CAMERON_${model.replaceAll("-", "_")}`,
     manufacturer: "Cameron",
     manufacturerModelId: model,
     model,

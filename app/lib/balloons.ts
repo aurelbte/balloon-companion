@@ -11,26 +11,30 @@ export type Balloon = {
   volumeM3: number;
   /** MTOM applicable à cette configuration précise, confirmée par le pilote. */
   applicableMtowKg?: number;
+  /** Confirmation volontaire ; toujours false après migration d'une ancienne fiche. */
+  configurationLimitsConfirmed: boolean;
   color?: string;
   isFavorite?: boolean;
   lastUsedAt?: string;
   documents: BalloonDocument[];
   weights: BalloonWeights;
 };
-export type BalloonInput = Omit<Balloon, "id" | "documents" | "isFavorite" | "lastUsedAt">;
+export type BalloonInput = Omit<Balloon, "id" | "documents" | "isFavorite" | "lastUsedAt" | "configurationLimitsConfirmed"> & {
+  configurationLimitsConfirmed?: boolean;
+};
 export type BalloonSnapshot = Pick<Balloon, "registration" | "manufacturer" | "model" | "category">;
 
 export const REGISTERED_BALLOONS: readonly Balloon[] = [
-  { id: "F-HLFM", registration: "F-HLFM", manufacturer: "Cameron", model: "Z105", category: "Libre à air chaud", volumeM3: 2_973, applicableMtowKg: 952, isFavorite: true, documents: [], weights: { fullCylinders: [] } },
-  { id: "F-HOBA", registration: "F-HOBA", manufacturer: "Cameron", model: "Z350", category: "Libre à air chaud", volumeM3: 9_911, documents: [], weights: { fullCylinders: [] } },
-  { id: "F-HMIG", registration: "F-HMIG", manufacturer: "Cameron", model: "Z350", category: "Libre à air chaud", volumeM3: 9_911, documents: [], weights: { fullCylinders: [] } },
-  { id: "F-GTET", registration: "F-GTET", manufacturer: "Cameron", model: "Z150", category: "Libre à air chaud", volumeM3: 4_247, documents: [], weights: { fullCylinders: [] } },
+  { id: "F-HLFM", registration: "F-HLFM", manufacturer: "Cameron", model: "Z105", category: "Libre à air chaud", volumeM3: 2_973, applicableMtowKg: 952, configurationLimitsConfirmed: false, isFavorite: true, documents: [], weights: { fullCylinders: [] } },
+  { id: "F-HOBA", registration: "F-HOBA", manufacturer: "Cameron", model: "Z350", category: "Libre à air chaud", volumeM3: 9_911, configurationLimitsConfirmed: false, documents: [], weights: { fullCylinders: [] } },
+  { id: "F-HMIG", registration: "F-HMIG", manufacturer: "Cameron", model: "Z350", category: "Libre à air chaud", volumeM3: 9_911, configurationLimitsConfirmed: false, documents: [], weights: { fullCylinders: [] } },
+  { id: "F-GTET", registration: "F-GTET", manufacturer: "Cameron", model: "Z150", category: "Libre à air chaud", volumeM3: 4_247, configurationLimitsConfirmed: false, documents: [], weights: { fullCylinders: [] } },
 ] as const;
 
 export function normalizeBalloonRegistration(value: string): string { const normalized = value.trim().replace(/\s+/g, "").toUpperCase(); return /^F[A-Z0-9]{4}$/.test(normalized) ? `F-${normalized.slice(1)}` : normalized; }
 export function balloonDisplayName(balloon: Pick<Balloon, "registration" | "manufacturer" | "model">): string { return `${balloon.registration} • ${balloon.manufacturer} ${balloon.model}`; }
 export function createBalloon(input: BalloonInput, id = normalizeBalloonRegistration(input.registration)): Balloon {
-  return { id, registration: normalizeBalloonRegistration(input.registration), manufacturer: input.manufacturer.trim(), model: input.model.trim(), category: input.category, volumeM3: input.volumeM3, ...(input.applicableMtowKg === undefined ? {} : { applicableMtowKg: input.applicableMtowKg }), ...(input.color?.trim() ? { color: input.color.trim() } : {}), documents: [], weights: { ...input.weights, fullCylinders: input.weights.fullCylinders.map((cylinder) => ({ ...cylinder, ...(cylinder.label?.trim() ? { label: cylinder.label.trim() } : {}) })) } };
+  return { id, registration: normalizeBalloonRegistration(input.registration), manufacturer: input.manufacturer.trim(), model: input.model.trim(), category: input.category, volumeM3: input.volumeM3, ...(input.applicableMtowKg === undefined ? {} : { applicableMtowKg: input.applicableMtowKg }), configurationLimitsConfirmed: input.configurationLimitsConfirmed === true, ...(input.color?.trim() ? { color: input.color.trim() } : {}), documents: [], weights: { ...input.weights, fullCylinders: input.weights.fullCylinders.map((cylinder) => ({ ...cylinder, ...(cylinder.label?.trim() ? { label: cylinder.label.trim() } : {}) })) } };
 }
 export function updateBalloon(current: Balloon, input: BalloonInput): Balloon { return { ...createBalloon(input, current.id), documents: current.documents, ...(current.isFavorite ? { isFavorite: true } : {}), ...(current.lastUsedAt ? { lastUsedAt: current.lastUsedAt } : {}) }; }
 export function balloonSnapshot(balloon: Balloon): BalloonSnapshot { return { registration: balloon.registration, manufacturer: balloon.manufacturer, model: balloon.model, category: balloon.category }; }

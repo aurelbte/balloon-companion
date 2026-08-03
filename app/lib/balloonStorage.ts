@@ -1,5 +1,5 @@
 import { createBalloon, REGISTERED_BALLOONS, updateBalloon, type Balloon, type BalloonInput } from "./balloons.ts";
-export const BALLOON_REGISTRY_VERSION = 4;
+export const BALLOON_REGISTRY_VERSION = 5;
 const STORAGE_KEY = "balloon-companion-balloons";
 export const BALLOON_REGISTRY_EVENT = "balloon-companion:balloons-changed";
 export const NEW_BALLOON_SELECTION_KEY = "balloon-companion-new-balloon-selection";
@@ -9,7 +9,7 @@ export type BalloonRegistry = { version: typeof BALLOON_REGISTRY_VERSION; balloo
 export function createDefaultBalloonRegistry(): BalloonRegistry { return { version: BALLOON_REGISTRY_VERSION, balloons: REGISTERED_BALLOONS, activeBalloonId: "F-HLFM" }; }
 export function getActiveBalloon(registry: BalloonRegistry): Balloon | null { return registry.balloons.find(({ id }) => id === registry.activeBalloonId) ?? null; }
 function numberOrUndefined(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
-function migrateBalloon(value: unknown): Balloon | null {
+function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Balloon | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Partial<Balloon> & { weights?: Record<string, unknown> };
   if (typeof item.id !== "string" || typeof item.registration !== "string" || typeof item.manufacturer !== "string" || typeof item.model !== "string") return null;
@@ -35,6 +35,7 @@ function migrateBalloon(value: unknown): Balloon | null {
     category: item.category === "Libre à gaz" ? "Libre à gaz" : "Libre à air chaud",
     volumeM3: numberOrUndefined(item.volumeM3) ?? reference?.volumeM3 ?? 0,
     ...(numberOrUndefined(item.applicableMtowKg) === undefined ? {} : { applicableMtowKg: numberOrUndefined(item.applicableMtowKg) }),
+    configurationLimitsConfirmed: allowStoredConfirmation && item.configurationLimitsConfirmed === true,
     ...(typeof item.color === "string" && item.color ? { color: item.color } : {}),
     ...(item.isFavorite ? { isFavorite: true } : {}),
     documents: Array.isArray(item.documents) ? item.documents : [],
@@ -46,7 +47,7 @@ function migrateBalloon(value: unknown): Balloon | null {
     },
   };
 }
-export function migrateBalloonRegistry(value: unknown): BalloonRegistry { if (!value || typeof value !== "object") return createDefaultBalloonRegistry(); const stored = value as { version?: unknown; balloons?: unknown; activeBalloonId?: unknown }; if (!Array.isArray(stored.balloons)) return createDefaultBalloonRegistry(); const balloons = stored.balloons.map(migrateBalloon).filter((item): item is Balloon => item !== null); const storedActive = typeof stored.activeBalloonId === "string" && balloons.some(({ id }) => id === stored.activeBalloonId) ? stored.activeBalloonId : null; if (stored.version === BALLOON_REGISTRY_VERSION) return { version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId: storedActive }; const legacyActive = storedActive ?? balloons.find(({ isFavorite }) => isFavorite)?.id ?? null; return { version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId: legacyActive }; }
+export function migrateBalloonRegistry(value: unknown): BalloonRegistry { if (!value || typeof value !== "object") return createDefaultBalloonRegistry(); const stored = value as { version?: unknown; balloons?: unknown; activeBalloonId?: unknown }; if (!Array.isArray(stored.balloons)) return createDefaultBalloonRegistry(); const currentVersion = stored.version === BALLOON_REGISTRY_VERSION; const balloons = stored.balloons.map((item) => migrateBalloon(item, currentVersion)).filter((item): item is Balloon => item !== null); const storedActive = typeof stored.activeBalloonId === "string" && balloons.some(({ id }) => id === stored.activeBalloonId) ? stored.activeBalloonId : null; if (currentVersion) return { version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId: storedActive }; const legacyActive = storedActive ?? balloons.find(({ isFavorite }) => isFavorite)?.id ?? null; return { version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId: legacyActive }; }
 export function addBalloonToRegistry(registry: BalloonRegistry, input: BalloonInput): { registry: BalloonRegistry; balloon: Balloon } { const balloon = createBalloon(input); const balloons = [...registry.balloons.filter(({ registration }) => registration !== balloon.registration), balloon]; return { balloon, registry: { ...registry, balloons, activeBalloonId: registry.activeBalloonId ?? balloon.id } }; }
 export function updateBalloonInRegistry(registry: BalloonRegistry, id: string, input: BalloonInput): BalloonRegistry { const current = registry.balloons.find((item) => item.id === id); if (!current) return registry; return { ...registry, balloons: registry.balloons.map((item) => item.id === id ? updateBalloon(current, input) : item) }; }
 export function removeBalloonFromRegistry(registry: BalloonRegistry, id: string): BalloonRegistry { if (!registry.balloons.some((item) => item.id === id)) return registry; return { ...registry, balloons: registry.balloons.filter((item) => item.id !== id), activeBalloonId: registry.activeBalloonId === id ? null : registry.activeBalloonId }; }

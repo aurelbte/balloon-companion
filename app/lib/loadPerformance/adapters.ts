@@ -10,7 +10,7 @@ abstract class DisabledUntilVerifiedAdapter implements ManufacturerLoadAdapter {
   abstract readonly manufacturer: string;
 
   canCalculate(input: LoadCalculationInput): LoadSupportResult {
-    if (input.manufacturer !== this.manufacturer) {
+    if (input.manufacturer?.trim().localeCompare(this.manufacturer, undefined, { sensitivity: "base" }) !== 0) {
       return { supported: false, reasonCode: "UNSUPPORTED_MODEL", message: "Modèle constructeur non pris en charge." };
     }
     const dataset = enabledOfficialLoadDatasets.find(

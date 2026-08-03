@@ -59,5 +59,5 @@ test("le fournisseur appelle le flux générique sans modèle de trajectoire", a
 test("la température reste disponible au moteur officiel même sans dataset activé", () => {
   const result = calculateOfficialLoad({ balloonId: "F-HLFM", manufacturer: "Cameron", model: "Z105", balloonEquipmentWeightKg: 415, occupantsWeightKg: 330, launchElevationMslM: 100, plannedMaximumAltitudeMslM: 500, groundTemperature: { temperatureC: 21.6, sourceModel: "Open-Meteo", forecastRun: "n/a", validTime: request.dateTime } });
   assert.equal(result.status, "UNAVAILABLE");
-  assert.equal(result.reasonCode, "UNSUPPORTED_OFFICIAL_DATASET");
+  assert.equal(result.reasonCode, "CONFIGURATION_LIMITS_UNCONFIRMED");
 });

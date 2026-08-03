@@ -2,6 +2,9 @@ import { officialLoadDatasets, validateOfficialLoadDatasets } from "../app/lib/l
 import { enabledDemoLoadDatasets } from "../app/lib/loadPerformance/datasets/demoCameronZ105.ts";
 import { cameronZ105Official } from "../app/lib/loadPerformance/datasets/cameronZ105Official.ts";
 import { auditCameronZ105ReferenceCoverage, cameronZ105References } from "../app/lib/loadPerformance/referenceCases/cameronZ105References.ts";
+import { CAMERON_Z105_REFERENCE_001 } from "../app/lib/loadPerformance/referenceCases/cameronZ105References.ts";
+import { calculateOfficialLoad } from "../app/lib/loadPerformance/engine.ts";
+import { enabledPilotValidationLoadConfigurations } from "../app/lib/loadPerformance/modelParameters/activationRegistry.ts";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +20,35 @@ function sourceFiles(directory) {
 }
 
 const errors = validateOfficialLoadDatasets(officialLoadDatasets);
+if (enabledPilotValidationLoadConfigurations.length !== 1) errors.push("Validation pilote : seule la configuration Cameron Z105 doit être activée");
+const pilotConfiguration = enabledPilotValidationLoadConfigurations[0];
+if (pilotConfiguration?.manufacturerMethodId !== "CAMERON_METHOD_A2" || pilotConfiguration?.modelParameterSetId !== "CAMERON_Z105" || pilotConfiguration?.manualRevision !== "ISSUE_10_AMENDMENT_18") errors.push("Validation pilote : identité Cameron Z105 invalide");
+const reference = CAMERON_Z105_REFERENCE_001;
+const referenceInput = {
+  balloonId: reference.id,
+  manufacturer: reference.manufacturer,
+  model: reference.model,
+  volumeM3: reference.volumeM3,
+  applicableMtowKg: reference.applicableMtowKg,
+  configurationLimitsConfirmed: true,
+  balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg,
+  occupantsWeightKg: reference.occupantsWeightKg,
+  launchElevationMslM: reference.launchElevationMslM,
+  plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+  groundTemperature: { temperatureC: reference.groundTemperatureC, sourceModel: "REFERENCE", forecastRun: reference.verifiedAt, validTime: reference.verifiedAt },
+};
+const candidateReference = calculateOfficialLoad(referenceInput);
+if (candidateReference.status !== "AVAILABLE") errors.push(`Validation pilote : REFERENCE_001 indisponible (${candidateReference.reasonCode})`);
+if (candidateReference.status === "AVAILABLE") {
+  if (candidateReference.calculationStatus !== "CANDIDATE_PILOT_VALIDATION") errors.push("Validation pilote : statut candidat absent");
+  if (candidateReference.manufacturerMethodId !== "CAMERON_METHOD_A2") errors.push("Validation pilote : méthode constructeur absente");
+  if (candidateReference.datasetId.includes("DEMO") || "calculationMode" in candidateReference) errors.push("Validation pilote : dataset DEMO interdit");
+  if (Math.floor(candidateReference.marginKg) !== 80) errors.push("Validation pilote : REFERENCE_001 ne produit plus +80 kg");
+}
+const unconfirmedReference = calculateOfficialLoad({ ...referenceInput, configurationLimitsConfirmed: false });
+if (unconfirmedReference.status !== "UNAVAILABLE" || unconfirmedReference.reasonCode !== "CONFIGURATION_LIMITS_UNCONFIRMED") errors.push("Validation pilote : une configuration non confirmée produit un résultat");
+const pendingModel = calculateOfficialLoad({ ...referenceInput, model: "Z350", volumeM3: 9_912 });
+if (pendingModel.status !== "UNAVAILABLE" || pendingModel.reasonCode !== "PENDING_VERIFICATION") errors.push("Validation pilote : un modèle PENDING produit un résultat");
 if (cameronZ105Official.enabled) {
   if (!cameronZ105Official.documentedData.loadTable) errors.push("CAMERON_Z105_OFFICIAL: table officielle absente");
   if (!cameronZ105Official.source.manualRevision || cameronZ105Official.source.tablePages.length === 0) errors.push("CAMERON_Z105_OFFICIAL: source ou pages exactes absentes");

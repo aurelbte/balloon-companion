@@ -9,6 +9,7 @@ export const cameronZ105Official = Object.freeze({
   manufacturer: "Cameron",
   model: "Z105",
   authorityStatus: "PENDING_VERIFICATION",
+  pilotValidationStatus: "CANDIDATE_PILOT_VALIDATION",
   enabled: false,
   manual: {
     title: "Hot Air Balloon Flight Manual",

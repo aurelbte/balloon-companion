@@ -69,6 +69,7 @@ test("les ballons de démonstration restent incomplets sans masses inventées", 
   assert.equal(balloonDisplayName(REGISTERED_BALLOONS[0]), "F-HLFM • Cameron Z105");
   assert.equal(REGISTERED_BALLOONS[0].volumeM3, 2_973);
   assert.equal(REGISTERED_BALLOONS[0].applicableMtowKg, 952);
+  assert.equal(REGISTERED_BALLOONS[0].configurationLimitsConfirmed, false);
   assert.deepEqual(REGISTERED_BALLOONS[0].weights, { fullCylinders: [] });
   assert.equal(calculateBalloonWeight(REGISTERED_BALLOONS[0].weights), null);
 });
@@ -85,6 +86,7 @@ test("création, normalisation et conservation des saisies libres", () => {
   assert.equal(custom.volumeM3, 3_111);
   const configured = createBalloon({ ...input, applicableMtowKg: 952 });
   assert.equal(configured.applicableMtowKg, 952);
+  assert.equal(configured.configurationLimitsConfirmed, false);
 });
 
 test("le poids total est toujours dérivé des composants", () => {
@@ -150,6 +152,7 @@ test("la migration conserve seulement les masses composant exactes", () => {
   assert.equal(migrated.version, BALLOON_REGISTRY_VERSION);
   assert.equal(migrated.activeBalloonId, "F-OLD");
   assert.equal(migrated.balloons[0].color, "Bleu");
+  assert.equal(migrated.balloons[0].configurationLimitsConfirmed, false);
   assert.deepEqual(migrated.balloons[0].weights, {
     envelopeKg: 280,
     fullCylinders: [{ id: "c1", fullWeightKg: 60 }],
@@ -158,7 +161,17 @@ test("la migration conserve seulement les masses composant exactes", () => {
 });
 
 test("le registre survit à une sérialisation de rechargement", () => {
-  const added = addBalloonToRegistry({ version: BALLOON_REGISTRY_VERSION, balloons: [], activeBalloonId: null }, input).registry;
+  const added = addBalloonToRegistry({ version: BALLOON_REGISTRY_VERSION, balloons: [], activeBalloonId: null }, { ...input, applicableMtowKg: 952, configurationLimitsConfirmed: true }).registry;
   const restored = migrateBalloonRegistry(JSON.parse(JSON.stringify(added)));
   assert.deepEqual(restored, added);
+  assert.equal(restored.balloons[0].configurationLimitsConfirmed, true);
+});
+
+test("une migration ne confirme jamais silencieusement les limites", () => {
+  const legacy = migrateBalloonRegistry({
+    version: 4,
+    activeBalloonId: "F-HLFM",
+    balloons: [{ ...createBalloon({ ...input, applicableMtowKg: 952, configurationLimitsConfirmed: true }), configurationLimitsConfirmed: true }],
+  });
+  assert.equal(legacy.balloons[0].configurationLimitsConfirmed, false);
 });

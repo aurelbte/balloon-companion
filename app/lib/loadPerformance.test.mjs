@@ -74,12 +74,10 @@ test("une altitude maximale sous le terrain est refusée", () => {
   assert.deepEqual(result, { status: "UNAVAILABLE", reasonCode: "OUTSIDE_OFFICIAL_TABLE", message: "L’altitude maximale prévue est inférieure à l’altitude du terrain." });
 });
 
-test("Cameron, Kubíček et Ultramagic restent bloqués sans golden dataset", () => {
-  for (const manufacturer of ["Cameron", "Kubíček", "Ultramagic"]) {
-    const result = calculateOfficialLoad({ ...completeInput, manufacturer });
-    assert.equal(result.status, "UNAVAILABLE");
-    assert.equal(result.reasonCode, "UNSUPPORTED_OFFICIAL_DATASET");
-  }
+test("seul le Z105 explicitement confirmé peut atteindre le calcul candidat", () => {
+  assert.equal(calculateOfficialLoad(completeInput).reasonCode, "CONFIGURATION_LIMITS_UNCONFIRMED");
+  assert.equal(calculateOfficialLoad({ ...completeInput, manufacturer: "Kubíček" }).reasonCode, "UNSUPPORTED_MODEL");
+  assert.equal(calculateOfficialLoad({ ...completeInput, manufacturer: "Ultramagic" }).reasonCode, "UNSUPPORTED_MODEL");
 });
 
 test("le moteur de charge réutilise la masse centrale du ballon", () => {
@@ -312,7 +310,7 @@ test("le dataset officiel Cameron reste impossible à activer avec un seul cas",
   assert.ok(auditCameronZ105ReferenceCoverage(cameronZ105References).length > 0);
 });
 
-test("le cas +80 n'active jamais un résultat officiel ni un fallback DEMO", () => {
+test("REFERENCE_001 passe par l'orchestrateur normal avec le statut validation pilote", () => {
   const reference = CAMERON_Z105_REFERENCE_001;
   const input = {
     ...completeInput,
@@ -323,14 +321,76 @@ test("le cas +80 n'active jamais un résultat officiel ni un fallback DEMO", () 
     launchElevationMslM: reference.launchElevationMslM,
     plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
     groundTemperature: { ...completeInput.groundTemperature, temperatureC: reference.groundTemperatureC },
+    configurationLimitsConfirmed: true,
   };
   const official = calculateOfficialLoad(input);
   const demo = calculateDemoLoad(input, true);
-  assert.equal(official.status, "UNAVAILABLE");
-  assert.equal(official.reasonCode, "UNSUPPORTED_OFFICIAL_DATASET");
+  assert.equal(official.status, "AVAILABLE");
+  if (official.status === "AVAILABLE") {
+    assert.equal(official.calculationStatus, "CANDIDATE_PILOT_VALIDATION");
+    assert.equal(official.manufacturerMethodId, "CAMERON_METHOD_A2");
+    assert.equal(official.modelParameterSetId, "CAMERON_Z105");
+    assert.equal(Math.floor(official.actualTotalMassKg), 745);
+    assert.equal(Math.floor(official.availableOccupantsCapacityKg), 410);
+    assert.equal(Math.floor(official.permittedTotalMassKg), 825);
+    assert.equal(Math.floor(official.marginKg), 80);
+    assert.equal(official.marginKg, official.availableOccupantsCapacityKg - reference.occupantsWeightKg);
+    assert.equal("calculationMode" in official, false);
+  }
   assert.equal(demo.status, "AVAILABLE");
   if (demo.status === "AVAILABLE") {
     assert.equal(demo.calculationMode, "DEMO");
     assert.notEqual(demo.marginKg, reference.expectedMarginKg);
   }
+});
+
+test("le candidat Z105 expose chaque précondition manquante sans fallback DEMO", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const input = {
+    ...completeInput,
+    volumeM3: 2_973,
+    applicableMtowKg: reference.applicableMtowKg,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg,
+    occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM,
+    plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { ...completeInput.groundTemperature, temperatureC: reference.groundTemperatureC },
+    configurationLimitsConfirmed: true,
+  };
+  assert.equal(calculateOfficialLoad({ ...input, configurationLimitsConfirmed: false }).reasonCode, "CONFIGURATION_LIMITS_UNCONFIRMED");
+  assert.equal(calculateOfficialLoad({ ...input, applicableMtowKg: undefined }).reasonCode, "MISSING_MTOW");
+  assert.equal(calculateOfficialLoad({ ...input, balloonEquipmentWeightKg: undefined }).reasonCode, "INCOMPLETE_BALLOON_MASSES");
+  assert.equal(calculateOfficialLoad({ ...input, groundTemperature: undefined }).reasonCode, "NO_GROUND_TEMPERATURE");
+  assert.equal(calculateOfficialLoad({ ...input, launchElevationMslM: undefined }).reasonCode, "NO_LAUNCH_ELEVATION");
+  assert.equal(calculateOfficialLoad({ ...input, plannedMaximumAltitudeMslM: undefined }).reasonCode, "NO_MAXIMUM_ALTITUDE");
+  assert.equal(calculateOfficialLoad({ ...input, model: "Z350", volumeM3: 9_911 }).reasonCode, "PENDING_VERIFICATION");
+  assert.equal(calculateOfficialLoad({ ...input, volumeM3: 2_970 }).reasonCode, "VOLUME_MISMATCH");
+  assert.equal(calculateOfficialLoad({ ...input, manufacturer: " cameron ", model: "Z-105" }).status, "AVAILABLE");
+});
+
+test("le candidat applique MTOM, marges négative et proche de zéro sans arrondi intermédiaire", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const input = {
+    ...completeInput,
+    volumeM3: 2_973,
+    applicableMtowKg: reference.applicableMtowKg,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg,
+    occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM,
+    plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { ...completeInput.groundTemperature, temperatureC: reference.groundTemperatureC },
+    configurationLimitsConfirmed: true,
+  };
+  const mtomLimited = calculateOfficialLoad({ ...input, applicableMtowKg: 800 });
+  assert.equal(mtomLimited.status, "AVAILABLE");
+  if (mtomLimited.status === "AVAILABLE") assert.equal(mtomLimited.limitingRule, "APPLICABLE_MTOW");
+  const negative = calculateOfficialLoad({ ...input, occupantsWeightKg: 500 });
+  assert.equal(negative.status, "AVAILABLE");
+  if (negative.status === "AVAILABLE") assert.ok(negative.marginKg < 0);
+  const nearZero = calculateOfficialLoad({ ...input, occupantsWeightKg: 410 });
+  assert.equal(nearZero.status, "AVAILABLE");
+  if (nearZero.status === "AVAILABLE") assert.equal(displayLoadMarginKg(nearZero.marginKg), 0);
+  const heavier = calculateOfficialLoad({ ...input, occupantsWeightKg: reference.occupantsWeightKg + 12 });
+  assert.equal(heavier.status, "AVAILABLE");
+  if (heavier.status === "AVAILABLE") assert.ok(Math.abs(heavier.marginKg - (reference.expectedMarginKg + 0.3448292881172 - 12)) < 1e-9);
 });
