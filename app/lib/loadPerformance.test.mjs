@@ -11,6 +11,17 @@ import { demoCameronZ105, enabledDemoLoadDatasets } from "./loadPerformance/data
 import { enabledOfficialLoadDatasets, officialLoadDatasets, validateOfficialLoadDatasets } from "./loadPerformance/manufacturerDatasets.ts";
 import { createBalloon } from "./balloons.ts";
 import { cameronZ105Official } from "./loadPerformance/datasets/cameronZ105Official.ts";
+import { calculateCameronMethodA2Candidate, calculateCameronOfficialCandidate } from "./loadPerformance/cameron/officialCalculation.ts";
+import {
+  cameronModelParameters,
+  cameronZ105Parameters,
+  canActivateOfficialLoadCandidate,
+  enabledOfficialLoadParameterCombinations,
+  kubicekModelParameters,
+  officialLoadMethodMatrix,
+  officialLoadValidationStrategy,
+  ultramagicModelParameters,
+} from "./loadPerformance/modelParameters/index.ts";
 import {
   CAMERON_Z105_REFERENCE_001,
   applyApplicableMtowLimit,
@@ -46,9 +57,7 @@ test("aucun dataset constructeur non vérifié n'est activé", () => {
 test("un dataset activé sans preuve complète fait échouer l'audit", () => {
   const unsafe = { ...officialLoadDatasets[0], enabled: true };
   const errors = validateOfficialLoadDatasets([unsafe]);
-  assert.ok(errors.some((error) => error.includes("aucun modèle activé")));
-  assert.ok(errors.some((error) => error.includes("golden test absent")));
-  assert.ok(errors.some((error) => error.includes("interpolation non implémentée")));
+  assert.ok(errors.some((error) => error.includes("vérification absente")));
 });
 
 test("le moteur explique chaque donnée manquante sans utiliser zéro", () => {
@@ -192,6 +201,91 @@ test("CAMERON_Z105_REFERENCE_001 reproduit exactement le golden case pilote", ()
   assert.equal(validation.coherent, true);
 });
 
+test("le candidat Cameron officiel reproduit le golden case sans constante d'ajustement", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const result = calculateCameronOfficialCandidate({
+    balloonId: reference.id,
+    manufacturer: reference.manufacturer,
+    model: reference.model,
+    volumeM3: reference.volumeM3,
+    applicableMtowKg: reference.applicableMtowKg,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg,
+    occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM,
+    plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { temperatureC: reference.groundTemperatureC, sourceModel: "REFERENCE", forecastRun: reference.verifiedAt, validTime: reference.verifiedAt },
+  });
+  assert.ok(result);
+  assert.ok(Math.abs(result.performanceLimitedMassKg - 825.3448292881172) < 1e-9);
+  assert.equal(Math.floor(result.permittedTotalMassKg), 825);
+  assert.equal(Math.floor(result.marginKg), 80);
+  assert.equal(result.limitingRule, "CAMERON_LIFT");
+});
+
+test("le candidat Cameron applique la MTOM et refuse toute applicabilité extrapolée", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const input = {
+    balloonId: reference.id, manufacturer: reference.manufacturer, model: reference.model,
+    volumeM3: reference.volumeM3, applicableMtowKg: 800,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg, occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM, plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { temperatureC: reference.groundTemperatureC, sourceModel: "REFERENCE", forecastRun: reference.verifiedAt, validTime: reference.verifiedAt },
+  };
+  const limited = calculateCameronOfficialCandidate(input);
+  assert.equal(limited?.permittedTotalMassKg, 800);
+  assert.equal(limited?.limitingRule, "APPLICABLE_MTOW");
+  assert.equal(calculateCameronOfficialCandidate({ ...input, model: "Z120" }), null);
+  assert.equal(calculateCameronOfficialCandidate({ ...input, volumeM3: 2_973 }), null);
+  assert.equal(calculateCameronOfficialCandidate({ ...input, plannedMaximumAltitudeMslM: 50 }), null);
+});
+
+test("la méthode Cameron A2 est indépendante du Z105 et exige un jeu de paramètres exact", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const z120 = cameronModelParameters.find(({ model }) => model === "Z-120");
+  assert.ok(z120);
+  const base = {
+    balloonId: "CAMERON-Z120-AUDIT", manufacturer: "Cameron", model: "Z120",
+    volumeM3: z120.volumeM3, applicableMtowKg: 1_100,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg, occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM, plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { temperatureC: reference.groundTemperatureC, sourceModel: "REFERENCE", forecastRun: reference.verifiedAt, validTime: reference.verifiedAt },
+  };
+  assert.ok(calculateCameronMethodA2Candidate(base, z120));
+  assert.equal(calculateCameronMethodA2Candidate({ ...base, volumeM3: 2_974 }, z120), null);
+  assert.equal(calculateCameronMethodA2Candidate(base, cameronZ105Parameters), null);
+  assert.equal(calculateCameronOfficialCandidate(base), null);
+});
+
+test("les registres séparent méthodes, paramètres modèles et limites de configuration", () => {
+  assert.equal(officialLoadMethodMatrix.length, 3);
+  assert.deepEqual(enabledOfficialLoadParameterCombinations, []);
+  assert.equal(cameronModelParameters.length, 11);
+  assert.equal(kubicekModelParameters[0].verificationStatus, "PENDING_HUMAN_VERIFICATION");
+  assert.equal(ultramagicModelParameters[0].verificationStatus, "PENDING_HUMAN_VERIFICATION");
+  assert.equal(officialLoadValidationStrategy.method.minimumCases, 15);
+  assert.equal(officialLoadValidationStrategy.familyOrTableRow.minimumCases, 3);
+  assert.equal(officialLoadValidationStrategy.modelParameterSet.minimumCases, 2);
+  assert.ok(!("applicableMtowKg" in cameronZ105Parameters));
+});
+
+test("l'activation exige la combinaison méthode, paramètres, révision et limites confirmées", () => {
+  const complete = {
+    key: {
+      manufacturerMethodId: cameronZ105Parameters.manufacturerMethodId,
+      modelParameterSetId: cameronZ105Parameters.id,
+      manualRevision: cameronZ105Parameters.source.manualRevision,
+      configurationLimitsConfirmed: true,
+    },
+    methodValidated: true,
+    modelParametersVerified: true,
+    sourcesTraceable: true,
+    targetedTestsPassing: true,
+  };
+  assert.equal(canActivateOfficialLoadCandidate(complete), true);
+  assert.equal(canActivateOfficialLoadCandidate({ ...complete, methodValidated: false }), false);
+  assert.equal(canActivateOfficialLoadCandidate({ ...complete, targetedTestsPassing: false }), false);
+});
+
 test("la capacité occupants et la marge réagissent aux masses sans formule constructeur implicite", () => {
   const base = applyApplicableMtowLimit({ tablePermittedTotalMassKg: 825, applicableMtowKg: 952, balloonEquipmentWeightKg: 415, occupantsWeightKg: 330 });
   const heavierOccupants = applyApplicableMtowLimit({ tablePermittedTotalMassKg: 825, applicableMtowKg: 952, balloonEquipmentWeightKg: 415, occupantsWeightKg: 350 });
@@ -213,7 +307,8 @@ test("la MTOM applicable limite toujours une masse de table supérieure", () => 
 test("le dataset officiel Cameron reste impossible à activer avec un seul cas", () => {
   assert.equal(cameronZ105Official.enabled, false);
   assert.equal(cameronZ105Official.documentedData.loadTable, null);
-  assert.equal(cameronZ105Official.calculationMethod.interpolationPolicy, null);
+  assert.equal(cameronZ105Official.calculationMethod.interpolationPolicy, "DIRECT_FORMULA_NO_TABLE_INTERPOLATION");
+  assert.equal(cameronZ105Official.verification.status, "PENDING_HUMAN_VERIFICATION");
   assert.ok(auditCameronZ105ReferenceCoverage(cameronZ105References).length > 0);
 });
 

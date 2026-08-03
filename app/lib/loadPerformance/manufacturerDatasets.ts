@@ -1,3 +1,6 @@
+import { cameronZ105Official } from "./datasets/cameronZ105Official.ts";
+import { auditCameronZ105ReferenceCoverage, cameronZ105References } from "./referenceCases/cameronZ105References.ts";
+
 export type OfficialLoadDataset = {
   id: string;
   manufacturer: "Cameron" | "Kubíček" | "Ultramagic";
@@ -25,22 +28,22 @@ export const officialLoadDatasets: readonly OfficialLoadDataset[] = [
   {
     id: "CAMERON_ISSUE_10_AMENDMENT_18",
     manufacturer: "Cameron",
-    supportedModels: [],
+    supportedModels: ["Z105"],
     manualTitle: "Cameron Balloons Hot Air Balloon Flight Manual",
     manualEdition: "Issue 10",
     manualRevision: "Amendment 18",
     revisionDate: "2022-07-05",
-    sourceUrl: "https://www.cameronballoons.co.uk/c/download/Hot-Air-Balloon-Flight-Manual-Amendment-18-Updated-pages-only.pdf",
-    sourcePages: ["9-3 (applicabilité des enveloppes uniquement)"],
+    sourceUrl: "https://www.cameronballoons.co.uk/c/download/Hot-Air-Balloon-Flight-Manual-Amendment-18.pdf",
+    sourcePages: ["5-1 à 5-4", "A2-1"],
     authorityStatus: "OFFICIAL_SOURCE",
     units: { altitude: "m AMSL", temperature: "°C", mass: "kg" },
-    interpolationPolicy: "NOT_IMPLEMENTED",
+    interpolationPolicy: "DOCUMENTED_ONLY",
     extrapolationAllowed: false,
     parserVersion: "1",
-    sourceFingerprint: "cameron-issue10-amendment18-2022-07-05",
-    goldenTestIds: [],
+    sourceFingerprint: "sha256:a2bb81dd8cff59771381a580812ce6e9878c74b0c0aa450981c219abba1b8572",
+    goldenTestIds: ["CAMERON_Z105_REFERENCE_001"],
     enabled: false,
-    blockedReason: "Tables de portance et golden test officiel non encore intégrés et vérifiés.",
+    blockedReason: "Méthode commune A2 transcrite ; validation méthode, validation ciblée Z105 et double validation humaine encore requises.",
   },
   {
     id: "KUBICEK_B3102_ED3_REV22",
@@ -51,13 +54,13 @@ export const officialLoadDatasets: readonly OfficialLoadDataset[] = [
     manualRevision: "Revision 22",
     revisionDate: "2025-10-30",
     sourceUrl: "https://www.kubicekballoons.cz/runtime/cache/files/original/b/b.3102-fm-edition-3-rev22-eu-20251112083924.pdf",
-    sourcePages: ["II", "0-III à 0-IV (identification et historique de révision uniquement)"],
+    sourcePages: ["2-4", "2-5", "2-10", "5-1 à 5-5", "6-1"],
     authorityStatus: "OFFICIAL_SOURCE",
     units: { altitude: "m AMSL", temperature: "°C", mass: "kg" },
     interpolationPolicy: "NOT_IMPLEMENTED",
     extrapolationAllowed: false,
     parserVersion: "1",
-    sourceFingerprint: "kubicek-b3102-ed3-rev22-2025-10-30",
+    sourceFingerprint: "sha256:c32dd501b7761b1b03974aa8e39b6d4e20efc9e304c1a520ecc37c03bf721c30",
     goldenTestIds: [],
     enabled: false,
     blockedReason: "Tables de charge, applicabilité par configuration et golden test officiel à valider.",
@@ -69,15 +72,15 @@ export const officialLoadDatasets: readonly OfficialLoadDataset[] = [
     manualTitle: "Ultramagic Hot Air Balloon Flight Manual FM04",
     manualEdition: "FM04",
     manualRevision: "Revision 30",
-    revisionDate: "2026-03",
+    revisionDate: "2025-07-21",
     sourceUrl: "https://ultramagic.com/openfiles/Manuals04/MV04ar30.pdf",
-    sourcePages: ["5.8", "Annexe A"],
+    sourcePages: ["2.4", "5.3 à 5.5", "5.8", "5.9", "8.1", "9.1"],
     authorityStatus: "OFFICIAL_SOURCE",
     units: { altitude: "m AMSL", temperature: "°C", mass: "kg" },
     interpolationPolicy: "NOT_IMPLEMENTED",
     extrapolationAllowed: false,
     parserVersion: "1",
-    sourceFingerprint: "ultramagic-fm04-rev30",
+    sourceFingerprint: "sha256:b6f45b47fce6c7ff74802a260fa03459d8b38f967a5ef1f396132e004374deab",
     goldenTestIds: [],
     enabled: false,
     blockedReason: "Graphiques sans table numérique officielle suffisamment précise pour une intégration sûre.",
@@ -108,6 +111,11 @@ export function validateOfficialLoadDatasets(
       if (dataset.interpolationPolicy === "NOT_IMPLEMENTED") errors.push(`${dataset.id}: interpolation non implémentée`);
       if (dataset.goldenTestIds.length === 0) errors.push(`${dataset.id}: golden test absent`);
       if (!dataset.verifiedAt || !dataset.verifiedBy) errors.push(`${dataset.id}: vérification absente`);
+      if (dataset.id === "CAMERON_ISSUE_10_AMENDMENT_18") {
+        if (!cameronZ105Official.enabled) errors.push(`${dataset.id}: activation fine Cameron Z105 absente`);
+        errors.push(...auditCameronZ105ReferenceCoverage(cameronZ105References).map((error) => `${dataset.id}: ${error}`));
+        if (cameronZ105Official.verification.verifiedBy.length < 2) errors.push(`${dataset.id}: double validation humaine absente`);
+      }
     }
   }
   return errors;

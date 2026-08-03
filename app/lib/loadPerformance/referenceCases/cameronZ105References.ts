@@ -99,7 +99,7 @@ export function applyApplicableMtowLimit(input: Readonly<{
   };
 }
 
-export const CAMERON_Z105_ACTIVATION_REQUIREMENTS = Object.freeze({
+export const CAMERON_A2_METHOD_ACTIVATION_REQUIREMENTS = Object.freeze({
   minimumReferenceCases: 15,
   requiresTemperatureCoverage: true,
   requiresAltitudeCoverage: true,
@@ -108,9 +108,12 @@ export const CAMERON_Z105_ACTIVATION_REQUIREMENTS = Object.freeze({
   tolerancePolicy: "DOCUMENTED_ONLY",
 });
 
+/** Kept as an alias while dataset activation remains disabled. Cases validate the common method, not 15 Z-105 implementations. */
+export const CAMERON_Z105_ACTIVATION_REQUIREMENTS = CAMERON_A2_METHOD_ACTIVATION_REQUIREMENTS;
+
 export function auditCameronZ105ReferenceCoverage(references: readonly CameronZ105ReferenceCase[]): readonly string[] {
   const errors: string[] = [];
-  if (references.length < CAMERON_Z105_ACTIVATION_REQUIREMENTS.minimumReferenceCases) errors.push(`Au moins ${CAMERON_Z105_ACTIVATION_REQUIREMENTS.minimumReferenceCases} cas de référence sont requis.`);
+  if (references.length < CAMERON_A2_METHOD_ACTIVATION_REQUIREMENTS.minimumReferenceCases) errors.push(`Au moins ${CAMERON_A2_METHOD_ACTIVATION_REQUIREMENTS.minimumReferenceCases} cas de validation de la méthode A2 sont requis.`);
   if (!references.every((reference) => validateCameronZ105Reference(reference).coherent)) errors.push("Un ou plusieurs cas de référence sont arithmétiquement incohérents.");
   const distinctTemperatures = new Set(references.map(({ groundTemperatureC }) => groundTemperatureC));
   const distinctAltitudes = new Set(references.map(({ plannedMaximumAltitudeMslM }) => plannedMaximumAltitudeMslM));

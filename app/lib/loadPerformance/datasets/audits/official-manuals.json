@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "documents": [
+    {
+      "id": "CAMERON_ISSUE_10_AMENDMENT_18",
+      "manufacturer": "Cameron",
+      "title": "Hot Air Balloon Flight Manual",
+      "edition": "Issue 10",
+      "revision": "Amendment 18",
+      "revisionDate": "2022-07-05",
+      "sourceUrl": "https://www.cameronballoons.co.uk/c/download/Hot-Air-Balloon-Flight-Manual-Amendment-18.pdf",
+      "checksumSha256": "a2bb81dd8cff59771381a580812ce6e9878c74b0c0aa450981c219abba1b8572",
+      "retrievedAt": "2026-08-02",
+      "pagesUsed": ["2-3", "2-6", "2-7", "5-1", "5-2", "5-3", "5-4", "8-1", "8-2", "9-1", "9-2", "9-3", "A2-1"],
+      "localFilename": "cameron-amendment-18.pdf"
+    },
+    {
+      "id": "KUBICEK_B3102_ED3_REV22",
+      "manufacturer": "Kubíček",
+      "title": "Flight Manual B.3102",
+      "edition": "Edition 3",
+      "revision": "Revision 22",
+      "revisionDate": "2025-10-30",
+      "sourceUrl": "https://kubicekballoons.com/runtime/cache/files/original/b/b.3102-fm-edition-3-rev22-eu-20251112083924.pdf",
+      "checksumSha256": "c32dd501b7761b1b03974aa8e39b6d4e20efc9e304c1a520ecc37c03bf721c30",
+      "retrievedAt": "2026-08-02",
+      "pagesUsed": ["2-4", "2-5", "2-10", "5-1", "5-2", "5-3", "5-4", "5-5", "6-1"],
+      "localFilename": "kubicek-b3102-rev22.pdf"
+    },
+    {
+      "id": "ULTRAMAGIC_FM04_REV30",
+      "manufacturer": "Ultramagic",
+      "title": "Hot Air Balloon Flight Manual FM04",
+      "edition": "FM04",
+      "revision": "Revision 30",
+      "revisionDate": "2025-07-21",
+      "sourceUrl": "https://ultramagic.com/openfiles/Manuals04/MV04ar30.pdf",
+      "checksumSha256": "b6f45b47fce6c7ff74802a260fa03459d8b38f967a5ef1f396132e004374deab",
+      "retrievedAt": "2026-08-02",
+      "pagesUsed": ["2.4", "5.3", "5.4", "5.5", "5.8", "5.9", "8.1", "9.1"],
+      "localFilename": "ultramagic-fm04-rev30.pdf"
+    }
+  ]
+}

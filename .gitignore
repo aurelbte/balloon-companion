@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# official load-performance manuals and extraction work (downloaded, never versioned)
+/.load-performance-work/
