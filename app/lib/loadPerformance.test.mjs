@@ -21,6 +21,8 @@ import {
   officialLoadMethodMatrix,
   officialLoadValidationStrategy,
   ultramagicModelParameters,
+  proposedApplicableMtowKg,
+  resolveApplicableMtowSuggestion,
 } from "./loadPerformance/modelParameters/index.ts";
 import {
   CAMERON_Z105_REFERENCE_001,
@@ -393,4 +395,55 @@ test("le candidat applique MTOM, marges négative et proche de zéro sans arrond
   const heavier = calculateOfficialLoad({ ...input, occupantsWeightKg: reference.occupantsWeightKg + 12 });
   assert.equal(heavier.status, "AVAILABLE");
   if (heavier.status === "AVAILABLE") assert.ok(Math.abs(heavier.marginKg - (reference.expectedMarginKg + 0.3448292881172 - 12)) < 1e-9);
+});
+
+test("la proposition MTOM catalogue ne concerne que le jeu de paramètres Cameron Z105", () => {
+  assert.equal(proposedApplicableMtowKg("Cameron", "Z105"), 952);
+  assert.equal(proposedApplicableMtowKg(" cameron ", "Z-105"), 952);
+  assert.equal(proposedApplicableMtowKg("Cameron", "Z350"), null);
+  assert.equal(proposedApplicableMtowKg("Ultramagic", "Z105"), null);
+  assert.deepEqual(resolveApplicableMtowSuggestion(undefined, "Cameron", "Z105"), { valueKg: 952, proposed: true });
+  assert.deepEqual(resolveApplicableMtowSuggestion(940, "Cameron", "Z105"), { valueKg: 940, proposed: false });
+});
+
+test("deux Z105 de même configuration produisent exactement la même marge", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const common = {
+    manufacturer: "Cameron",
+    model: "Z105",
+    volumeM3: 2_973,
+    applicableMtowKg: 952,
+    configurationLimitsConfirmed: true,
+    balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg,
+    occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM,
+    plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { ...completeInput.groundTemperature, temperatureC: reference.groundTemperatureC },
+  };
+  const first = calculateOfficialLoad({ ...common, balloonId: "F-HLFM" });
+  const second = calculateOfficialLoad({ ...common, balloonId: "F-TEST" });
+  assert.equal(first.status, "AVAILABLE");
+  assert.equal(second.status, "AVAILABLE");
+  if (first.status === "AVAILABLE" && second.status === "AVAILABLE") assert.equal(second.marginKg, first.marginKg);
+});
+
+test("une différence de masse équipée modifie la marge du Z105 du même nombre de kg", () => {
+  const reference = CAMERON_Z105_REFERENCE_001;
+  const common = {
+    manufacturer: "Cameron",
+    model: "Z105",
+    volumeM3: 2_973,
+    applicableMtowKg: 952,
+    configurationLimitsConfirmed: true,
+    occupantsWeightKg: reference.occupantsWeightKg,
+    launchElevationMslM: reference.launchElevationMslM,
+    plannedMaximumAltitudeMslM: reference.plannedMaximumAltitudeMslM,
+    groundTemperature: { ...completeInput.groundTemperature, temperatureC: reference.groundTemperatureC },
+  };
+  const differenceKg = 18;
+  const first = calculateOfficialLoad({ ...common, balloonId: "F-HLFM", balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg });
+  const second = calculateOfficialLoad({ ...common, balloonId: "F-TEST", balloonEquipmentWeightKg: reference.balloonEquipmentWeightKg + differenceKg });
+  assert.equal(first.status, "AVAILABLE");
+  assert.equal(second.status, "AVAILABLE");
+  if (first.status === "AVAILABLE" && second.status === "AVAILABLE") assert.equal(second.marginKg, first.marginKg - differenceKg);
 });

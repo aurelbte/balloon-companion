@@ -5,3 +5,4 @@ export * from "./ultramagicModels.ts";
 export * from "./validationStrategy.ts";
 export * from "./methodMatrix.ts";
 export * from "./activationRegistry.ts";
+export * from "./mtomCatalog.ts";

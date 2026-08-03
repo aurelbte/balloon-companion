@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { catalogManufacturers, catalogModels, catalogVolume } from "../../lib/balloonCatalog";
 import { calculateBalloonWeight, type Balloon, type BalloonCategory, type BalloonInput } from "../../lib/balloons";
+import { proposedApplicableMtowKg } from "../../lib/loadPerformance/modelParameters/mtomCatalog";
 import styles from "../../more/More.module.css";
 
 const OTHER = "__other__";
@@ -21,7 +22,11 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
   const [category, setCategory] = useState<BalloonCategory>(balloon?.category ?? "Libre à air chaud");
   const [volume, setVolume] = useState(balloon ? String(balloon.volumeM3) : "");
   const [volumeFromCatalog, setVolumeFromCatalog] = useState(false);
-  const [applicableMtow, setApplicableMtow] = useState(balloon?.applicableMtowKg === undefined ? "" : String(balloon.applicableMtowKg));
+  const initialProposedMtow = balloon?.applicableMtowKg === undefined && balloon
+    ? proposedApplicableMtowKg(balloon.manufacturer, balloon.model)
+    : null;
+  const [applicableMtow, setApplicableMtow] = useState(balloon?.applicableMtowKg === undefined ? initialProposedMtow === null ? "" : String(initialProposedMtow) : String(balloon.applicableMtowKg));
+  const [mtomFromCatalog, setMtomFromCatalog] = useState(initialProposedMtow !== null);
   const [configurationLimitsConfirmed, setConfigurationLimitsConfirmed] = useState(balloon?.configurationLimitsConfirmed === true);
   const [envelope, setEnvelope] = useState(balloon?.weights.envelopeKg === undefined ? "" : String(balloon.weights.envelopeKg));
   const [burner, setBurner] = useState(balloon?.weights.burnerKg === undefined ? "" : String(balloon.weights.burnerKg));
@@ -45,8 +50,22 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
   const weights = { ...(envelopeKg === undefined ? {} : { envelopeKg }), ...(burnerKg === undefined ? {} : { burnerKg }), ...(basketKg === undefined ? {} : { basketKg }), fullCylinders: parsedCylinders };
   const total = calculateBalloonWeight(weights);
   const valid = Boolean(registration.trim() && manufacturer && model && volumeM3 && volumeM3 > 0 && total !== null);
-  const chooseManufacturer = (choice: string) => { setManufacturerChoice(choice); setModelChoice(""); setManualModel(""); setVolumeFromCatalog(false); if (choice !== OTHER) setManualManufacturer(""); };
-  const chooseModel = (choice: string) => { setModelChoice(choice); setVolumeFromCatalog(false); if (choice !== OTHER) { setManualModel(""); const knownVolume = catalogVolume(manufacturerChoice, choice); if (knownVolume !== null) { setVolume(String(knownVolume)); setVolumeFromCatalog(true); } } };
+  const chooseManufacturer = (choice: string) => { setManufacturerChoice(choice); setModelChoice(""); setManualModel(""); setVolumeFromCatalog(false); setConfigurationLimitsConfirmed(false); if (mtomFromCatalog) { setApplicableMtow(""); setMtomFromCatalog(false); } if (choice !== OTHER) setManualManufacturer(""); };
+  const chooseModel = (choice: string) => {
+    setModelChoice(choice);
+    setVolumeFromCatalog(false);
+    setConfigurationLimitsConfirmed(false);
+    if (choice === OTHER) return;
+    setManualModel("");
+    const knownVolume = catalogVolume(manufacturerChoice, choice);
+    if (knownVolume !== null) { setVolume(String(knownVolume)); setVolumeFromCatalog(true); }
+    const hasPilotMtow = Boolean(applicableMtow.trim()) && !mtomFromCatalog;
+    if (mtomFromCatalog) { setApplicableMtow(""); setMtomFromCatalog(false); }
+    if (!hasPilotMtow) {
+      const proposedMtow = proposedApplicableMtowKg(manufacturerChoice, choice);
+      if (proposedMtow !== null) { setApplicableMtow(String(proposedMtow)); setMtomFromCatalog(true); }
+    }
+  };
   const addCylinder = () => { const id = `cylinder-${Date.now()}-${cylinders.length + 1}`; setCylinders((current) => [...current, { id, label: `Cylindre ${current.length + 1}`, weight: "" }]); setFocusCylinderId(id); };
   return <form className={styles.balloonForm} onSubmit={(event) => { event.preventDefault(); if (!valid || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, ...(applicableMtowKg === undefined ? {} : { applicableMtowKg }), configurationLimitsConfirmed, ...(color.trim() ? { color } : {}) }); }}>
     <label><span>Immatriculation</span><input autoFocus autoCapitalize="characters" value={registration} onChange={(e) => setRegistration(e.target.value.toUpperCase().replace(/\s/g, ""))} /></label>
@@ -55,7 +74,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
     {manufacturerChoice && manufacturerChoice !== OTHER && <label><span>Modèle / type</span><select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}><option value="">Choisir</option>{catalogModels(manufacturer).map((item) => <option key={item.model}>{item.model}</option>)}<option value={OTHER}>Autre modèle</option></select></label>}
     {(manufacturerChoice === OTHER || modelChoice === OTHER) && <label><span>Modèle / type</span><input value={manualModel} onChange={(e) => setManualModel(e.target.value)} /></label>}
     <label><span>Volume</span><span className={styles.technicalInput}><input inputMode="decimal" value={volume} onChange={(e) => { setVolume(decimalInput(e.target.value)); setVolumeFromCatalog(false); }} /><i>m³</i></span>{volumeFromCatalog && <small className={styles.catalogHint}>Volume issu du catalogue constructeur — modifiable</small>}</label>
-    <label><span>MTOM applicable</span><span className={styles.technicalInput}><input inputMode="decimal" value={applicableMtow} onChange={(e) => { setApplicableMtow(decimalInput(e.target.value)); setConfigurationLimitsConfirmed(false); }} /><i>kg</i></span><small className={styles.catalogHint}>À confirmer avec le manuel de vol du ballon.</small></label>
+    <label><span>MTOM applicable</span><span className={styles.technicalInput}><input inputMode="decimal" value={applicableMtow} onChange={(e) => { setApplicableMtow(decimalInput(e.target.value)); setMtomFromCatalog(false); setConfigurationLimitsConfirmed(false); }} /><i>kg</i></span>{mtomFromCatalog && <small className={styles.catalogHint}>Valeur proposée depuis le catalogue constructeur — modifiable</small>}<small className={styles.catalogHint}>À confirmer avec le manuel de vol du ballon.</small></label>
     <label className={styles.balloonFormWide}>
       <span>Limites vérifiées avec le manuel de vol</span>
       <span className={styles.confirmationField}><input type="checkbox" checked={configurationLimitsConfirmed} onChange={(event) => setConfigurationLimitsConfirmed(event.target.checked)} /><span>J’ai vérifié la MTOM et la configuration de ce ballon avec son manuel de vol.</span></span>
