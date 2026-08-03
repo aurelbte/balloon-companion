@@ -1,5 +1,6 @@
+import type { BalloonDocument } from "./balloonDocuments.ts";
+export type { BalloonDocument } from "./balloonDocuments.ts";
 export type BalloonCategory = "Libre à air chaud" | "Libre à gaz";
-export type BalloonDocument = { id: string; type: "insurance" | "cdn" | "cen" | "maintenance" | "registration" | "other"; label: string; expirationDate?: string; status: "valid" | "expiring" | "expired" | "missing" };
 export type FullCylinder = { id: string; label?: string; fullWeightKg: number };
 export type BalloonWeights = { envelopeKg?: number; basketKg?: number; burnerKg?: number; fullCylinders: readonly FullCylinder[] };
 export type Balloon = {
@@ -17,6 +18,8 @@ export type Balloon = {
   isFavorite?: boolean;
   lastUsedAt?: string;
   documents: BalloonDocument[];
+  /** Anciennes clés conservées temporairement uniquement pour permettre une récupération certaine. */
+  legacyWeightRecovery?: Readonly<Record<string, unknown>>;
   weights: BalloonWeights;
 };
 export type BalloonInput = Omit<Balloon, "id" | "documents" | "isFavorite" | "lastUsedAt" | "configurationLimitsConfirmed"> & {
@@ -36,7 +39,7 @@ export function balloonDisplayName(balloon: Pick<Balloon, "registration" | "manu
 export function createBalloon(input: BalloonInput, id = normalizeBalloonRegistration(input.registration)): Balloon {
   return { id, registration: normalizeBalloonRegistration(input.registration), manufacturer: input.manufacturer.trim(), model: input.model.trim(), category: input.category, volumeM3: input.volumeM3, ...(input.applicableMtowKg === undefined ? {} : { applicableMtowKg: input.applicableMtowKg }), configurationLimitsConfirmed: input.configurationLimitsConfirmed === true, ...(input.color?.trim() ? { color: input.color.trim() } : {}), documents: [], weights: { ...input.weights, fullCylinders: input.weights.fullCylinders.map((cylinder) => ({ ...cylinder, ...(cylinder.label?.trim() ? { label: cylinder.label.trim() } : {}) })) } };
 }
-export function updateBalloon(current: Balloon, input: BalloonInput): Balloon { return { ...createBalloon(input, current.id), documents: current.documents, ...(current.isFavorite ? { isFavorite: true } : {}), ...(current.lastUsedAt ? { lastUsedAt: current.lastUsedAt } : {}) }; }
+export function updateBalloon(current: Balloon, input: BalloonInput): Balloon { return { ...createBalloon(input, current.id), documents: current.documents, ...(current.legacyWeightRecovery ? { legacyWeightRecovery: current.legacyWeightRecovery } : {}), ...(current.isFavorite ? { isFavorite: true } : {}), ...(current.lastUsedAt ? { lastUsedAt: current.lastUsedAt } : {}) }; }
 export function balloonSnapshot(balloon: Balloon): BalloonSnapshot { return { registration: balloon.registration, manufacturer: balloon.manufacturer, model: balloon.model, category: balloon.category }; }
 export function calculateBalloonWeight(weights: BalloonWeights): number | null { if (!(weights.envelopeKg && weights.envelopeKg > 0) || !(weights.burnerKg && weights.burnerKg > 0) || !(weights.basketKg && weights.basketKg > 0) || weights.fullCylinders.some(({ fullWeightKg }) => !(fullWeightKg > 0))) return null; return weights.envelopeKg + weights.burnerKg + weights.basketKg + weights.fullCylinders.reduce((total, cylinder) => total + cylinder.fullWeightKg, 0); }
 export function calculateBalloonEmptyWeight(balloon: Balloon): number | null { return calculateBalloonWeight(balloon.weights); }

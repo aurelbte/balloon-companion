@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { balloonEquipmentWeightForLoad } from "./loadPerformance/balloonInput.ts";
+import { balloonEquipmentWeightForLoad, buildLoadCalculationInput } from "./loadPerformance/balloonInput.ts";
 import { calculateOfficialLoad, displayLoadMarginKg, loadMarginTone } from "./loadPerformance/engine.ts";
 import { calculateDemoLoad, demoLoadCacheKey, DEMO_LOAD_BADGE, isDemoCameronZ105 } from "./loadPerformance/demoEngine.ts";
 import { interpolateDemoPermittedMass } from "./loadPerformance/demoInterpolation.ts";
 import { formatDemoLoadDiagnostic } from "./loadPerformance/demoDiagnostic.ts";
 import { loadDisplayPolicy } from "./loadPerformance/loadDisplayMode.ts";
+import { loadCardBalloonCorrectionPath } from "./loadPerformance/loadCardPolicy.ts";
 import { resolveSyntheticMarginMode } from "./loadPerformance/demoMode.ts";
 import { demoCameronZ105, enabledDemoLoadDatasets } from "./loadPerformance/datasets/demoCameronZ105.ts";
 import { enabledOfficialLoadDatasets, officialLoadDatasets, validateOfficialLoadDatasets } from "./loadPerformance/manufacturerDatasets.ts";
@@ -461,6 +462,58 @@ test("deux Z105 de même configuration produisent exactement la même marge", ()
   assert.equal(first.status, "AVAILABLE");
   assert.equal(second.status, "AVAILABLE");
   if (first.status === "AVAILABLE" && second.status === "AVAILABLE") assert.equal(second.marginKg, first.marginKg);
+});
+
+test("F-HLFM passe par le mapping Analyse et produit la marge candidat attendue", () => {
+  const balloon = createBalloon({
+    registration: "F-HLFM",
+    manufacturer: "Cameron",
+    model: "Z105",
+    category: "Libre à air chaud",
+    volumeM3: 2_973,
+    applicableMtowKg: 952,
+    configurationLimitsConfirmed: true,
+    weights: {
+      envelopeKg: 200,
+      burnerKg: 50,
+      basketKg: 100,
+      fullCylinders: [{ id: "c1", fullWeightKg: 65 }],
+    },
+  });
+  const input = buildLoadCalculationInput({
+    balloon,
+    occupantsWeightKg: 330,
+    launchElevationMslM: 100,
+    plannedMaximumAltitudeMslM: 500,
+    groundTemperature: { temperatureC: 14, sourceModel: "Open-Meteo", forecastRun: "n/a", validTime: "2026-08-03T05:00:00.000Z" },
+  });
+  const result = calculateOfficialLoad(input);
+  assert.equal(input.balloonEquipmentWeightKg, 415);
+  assert.equal(result.status, "AVAILABLE");
+  if (result.status === "AVAILABLE") {
+    assert.equal(result.calculationStatus, "CANDIDATE_PILOT_VALIDATION");
+    assert.equal(result.manufacturerMethodId, "CAMERON_METHOD_A2");
+    assert.equal(result.modelParameterSetId, "CAMERON_Z105");
+    assert.equal(result.manualRevision, "ISSUE_10_AMENDMENT_18");
+    assert.equal(displayLoadMarginKg(result.marginKg), 80);
+  }
+});
+
+test("une limite Z105 non confirmée dirige la carte Charge vers la fiche ballon", () => {
+  const balloon = createBalloon({
+    registration: "F-HLFM",
+    manufacturer: "Cameron",
+    model: "Z-105",
+    category: "Libre à air chaud",
+    volumeM3: 2_974,
+    applicableMtowKg: 952,
+    configurationLimitsConfirmed: false,
+    weights: { envelopeKg: 200, burnerKg: 50, basketKg: 100, fullCylinders: [{ id: "c1", fullWeightKg: 65 }] },
+  });
+  const result = calculateOfficialLoad(buildLoadCalculationInput({ balloon, occupantsWeightKg: 330, launchElevationMslM: 100, plannedMaximumAltitudeMslM: 500, groundTemperature: { temperatureC: 14, sourceModel: "Open-Meteo", forecastRun: "n/a", validTime: "2026-08-03T05:00:00.000Z" } }));
+  assert.equal(result.status, "UNAVAILABLE");
+  if (result.status === "UNAVAILABLE") assert.equal(result.reasonCode, "CONFIGURATION_LIMITS_UNCONFIRMED");
+  assert.equal(loadCardBalloonCorrectionPath(balloon.id, result), "/more/profile/balloons/F-HLFM/edit");
 });
 
 test("une différence de masse équipée modifie la marge du Z105 du même nombre de kg", () => {

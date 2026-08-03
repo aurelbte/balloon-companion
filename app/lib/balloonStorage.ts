@@ -11,22 +11,23 @@ export function getActiveBalloon(registry: BalloonRegistry): Balloon | null { re
 function numberOrUndefined(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
 function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Balloon | null {
   if (!value || typeof value !== "object") return null;
-  const item = value as Partial<Balloon> & { weights?: Record<string, unknown> };
+  const item = value as Partial<Balloon> & { weights?: Record<string, unknown>; envelopeWeightKg?: unknown; burnerWeightKg?: unknown; basketWeightKg?: unknown; cylinders?: unknown };
   if (typeof item.id !== "string" || typeof item.registration !== "string" || typeof item.manufacturer !== "string" || typeof item.model !== "string") return null;
   const reference = REGISTERED_BALLOONS.find(({ registration }) => registration === item.registration);
   const legacyWeights: Record<string, unknown> = item.weights && typeof item.weights === "object" ? item.weights : {};
-  const cylinders = Array.isArray(legacyWeights.fullCylinders)
-    ? legacyWeights.fullCylinders.filter((cylinder: unknown): cylinder is { id: string; label?: string; fullWeightKg: number } => Boolean(
+  const cylinderSource = Array.isArray(legacyWeights.fullCylinders) ? legacyWeights.fullCylinders : Array.isArray(legacyWeights.cylinders) ? legacyWeights.cylinders : Array.isArray(item.cylinders) ? item.cylinders : [];
+  const cylinders = cylinderSource
+    .filter((cylinder: unknown): cylinder is { id: string; label?: string; fullWeightKg: number } => Boolean(
       cylinder
       && typeof cylinder === "object"
       && typeof (cylinder as { id?: unknown }).id === "string"
       && typeof (cylinder as { fullWeightKg?: unknown }).fullWeightKg === "number"
       && (cylinder as { fullWeightKg: number }).fullWeightKg > 0,
-    ))
-    : [];
-  const envelopeKg = numberOrUndefined(legacyWeights.envelopeKg);
-  const burnerKg = numberOrUndefined(legacyWeights.burnerKg);
-  const basketKg = numberOrUndefined(legacyWeights.basketKg);
+    ));
+  const envelopeKg = numberOrUndefined(legacyWeights.envelopeKg) ?? numberOrUndefined(legacyWeights.envelopeWeightKg) ?? numberOrUndefined(item.envelopeWeightKg);
+  const burnerKg = numberOrUndefined(legacyWeights.burnerKg) ?? numberOrUndefined(legacyWeights.burnerWeightKg) ?? numberOrUndefined(item.burnerWeightKg);
+  const basketKg = numberOrUndefined(legacyWeights.basketKg) ?? numberOrUndefined(legacyWeights.basketWeightKg) ?? numberOrUndefined(item.basketWeightKg);
+  const legacyWeightRecovery = Object.fromEntries(Object.entries({ envelopeWeightKg: legacyWeights.envelopeWeightKg ?? item.envelopeWeightKg, burnerWeightKg: legacyWeights.burnerWeightKg ?? item.burnerWeightKg, basketWeightKg: legacyWeights.basketWeightKg ?? item.basketWeightKg, cylinders: legacyWeights.cylinders ?? item.cylinders }).filter(([, entry]) => entry !== undefined));
   return {
     id: item.id,
     registration: item.registration,
@@ -39,6 +40,7 @@ function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Ballo
     ...(typeof item.color === "string" && item.color ? { color: item.color } : {}),
     ...(item.isFavorite ? { isFavorite: true } : {}),
     documents: Array.isArray(item.documents) ? item.documents : [],
+    ...(Object.keys(legacyWeightRecovery).length > 0 ? { legacyWeightRecovery } : {}),
     weights: {
       ...(envelopeKg === undefined ? {} : { envelopeKg }),
       ...(burnerKg === undefined ? {} : { burnerKg }),

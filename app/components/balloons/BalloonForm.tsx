@@ -3,6 +3,7 @@ import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { catalogManufacturers, catalogModels, catalogVolume } from "../../lib/balloonCatalog";
 import { balloonFormSectionDefaults, mtomAfterModelChange, mtomAfterManualChange } from "../../lib/balloonFormPolicy";
+import { balloonMassFormDraft, canSubmitHydratedBalloonForm } from "../../lib/balloonFormHydration";
 import { calculateBalloonWeight, type Balloon, type BalloonCategory, type BalloonInput } from "../../lib/balloons";
 import { applicableMtomCatalogEntry, proposedApplicableMtowKg } from "../../lib/loadPerformance/modelParameters/mtomCatalog";
 import styles from "../../more/More.module.css";
@@ -13,6 +14,7 @@ type Props = { balloon?: Balloon; submitLabel: string; onSubmit: (input: Balloon
 function parseDecimal(value: string): number | undefined { if (!value.trim()) return undefined; const number = Number(value.replace(",", ".")); return Number.isFinite(number) ? number : undefined; }
 function decimalInput(value: string): string { return value.replace(/[^0-9.,]/g, "").replace(/([.,].*)[.,]/g, "$1"); }
 export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }: Props) {
+  const initialMassDraft = balloonMassFormDraft(balloon);
   const sectionDefaults = balloonFormSectionDefaults(balloon?.applicableMtowKg !== undefined, balloon?.configurationLimitsConfirmed === true);
   const knownManufacturer = balloon && catalogManufacturers().includes(balloon.manufacturer);
   const knownModel = balloon && catalogModels(balloon.manufacturer).some(({ model }) => model === balloon.model);
@@ -34,13 +36,38 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
   const [identityOpen, setIdentityOpen] = useState(sectionDefaults.identity);
   const [massesOpen, setMassesOpen] = useState(sectionDefaults.masses);
   const [limitsOpen, setLimitsOpen] = useState(sectionDefaults.limits);
-  const [envelope, setEnvelope] = useState(balloon?.weights.envelopeKg === undefined ? "" : String(balloon.weights.envelopeKg));
-  const [burner, setBurner] = useState(balloon?.weights.burnerKg === undefined ? "" : String(balloon.weights.burnerKg));
-  const [basket, setBasket] = useState(balloon?.weights.basketKg === undefined ? "" : String(balloon.weights.basketKg));
-  const [cylinders, setCylinders] = useState<CylinderDraft[]>(balloon?.weights.fullCylinders.map(({ id, label, fullWeightKg }) => ({ id, label: label ?? "", weight: String(fullWeightKg) })) ?? []);
+  const [envelope, setEnvelope] = useState(initialMassDraft.envelope);
+  const [burner, setBurner] = useState(initialMassDraft.burner);
+  const [basket, setBasket] = useState(initialMassDraft.basket);
+  const [cylinders, setCylinders] = useState<CylinderDraft[]>([...initialMassDraft.cylinders]);
   const [color, setColor] = useState(balloon?.color ?? "");
+  const [hydrationReady, setHydrationReady] = useState(!balloon);
+  const hydratedBalloonIdRef = useRef<string | null>(null);
   const [focusCylinderId, setFocusCylinderId] = useState<string | null>(null);
   const cylinderInputs = useRef(new Map<string, HTMLInputElement>());
+  useEffect(() => {
+    if (!balloon || hydratedBalloonIdRef.current === balloon.id) return;
+    setHydrationReady(false);
+    setRegistration(balloon.registration);
+    setManufacturerChoice(knownManufacturer ? balloon.manufacturer : OTHER);
+    setManualManufacturer(knownManufacturer ? "" : balloon.manufacturer);
+    setModelChoice(knownModel ? balloon.model : OTHER);
+    setManualModel(knownModel ? "" : balloon.model);
+    setCategory(balloon.category);
+    setVolume(String(balloon.volumeM3));
+    setApplicableMtow(balloon.applicableMtowKg === undefined ? "" : String(balloon.applicableMtowKg));
+    setMtomFromCatalog(false);
+    setSelectedMtomOptionId("");
+    setConfigurationLimitsConfirmed(balloon.configurationLimitsConfirmed === true);
+    const massDraft = balloonMassFormDraft(balloon);
+    setEnvelope(massDraft.envelope);
+    setBurner(massDraft.burner);
+    setBasket(massDraft.basket);
+    setCylinders([...massDraft.cylinders]);
+    setColor(balloon.color ?? "");
+    hydratedBalloonIdRef.current = balloon.id;
+    setHydrationReady(true);
+  }, [balloon, knownManufacturer, knownModel]);
   useEffect(() => {
     if (!focusCylinderId) return;
     const timer = window.setTimeout(() => {
@@ -86,7 +113,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
     setMtomFromCatalog(true);
   };
   const addCylinder = () => { const id = `cylinder-${Date.now()}-${cylinders.length + 1}`; setCylinders((current) => [...current, { id, label: `Cylindre ${current.length + 1}`, weight: "" }]); setFocusCylinderId(id); };
-  return <form className={styles.balloonForm} onSubmit={(event) => { event.preventDefault(); if (!valid || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, ...(applicableMtowKg === undefined ? {} : { applicableMtowKg }), configurationLimitsConfirmed, ...(color.trim() ? { color } : {}) }); }}>
+  return <form className={styles.balloonForm} aria-busy={!hydrationReady} onSubmit={(event) => { event.preventDefault(); if (!canSubmitHydratedBalloonForm(hydrationReady, valid) || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, ...(applicableMtowKg === undefined ? {} : { applicableMtowKg }), configurationLimitsConfirmed, ...(color.trim() ? { color } : {}) }); }}>
     <details className={styles.formSection} open={identityOpen} onToggle={(event) => setIdentityOpen(event.currentTarget.open)}>
       <summary>Identité <ChevronDown size={17} aria-hidden /></summary>
       <div className={styles.sectionGrid}>
@@ -116,6 +143,6 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
       <summary>Détails facultatifs <ChevronDown size={17} aria-hidden /></summary>
       <div className={styles.sectionGrid}><label><span>Catégorie</span><select value={category} onChange={(e) => setCategory(e.target.value as BalloonCategory)}><option>Libre à air chaud</option><option>Libre à gaz</option></select></label><label><span>Couleur</span><input value={color} onChange={(e) => setColor(e.target.value)} /></label></div>
     </details>
-    <div className={styles.balloonFormActions}><button type="submit" disabled={!valid}>{submitLabel}</button><button type="button" className={styles.later} onClick={onCancel}>Annuler</button></div>
+    <div className={styles.balloonFormActions}><button type="submit" disabled={!canSubmitHydratedBalloonForm(hydrationReady, valid)}>{hydrationReady ? submitLabel : "Chargement…"}</button><button type="button" className={styles.later} onClick={onCancel}>Annuler</button></div>
   </form>;
 }

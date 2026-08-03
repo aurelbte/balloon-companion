@@ -9,7 +9,10 @@ import {
   officialFieldsForBalloon,
   REGISTERED_BALLOONS,
   resolveBalloonForFlight,
+  updateBalloon,
 } from "./balloons.ts";
+import { balloonMassFormDraft, canSubmitHydratedBalloonForm } from "./balloonFormHydration.ts";
+import { deriveBalloonDocumentStatus } from "./balloonDocuments.ts";
 import {
   addBalloonToRegistry,
   BALLOON_REGISTRY_VERSION,
@@ -174,4 +177,74 @@ test("une migration ne confirme jamais silencieusement les limites", () => {
     balloons: [{ ...createBalloon({ ...input, applicableMtowKg: 952, configurationLimitsConfirmed: true }), configurationLimitsConfirmed: true }],
   });
   assert.equal(legacy.balloons[0].configurationLimitsConfirmed, false);
+});
+
+test("un ballon de 415 kg retrouve exactement ses masses dans le formulaire", () => {
+  const equippedWeights = {
+    envelopeKg: 118,
+    burnerKg: 45,
+    basketKg: 124,
+    fullCylinders: [
+      { id: "c1", label: "Avant gauche", fullWeightKg: 32 },
+      { id: "c2", label: "Avant droit", fullWeightKg: 32 },
+      { id: "c3", label: "Arrière gauche", fullWeightKg: 32 },
+      { id: "c4", label: "Arrière droit", fullWeightKg: 32 },
+    ],
+  };
+  const stored = addBalloonToRegistry({ version: BALLOON_REGISTRY_VERSION, balloons: [], activeBalloonId: null }, { ...input, weights: equippedWeights }).registry;
+  const restored = migrateBalloonRegistry(JSON.parse(JSON.stringify(stored))).balloons[0];
+  assert.equal(calculateBalloonWeight(restored.weights), 415);
+  assert.deepEqual(balloonMassFormDraft(restored), {
+    envelope: "118",
+    burner: "45",
+    basket: "124",
+    cylinders: [
+      { id: "c1", label: "Avant gauche", weight: "32" },
+      { id: "c2", label: "Avant droit", weight: "32" },
+      { id: "c3", label: "Arrière gauche", weight: "32" },
+      { id: "c4", label: "Arrière droit", weight: "32" },
+    ],
+  });
+  const burnerChanged = updateBalloon(restored, { ...input, weights: { ...restored.weights, burnerKg: 50 } });
+  assert.equal(burnerChanged.weights.envelopeKg, 118);
+  assert.equal(burnerChanged.weights.basketKg, 124);
+  assert.deepEqual(burnerChanged.weights.fullCylinders, restored.weights.fullCylinders);
+  assert.equal(calculateBalloonWeight(burnerChanged.weights), 420);
+  const identityChanged = updateBalloon(restored, { ...input, registration: "F-NEWX", weights: restored.weights });
+  assert.deepEqual(identityChanged.weights, restored.weights);
+});
+
+test("la création reste vide et la sauvegarde attend la fin de l'hydratation", () => {
+  assert.deepEqual(balloonMassFormDraft(undefined), { envelope: "", burner: "", basket: "", cylinders: [] });
+  assert.equal(canSubmitHydratedBalloonForm(false, true), false);
+  assert.equal(canSubmitHydratedBalloonForm(true, true), true);
+});
+
+test("la migration récupère uniquement les anciennes masses dont la correspondance est certaine", () => {
+  const migrated = migrateBalloonRegistry({
+    version: 4,
+    activeBalloonId: "F-OLD",
+    balloons: [{
+      id: "F-OLD", registration: "F-OLD", manufacturer: "Cameron", model: "Z105", volumeM3: 2_973,
+      weights: {
+        envelopeWeightKg: 118,
+        burnerWeightKg: 45,
+        basketWeightKg: 124,
+        cylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }],
+      },
+    }],
+  });
+  assert.deepEqual(migrated.balloons[0].weights, { envelopeKg: 118, burnerKg: 45, basketKg: 124, fullCylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }] });
+  assert.deepEqual(migrated.balloons[0].legacyWeightRecovery, { envelopeWeightKg: 118, burnerWeightKg: 45, basketWeightKg: 124, cylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }] });
+  assert.equal(calculateBalloonWeight(migrated.balloons[0].weights), 415);
+});
+
+test("les statuts documentaires sont toujours dérivés de l'échéance", () => {
+  const base = { id: "doc", balloonId: "F-HLFM", category: "INSURANCE", fileName: "assurance.pdf", mimeType: "application/pdf", addedAt: "2026-01-01T00:00:00.000Z" };
+  const now = new Date("2026-08-03T12:00:00.000Z");
+  assert.equal(deriveBalloonDocumentStatus(undefined, now), "MISSING");
+  assert.equal(deriveBalloonDocumentStatus(base, now), "NO_EXPIRY");
+  assert.equal(deriveBalloonDocumentStatus({ ...base, expiryDate: "2026-08-20" }, now), "EXPIRING_SOON");
+  assert.equal(deriveBalloonDocumentStatus({ ...base, expiryDate: "2026-07-31" }, now), "EXPIRED");
+  assert.equal(deriveBalloonDocumentStatus({ ...base, expiryDate: "2027-08-03" }, now), "VALID");
 });

@@ -26,12 +26,13 @@ import {
 } from "../hooks/useAirspaceCoverage";
 import { getAirspaceFrequencyPresentations } from "../lib/operationalFrequency";
 import { loadPreparationDraft, savePreparationDraft } from "../lib/preparationDraftStorage";
-import { balloonEquipmentWeightForLoad } from "../lib/loadPerformance/balloonInput";
+import { buildLoadCalculationInput } from "../lib/loadPerformance/balloonInput";
 import { calculateOfficialLoad } from "../lib/loadPerformance/engine";
 import { displayLoadMarginKg, loadMarginTone } from "../lib/loadPerformance/engine";
 import { calculateDemoLoad, DEMO_LOAD_BADGE } from "../lib/loadPerformance/demoEngine";
 import { resolveLoadDemoMode, resolveSyntheticMarginMode } from "../lib/loadPerformance/demoMode";
 import { loadDisplayPolicy } from "../lib/loadPerformance/loadDisplayMode";
+import { loadCardBalloonCorrectionPath } from "../lib/loadPerformance/loadCardPolicy";
 import { formatDemoLoadDiagnostic } from "../lib/loadPerformance/demoDiagnostic";
 import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
 import { GROUND_TEMPERATURE_PROVIDER_ID, OpenMeteoGroundTemperatureProvider, canFetchGroundTemperature, groundTemperatureRequestKey } from "../lib/loadPerformance/groundTemperatureProvider";
@@ -121,7 +122,6 @@ export default function MapPage() {
   const [maximumAltitudeInput, setMaximumAltitudeInput] = useState("");
   const [launchElevationMslM, setLaunchElevationMslM] = useState<number | null>(null);
   const [groundTemperatureState, setGroundTemperatureState] = useState<{ key: string; value: GroundTemperature & { fetchedAt: string } } | null>(null);
-  const [groundTemperatureError, setGroundTemperatureError] = useState<string | null>(null);
   const [groundTemperatureErrorCode, setGroundTemperatureErrorCode] = useState<string | null>(null);
   const [groundTemperaturePendingKey, setGroundTemperaturePendingKey] = useState<string | null>(null);
   const [temperatureDebugEnabled, setTemperatureDebugEnabled] = useState(false);
@@ -252,13 +252,12 @@ export default function MapPage() {
       await Promise.resolve();
       if (!active) return;
       setGroundTemperaturePendingKey(key);
-      setGroundTemperatureError(null);
       setGroundTemperatureErrorCode(null);
       try {
         const value = await provider.getGroundTemperature({ ...requestIdentity, weatherModel: GROUND_TEMPERATURE_PROVIDER_ID, signal: controller.signal });
-        if (active) { setGroundTemperatureState({ key, value }); setGroundTemperaturePendingKey(null); setGroundTemperatureError(null); setGroundTemperatureErrorCode(null); }
+        if (active) { setGroundTemperatureState({ key, value }); setGroundTemperaturePendingKey(null); setGroundTemperatureErrorCode(null); }
       } catch (error) {
-        if (active && !controller.signal.aborted) { setGroundTemperaturePendingKey(null); setGroundTemperatureError(error instanceof Error ? error.message : "Température au sol indisponible"); setGroundTemperatureErrorCode(error instanceof Error ? error.name : "INVALID_OPEN_METEO_RESPONSE"); }
+        if (active && !controller.signal.aborted) { setGroundTemperaturePendingKey(null); setGroundTemperatureErrorCode(error instanceof Error ? error.name : "INVALID_OPEN_METEO_RESPONSE"); }
       }
     };
     void fetchTemperature();
@@ -437,16 +436,8 @@ export default function MapPage() {
   const groundTemperatureKey = groundTemperatureRequest ? groundTemperatureRequestKey(groundTemperatureRequest) : "";
   const groundTemperature = groundTemperatureState?.key === groundTemperatureKey ? groundTemperatureState.value : null;
   const groundTemperatureLoading = groundTemperatureFetchEnabled && groundTemperaturePendingKey === groundTemperatureKey;
-  const loadInput = {
-    ...(selectedBalloon ? {
-      balloonId: selectedBalloon.id,
-      manufacturer: selectedBalloon.manufacturer,
-      model: selectedBalloon.model,
-      volumeM3: selectedBalloon.volumeM3,
-      applicableMtowKg: selectedBalloon.applicableMtowKg,
-      configurationLimitsConfirmed: selectedBalloon.configurationLimitsConfirmed,
-      balloonEquipmentWeightKg: balloonEquipmentWeightForLoad(selectedBalloon) ?? undefined,
-    } : {}),
+  const loadInput = buildLoadCalculationInput({
+    balloon: selectedBalloon,
     occupantsWeightKg: preparation?.occupantsWeightKg,
     launchLatitude: config?.request.launchSite.latitude,
     launchLongitude: config?.request.launchSite.longitude,
@@ -454,7 +445,7 @@ export default function MapPage() {
     launchDateTime: config?.request.launchDateTimeIso,
     plannedMaximumAltitudeMslM,
     groundTemperature: groundTemperature ?? undefined,
-  };
+  });
   const loadResult = testLoadEnabled
     ? calculateDemoLoad(loadInput, true)
     : calculateOfficialLoad(loadInput);
@@ -504,10 +495,28 @@ export default function MapPage() {
     VOLUME_MISMATCH: "Volume incompatible avec le modèle",
     PENDING_VERIFICATION: "Paramètres constructeur en attente de validation",
     } as const)[loadResult.reasonCode] ?? "Calcul impossible";
+  const unavailableLoadCardCopy = loadResult.status === "UNAVAILABLE" ? ({
+    NO_BALLOON: ["Ballon", "à sélectionner"],
+    INCOMPLETE_BALLOON_MASSES: ["Masses du ballon", "à compléter"],
+    NO_OCCUPANTS_WEIGHT: ["Pilote + passagers", "à renseigner"],
+    NO_MAXIMUM_ALTITUDE: ["Altitude maximale", "à renseigner"],
+    NO_LAUNCH_ELEVATION: ["Altitude terrain", "indisponible"],
+    NO_GROUND_TEMPERATURE: ["Température sol", groundTemperatureLoading ? "récupération…" : "indisponible"],
+    UNSUPPORTED_MODEL: ["Modèle", "non pris en charge"],
+    UNSUPPORTED_OFFICIAL_DATASET: ["Données constructeur", "non intégrées"],
+    OUTSIDE_OFFICIAL_TABLE: ["Conditions", "hors domaine"],
+    OUTSIDE_DEMO_TABLE: ["Conditions test", "hors domaine"],
+    MISSING_MTOW: ["MTOM", "à renseigner"],
+    CONFIGURATION_LIMIT_MISSING: ["Limite du ballon", "indisponible"],
+    CONFIGURATION_LIMITS_UNCONFIRMED: ["Limites du ballon", "à confirmer"],
+    VOLUME_MISMATCH: ["Volume du ballon", "à vérifier"],
+    PENDING_VERIFICATION: ["Paramètres constructeur", "en attente"],
+  } as const)[loadResult.reasonCode] : null;
 
   const openLoadCard = () => {
-    if (!testLoadEnabled && selectedBalloon && loadResult.status === "UNAVAILABLE" && loadResult.reasonCode === "CONFIGURATION_LIMITS_UNCONFIRMED") {
-      router.push(`/more/profile/balloons/${encodeURIComponent(selectedBalloon.id)}/edit`);
+    const correctionPath = !testLoadEnabled ? loadCardBalloonCorrectionPath(selectedBalloon?.id, loadResult) : null;
+    if (correctionPath) {
+      router.push(correctionPath);
       return;
     }
     if ((testLoadEnabled && loadDisplay.openSyntheticDetail) || (!testLoadEnabled && loadResult.status === "AVAILABLE")) setLoadDetailOpen(true);
@@ -647,7 +656,7 @@ export default function MapPage() {
         </div>
       </header>
 
-      <div className="relative h-[clamp(460px,74dvh,760px)]">
+      <div className="relative h-[clamp(430px,68dvh,700px)]">
         {displayedTraces.length > 0 ? (
           <PreparationMap
             traces={displayedTraces}
@@ -855,7 +864,7 @@ export default function MapPage() {
       </div>
 
       <section
-        className="relative z-30 border-t px-3 py-5"
+        className="relative z-30 border-t px-3 py-2.5"
         style={{
           background: "var(--bc-color-canvas-elevated)",
           borderColor: "var(--bc-border)",
@@ -863,13 +872,13 @@ export default function MapPage() {
         aria-label="Paramètres des trajectoires"
       >
         <div className="mx-auto max-w-3xl">
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             <div
               role="button"
               tabIndex={0}
               onClick={openLoadCard}
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openLoadCard(); }}
-              className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
+              className="min-h-[118px] rounded-[16px] border p-2.5 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
                 borderColor: "var(--bc-border)",
@@ -883,10 +892,10 @@ export default function MapPage() {
                 Charge
               </h2>
               {loadDisplay.showSyntheticBadge && <span className="mt-1 inline-block rounded bg-orange-600 px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white">{DEMO_LOAD_BADGE} — DONNÉES SYNTHÉTIQUES</span>}
-              {!testLoadEnabled && candidateLoadResult && <span className="mt-1 inline-block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
-              <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>
-                {blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}
-              </p>
+              {!testLoadEnabled && candidateLoadResult && <span className="mt-0.5 block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
+              {!testLoadEnabled && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p></div>}
+              {(!testLoadEnabled && displayedMargin !== null) && <p className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={`Marge de charge ${displayedMargin} kilogrammes`}>{`${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}</p>}
+              {testLoadEnabled && <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>{blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}</p>}
               {testLoadEnabled && loadResult.status === "AVAILABLE" && !loadDisplay.showSyntheticMargin && <p className="mt-1 text-[9px] font-semibold leading-tight text-[var(--bc-color-text-muted)]">Dataset officiel Cameron requis</p>}
               {testLoadEnabled && <p className="mt-1 whitespace-nowrap text-[8px] font-semibold tracking-tight text-[var(--bc-color-text-muted)]">{demoDiagnostic}</p>}
               {testLoadEnabled && loadResult.status === "UNAVAILABLE" && (
@@ -903,20 +912,14 @@ export default function MapPage() {
                 </dl>
               )}
               {temperatureDebugEnabled && <div className="mt-1 text-[8px] font-semibold leading-tight text-[var(--bc-color-text-muted)]"><p>TEMP FETCH : {groundTemperatureFetchEnabled ? "ON" : "OFF"}</p><p>TEMP VALUE : {groundTemperature ? groundTemperature.temperatureC.toLocaleString("fr-FR") : "—"}</p><p>TEMP ERROR : {groundTemperatureErrorCode ?? "—"}</p></div>}
-              <label className="mt-2 block">
-                <span className="block text-[10px] font-semibold leading-tight">Altitude maximale prévue</span>
-                <span className="mt-1 flex items-center gap-1">
-                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={maximumAltitudeInput} onClick={(event) => event.stopPropagation()} onChange={(event) => updateMaximumAltitude(event.target.value)} placeholder="Ex. 1500" aria-label="Altitude maximale prévue en mètres AMSL" aria-invalid={maximumAltitudeBelowTerrain} className="min-w-0 w-full rounded-lg border bg-black/10 px-2 py-1.5 text-base font-semibold outline-none focus:border-[var(--bc-accent)]" style={{ borderColor: maximumAltitudeBelowTerrain ? "#ef4444" : "var(--bc-border)" }} />
+              <label className="mt-1.5 block">
+                <span className="block text-[9px] font-semibold leading-tight">Altitude max</span>
+                <span className="mt-0.5 flex items-center gap-1">
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={maximumAltitudeInput} onClick={(event) => event.stopPropagation()} onChange={(event) => updateMaximumAltitude(event.target.value)} placeholder="Ex. 1500" aria-label="Altitude maximale prévue en mètres AMSL" aria-invalid={maximumAltitudeBelowTerrain} className="min-w-0 w-full rounded-lg border bg-black/10 px-1.5 py-1 text-sm font-semibold outline-none focus:border-[var(--bc-accent)]" style={{ borderColor: maximumAltitudeBelowTerrain ? "#ef4444" : "var(--bc-border)" }} />
                   <span className="shrink-0 text-[9px]" style={{ color: "var(--bc-color-text-muted)" }}>m AMSL</span>
                 </span>
               </label>
-              <div className="mt-1.5 space-y-0.5 text-[9px] leading-tight" style={{ color: "var(--bc-color-text-muted)" }}>
-                <p>Terrain : {launchElevationMslM === null ? "récupération…" : `${Math.round(launchElevationMslM)} m AMSL`}</p>
-                {heightAboveTerrainM !== null && heightAboveTerrainM >= 0 && <p>Hauteur prévue : {Math.round(heightAboveTerrainM).toLocaleString("fr-FR")} m</p>}
-                {maximumAltitudeBelowTerrain && <p className="font-semibold text-red-500">L’altitude prévue est inférieure à l’altitude du terrain.</p>}
-                {!maximumAltitudeBelowTerrain && maximumAltitudeInput === "" && <p>Altitude maximale requise.</p>}
-                {!maximumAltitudeBelowTerrain && maximumAltitudeInput !== "" && !groundTemperatureLoading && groundTemperatureError && <p title={groundTemperatureError}>Température au sol indisponible</p>}
-              </div>
+              {maximumAltitudeBelowTerrain && <p className="mt-0.5 text-[8px] font-semibold leading-tight text-red-500">Sous l’altitude terrain</p>}
             </div>
 
             <button
@@ -928,7 +931,7 @@ export default function MapPage() {
                   setNotice("Aucun espace intersecté par les trajectoires.");
                 }
               }}
-              className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
+              className="min-h-[118px] rounded-[16px] border p-2.5 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
                 borderColor: "var(--bc-border)",
@@ -951,7 +954,7 @@ export default function MapPage() {
             <button
               type="button"
               onClick={() => setNotice("Information NOTAM indisponible.")}
-              className="min-h-28 rounded-[20px] border p-3 text-left transition-transform active:scale-[0.98]"
+              className="min-h-[118px] rounded-[16px] border p-2.5 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
                 borderColor: "var(--bc-border)",
