@@ -21,6 +21,7 @@ export interface RecordedFlightStorage {
   completeFlight(flight: RecordedFlight): Promise<void>;
   getFlight(id: string): Promise<RecordedFlight | null>;
   listFlights(): Promise<RecordedFlight[]>;
+  deleteFlight(id: string): Promise<void>;
 }
 
 function isRecordedFlight(value: unknown): value is RecordedFlight {
@@ -66,6 +67,9 @@ export class MemoryRecordedFlightStorage implements RecordedFlightStorage {
     return [...this.flights.values()].sort(
       (left, right) => right.startedAt - left.startedAt,
     );
+  }
+  async deleteFlight(id: string) {
+    this.flights.delete(id);
   }
 }
 
@@ -178,5 +182,15 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     return values
       .filter(isRecordedFlight)
       .sort((left, right) => right.startedAt - left.startedAt);
+  }
+
+  async deleteFlight(id: string): Promise<void> {
+    const database = await this.database();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+      transaction.objectStore(FLIGHTS_STORE).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   }
 }

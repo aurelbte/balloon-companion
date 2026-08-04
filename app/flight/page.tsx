@@ -257,8 +257,9 @@ export default function FlightPage() {
     if (completed) {
       setStopConfirmationOpen(false);
       stopGeolocation();
+      router.push("/flight/complete");
     }
-  }, [stopGeolocation, stopTracking]);
+  }, [router, stopGeolocation, stopTracking]);
 
   const handleNavigationRequest = useCallback(
     (target: string) => {

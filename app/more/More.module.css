@@ -76,6 +76,64 @@
 .detailTotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 5px; padding-top: 9px; border-top: 1px solid var(--bc-border); }
 .detailTotal span { color: var(--bc-text-secondary); font-size: .72rem; }
 .detailTotal strong { font-size: 1.2rem; }
+.documentSummaryCard { display: grid; min-height: 82px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; margin-top: 11px; padding: 13px 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); color: inherit; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
+.documentSummaryCard > svg { color: var(--bc-accent); }
+.documentSummaryCard span, .documentSummaryCard strong, .documentSummaryCard small, .documentSummaryCard em { display: block; min-width: 0; }
+.documentSummaryCard strong { font-size: .78rem; text-transform: uppercase; }
+.documentSummaryCard small { margin-top: 3px; color: var(--bc-text-secondary); font-size: .72rem; }
+.documentSummaryCard em { margin-top: 5px; color: var(--bc-accent); font-size: .7rem; font-style: normal; font-weight: 650; }
+.balloonDetailScreen { overflow-x: clip; }
+.balloonDetailLayout { max-width: 540px; }
+.balloonDetailHeader { position: relative; display: flex; min-height: 76px; align-items: flex-start; justify-content: space-between; gap: 12px; padding-top: 2px; }
+.balloonRegistration { font-size: clamp(1.8rem, 8vw, 2.25rem); font-weight: 600; letter-spacing: -.04em; line-height: 1; }
+.balloonDetailHeader p { margin-top: 5px; color: var(--bc-text-secondary); font-size: .83rem; }
+.activeBalloonBadge { display: inline-flex; min-height: 22px; align-items: center; margin-top: 7px; padding: 0 8px; border: 1px solid var(--bc-border); border-radius: 999px; color: var(--bc-text-secondary); font-size: .62rem; font-weight: 650; }
+.balloonOverflowMenu { position: relative; flex: none; }
+.balloonOverflowMenu summary { display: grid; width: 44px; height: 44px; cursor: pointer; place-items: center; border: 1px solid var(--bc-border); border-radius: 50%; background: var(--bc-surface); color: var(--bc-text-secondary); list-style: none; }
+.balloonOverflowMenu summary::-webkit-details-marker { display: none; }
+.balloonOverflowMenu > div { position: absolute; z-index: 10; top: 48px; right: 0; width: max-content; padding: 5px; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-surface); box-shadow: var(--bc-shadow-xs); }
+.balloonOverflowMenu button { min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--bc-danger); font-size: .72rem; font-weight: 650; }
+.balloonSummaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.balloonSummaryCard { display: grid; min-width: 0; height: 112px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 11px; border: 1px solid var(--bc-border); border-radius: 18px; background: var(--bc-surface); color: inherit; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
+.balloonSummaryCard > svg:first-child { color: var(--bc-accent); }
+.balloonSummaryCard > svg:last-child { color: var(--bc-text-muted); }
+.balloonSummaryCard span, .balloonSummaryCard strong, .balloonSummaryCard b, .balloonSummaryCard small { display: block; min-width: 0; }
+.balloonSummaryCard strong { overflow: hidden; color: var(--bc-text-secondary); font-size: .64rem; font-weight: 700; letter-spacing: .04em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.balloonSummaryCard b { overflow: hidden; margin-top: 7px; font-size: .84rem; font-weight: 650; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.balloonSummaryCard small { overflow: hidden; margin-top: 4px; color: var(--bc-text-muted); font-size: .67rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.balloonModifyAction { position: sticky; z-index: 5; bottom: calc(70px + env(safe-area-inset-bottom)); display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 7px; margin-top: 14px; border-radius: 999px; background: var(--bc-accent); color: var(--bc-accent-foreground); font-size: .78rem; font-weight: 700; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
+.documentPrimaryAction { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; margin-top: 14px; padding: 0 16px; border-radius: 999px; background: var(--bc-accent); color: var(--bc-accent-foreground); font-size: .78rem; font-weight: 700; text-decoration: none; }
+.documentHeader { margin-top: 2px; }
+.documentGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+.documentGridCard { display: grid; min-width: 0; min-height: 82px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--bc-border); border-radius: 17px; background: var(--bc-surface); color: inherit; text-decoration: none; box-shadow: var(--bc-shadow-xs); }
+.documentGridCard > svg:first-child { color: var(--bc-accent); }
+.documentGridCard > svg:last-child { color: var(--bc-text-muted); }
+.documentGridCard span, .documentGridCard strong, .documentGridCard small { display: block; min-width: 0; }
+.documentGridCard strong { overflow: hidden; font-size: .73rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.documentGridCard small { overflow: hidden; margin-top: 5px; color: var(--bc-text-muted); font-size: .64rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.documentSecondaryAction { display: inline-flex; min-height: 44px; align-items: center; gap: 6px; margin-top: 10px; padding: 0 6px; color: var(--bc-accent); font-size: .72rem; font-weight: 680; text-decoration: none; }
+.documentPresetCategory { margin: 0; padding: 11px 12px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-secondary); font-size: .76rem; font-weight: 650; }
+.documentList { display: grid; gap: 2px; margin-top: 13px; overflow: hidden; border: 1px solid var(--bc-border); border-radius: 18px; background: var(--bc-surface); }
+.documentRow { display: grid; min-height: 60px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 11px; border-bottom: 1px solid var(--bc-border); color: inherit; text-decoration: none; }
+.documentRow:last-child { border-bottom: 0; }
+.documentRow > svg { color: var(--bc-accent); }
+.documentRow span, .documentRow strong, .documentRow small { display: block; min-width: 0; }
+.documentRow strong { overflow: hidden; font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
+.documentRow small { overflow: hidden; margin-top: 3px; color: var(--bc-text-muted); font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
+.documentEmpty { margin-top: 18px; color: var(--bc-text-muted); font-size: .78rem; }
+.documentForm { display: grid; gap: 12px; margin-top: 18px; }
+.documentForm label > span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .65rem; font-weight: 650; text-transform: uppercase; }
+.documentForm input, .documentForm select { width: 100%; min-height: 48px; padding: 0 11px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-primary); }
+.documentFileActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.documentFileActions label { display: flex; min-height: 52px; align-items: center; justify-content: center; gap: 6px; padding: 6px; border: 1px solid var(--bc-border); border-radius: 14px; color: var(--bc-accent); cursor: pointer; font-size: .72rem; font-weight: 650; text-align: center; }
+.documentFileActions input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.documentSelectedFile { overflow: hidden; color: var(--bc-text-secondary); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.documentSave { min-height: 48px; border: 0; border-radius: 999px; background: var(--bc-accent); color: var(--bc-accent-foreground); font-weight: 700; }
+.documentSave:disabled { opacity: .45; }
+.documentPreview { height: min(52dvh, 520px); margin-top: 14px; overflow: hidden; border: 1px solid var(--bc-border); border-radius: 18px; background: #17191d; }
+.documentPreview object { width: 100%; height: 100%; }
+.documentActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 12px; }
+.documentActions button { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--bc-border); border-radius: 14px; background: var(--bc-surface); color: var(--bc-text-primary); font-size: .72rem; font-weight: 650; }
 .profileForm { display: grid; gap: 10px; margin-top: 16px; }
 .profileForm section { padding: 14px; border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); }
 .profileForm section h2 { margin-bottom: 10px; color: var(--bc-text-secondary); font-size: .72rem; font-weight: 650; text-transform: uppercase; }

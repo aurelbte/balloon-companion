@@ -45,7 +45,7 @@ export default function RenameFlightDialog({
         onCancel();
       }}
     >
-      <h2 id="rename-flight-title" className="text-xl font-semibold tracking-tight">Renommer le vol</h2>
+      <h2 id="rename-flight-title" className="text-xl font-semibold tracking-tight">Modifier le vol</h2>
       <label className="mt-4 block">
         <span className="sr-only">Nouveau nom du vol {flight.departure} vers {flight.arrival}</span>
         <input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} className="min-h-12 w-full rounded-2xl border border-[var(--bc-border)] bg-[var(--bc-surface)] px-3 text-base font-semibold outline-none" />

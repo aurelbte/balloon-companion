@@ -4,7 +4,7 @@ import {
   type JournalFlightPoint,
 } from "./journalMockData.ts";
 
-export const FLIGHT_COMPLETION_SCHEMA_VERSION = 2;
+export const FLIGHT_COMPLETION_SCHEMA_VERSION = 3;
 export const DEMO_COMPLETION_FLIGHT_ID = "demo-flight-lfqo-merignies-2026-08-01";
 export const DEMO_COMPLETION_ASCENSION_ID = "demo-ascension-lfqo-merignies-2026-08-01";
 
@@ -15,7 +15,7 @@ export type PilotExperienceBalance = {
 };
 
 export type CompletionJournalFlight = JournalFlight & {
-  logbookStatus: "PENDING" | "VALIDATED";
+  logbookStatus: "CARNET_PENDING" | "CARNET_VALIDATED" | "JOURNAL_ONLY";
   origin: "REAL_GPS" | "MANUAL" | "DEMO";
   recovered?: boolean;
 };
@@ -102,7 +102,7 @@ export function createDemoCompletionJournalFlight(): CompletionJournalFlight {
       directDistanceKm: 16.9,
     },
     points: demoTrace(),
-    logbookStatus: "PENDING",
+    logbookStatus: "CARNET_PENDING",
     origin: "DEMO",
   };
 }
@@ -141,7 +141,7 @@ export function validateOfficialAscension(
   if (!sourceFlight) return state;
   const ascension: OfficialAscension = {
     ...input,
-    id: DEMO_COMPLETION_ASCENSION_ID,
+    id: sourceFlightId === DEMO_COMPLETION_FLIGHT_ID ? DEMO_COMPLETION_ASCENSION_ID : `ascension-${sourceFlightId}`,
     sourceFlightId,
     source: "GPS_BALLOON_COMPANION",
     gpsDurationMinutes: sourceFlight.durationMinutes,
@@ -155,7 +155,7 @@ export function validateOfficialAscension(
   return {
     ...state,
     journalFlights: state.journalFlights.map((flight) =>
-      flight.id === sourceFlightId ? { ...flight, logbookStatus: "VALIDATED" } : flight,
+      flight.id === sourceFlightId ? { ...flight, logbookStatus: "CARNET_VALIDATED" } : flight,
     ),
     officialAscensions,
   };
@@ -251,9 +251,42 @@ export function removeOfficialAscension(
     officialAscensions: state.officialAscensions.filter(({ id }) => id !== ascensionId),
     journalFlights: state.journalFlights.map((flight) =>
       removed.sourceFlightId !== null && flight.id === removed.sourceFlightId
-        ? { ...flight, logbookStatus: "PENDING" }
+        ? { ...flight, logbookStatus: "CARNET_PENDING" }
         : flight,
     ),
+  };
+}
+
+export function adjustOfficialDurationMinutes(currentMinutes: number, deltaMinutes: number): number {
+  const safeCurrent = Number.isFinite(currentMinutes) ? Math.round(currentMinutes) : 1;
+  const safeDelta = Number.isFinite(deltaMinutes) ? Math.round(deltaMinutes) : 0;
+  return Math.max(1, safeCurrent + safeDelta);
+}
+
+export function setJournalFlightLogbookStatus(
+  state: FlightCompletionState,
+  flightId: string,
+  status: "CARNET_PENDING" | "JOURNAL_ONLY",
+): FlightCompletionState {
+  const linkedAscension = state.officialAscensions.find(({ sourceFlightId }) => sourceFlightId === flightId);
+  if (linkedAscension) return state;
+  return {
+    ...state,
+    journalFlights: state.journalFlights.map((flight) => flight.id === flightId ? { ...flight, logbookStatus: status } : flight),
+  };
+}
+
+export function removeJournalFlight(
+  state: FlightCompletionState,
+  flightId: string,
+  removeLinkedAscension: boolean,
+): FlightCompletionState {
+  return {
+    ...state,
+    journalFlights: state.journalFlights.filter(({ id }) => id !== flightId),
+    officialAscensions: removeLinkedAscension
+      ? state.officialAscensions.filter(({ sourceFlightId }) => sourceFlightId !== flightId)
+      : state.officialAscensions,
   };
 }
 

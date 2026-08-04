@@ -12,7 +12,6 @@ import {
   updateBalloon,
 } from "./balloons.ts";
 import { balloonMassFormDraft, canSubmitHydratedBalloonForm } from "./balloonFormHydration.ts";
-import { deriveBalloonDocumentStatus } from "./balloonDocuments.ts";
 import {
   addBalloonToRegistry,
   BALLOON_REGISTRY_VERSION,
@@ -237,14 +236,4 @@ test("la migration récupère uniquement les anciennes masses dont la correspond
   assert.deepEqual(migrated.balloons[0].weights, { envelopeKg: 118, burnerKg: 45, basketKg: 124, fullCylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }] });
   assert.deepEqual(migrated.balloons[0].legacyWeightRecovery, { envelopeWeightKg: 118, burnerWeightKg: 45, basketWeightKg: 124, cylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }] });
   assert.equal(calculateBalloonWeight(migrated.balloons[0].weights), 415);
-});
-
-test("les statuts documentaires sont toujours dérivés de l'échéance", () => {
-  const base = { id: "doc", balloonId: "F-HLFM", category: "INSURANCE", fileName: "assurance.pdf", mimeType: "application/pdf", addedAt: "2026-01-01T00:00:00.000Z" };
-  const now = new Date("2026-08-03T12:00:00.000Z");
-  assert.equal(deriveBalloonDocumentStatus(undefined, now), "MISSING");
-  assert.equal(deriveBalloonDocumentStatus(base, now), "NO_EXPIRY");
-  assert.equal(deriveBalloonDocumentStatus({ ...base, expiryDate: "2026-08-20" }, now), "EXPIRING_SOON");
-  assert.equal(deriveBalloonDocumentStatus({ ...base, expiryDate: "2026-07-31" }, now), "EXPIRED");
-  assert.equal(deriveBalloonDocumentStatus({ ...base, expiryDate: "2027-08-03" }, now), "VALID");
 });

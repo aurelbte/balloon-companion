@@ -8,6 +8,8 @@ import {
   type OfficialAscensionInput,
   validateOfficialAscension,
   type CompletionJournalFlight,
+  removeJournalFlight,
+  setJournalFlightLogbookStatus,
 } from "./flightCompletion.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
@@ -37,7 +39,16 @@ function normalizeState(value: unknown): FlightCompletionState | null {
       ascensions,
       officialDurationMinutes,
     },
-    journalFlights: state.journalFlights,
+    journalFlights: state.journalFlights.map((flight) => {
+      const legacyStatus = (flight as { logbookStatus?: string }).logbookStatus;
+      return {
+        ...flight,
+        logbookStatus: legacyStatus === "VALIDATED" ? "CARNET_VALIDATED"
+          : legacyStatus === "JOURNAL_ONLY" ? "JOURNAL_ONLY"
+          : legacyStatus === "CARNET_VALIDATED" ? "CARNET_VALIDATED"
+          : "CARNET_PENDING",
+      };
+    }),
     officialAscensions: state.officialAscensions,
   };
 }
@@ -141,4 +152,25 @@ export function persistOfficialAscension(
   );
   saveFlightCompletionState(state);
   return state;
+}
+
+export function persistJournalFlightDecision(
+  flightId: string,
+  decision: "CARNET_PENDING" | "JOURNAL_ONLY",
+): FlightCompletionState {
+  const state = setJournalFlightLogbookStatus(loadFlightCompletionState(), flightId, decision);
+  saveFlightCompletionState(state);
+  return state;
+}
+
+export function persistJournalFlightDeletion(flightId: string, removeLinkedAscension: boolean): FlightCompletionState {
+  const state = removeJournalFlight(loadFlightCompletionState(), flightId, removeLinkedAscension);
+  saveFlightCompletionState(state);
+  return state;
+}
+
+export async function deleteRecordedJournalFlight(flightId: string, removeLinkedAscension: boolean): Promise<FlightCompletionState> {
+  const storage = new IndexedDbRecordedFlightStorage();
+  await storage.deleteFlight(flightId);
+  return persistJournalFlightDeletion(flightId, removeLinkedAscension);
 }

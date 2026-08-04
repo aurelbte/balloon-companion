@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import OfficialAscensionForm, {
   type OfficialAscensionFormValues,
 } from "../../../components/journal/OfficialAscensionForm";
@@ -17,16 +17,18 @@ import {
 import { loadBalloonRegistry } from "../../../lib/balloonStorage";
 import { officialFieldsForBalloon, resolveBalloonForFlight } from "../../../lib/balloons";
 import { loadPreparationDraft } from "../../../lib/preparationDraftStorage";
+import { useFlightCompletionState } from "../../../hooks/useFlightCompletionState";
 
-function toFormValues(): OfficialAscensionFormValues {
+function toFormValues(flightId: string): OfficialAscensionFormValues {
   const defaults = defaultOfficialAscensionInput();
-  const existing = loadFlightCompletionState().officialAscensions.find(
-    ({ sourceFlightId }) => sourceFlightId === DEMO_COMPLETION_FLIGHT_ID,
-  );
+  const state = loadFlightCompletionState();
+  const flight = state.journalFlights.find(({ id }) => id === flightId);
+  const existing = state.officialAscensions.find(({ sourceFlightId }) => sourceFlightId === flightId);
   const preparationBalloonId = loadPreparationDraft()?.balloonName;
   const registry = loadBalloonRegistry();
   const selectedBalloon = resolveBalloonForFlight(registry.balloons, preparationBalloonId, registry.activeBalloonId);
-  const value = existing ?? (selectedBalloon ? { ...defaults, ...officialFieldsForBalloon(selectedBalloon) } : defaults);
+  const flightValues = flight ? { dateIso: flight.dateIso, date: flight.date, registration: flight.balloonRegistration, departure: flight.departure, arrival: flight.arrival, maximumAltitudeM: flight.maxAltitudeM, officialDurationMinutes: flight.durationMinutes } : {};
+  const value = existing ?? { ...defaults, ...flightValues, ...(selectedBalloon ? officialFieldsForBalloon(selectedBalloon) : {}) };
   return {
     dateIso: value.dateIso,
     balloonModel: value.balloonModel,
@@ -43,15 +45,19 @@ function toFormValues(): OfficialAscensionFormValues {
   };
 }
 
-export default function ValidateAscensionPage() {
+function ValidateAscensionContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const flightId = searchParams.get("flightId") ?? DEMO_COMPLETION_FLIGHT_ID;
+  const completionState = useFlightCompletionState();
+  const sourceFlight = completionState.journalFlights.find(({ id }) => id === flightId);
   const [initialValues, setInitialValues] = useState<OfficialAscensionFormValues | null>(null);
 
   useEffect(() => {
-    ensureDemoCompletionPersisted();
-    const timer = window.setTimeout(() => setInitialValues(toFormValues()), 0);
+    if (flightId === DEMO_COMPLETION_FLIGHT_ID) ensureDemoCompletionPersisted();
+    const timer = window.setTimeout(() => setInitialValues(toFormValues(flightId)), 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [flightId]);
 
   if (!initialValues) return null;
 
@@ -60,18 +66,22 @@ export default function ValidateAscensionPage() {
       title="Valider l’ascension"
       backLabel="Synthèse du vol"
       submitLabel="Valider l’ascension"
-      gpsDurationMinutes={57}
+      gpsDurationMinutes={sourceFlight?.durationMinutes}
       initialValues={initialValues}
       onCancel={(dirty) => {
         if (!dirty || window.confirm("Quitter sans enregistrer les modifications ?")) {
-          router.push("/flight/complete");
+          router.push(`/journal/${encodeURIComponent(flightId)}`);
         }
       }}
       onSubmit={(input) => {
-        persistOfficialAscension(DEMO_COMPLETION_FLIGHT_ID, input);
+        persistOfficialAscension(flightId, input);
         window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
         router.push("/journal");
       }}
     />
   );
+}
+
+export default function ValidateAscensionPage() {
+  return <Suspense fallback={null}><ValidateAscensionContent /></Suspense>;
 }

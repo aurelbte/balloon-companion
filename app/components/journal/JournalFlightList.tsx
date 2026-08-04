@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -8,7 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import {
   loadJournalDemoState,
@@ -23,16 +23,15 @@ import DeleteFlightDialog from "./DeleteFlightDialog";
 import JournalTraceThumbnail from "./JournalTraceThumbnail";
 import RenameFlightDialog from "./RenameFlightDialog";
 import styles from "../../journal/Journal.module.css";
-import { migrateCompletedRecordedFlightsToJournal } from "../../lib/flightCompletionStorage";
+import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal } from "../../lib/flightCompletionStorage";
 import { journalFlightsForMode } from "../../lib/realFlightJournal";
+import { journalSwipeAxis, journalSwipeOffset, JOURNAL_SWIPE_ACTIONS_WIDTH_PX, shouldOpenJournalSwipe, type JournalSwipeAxis } from "../../lib/journalSwipe";
 
 type JournalFlightListProps = { flights: readonly JournalFlight[] };
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
 type DurationFilter = "all" | "under-45" | "45-to-60" | "over-60";
 type SortOrder = "recent" | "oldest" | "duration" | "distance";
 
-const LONG_PRESS_MS = 500;
-const MOVE_CANCEL_DISTANCE_PX = 9;
 const EMPTY_STATE: JournalDemoState = {
   version: 2,
   deletedFlightIds: [],
@@ -86,14 +85,14 @@ function matchesDuration(duration: number, filter: DurationFilter): boolean {
 type FlightActionMenuProps = {
   flightName: string;
   onClose: () => void;
-  onRename: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 };
 
 function FlightActionMenu({
   flightName,
   onClose,
-  onRename,
+  onEdit,
   onDelete,
 }: FlightActionMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -122,8 +121,8 @@ function FlightActionMenu({
       role="menu"
       aria-label={`Actions pour ${flightName}`}
     >
-      <button ref={firstActionRef} type="button" role="menuitem" onClick={onRename}>
-        <Pencil size={16} aria-hidden="true" /> Renommer
+      <button ref={firstActionRef} type="button" role="menuitem" onClick={onEdit}>
+        <Pencil size={16} aria-hidden="true" /> Modifier
       </button>
       <button type="button" role="menuitem" onClick={onDelete}>
         <Trash2 size={16} aria-hidden="true" /> Supprimer
@@ -136,9 +135,11 @@ type InteractiveFlightCardProps = {
   flight: JournalFlight;
   displayName: string;
   menuOpen: boolean;
+  swipeOpen: boolean;
+  onSetSwipeOpen: (open: boolean) => void;
   onOpenMenu: (trigger: HTMLElement) => void;
   onCloseMenu: () => void;
-  onRename: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 };
 
@@ -146,73 +147,67 @@ function InteractiveFlightCard({
   flight,
   displayName,
   menuOpen,
+  swipeOpen,
+  onSetSwipeOpen,
   onOpenMenu,
   onCloseMenu,
-  onRename,
+  onEdit,
   onDelete,
 }: InteractiveFlightCardProps) {
-  const linkRef = useRef<HTMLAnchorElement>(null);
-  const timerRef = useRef<number | null>(null);
-  const startRef = useRef<{ x: number; y: number } | null>(null);
-  const longPressTriggeredRef = useRef(false);
+  const router = useRouter();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const startRef = useRef<{ x: number; y: number; initiallyOpen: boolean } | null>(null);
+  const axisRef = useRef<JournalSwipeAxis>(null);
+  const offsetRef = useRef(swipeOpen ? -JOURNAL_SWIPE_ACTIONS_WIDTH_PX : 0);
+  const draggedRef = useRef(false);
 
-  const cancelLongPress = () => {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = null;
-    startRef.current = null;
-  };
-  const beginLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+  useEffect(() => {
+    const offset = swipeOpen ? -JOURNAL_SWIPE_ACTIONS_WIDTH_PX : 0;
+    offsetRef.current = offset;
+    if (contentRef.current) contentRef.current.style.transform = `translateX(${offset}px)`;
+  }, [swipeOpen]);
+
+  const beginSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    cancelLongPress();
-    longPressTriggeredRef.current = false;
-    startRef.current = { x: event.clientX, y: event.clientY };
-    timerRef.current = window.setTimeout(() => {
-      longPressTriggeredRef.current = true;
-      if (linkRef.current) onOpenMenu(linkRef.current);
-    }, LONG_PRESS_MS);
+    startRef.current = { x: event.clientX, y: event.clientY, initiallyOpen: swipeOpen };
+    axisRef.current = null;
+    draggedRef.current = false;
   };
-  const trackMovement = (event: ReactPointerEvent<HTMLElement>) => {
+  const moveSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
     const start = startRef.current;
     if (!start) return;
-    if (
-      Math.hypot(event.clientX - start.x, event.clientY - start.y) >=
-      MOVE_CANCEL_DISTANCE_PX
-    ) {
-      cancelLongPress();
-    }
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    axisRef.current ??= journalSwipeAxis(deltaX, deltaY);
+    if (axisRef.current !== "horizontal") return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draggedRef.current = true;
+    const offset = journalSwipeOffset(deltaX, start.initiallyOpen);
+    offsetRef.current = offset;
+    event.currentTarget.style.transform = `translateX(${offset}px)`;
+  };
+  const finishSwipe = () => {
+    if (axisRef.current === "horizontal") onSetSwipeOpen(shouldOpenJournalSwipe(offsetRef.current));
+    startRef.current = null;
+    axisRef.current = null;
   };
 
   return (
-    <article
-      className={styles.flightCardShell}
-      onPointerDown={beginLongPress}
-      onPointerMove={trackMovement}
-      onPointerUp={cancelLongPress}
-      onPointerCancel={cancelLongPress}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        cancelLongPress();
-        if (linkRef.current) onOpenMenu(linkRef.current);
-      }}
-    >
-      <Link
-        ref={linkRef}
-        href={`/journal/${flight.id}`}
+    <article className={styles.flightCardShell} data-journal-flight-shell>
+      <div className={styles.flightSwipeActions} aria-hidden={!swipeOpen}><button type="button" tabIndex={swipeOpen ? 0 : -1} onClick={onEdit} aria-label={`Modifier le vol du ${flight.date}`}><Pencil size={18} />Modifier</button><button type="button" tabIndex={swipeOpen ? 0 : -1} onClick={onDelete} aria-label={`Supprimer le vol du ${flight.date}`}><Trash2 size={18} />Supprimer</button></div>
+      <div
+        ref={contentRef}
+        role="link"
+        tabIndex={0}
         className={`${styles.flightCard} ${menuOpen ? styles.flightCardSelected : ""}`}
         aria-label={`Ouvrir le vol ${displayName}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={(event) => {
-          if (longPressTriggeredRef.current || menuOpen) {
-            event.preventDefault();
-            longPressTriggeredRef.current = false;
-          }
-        }}
+        onPointerDown={beginSwipe}
+        onPointerMove={moveSwipe}
+        onPointerUp={finishSwipe}
+        onPointerCancel={finishSwipe}
+        onClick={() => { if (draggedRef.current) { draggedRef.current = false; return; } if (swipeOpen) onSetSwipeOpen(false); else router.push(`/journal/${flight.id}`); }}
         onKeyDown={(event) => {
-          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-            event.preventDefault();
-            if (linkRef.current) onOpenMenu(linkRef.current);
-          }
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/journal/${flight.id}`); }
         }}
       >
         <div className="min-w-0">
@@ -221,9 +216,7 @@ function InteractiveFlightCard({
           <div className={styles.flightMetrics}>
             <span>{flight.durationMinutes} min</span>
             <span>{flight.distanceKm.toFixed(1)} km</span>
-            {"logbookStatus" in flight && flight.logbookStatus === "PENDING" && (
-              <span className={styles.pendingLogbook}>Carnet à valider</span>
-            )}
+            {"logbookStatus" in flight && <span className={styles.pendingLogbook}>{flight.logbookStatus === "CARNET_VALIDATED" ? "CARNET ✓" : flight.logbookStatus === "JOURNAL_ONLY" ? "JOURNAL" : "À VALIDER"}</span>}
           </div>
         </div>
         <div className={styles.thumbnail}>
@@ -231,13 +224,13 @@ function InteractiveFlightCard({
             points={flight.points}
             label={`Miniature de la trace ${flight.departure} vers ${flight.arrival}`}
           />
-        </div>
-      </Link>
+        </div><button type="button" className={styles.flightMoreButton} aria-label={`Actions pour le vol du ${flight.date}`} aria-haspopup="menu" aria-expanded={menuOpen} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenMenu(event.currentTarget); }}><MoreHorizontal size={19} /></button>
+      </div>
       {menuOpen && (
         <FlightActionMenu
           flightName={displayName}
           onClose={onCloseMenu}
-          onRename={onRename}
+          onEdit={onEdit}
           onDelete={onDelete}
         />
       )}
@@ -259,6 +252,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   const [duration, setDuration] = useState<DurationFilter>("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("recent");
   const [menuFlightId, setMenuFlightId] = useState<string | null>(null);
+  const [openSwipeFlightId, setOpenSwipeFlightId] = useState<string | null>(null);
   const [pendingRename, setPendingRename] = useState<JournalFlight | null>(null);
   const [pendingDelete, setPendingDelete] = useState<JournalFlight | null>(null);
   const [actionTrigger, setActionTrigger] = useState<HTMLElement | null>(null);
@@ -298,6 +292,15 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
     const timer = window.setTimeout(() => setToastVisible(false), 2200);
     return () => window.clearTimeout(timer);
   }, [toastVisible]);
+
+  useEffect(() => {
+    if (!openSwipeFlightId) return;
+    const closeSwipeFromOutside = (event: PointerEvent) => {
+      if (!(event.target as Element).closest?.("[data-journal-flight-shell]")) setOpenSwipeFlightId(null);
+    };
+    document.addEventListener("pointerdown", closeSwipeFromOutside);
+    return () => document.removeEventListener("pointerdown", closeSwipeFromOutside);
+  }, [openSwipeFlightId]);
 
   const availableFlights = useMemo(
     () =>
@@ -436,20 +439,28 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
                 flight={flight}
                 displayName={displayName}
                 menuOpen={menuFlightId === flight.id}
+                swipeOpen={openSwipeFlightId === flight.id}
+                onSetSwipeOpen={(open) => {
+                  setOpenSwipeFlightId(open ? flight.id : null);
+                  if (open) setMenuFlightId(null);
+                }}
                 onOpenMenu={(trigger) => {
                   setActionTrigger(trigger);
+                  setOpenSwipeFlightId(null);
                   setMenuFlightId(flight.id);
                 }}
                 onCloseMenu={() => {
                   setMenuFlightId(null);
                   actionTrigger?.focus();
                 }}
-                onRename={() => {
+                onEdit={() => {
                   setPendingRename(flight);
+                  setOpenSwipeFlightId(null);
                   setMenuFlightId(null);
                 }}
                 onDelete={() => {
                   setPendingDelete(flight);
+                  setOpenSwipeFlightId(null);
                   setMenuFlightId(null);
                 }}
               />
@@ -483,9 +494,18 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
       {pendingDelete && (
         <DeleteFlightDialog
           flightName={demoState.customNames[pendingDelete.id] ?? getJournalFlightAutomaticName(pendingDelete)}
+          linkedAscension={completionState.officialAscensions.some(({ sourceFlightId }) => sourceFlightId === pendingDelete.id)}
           returnFocusTo={actionTrigger}
           onCancel={() => setPendingDelete(null)}
-          onConfirm={() => {
+          onConfirm={async (removeLinkedAscension = false) => {
+            try {
+              if (completionState.journalFlights.some(({ id }) => id === pendingDelete.id)) {
+                await deleteRecordedJournalFlight(pendingDelete.id, removeLinkedAscension);
+              }
+            } catch {
+              window.alert("Le vol et sa trace n’ont pas pu être supprimés.");
+              return;
+            }
             const nextState = {
               ...demoState,
               deletedFlightIds: [...new Set([...demoState.deletedFlightIds, pendingDelete.id])],

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   addManualOfficialAscension,
+  adjustOfficialDurationMinutes,
   calculatePilotOfficialTotals,
   confirmPilotExperience,
   createEmptyFlightCompletionState,
@@ -10,6 +11,8 @@ import {
   DEMO_COMPLETION_FLIGHT_ID,
   ensureCompletionJournalFlight,
   removeOfficialAscension,
+  removeJournalFlight,
+  setJournalFlightLogbookStatus,
   validateOfficialAscension,
 } from "./flightCompletion.ts";
 
@@ -77,7 +80,7 @@ test("Journal automatique : la création est idempotente", () => {
 
 test("Plus tard : conserve le Journal en attente sans modifier le total officiel", () => {
   const state = ensureCompletionJournalFlight(createEmptyFlightCompletionState());
-  assert.equal(state.journalFlights[0].logbookStatus, "PENDING");
+  assert.equal(state.journalFlights[0].logbookStatus, "CARNET_PENDING");
   assert.equal(state.officialAscensions.length, 0);
   assert.deepEqual(calculatePilotOfficialTotals(state), {
     ascensions: 108,
@@ -147,7 +150,43 @@ test("supprimer une ascension recalcule le total et remet le Journal en attente"
   );
   const removed = removeOfficialAscension(validated, validated.officialAscensions[0].id);
   assert.equal(calculatePilotOfficialTotals(removed).ascensions, 108);
-  assert.equal(removed.journalFlights[0].logbookStatus, "PENDING");
+  assert.equal(removed.journalFlights[0].logbookStatus, "CARNET_PENDING");
+});
+
+test("les flèches ajustent la durée officielle par cinq minutes sans atteindre zéro", () => {
+  assert.equal(adjustOfficialDurationMinutes(57, 5), 62);
+  assert.equal(adjustOfficialDurationMinutes(57, -5), 52);
+  assert.equal(adjustOfficialDurationMinutes(3, -5), 1);
+});
+
+test("Je n’ai pas piloté conserve uniquement le Journal et les totaux", () => {
+  const pending = ensureCompletionJournalFlight(createEmptyFlightCompletionState());
+  const journalOnly = setJournalFlightLogbookStatus(pending, DEMO_COMPLETION_FLIGHT_ID, "JOURNAL_ONLY");
+  assert.equal(journalOnly.journalFlights[0].logbookStatus, "JOURNAL_ONLY");
+  assert.equal(journalOnly.officialAscensions.length, 0);
+  assert.deepEqual(calculatePilotOfficialTotals(journalOnly), calculatePilotOfficialTotals(pending));
+});
+
+test("Élève crée une ascension officielle sans modifier la durée ni la trace GPS", () => {
+  const pending = ensureCompletionJournalFlight(createEmptyFlightCompletionState());
+  const pointsBefore = structuredClone(pending.journalFlights[0].points);
+  const validated = validateOfficialAscension(pending, DEMO_COMPLETION_FLIGHT_ID, { ...defaultOfficialAscensionInput(), pilotFunction: "Élève", officialDurationMinutes: 62 });
+  assert.equal(validated.journalFlights[0].logbookStatus, "CARNET_VALIDATED");
+  assert.equal(validated.journalFlights[0].durationMinutes, 57);
+  assert.deepEqual(validated.journalFlights[0].points, pointsBefore);
+  assert.equal(validated.officialAscensions[0].pilotFunction, "Élève");
+  assert.equal(validated.officialAscensions[0].officialDurationMinutes, 62);
+});
+
+test("un vol Journal lié peut être supprimé en conservant ou supprimant son ascension", () => {
+  const validated = validateOfficialAscension(createEmptyFlightCompletionState(), DEMO_COMPLETION_FLIGHT_ID, defaultOfficialAscensionInput());
+  const kept = removeJournalFlight(validated, DEMO_COMPLETION_FLIGHT_ID, false);
+  assert.equal(kept.journalFlights.length, 0);
+  assert.equal(kept.officialAscensions.length, 1);
+  const removed = removeJournalFlight(validated, DEMO_COMPLETION_FLIGHT_ID, true);
+  assert.equal(removed.journalFlights.length, 0);
+  assert.equal(removed.officialAscensions.length, 0);
+  assert.equal(calculatePilotOfficialTotals(removed).ascensions, 108);
 });
 
 test("une ascension manuelle accepte une altitude absente et conserve le temps en minutes", () => {

@@ -1,30 +1,71 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import JournalTraceThumbnail from "../../components/journal/JournalTraceThumbnail";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import {
-  createDemoCompletionJournalFlight,
-  DEMO_COMPLETION_FLIGHT_ID,
+  adjustOfficialDurationMinutes,
+  defaultOfficialAscensionInput,
+  type OfficialAscensionInput,
 } from "../../lib/flightCompletion";
-import { ensureDemoCompletionPersisted } from "../../lib/flightCompletionStorage";
+import { ensureDemoCompletionPersisted, persistJournalFlightDecision, persistOfficialAscension } from "../../lib/flightCompletionStorage";
 import styles from "./FlightComplete.module.css";
+
+type FlightRole = OfficialAscensionInput["pilotFunction"] | "NON_PILOT";
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
+}
 
 export default function FlightCompletePage() {
   const router = useRouter();
   const state = useFlightCompletionState();
-  const flight = createDemoCompletionJournalFlight();
-  const storedFlight = state.journalFlights.find(({ id }) => id === DEMO_COMPLETION_FLIGHT_ID);
+  const [role, setRole] = useState<FlightRole | null>(null);
+  const activeFlight = state.journalFlights.at(-1) ?? null;
+  const [officialDuration, setOfficialDuration] = useState<number | null>(null);
 
   useEffect(() => {
-    const demoEnabled = process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1";
-    if (demoEnabled) ensureDemoCompletionPersisted();
-    else router.replace("/journal");
-  }, [router]);
+    const timer = window.setTimeout(() => {
+      const demoEnabled = process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1";
+      if (demoEnabled) ensureDemoCompletionPersisted();
+      else if (!demoEnabled && state.journalFlights.length === 0) router.replace("/journal");
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [router, state.journalFlights.length]);
 
   const leaveForLater = () => {
+    if (activeFlight) persistJournalFlightDecision(activeFlight.id, "CARNET_PENDING");
+    window.sessionStorage.setItem("balloon-companion-journal-view", "flights");
+    window.sessionStorage.setItem("balloon-companion-completion-deferred", activeFlight?.id ?? "");
+    router.push("/journal");
+  };
+
+  const officialInput = useMemo(() => {
+    if (!activeFlight || role === null || role === "NON_PILOT") return null;
+    const duration = officialDuration ?? activeFlight.durationMinutes;
+    const defaults = defaultOfficialAscensionInput();
+    return {
+      ...defaults,
+      dateIso: activeFlight.dateIso,
+      date: activeFlight.date,
+      registration: activeFlight.balloonRegistration,
+      departure: activeFlight.departure,
+      arrival: activeFlight.arrival,
+      pilotFunction: role,
+      maximumAltitudeM: activeFlight.maxAltitudeM,
+      officialDurationMinutes: duration,
+    } satisfies OfficialAscensionInput;
+  }, [activeFlight, officialDuration, role]);
+
+  if (!activeFlight) return null;
+  const displayedOfficialDuration = officialDuration ?? activeFlight.durationMinutes;
+
+  const confirm = () => {
+    if (role === "NON_PILOT") persistJournalFlightDecision(activeFlight.id, "JOURNAL_ONLY");
+    else if (officialInput) persistOfficialAscension(activeFlight.id, officialInput);
+    else return;
     window.sessionStorage.setItem("balloon-companion-journal-view", "flights");
     router.push("/journal");
   };
@@ -32,36 +73,13 @@ export default function FlightCompletePage() {
   return (
     <main className={styles.screen}>
       <div className={styles.layout}>
-        <header>
-          <p className={styles.eyebrow}>Fin de vol</p>
-          <h1 className={styles.title}>Vol terminé</h1>
-          <p className={styles.route}>LFQO → Mérignies</p>
-        </header>
-
-        <Link href={`/journal/${DEMO_COMPLETION_FLIGHT_ID}`} className={styles.traceCard} aria-label="Ouvrir la trace détaillée">
-          <JournalTraceThumbnail points={flight.points} label="Trace LFQO vers Mérignies" />
-        </Link>
-
-        <section className={styles.metrics} aria-label="Résumé du vol">
-          <p className={styles.metric}><strong>57 min</strong><span>Durée GPS</span></p>
-          <p className={styles.metric}><strong>17,8 km</strong><span>Distance</span></p>
-          <p className={styles.metric}><strong>982 m</strong><span>Altitude max</span></p>
+        <section className={styles.completionSheet} aria-labelledby="completion-title">
+          <header><p className={styles.eyebrow}>Journal enregistré</p><h1 className={styles.title} id="completion-title">Vol enregistré</h1></header>
+          <p className={styles.gpsDuration}><span>Durée GPS</span><strong>{formatDuration(activeFlight.durationMinutes)}</strong></p>
+          <div className={styles.officialDuration}><span>Durée au carnet</span><div><button type="button" aria-label="Réduire la durée officielle de 5 minutes" onClick={() => setOfficialDuration(adjustOfficialDurationMinutes(displayedOfficialDuration, -5))}><ChevronDown size={30} /></button><strong>{formatDuration(displayedOfficialDuration)}</strong><button type="button" aria-label="Augmenter la durée officielle de 5 minutes" onClick={() => setOfficialDuration(adjustOfficialDurationMinutes(displayedOfficialDuration, 5))}><ChevronUp size={30} /></button></div></div>
+          <fieldset className={styles.flightRole}><legend>Fonction pendant ce vol</legend>{(["Pilote", "Élève", "NON_PILOT"] as const).map((value) => <label key={value}><input type="radio" name="flight-role" checked={role === value} onChange={() => setRole(value)} /><span>{value === "NON_PILOT" ? "Je n’ai pas piloté" : value}</span></label>)}</fieldset>
+          <div className={styles.completionActions}><button type="button" disabled={!role} onClick={confirm}>{role === "NON_PILOT" ? "Conserver uniquement dans le Journal" : "Ajouter au carnet"}</button><button type="button" onClick={leaveForLater}>Plus tard</button></div>
         </section>
-
-        <section className={styles.statusCard} aria-label="État d’enregistrement">
-          <p>Journal<strong>Enregistré</strong></p>
-          <p>Carnet d’ascensions<strong>{storedFlight?.logbookStatus === "VALIDATED" ? "Validé" : "À valider"}</strong></p>
-        </section>
-
-        <Link href="/flight/complete/ascension" className={styles.logbookCard}>
-          <div><h2>Carnet d’ascensions</h2><p>57 min proposées</p></div>
-          <span>{storedFlight?.logbookStatus === "VALIDATED" ? "Consulter →" : "À valider →"}</span>
-        </Link>
-
-        <div className={styles.actions}>
-          <button type="button" onClick={leaveForLater}>Plus tard</button>
-          <Link href="/flight/complete/ascension">Valider l’ascension</Link>
-        </div>
       </div>
     </main>
   );

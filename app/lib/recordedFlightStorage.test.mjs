@@ -24,6 +24,15 @@ test("persiste, reprend puis finalise un vol via l’abstraction de stockage", a
   assert.equal((await storage.getFlight("flight"))?.id, "flight");
 });
 
+test("supprime définitivement une trace terminée du stockage", async () => {
+  const storage = new MemoryRecordedFlightStorage();
+  const completed = finalizeRecordedFlight(createRecordedFlight({ id: "delete-me", startedAt: 1_000 }), 2_000);
+  await storage.completeFlight(completed);
+  assert.ok(await storage.getFlight("delete-me"));
+  await storage.deleteFlight("delete-me");
+  assert.equal(await storage.getFlight("delete-me"), null);
+});
+
 test("abandonne uniquement le vol actif", async () => {
   const storage = new MemoryRecordedFlightStorage();
   const completed = finalizeRecordedFlight(

@@ -111,7 +111,7 @@ export function recordedFlightToJournalFlight(
       altitudeM: point.altitudeMeters,
       speedKmh: point.speedMetersPerSecond === null ? null : point.speedMetersPerSecond * 3.6,
     })),
-    logbookStatus: "PENDING",
+    logbookStatus: "CARNET_PENDING",
     origin: "REAL_GPS",
     ...(options.recovered ? { recovered: true } : {}),
   };

@@ -4,14 +4,16 @@ import { useEffect, useRef } from "react";
 type DeleteFlightDialogProps = {
   flightName: string;
   entityLabel?: "vol" | "ascension";
+  linkedAscension?: boolean;
   returnFocusTo: HTMLElement | null;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (removeLinkedAscension?: boolean) => void;
 };
 
 export default function DeleteFlightDialog({
   flightName,
   entityLabel = "vol",
+  linkedAscension = false,
   returnFocusTo,
   onCancel,
   onConfirm,
@@ -48,10 +50,10 @@ export default function DeleteFlightDialog({
         id="delete-flight-description"
         className="mt-2 text-sm leading-relaxed text-[var(--bc-text-secondary)]"
       >
-        {entityLabel === "ascension" ? "L’ascension" : "Le vol"} « {flightName} » et ses données seront
-        définitivement supprimés.
+        {entityLabel === "ascension" ? `L’ascension « ${flightName} » et ses données seront définitivement supprimées.` : "Ce vol et sa trace seront supprimés du Journal."}
+        {linkedAscension && " Une ascension officielle est liée : choisissez explicitement de la conserver ou de la supprimer."}
       </p>
-      <div className="mt-5 grid grid-cols-2 gap-2">
+      <div className={`mt-5 grid gap-2 ${linkedAscension ? "grid-cols-1" : "grid-cols-2"}`}>
         <button
           ref={cancelRef}
           type="button"
@@ -60,12 +62,19 @@ export default function DeleteFlightDialog({
         >
           Annuler
         </button>
+        {linkedAscension && <button
+          type="button"
+          onClick={() => onConfirm(false)}
+          className="min-h-12 rounded-full border border-[var(--bc-border)] bg-[var(--bc-surface)] px-4 text-sm font-semibold"
+        >
+          Supprimer le vol uniquement
+        </button>}
         <button
           type="button"
-          onClick={onConfirm}
+          onClick={() => onConfirm(linkedAscension)}
           className="min-h-12 rounded-full bg-[color-mix(in_srgb,var(--bc-danger)_72%,var(--bc-surface))] px-4 text-sm font-semibold text-white"
         >
-          Supprimer
+          {linkedAscension ? "Supprimer le vol et l’ascension" : "Supprimer"}
         </button>
       </div>
     </dialog>

@@ -1,0 +1,86 @@
+import { sortBalloonDocuments, supportedBalloonDocumentMimeType, validateBalloonDocumentFile, type BalloonDocument, type BalloonDocumentChanges, type BalloonDocumentStorage, type NewBalloonDocumentMetadata } from "./balloonDocuments.ts";
+
+export const BALLOON_DOCUMENT_DB_NAME = "balloon-companion-documents";
+export const BALLOON_DOCUMENT_DB_VERSION = 1;
+const DOCUMENTS_STORE = "documents";
+const FILES_STORE = "files";
+const BALLOON_INDEX = "balloonId";
+export const BALLOON_DOCUMENTS_CHANGED_EVENT = "balloon-companion:documents-changed";
+
+type StoredFile = { documentId: string; storageKey: string; file: Blob };
+
+export class BalloonDocumentStorageError extends Error {
+  readonly code: "UNAVAILABLE" | "QUOTA_EXCEEDED" | "WRITE_FAILED" | "NOT_FOUND" | "DELETE_FAILED";
+
+  constructor(code: "UNAVAILABLE" | "QUOTA_EXCEEDED" | "WRITE_FAILED" | "NOT_FOUND" | "DELETE_FAILED", message: string) {
+    super(message);
+    this.name = "BalloonDocumentStorageError";
+    this.code = code;
+  }
+}
+
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+}
+
+function transactionDone(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error ?? new Error("Transaction interrompue")); });
+}
+
+function storageError(error: unknown, fallback: "WRITE_FAILED" | "DELETE_FAILED"): BalloonDocumentStorageError {
+  if (error instanceof DOMException && error.name === "QuotaExceededError") return new BalloonDocumentStorageError("QUOTA_EXCEEDED", "Stockage insuffisant sur cet appareil.");
+  return error instanceof BalloonDocumentStorageError ? error : new BalloonDocumentStorageError(fallback, fallback === "WRITE_FAILED" ? "Le fichier n’a pas pu être enregistré." : "Le document n’a pas pu être supprimé.");
+}
+
+function identifier(): string { return globalThis.crypto?.randomUUID?.() ?? `document-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+
+export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
+  private databasePromise: Promise<IDBDatabase> | null = null;
+  private readonly factory: IDBFactory | undefined;
+
+  constructor(factory: IDBFactory | undefined = typeof indexedDB === "undefined" ? undefined : indexedDB) {
+    this.factory = factory;
+  }
+
+  private database(): Promise<IDBDatabase> {
+    if (!this.factory) return Promise.reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le stockage local des documents n’est pas disponible sur cet appareil."));
+    if (!this.databasePromise) this.databasePromise = new Promise((resolve, reject) => {
+      const request = this.factory!.open(BALLOON_DOCUMENT_DB_NAME, BALLOON_DOCUMENT_DB_VERSION);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(DOCUMENTS_STORE)) database.createObjectStore(DOCUMENTS_STORE, { keyPath: "id" }).createIndex(BALLOON_INDEX, "balloonId", { unique: false });
+        if (!database.objectStoreNames.contains(FILES_STORE)) database.createObjectStore(FILES_STORE, { keyPath: "documentId" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le stockage local est occupé par une autre version de l’application."));
+    });
+    return this.databasePromise;
+  }
+
+  async listByBalloonId(balloonId: string): Promise<readonly BalloonDocument[]> {
+    const database = await this.database();
+    const transaction = database.transaction(DOCUMENTS_STORE, "readonly");
+    const documents = await requestResult(transaction.objectStore(DOCUMENTS_STORE).index(BALLOON_INDEX).getAll(balloonId)) as BalloonDocument[];
+    await transactionDone(transaction);
+    return sortBalloonDocuments(documents);
+  }
+  async getDocument(documentId: string): Promise<BalloonDocument | null> { const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const result = await requestResult(transaction.objectStore(DOCUMENTS_STORE).get(documentId)) as BalloonDocument | undefined; await transactionDone(transaction); return result ?? null; }
+  async getDocumentFile(documentId: string): Promise<Blob | null> { const database = await this.database(); const transaction = database.transaction(FILES_STORE, "readonly"); const result = await requestResult(transaction.objectStore(FILES_STORE).get(documentId)) as StoredFile | undefined; await transactionDone(transaction); return result?.file ?? null; }
+  async addDocument(metadata: NewBalloonDocumentMetadata, file: File): Promise<BalloonDocument> {
+    const validation = validateBalloonDocumentFile(file); if (validation) throw new BalloonDocumentStorageError("WRITE_FAILED", validation);
+    if (!metadata.title.trim()) throw new BalloonDocumentStorageError("WRITE_FAILED", "Le titre du document est obligatoire.");
+    const database = await this.database(); const id = identifier(); const storageKey = `balloon/${metadata.balloonId}/${id}`; const now = new Date().toISOString();
+    const document: BalloonDocument = { id, balloonId: metadata.balloonId, category: metadata.category, title: metadata.title.trim(), originalFileName: file.name, mimeType: supportedBalloonDocumentMimeType(file)!, sizeBytes: file.size, createdAt: now, updatedAt: now, storageKey, ...(metadata.notes?.trim() ? { notes: metadata.notes.trim() } : {}), ...(metadata.issueDate ? { issueDate: metadata.issueDate } : {}), ...(metadata.expiryDate ? { expiryDate: metadata.expiryDate } : {}) };
+    const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite");
+    try { transaction.objectStore(FILES_STORE).add({ documentId: id, storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).add(document); await transactionDone(transaction); this.notify(); return document; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); }
+  }
+  async updateDocument(documentId: string, changes: BalloonDocumentChanges): Promise<BalloonDocument> { const current = await this.getDocument(documentId); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const updated = { ...current, ...changes, title: changes.title?.trim() || current.title, updatedAt: new Date().toISOString() }; const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readwrite"); transaction.objectStore(DOCUMENTS_STORE).put(updated); await transactionDone(transaction); this.notify(); return updated; }
+  async replaceDocumentFile(documentId: string, file: File): Promise<BalloonDocument> { const validation = validateBalloonDocumentFile(file); if (validation) throw new BalloonDocumentStorageError("WRITE_FAILED", validation); const current = await this.getDocument(documentId); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const updated = { ...current, originalFileName: file.name, mimeType: supportedBalloonDocumentMimeType(file)!, sizeBytes: file.size, updatedAt: new Date().toISOString() }; const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).put({ documentId, storageKey: current.storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).put(updated); await transactionDone(transaction); this.notify(); return updated; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); } }
+  async deleteDocument(documentId: string): Promise<void> { const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).delete(documentId); transaction.objectStore(DOCUMENTS_STORE).delete(documentId); await transactionDone(transaction); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }
+  async countByBalloonId(balloonId: string): Promise<number> { const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const count = await requestResult(transaction.objectStore(DOCUMENTS_STORE).index(BALLOON_INDEX).count(balloonId)); await transactionDone(transaction); return count; }
+  async deleteByBalloonId(balloonId: string): Promise<void> { const documents = await this.listByBalloonId(balloonId); const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { for (const document of documents) { transaction.objectStore(FILES_STORE).delete(document.id); transaction.objectStore(DOCUMENTS_STORE).delete(document.id); } await transactionDone(transaction); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }
+  private notify() { if (typeof window !== "undefined") window.dispatchEvent(new Event(BALLOON_DOCUMENTS_CHANGED_EVENT)); }
+}
+
+export const balloonDocumentStorage = new IndexedDbBalloonDocumentStorage();

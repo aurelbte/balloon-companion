@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { appendRecordedFlightPoint, createRecordedFlight, finalizeRecordedFlight } from "./recordedFlight.ts";
 import { createEmptyFlightCompletionState, ensureCompletionJournalFlight } from "./flightCompletion.ts";
 import { journalFlightsForMode, legacyFlightSessionToRecordedFlight, recordedFlightToJournalFlight } from "./realFlightJournal.ts";
@@ -28,7 +29,7 @@ test("un vol GPS long devient une entrée Journal réelle complète", () => {
   const journal = recordedFlightToJournalFlight(recorded);
   assert.equal(journal.id, recorded.id);
   assert.equal(journal.origin, "REAL_GPS");
-  assert.equal(journal.logbookStatus, "PENDING");
+  assert.equal(journal.logbookStatus, "CARNET_PENDING");
   assert.equal(journal.points.length, 420);
   assert.ok(journal.distanceKm > 30);
   assert.equal(journal.balloonRegistration, "F-HLFM");
@@ -69,4 +70,12 @@ test("un ancien stockage de session est converti sans mutation ni suppression", 
   assert.equal(migrated.status, "INTERRUPTED");
   assert.equal(migrated.points.length, 1);
   assert.deepEqual(source, snapshot);
+});
+
+test("la feuille de fin ne s’ouvre qu’après stockage du vol et du Journal", () => {
+  const tracking = readFileSync(new URL("../hooks/useFlightTracking.ts", import.meta.url), "utf8");
+  const flightPage = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
+  assert.ok(tracking.indexOf("await storageRef.current.completeFlight(completed)") < tracking.indexOf("persistRecordedFlightInJournal(completed)"));
+  assert.ok(tracking.indexOf("persistRecordedFlightInJournal(completed)") < tracking.indexOf("return completed"));
+  assert.match(flightPage, /if \(completed\)[\s\S]*router\.push\("\/flight\/complete"\)/);
 });

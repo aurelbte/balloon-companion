@@ -81,6 +81,8 @@
 }
 
 .flightCard {
+  position: relative;
+  z-index: 2;
   display: grid;
   min-height: 104px;
   grid-template-columns: minmax(0, 1fr) 128px;
@@ -94,13 +96,22 @@
   color: var(--bc-text-primary);
   text-decoration: none;
   box-shadow: var(--bc-shadow-xs);
+  touch-action: pan-y;
+  user-select: none;
   transition: transform var(--bc-duration-fast) var(--bc-easing-standard), border-color var(--bc-duration-fast) var(--bc-easing-standard);
 }
 
 .flightCardShell {
   position: relative;
   min-width: 0;
+  overflow: hidden;
+  border-radius: 22px;
 }
+
+.flightSwipeActions { position: absolute; z-index: 1; inset: 0 0 0 auto; display: grid; width: 152px; grid-template-columns: repeat(2, 1fr); overflow: hidden; border-radius: 0 22px 22px 0; }
+.flightSwipeActions button { display: grid; min-width: 0; place-content: center; gap: 4px; border: 0; background: var(--bc-color-canvas-elevated); color: var(--bc-text-primary); font-size: .67rem; font-weight: 650; }
+.flightSwipeActions button:last-child { background: var(--bc-danger); color: white; }
+.flightMoreButton { position: absolute; z-index: 3; top: 7px; right: 7px; display: grid; width: 38px; height: 38px; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--bc-surface) 88%, transparent); color: var(--bc-text-secondary); }
 
 .flightCardSelected {
   border-color: var(--bc-border-strong);
@@ -622,6 +633,12 @@
 .detailHeader {
   margin: 5px 0 14px;
 }
+.logbookLinkCard { display: flex; min-height: 70px; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 11px 13px; border: 1px solid var(--bc-border); border-radius: 18px; background: var(--bc-surface); }
+.logbookLinkCard span, .logbookLinkCard strong { display: block; }
+.logbookLinkCard span { color: var(--bc-text-muted); font-size: .65rem; text-transform: uppercase; }
+.logbookLinkCard strong { margin-top: 3px; font-size: .78rem; }
+.logbookLinkCard > a, .logbookLinkCard > div:last-child a { color: var(--bc-accent); font-size: .72rem; font-weight: 650; text-decoration: none; }
+.logbookLinkCard > div:last-child { display: grid; justify-items: end; gap: 5px; }
 
 .routeTitle {
   font-size: clamp(1.65rem, 7vw, 2.4rem);
@@ -864,4 +881,5 @@
   .segmentedSelection {
     transition: none;
   }
+  .flightCard { transition: none; }
 }

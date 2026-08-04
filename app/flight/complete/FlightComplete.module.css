@@ -10,6 +10,24 @@
   margin-inline: auto;
 }
 
+.completionSheet { margin-top: min(14dvh, 110px); padding: 18px; border: 1px solid var(--bc-border); border-radius: 26px; background: var(--bc-surface); box-shadow: var(--bc-shadow-panel); }
+.gpsDuration { display: flex; align-items: baseline; justify-content: space-between; margin-top: 18px; padding: 12px 0; border-bottom: 1px solid var(--bc-border); color: var(--bc-text-secondary); font-size: .78rem; }
+.gpsDuration strong { color: var(--bc-text-primary); font-size: 1.1rem; }
+.officialDuration { margin-top: 14px; }
+.officialDuration > span, .flightRole legend { color: var(--bc-text-secondary); font-size: .68rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.officialDuration > div { display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px; align-items: center; gap: 10px; margin-top: 8px; }
+.officialDuration button { display: grid; min-height: 58px; place-items: center; border: 1px solid var(--bc-border); border-radius: 17px; background: var(--bc-canvas-elevated); color: var(--bc-accent); }
+.officialDuration strong { text-align: center; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.flightRole { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 18px; padding: 0; border: 0; }
+.flightRole legend { grid-column: 1 / -1; margin-bottom: 7px; }
+.flightRole label { position: relative; display: grid; min-height: 52px; place-items: center; padding: 5px; border: 1px solid var(--bc-border); border-radius: 15px; color: var(--bc-text-secondary); font-size: .7rem; font-weight: 600; text-align: center; }
+.flightRole label:has(input:checked) { border-color: var(--bc-accent); color: var(--bc-text-primary); }
+.flightRole input { position: absolute; opacity: 0; }
+.completionActions { display: grid; gap: 7px; margin-top: 18px; }
+.completionActions button { min-height: 48px; border: 1px solid var(--bc-border); border-radius: 999px; background: transparent; color: var(--bc-text-secondary); font-weight: 650; }
+.completionActions button:first-child { border-color: transparent; background: var(--bc-accent); color: var(--bc-accent-foreground); }
+.completionActions button:disabled { opacity: .42; }
+
 .eyebrow {
   color: var(--bc-accent);
   font-size: 0.68rem;
