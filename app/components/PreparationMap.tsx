@@ -667,37 +667,28 @@ export default function PreparationMap({
     });
     if (fitKey === lastFittedAnalysisKey.current) return;
     let frame = 0;
-    const fit = () => {
+    let settleFrame = 0;
+    const fitVisibleTrajectoryBounds = () => {
       map.resize();
       frame = window.requestAnimationFrame(() => {
-        if (mapRef.current !== map) return;
-        if (!map.isStyleLoaded()) {
-          fitWhenReady();
-          return;
-        }
-        map.fitBounds([[bounds.west, bounds.south], [bounds.east, bounds.north]], {
-          padding: analysisFitPadding(map.getContainer().clientWidth),
-          maxZoom: analysisFitMaxZoom(map.getContainer().clientWidth),
-          ...(recenterToken ? REFERENCE_ORIENTATION : { bearing: map.getBearing(), pitch: 0 }),
-          duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520,
+        settleFrame = window.requestAnimationFrame(() => {
+          if (mapRef.current !== map) return;
+          if (!map.isStyleLoaded()) {
+            fitWhenReady();
+            return;
+          }
+          map.fitBounds([[bounds.west, bounds.south], [bounds.east, bounds.north]], {
+            padding: analysisFitPadding(map.getContainer().clientWidth),
+            maxZoom: analysisFitMaxZoom(map.getContainer().clientWidth),
+            ...(recenterToken ? REFERENCE_ORIENTATION : { bearing: map.getBearing(), pitch: 0 }),
+            duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520,
+          });
+          lastFittedAnalysisKey.current = fitKey;
+          if (process.env.NODE_ENV === "development") {
+            const endpoints = visibleTraces.map((trace) => ({ traceId: trace.traceId, first: trace.projection.points[0] ?? null, last: trace.projection.points.at(-1) ?? null }));
+            map.once("moveend", () => console.debug("[trajectory-fit]", { analysisKey, traceCount: visibleTraces.length, rawPointCount, usedPointCount: pointCount, endpoints, bounds, zoom: map.getZoom() }));
+          }
         });
-        lastFittedAnalysisKey.current = fitKey;
-        if (process.env.NODE_ENV === "development") {
-          const endpoints = visibleTraces.map((trace) => ({
-            traceId: trace.traceId,
-            first: trace.projection.points[0] ?? null,
-            last: trace.projection.points.at(-1) ?? null,
-          }));
-          map.once("moveend", () => console.debug("[trajectory-fit]", {
-            analysisKey,
-            traceCount: visibleTraces.length,
-            rawPointCount,
-            usedPointCount: pointCount,
-            endpoints,
-            bounds,
-            zoom: map.getZoom(),
-          }));
-        }
       });
     };
     const fitWhenReady = () => {
@@ -709,13 +700,14 @@ export default function PreparationMap({
         map.once("styledata", fitWhenReady);
         return;
       }
-      fit();
+      fitVisibleTrajectoryBounds();
     };
     fitWhenReady();
     return () => {
       map.off("load", fitWhenReady);
       map.off("styledata", fitWhenReady);
       window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(settleFrame);
     };
   }, [analysisKey, launchSite, mapDimensions.height, mapDimensions.width, recenterToken, traces, visibleTraceIds]);
 

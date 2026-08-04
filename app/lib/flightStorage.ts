@@ -37,6 +37,10 @@ export interface StoredFlightPreparationV2 {
    * Stocké uniquement. Aucune phase de descente n’est déduite de cette valeur.
    */
   descentRateMps?: number;
+  /** Intention pilote conservée dans l’unité de saisie. */
+  ascentRateMPerMin?: number;
+  /** Valeur absolue positive de descente prévue. */
+  descentRateMPerMin?: number;
   balloonName?: string;
   /** Poids total déclaré du pilote et des passagers, sans équipement ni aéronef. */
   occupantsWeightKg?: number;
@@ -158,6 +162,8 @@ function parseV2Preparation(
         value.targetAltitudeAmslM < 0)) ||
     !isPositiveOptionalNumber(value.climbRateMps) ||
     !isPositiveOptionalNumber(value.descentRateMps) ||
+    !isPositiveOptionalNumber(value.ascentRateMPerMin) ||
+    !isPositiveOptionalNumber(value.descentRateMPerMin) ||
     !isFiniteNumber(value.createdAt) ||
     !isFiniteNumber(value.updatedAt)
   ) {
@@ -186,6 +192,12 @@ function parseV2Preparation(
       : {}),
     ...(isFiniteNumber(value.descentRateMps)
       ? { descentRateMps: value.descentRateMps }
+      : {}),
+    ...(isFiniteNumber(value.ascentRateMPerMin)
+      ? { ascentRateMPerMin: value.ascentRateMPerMin }
+      : {}),
+    ...(isFiniteNumber(value.descentRateMPerMin)
+      ? { descentRateMPerMin: value.descentRateMPerMin }
       : {}),
     ...(typeof value.balloonName === "string"
       ? { balloonName: value.balloonName }

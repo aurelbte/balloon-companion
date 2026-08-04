@@ -50,3 +50,20 @@ test("conserve un taux de descente V2 sans ajouter de scénario de descente", ()
   assert.equal(migrated?.descentRateMps, 1.1);
   assert.equal("descentStartsAt" in migrated, false);
 });
+
+test("conserve les intentions pilote en mètres par minute", () => {
+  const migrated = migrateStoredPreparation({
+    storageVersion: PREPARATION_STORAGE_VERSION,
+    launchSite: { name: "Bondues", latitude: 50.68, longitude: 3.08 },
+    departureTime: "2026-08-05T04:30:00.000Z",
+    durationMinutes: 60,
+    weatherModel: "arome_seamless",
+    targetAltitudeAmslM: null,
+    ascentRateMPerMin: 150,
+    descentRateMPerMin: 100,
+    createdAt: 10,
+    updatedAt: 20,
+  });
+  assert.equal(migrated?.ascentRateMPerMin, 150);
+  assert.equal(migrated?.descentRateMPerMin, 100);
+});

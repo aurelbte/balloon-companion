@@ -11,7 +11,7 @@ import {
   sameLaunchSite,
   updateFavoriteLaunchSite,
 } from "./favoriteLaunchSites.ts";
-import { normalizeTimeInput, validDurationMinutes } from "./preparationInputs.ts";
+import { metersPerMinuteToMetersPerSecond, normalizeTimeInput, optionalRateMPerMin, validDurationMinutes } from "./preparationInputs.ts";
 import {
   createTrajectoryAnalysisKey,
   toggleLimitedSelection,
@@ -70,6 +70,14 @@ test("la saisie horaire accepte les formats numériques iPad", () => {
   assert.equal(normalizeTimeInput("2568").error, "Heure invalide");
   assert.equal(validDurationMinutes("75"), true);
   assert.equal(validDurationMinutes("0"), false);
+});
+
+test("les taux verticaux sont optionnels, positifs et convertis seulement à la frontière moteur", () => {
+  assert.equal(optionalRateMPerMin(""), undefined);
+  assert.equal(optionalRateMPerMin("150"), 150);
+  assert.equal(optionalRateMPerMin("0"), undefined);
+  assert.equal(optionalRateMPerMin("-10"), undefined);
+  assert.equal(metersPerMinuteToMetersPerSecond(150), 2.5);
 });
 
 test("la clé d'analyse change avec chaque entrée métier", () => {
@@ -179,4 +187,20 @@ test("le cadrage final attend les points et redimensionne avant la frame de fitB
   assert.ok(source.indexOf("map.resize()") < source.indexOf("window.requestAnimationFrame"));
   assert.ok(source.indexOf("window.requestAnimationFrame") < source.indexOf("map.fitBounds"));
   assert.match(source, /lastFittedAnalysisKey\.current = fitKey/);
+  assert.match(source, /fitVisibleTrajectoryBounds/);
+  assert.ok(source.match(/requestAnimationFrame/g).length >= 2);
+});
+
+test("Prépa affiche deux saisies numériques facultatives en m\/min", () => {
+  const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /ascentRateMPerMin/);
+  assert.match(source, /descentRateMPerMin/);
+  assert.match(source, /inputMode="numeric"/);
+  assert.match(source, /m\/min/);
+});
+
+test("l'Analyse transmet les deux taux convertis au moteur existant", () => {
+  const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /config\.request\.climbRateMps/);
+  assert.match(source, /config\.request\.descentRateMps/);
 });

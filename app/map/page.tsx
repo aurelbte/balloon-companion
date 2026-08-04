@@ -237,6 +237,8 @@ export default function MapPage() {
             durationSeconds: config.request.durationSeconds,
             weatherModel: model.providerModelId,
             altitudesAmslM: selectedAltitudes,
+            ...(config.request.climbRateMps === undefined ? {} : { climbRateMps: config.request.climbRateMps }),
+            ...(config.request.descentRateMps === undefined ? {} : { descentRateMps: config.request.descentRateMps }),
           };
           try {
             const response = await fetch("/api/trajectory/project", {
@@ -307,7 +309,7 @@ export default function MapPage() {
       } else {
         setNotice(
           navigator.onLine
-            ? "Aucune trajectoire exploitable pour cette sélection."
+            ? nextFailures[0]?.message ?? "Aucune trajectoire exploitable pour cette sélection."
             : "Hors ligne — dernières trajectoires conservées.",
         );
       }

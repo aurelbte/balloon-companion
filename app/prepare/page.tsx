@@ -36,7 +36,7 @@ import {
 } from "../lib/trajectory/integration";
 import { saveTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
 import { addFavoriteLaunchSite, loadFavoriteLaunchSites, removeFavoriteLaunchSite, saveFavoriteLaunchSites, updateFavoriteLaunchSite, type FavoriteLaunchSite } from "../lib/favoriteLaunchSites";
-import { normalizeTimeInput, validDurationMinutes } from "../lib/preparationInputs";
+import { metersPerMinuteToMetersPerSecond, normalizeTimeInput, optionalRateMPerMin, validDurationMinutes } from "../lib/preparationInputs";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
 function localDateParts(value: string | null): { date: string; time: string } {
@@ -64,8 +64,8 @@ function initialForm(): TrajectoryFormState {
     targetAltitudeAmslM: "",
     selectedAltitudes: [...DEFAULT_ALTITUDE_OPTIONS],
     weatherModel: "arome_seamless",
-    climbRateMps: "0",
-    descentRateMps: "0",
+    ascentRateMPerMin: "",
+    descentRateMPerMin: "",
     balloonName: "",
     occupantsWeightKg: "",
   };
@@ -84,8 +84,8 @@ function preparationSnapshot(
 ): StoredFlightPreparationV2 {
   const duration = parseNumber(form.durationMinutes);
   const altitude = parseNumber(form.targetAltitudeAmslM);
-  const climbRate = parseNumber(form.climbRateMps);
-  const descentRate = parseNumber(form.descentRateMps);
+  const ascentRate = optionalRateMPerMin(form.ascentRateMPerMin);
+  const descentRate = optionalRateMPerMin(form.descentRateMPerMin);
   const occupantsWeight = parseNumber(form.occupantsWeightKg);
   return {
     storageVersion: PREPARATION_STORAGE_VERSION,
@@ -109,10 +109,8 @@ function preparationSnapshot(
     form.selectedAltitudes.includes(altitude as NumericAltitudeOption)
       ? { primaryAltitudeAmslM: altitude }
       : {}),
-    ...(climbRate !== null && climbRate > 0 ? { climbRateMps: climbRate } : {}),
-    ...(descentRate !== null && descentRate > 0
-      ? { descentRateMps: descentRate }
-      : {}),
+    ...(ascentRate === undefined ? {} : { ascentRateMPerMin: ascentRate }),
+    ...(descentRate === undefined ? {} : { descentRateMPerMin: descentRate }),
     ...(form.balloonName.trim()
       ? { balloonName: form.balloonName.trim() }
       : {}),
@@ -209,8 +207,12 @@ export default function PreparePage() {
           )
             ? stored.weatherModel
             : "arome_seamless",
-          climbRateMps: String(stored.climbRateMps ?? 0),
-          descentRateMps: String(stored.descentRateMps ?? 0),
+          ascentRateMPerMin: stored.ascentRateMPerMin === undefined
+            ? stored.climbRateMps === undefined ? "" : String(stored.climbRateMps * 60)
+            : String(stored.ascentRateMPerMin),
+          descentRateMPerMin: stored.descentRateMPerMin === undefined
+            ? stored.descentRateMps === undefined ? "" : String(stored.descentRateMps * 60)
+            : String(stored.descentRateMPerMin),
           balloonName: stored.balloonName ?? "",
           occupantsWeightKg:
             !stored.balloonName || stored.occupantsWeightKg === undefined
@@ -340,10 +342,18 @@ export default function PreparePage() {
     const launchDateTimeIso = combineLocalDateAndTime(form.date, form.time);
     const durationMinutes = parseNumber(form.durationMinutes);
     const altitude = parseNumber(form.targetAltitudeAmslM);
-    const climbRate = Number(form.climbRateMps);
-    const descentRate = Number(form.descentRateMps);
-    const optionalClimbRate = optionalVerticalRate(climbRate);
-    const optionalDescentRate = optionalVerticalRate(descentRate);
+    const ascentRate = optionalRateMPerMin(form.ascentRateMPerMin);
+    const descentRate = optionalRateMPerMin(form.descentRateMPerMin);
+    if (form.ascentRateMPerMin.trim() && ascentRate === undefined) {
+      setError("Le taux de montée doit être strictement positif.");
+      return null;
+    }
+    if (form.descentRateMPerMin.trim() && descentRate === undefined) {
+      setError("Le taux de descente doit être strictement positif.");
+      return null;
+    }
+    const optionalClimbRate = optionalVerticalRate(metersPerMinuteToMetersPerSecond(ascentRate) ?? 0);
+    const optionalDescentRate = optionalVerticalRate(metersPerMinuteToMetersPerSecond(descentRate) ?? 0);
     if (!form.launchSite) {
       setError("Sélectionnez un point de départ.");
       return null;
@@ -634,6 +644,37 @@ export default function PreparePage() {
             </p>
           )}
 
+        </section>
+
+        <section className="mt-2 rounded-[20px] border p-3" style={{ background: "var(--bc-surface)", borderColor: "var(--bc-border)" }} aria-labelledby="vertical-rates-title">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 id="vertical-rates-title" className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--bc-color-text-muted)" }}>Profil vertical</h2>
+            <span className="text-[10px]" style={{ color: "var(--bc-color-text-muted)" }}>Facultatif</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ["ascentRateMPerMin", "Montée"],
+              ["descentRateMPerMin", "Descente"],
+            ] as const).map(([field, label]) => (
+              <label key={field} className="flex min-h-12 items-center justify-between gap-2 rounded-xl border px-2.5" style={{ borderColor: "var(--bc-border)" }}>
+                <span className="text-xs font-semibold">{label}</span>
+                <span className="flex min-w-0 items-baseline gap-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
+                    value={form[field]}
+                    onChange={(event) => update(field, event.target.value.replace(/\D/g, ""))}
+                    className="w-12 border-0 bg-transparent p-0 text-right text-base font-semibold outline-none"
+                    placeholder="—"
+                    aria-label={`Taux de ${label.toLowerCase()} en mètres par minute`}
+                  />
+                  <span className="whitespace-nowrap text-[10px]" style={{ color: "var(--bc-color-text-muted)" }}>m/min</span>
+                </span>
+              </label>
+            ))}
+          </div>
         </section>
 
         <div className="mt-2">

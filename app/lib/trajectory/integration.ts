@@ -155,8 +155,8 @@ export type TrajectoryFormState = {
   targetAltitudeAmslM: string;
   selectedAltitudes: AltitudeOption[];
   weatherModel: string;
-  climbRateMps: string;
-  descentRateMps: string;
+  ascentRateMPerMin: string;
+  descentRateMPerMin: string;
   balloonName: string;
   occupantsWeightKg: string;
 };

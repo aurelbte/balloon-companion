@@ -15,3 +15,13 @@ export function validDurationMinutes(raw: string): boolean {
   const value = Number(raw);
   return /^\d+$/.test(raw) && Number.isInteger(value) && value > 0;
 }
+
+export function optionalRateMPerMin(raw: string): number | undefined {
+  if (!raw.trim()) return undefined;
+  const value = Number(raw.replace(",", "."));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+export function metersPerMinuteToMetersPerSecond(value: number | undefined): number | undefined {
+  return value === undefined ? undefined : value / 60;
+}
