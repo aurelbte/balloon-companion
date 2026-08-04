@@ -35,23 +35,10 @@ import {
   type NumericAltitudeOption,
 } from "../lib/trajectory/integration";
 import { saveTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
+import { addFavoriteLaunchSite, loadFavoriteLaunchSites, removeFavoriteLaunchSite, sameLaunchSite, saveFavoriteLaunchSites, type FavoriteLaunchSite } from "../lib/favoriteLaunchSites";
+import { normalizeTimeInput, validDurationMinutes } from "../lib/preparationInputs";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
-const FAVORITE_TERRAINS: readonly GeocodingResult[] = [
-  {
-    id: "favorite-lfqo",
-    name: "LFQO",
-    latitude: 50.686341,
-    longitude: 3.079865,
-  },
-  {
-    id: "favorite-boeschepe",
-    name: "Boeschepe",
-    latitude: 50.80135,
-    longitude: 2.687643,
-  },
-] as const;
-
 function localDateParts(value: string | null): { date: string; time: string } {
   if (!value) return { date: "", time: "" };
   const parsed = new Date(value);
@@ -177,6 +164,7 @@ export default function PreparePage() {
   const [customDuration, setCustomDuration] = useState("");
   const [timeDigits, setTimeDigits] = useState("");
   const [timeError, setTimeError] = useState<string | null>(null);
+  const [favoriteTerrains, setFavoriteTerrains] = useState<FavoriteLaunchSite[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [launchPointDraft, setLaunchPointDraft] =
@@ -230,6 +218,7 @@ export default function PreparePage() {
               : String(stored.occupantsWeightKg),
         });
       }
+      setFavoriteTerrains(loadFavoriteLaunchSites());
       setStorageReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -261,22 +250,27 @@ export default function PreparePage() {
   );
 
   const updateTimeDigits = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 4);
-    setTimeDigits(digits);
-    if (digits.length < 4) {
-      setTimeError(null);
-      update("time", "");
-      return;
-    }
-    const hours = Number(digits.slice(0, 2));
-    const minutes = Number(digits.slice(2, 4));
-    if (hours > 23 || minutes > 59) {
-      setTimeError("Heure invalide");
-      update("time", "");
-      return;
-    }
-    setTimeError(null);
-    update("time", `${digits.slice(0, 2)}:${digits.slice(2, 4)}`);
+    const normalized = normalizeTimeInput(value);
+    setTimeDigits(normalized.digits);
+    setTimeError(normalized.error);
+    update("time", normalized.time);
+  };
+
+  const finalizeTimeDigits = () => {
+    const normalized = normalizeTimeInput(timeDigits, true);
+    setTimeDigits(normalized.digits);
+    setTimeError(normalized.error);
+    update("time", normalized.time);
+  };
+
+  const toggleFavorite = (terrain: GeocodingResult) => {
+    setFavoriteTerrains((current) => {
+      const next = current.some((item) => sameLaunchSite(item, terrain))
+        ? removeFavoriteLaunchSite(current, terrain)
+        : addFavoriteLaunchSite(current, terrain);
+      saveFavoriteLaunchSites(next);
+      return next;
+    });
   };
 
   const searchLaunchSite = async () => {
@@ -476,7 +470,9 @@ export default function PreparePage() {
             }}
             onSearch={() => void searchLaunchSite()}
             onLocate={useCurrentPosition}
-            favoriteTerrains={FAVORITE_TERRAINS}
+            favoriteTerrains={favoriteTerrains}
+            selectedTerrain={form.launchSite}
+            onToggleFavorite={toggleFavorite}
             onSelectFavorite={(favorite) => {
               setForm((current) => ({
                 ...current,
@@ -553,6 +549,7 @@ export default function PreparePage() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete="off"
+                  enterKeyHint="next"
                   maxLength={5}
                   value={
                     timeDigits.length === 4
@@ -560,6 +557,8 @@ export default function PreparePage() {
                       : timeDigits
                   }
                   onChange={(event) => updateTimeDigits(event.target.value)}
+                  onBlur={finalizeTimeDigits}
+                  onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); finalizeTimeDigits(); (event.currentTarget.closest(".grid")?.querySelector("button") as HTMLButtonElement | null)?.focus(); } }}
                   onFocus={(event) => event.currentTarget.select()}
                   className="block w-full border-0 bg-transparent p-0 text-sm font-semibold outline-none"
                   placeholder="—:—"
@@ -759,6 +758,8 @@ export default function PreparePage() {
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
+              autoComplete="off"
+              enterKeyHint="done"
               value={customDuration}
               onChange={(event) =>
                 setCustomDuration(event.target.value.replace(/\D/g, ""))
@@ -770,7 +771,7 @@ export default function PreparePage() {
               type="button"
               onClick={() => {
                 const value = parseNumber(customDuration);
-                if (value !== null && value > 0) {
+                if (validDurationMinutes(customDuration) && value !== null) {
                   update("durationMinutes", String(value));
                   setCustomDurationOpen(false);
                 }

@@ -22,6 +22,9 @@ export type JournalFlight = {
   id: string;
   generatedTitle?: string;
   customTitle?: string;
+  startedAt?: number;
+  startLocationLabel?: string;
+  endLocationLabel?: string;
   /** Ancien champ conservé uniquement pour la migration. */
   title?: string;
   departure: string;
@@ -248,5 +251,5 @@ export function getJournalFlight(id: string): JournalFlight | null {
 }
 
 export function getJournalFlightAutomaticName(flight: JournalFlight): string {
-  return flight.generatedTitle ?? `${flight.departure} → ${flight.arrival} · ${flight.takeoffTime}`;
+  return flight.generatedTitle ?? `${flight.departure} → ${flight.arrival}`;
 }

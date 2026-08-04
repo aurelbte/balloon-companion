@@ -30,6 +30,7 @@ export type WeatherAnalysisState = {
   layers: AnalysisLayerSettings;
   traces: WeatherAnalysisTrace[];
   failures: Array<AltitudeProjectionFailure & { modelId: string }>;
+  analysisKey?: string;
 };
 
 export type ExportedPlannedTrajectory = {

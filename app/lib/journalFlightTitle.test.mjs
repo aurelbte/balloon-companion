@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildGeneratedFlightTitle,
+  buildFactualFlightLabel,
   formatJournalTakeoffTime,
   getJournalFlightDisplayTitle,
   selectFlightPlaceName,
@@ -23,9 +24,10 @@ test("la priorité de lieu n'utilise l'ICAO que pour un aérodrome explicitement
   assert.equal(selectFlightPlaceName({}, "Arrivée inconnue"), "Arrivée inconnue");
 });
 
-test("le titre factuel conserve route et heure sans donnée ballon", () => {
-  assert.equal(buildGeneratedFlightTitle(flight), "LFQQ → Mérignies · 06:45");
-  assert.equal(buildGeneratedFlightTitle({ ...flight, takeoffTime: "19:33" }), "LFQQ → Mérignies · 19:33");
+test("le titre automatique sépare la route de l'heure factuelle", () => {
+  assert.equal(buildGeneratedFlightTitle(flight), "LFQQ → Mérignies");
+  assert.equal(buildFactualFlightLabel(flight), "LFQQ → Mérignies · 06:45");
+  assert.equal(buildFactualFlightLabel({ ...flight, takeoffTime: "19:33" }), "LFQQ → Mérignies · 19:33");
   assert.equal(buildGeneratedFlightTitle({ ...flight, balloonRegistration: "F-XXXX" }), buildGeneratedFlightTitle(flight));
 });
 
@@ -38,5 +40,5 @@ test("l'heure est issue du timestamp et le fuseau est maîtrisé", () => {
 test("le titre personnalisé est prioritaire et peut être rétabli", () => {
   const customized = { ...flight, generatedTitle: buildGeneratedFlightTitle(flight), customTitle: "Vol du matin avec élève" };
   assert.equal(getJournalFlightDisplayTitle(customized), "Vol du matin avec élève");
-  assert.equal(getJournalFlightDisplayTitle(withoutCustomFlightTitle(customized)), "LFQQ → Mérignies · 06:45");
+  assert.equal(getJournalFlightDisplayTitle(withoutCustomFlightTitle(customized)), "LFQQ → Mérignies");
 });

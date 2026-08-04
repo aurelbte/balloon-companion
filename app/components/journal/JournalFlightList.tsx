@@ -22,7 +22,7 @@ import RenameFlightDialog from "./RenameFlightDialog";
 import styles from "../../journal/Journal.module.css";
 import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal, persistJournalFlightCustomTitle } from "../../lib/flightCompletionStorage";
 import { journalFlightsForMode } from "../../lib/realFlightJournal";
-import { getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
+import { buildFactualFlightLabel, getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
 import { journalSwipeAxis, journalSwipeDestination, journalSwipeInitialOffset, journalSwipeOffset, JOURNAL_SWIPE_ACTIONS_WIDTH_PX, type JournalSwipeAxis, type JournalSwipeStableState, type JournalSwipeState } from "../../lib/journalSwipe";
 
 type JournalFlightListProps = { flights: readonly JournalFlight[] };
@@ -35,6 +35,11 @@ const EMPTY_STATE: JournalDemoState = {
   deletedFlightIds: [],
   customNames: {},
 };
+
+const DISTANCE_FORMATTER = new Intl.NumberFormat("fr-FR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 
 function normalizeSearch(value: string): string {
   return value
@@ -132,6 +137,7 @@ function FlightActionMenu({
 type InteractiveFlightCardProps = {
   flight: JournalFlight;
   displayName: string;
+  customized: boolean;
   menuOpen: boolean;
   swipeOpen: boolean;
   onSetSwipeOpen: (open: boolean) => void;
@@ -144,6 +150,7 @@ type InteractiveFlightCardProps = {
 function InteractiveFlightCard({
   flight,
   displayName,
+  customized,
   menuOpen,
   swipeOpen,
   onSetSwipeOpen,
@@ -282,21 +289,27 @@ function InteractiveFlightCard({
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/journal/${flight.id}`); }
         }}
       >
-        <div className="min-w-0">
+        <div className={styles.flightCardHeader}>
           <p className={styles.flightDate}>{flight.date}</p>
+          <button type="button" className={styles.flightMoreButton} aria-label={`Actions pour le vol du ${flight.date}`} aria-haspopup="menu" aria-expanded={menuOpen} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenMenu(event.currentTarget); }}><MoreHorizontal size={19} /></button>
+        </div>
+        <div className={styles.flightCardBody}>
+          <div className={styles.flightCardInformation}>
           <h2 className={styles.flightRoute}>{displayName}</h2>
+          <p className={styles.flightTakeoffTime}>{customized ? buildFactualFlightLabel(flight) : `Décollage ${flight.takeoffTime}`}</p>
           <div className={styles.flightMetrics}>
             <span>{flight.durationMinutes} min</span>
-            <span>{flight.distanceKm.toFixed(1)} km</span>
+            <span>{DISTANCE_FORMATTER.format(flight.distanceKm)} km</span>
             {"logbookStatus" in flight && <span className={styles.pendingLogbook}>{flight.logbookStatus === "CARNET_VALIDATED" ? "CARNET ✓" : flight.logbookStatus === "JOURNAL_ONLY" ? "JOURNAL" : "À VALIDER"}</span>}
           </div>
-        </div>
-        <div className={styles.thumbnail}>
+          </div>
+          <div className={styles.thumbnail}>
           <JournalTraceThumbnail
             points={flight.points}
             label={`Miniature de la trace ${flight.departure} vers ${flight.arrival}`}
           />
-        </div><button type="button" className={styles.flightMoreButton} aria-label={`Actions pour le vol du ${flight.date}`} aria-haspopup="menu" aria-expanded={menuOpen} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenMenu(event.currentTarget); }}><MoreHorizontal size={19} /></button>
+          </div>
+        </div>
       </div>
       {menuOpen && (
         <FlightActionMenu
@@ -504,13 +517,14 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
       <section className={styles.flightList} aria-label="Liste des vols">
         {visibleFlights.length > 0 ? (
           visibleFlights.map((flight) => {
-            const displayName =
-              demoState.customNames[flight.id] ?? getJournalFlightDisplayTitle(flight);
+            const customTitle = demoState.customNames[flight.id] ?? flight.customTitle;
+            const displayName = customTitle ?? getJournalFlightDisplayTitle(flight);
             return (
               <InteractiveFlightCard
                 key={flight.id}
                 flight={flight}
                 displayName={displayName}
+                customized={Boolean(customTitle)}
                 menuOpen={menuFlightId === flight.id}
                 swipeOpen={openSwipeFlightId === flight.id}
                 onSetSwipeOpen={(open) => {

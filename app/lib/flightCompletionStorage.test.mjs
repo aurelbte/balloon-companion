@@ -40,7 +40,7 @@ test("la migration sépare le nom généré d'un ancien titre personnalisé", ()
     officialAscensions: [],
   }));
   const restored = loadFlightCompletionState();
-  assert.equal(restored.journalFlights[0].generatedTitle, "LFQO → Mérignies · 06:45");
+  assert.equal(restored.journalFlights[0].generatedTitle, "LFQO → Mérignies");
   assert.equal(restored.journalFlights[0].customTitle, "Vol du matin");
   delete globalThis.window;
   delete globalThis.localStorage;
@@ -59,7 +59,7 @@ test("un ancien titre technique n'est pas pris pour un nom personnalisé", () =>
     officialAscensions: [],
   }));
   const restored = loadFlightCompletionState();
-  assert.equal(restored.journalFlights[0].generatedTitle, "Départ inconnu → Arrivée inconnue · 19:33");
+  assert.equal(restored.journalFlights[0].generatedTitle, "Départ inconnu → Arrivée inconnue");
   assert.equal(restored.journalFlights[0].customTitle, undefined);
   delete globalThis.window;
   delete globalThis.localStorage;

@@ -37,6 +37,7 @@ import type {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import type { BaseMap } from "../types/flight";
 import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
+import { analysisFitPadding, calculateTrajectoryBounds, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -52,6 +53,7 @@ interface PreparationMapProps {
   traces: WeatherAnalysisTrace[];
   visibleTraceIds: string[];
   launchSiteName: string;
+  launchSite: BoundsLaunchSite;
   baseMap: BaseMap;
   layers: AnalysisLayerSettings;
   airspaces?: AirspaceFeatureCollection;
@@ -167,19 +169,18 @@ function arrivalCollection(
 }
 
 function startCollection(
-  traces: readonly WeatherAnalysisTrace[],
+  launchSite: BoundsLaunchSite,
 ): GeoJSON.FeatureCollection<GeoJSON.Point> {
-  const point = traces[0]?.projection.points[0];
   return {
     type: "FeatureCollection",
-    features: point
+    features: Number.isFinite(launchSite.latitude) && Number.isFinite(launchSite.longitude)
       ? [
           {
             type: "Feature",
             properties: { kind: "start" },
             geometry: {
               type: "Point",
-              coordinates: [point.longitude, point.latitude],
+              coordinates: [launchSite.longitude, launchSite.latitude],
             },
           },
         ]
@@ -187,28 +188,11 @@ function startCollection(
   };
 }
 
-function boundsFor(
-  traces: readonly WeatherAnalysisTrace[],
-  visibleIds: readonly string[],
-): maplibregl.LngLatBounds | null {
-  const visible = new Set(visibleIds);
-  const coordinates = traces
-    .filter((trace) => visible.has(trace.traceId))
-    .flatMap((trace) =>
-      trace.projection.points.map(
-        (point) => [point.longitude, point.latitude] as [number, number],
-      ),
-    );
-  if (!coordinates.length) return null;
-  const bounds = new maplibregl.LngLatBounds(coordinates[0], coordinates[0]);
-  coordinates.slice(1).forEach((coordinate) => bounds.extend(coordinate));
-  return bounds;
-}
-
 export default function PreparationMap({
   traces,
   visibleTraceIds,
   launchSiteName,
+  launchSite,
   baseMap,
   layers,
   airspaces = EMPTY_AIRSPACES,
@@ -227,9 +211,8 @@ export default function PreparationMap({
   const showAirspacesRef = useRef(layers.airspaces);
   const indexRef = useRef(createAirspaceSelectionIndex(airspaces));
   const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim() ?? "";
-  const initial = traces[0]?.projection.points[0];
-  const initialLatitude = initial?.latitude;
-  const initialLongitude = initial?.longitude;
+  const initialLatitude = launchSite.latitude;
+  const initialLongitude = launchSite.longitude;
   const traceData = useMemo(
     () => traceCollection(traces, visibleTraceIds),
     [traces, visibleTraceIds],
@@ -242,7 +225,7 @@ export default function PreparationMap({
     () => arrivalCollection(traces, visibleTraceIds),
     [traces, visibleTraceIds],
   );
-  const startData = useMemo(() => startCollection(traces), [traces]);
+  const startData = useMemo(() => startCollection(launchSite), [launchSite]);
   const initialTraceData = useRef(traceData);
   const initialTimeData = useRef(timeData);
   const initialArrivalData = useRef(arrivalData);
@@ -650,10 +633,12 @@ export default function PreparationMap({
     const map = mapRef.current;
     if (!map) return;
     const fit = () => {
-      const bounds = boundsFor(traces, visibleTraceIds);
-      if (bounds)
-        map.fitBounds(bounds, {
-          padding: { top: 64, right: 76, bottom: 104, left: 106 },
+      const visible = new Set(visibleTraceIds);
+      const bounds = calculateTrajectoryBounds(traces.filter((trace) => visible.has(trace.traceId)), launchSite);
+      if (bounds) {
+        map.resize();
+        map.fitBounds([[bounds.west, bounds.south], [bounds.east, bounds.north]], {
+          padding: analysisFitPadding(map.getContainer().clientWidth),
           maxZoom: 14,
           ...(recenterToken
             ? REFERENCE_ORIENTATION
@@ -661,14 +646,17 @@ export default function PreparationMap({
           duration:
             recenterToken || hasCompletedInitialFit.current ? 320 : 0,
         });
+      }
       hasCompletedInitialFit.current = true;
     };
     if (map.loaded()) fit();
     else map.once("load", fit);
+    window.addEventListener("resize", fit);
     return () => {
       map.off("load", fit);
+      window.removeEventListener("resize", fit);
     };
-  }, [recenterToken, traces, visibleTraceIds]);
+  }, [launchSite, recenterToken, traces, visibleTraceIds]);
 
   return (
     <div className="relative h-full w-full">

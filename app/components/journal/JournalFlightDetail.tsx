@@ -8,7 +8,7 @@ import type { JournalFlight } from "../../lib/journalMockData";
 import styles from "../../journal/Journal.module.css";
 import JournalFlightMap from "./JournalFlightMap";
 import JournalFlightTitle from "./JournalFlightTitle";
-import { buildGeneratedFlightTitle } from "../../lib/journalFlightTitle";
+import { buildFactualFlightLabel } from "../../lib/journalFlightTitle";
 
 const measured = (value: number | null, unit: string) => value === null ? "—" : `${Math.round(value)} ${unit}`;
 
@@ -20,7 +20,7 @@ export default function JournalFlightDetail({ flightId, initialFlight }: { fligh
   const completionFlight = state.journalFlights.find(({ id }) => id === flight.id);
   const linkedAscension = state.officialAscensions.find(({ sourceFlightId }) => sourceFlightId === flight.id);
   const routeName = `${flight.departure} → ${flight.arrival}`;
-  const factualName = buildGeneratedFlightTitle(flight);
+  const factualName = buildFactualFlightLabel(flight);
   return <main className={styles.screen}><div className={styles.layout}>
     <Link href="/journal" className={styles.backLink}>← Journal</Link>
     <header className={styles.detailHeader}><JournalFlightTitle flightId={flight.id} automaticName={routeName} secondaryName={factualName} availableFlightIds={ids} className={styles.routeTitle} secondaryClassName={styles.automaticRouteTitle} /><p className={styles.dateLine}>{flight.date} · Décollage {flight.takeoffTime}</p><div className={styles.primaryMetrics}><p><span>Durée</span><strong>{flight.durationMinutes} min</strong></p><p><span>Distance</span><strong>{flight.distanceKm.toFixed(1)} km</strong></p></div></header>

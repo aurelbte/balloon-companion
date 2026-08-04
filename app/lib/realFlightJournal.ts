@@ -81,14 +81,17 @@ export function recordedFlightToJournalFlight(
   const last = source.points.at(-1);
   const directDistanceKm = first && last ? distanceBetweenRecordedPoints(first, last) / 1000 : 0;
   const rates = verticalRates(source.points);
-  const departure = UNKNOWN_DEPARTURE;
-  const arrival = UNKNOWN_ARRIVAL;
+  const departure = source.startLocationLabel?.trim() || UNKNOWN_DEPARTURE;
+  const arrival = source.endLocationLabel?.trim() || UNKNOWN_ARRIVAL;
   const takeoffTime = timeLabel(source.startedAt);
   return {
     id: source.id,
+    startedAt: source.startedAt,
+    startLocationLabel: departure,
+    endLocationLabel: arrival,
     departure,
     arrival,
-    generatedTitle: buildGeneratedFlightTitle({ departure, arrival, takeoffTime }),
+    generatedTitle: source.generatedTitle?.trim() || buildGeneratedFlightTitle({ departure, arrival }),
     ...date,
     balloonRegistration: options.balloonRegistration ?? source.balloonRegistration ?? "Non renseigné",
     durationMinutes: Math.max(0, Math.round(summary.durationSeconds / 60)),

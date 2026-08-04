@@ -76,19 +76,16 @@
 
 .flightList {
   display: grid;
-  gap: 9px;
+  gap: 11px;
   margin-top: 10px;
 }
 
 .flightCard {
   position: relative;
   z-index: 2;
-  display: grid;
-  min-height: 104px;
-  grid-template-columns: minmax(0, 1fr) 128px;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 10px 12px 14px;
+  display: block;
+  min-height: 156px;
+  padding: 14px 16px 15px;
   overflow: hidden;
   border: 1px solid var(--bc-border);
   border-radius: 22px;
@@ -113,7 +110,10 @@
 .flightSwipeActions { position: absolute; z-index: 1; inset: 0 0 0 auto; display: grid; width: 152px; grid-template-columns: repeat(2, 1fr); overflow: hidden; border-radius: 0 22px 22px 0; }
 .flightSwipeActions button { display: grid; min-width: 0; place-content: center; gap: 4px; border: 0; background: var(--bc-color-canvas-elevated); color: var(--bc-text-primary); font-size: .67rem; font-weight: 650; }
 .flightSwipeActions button:last-child { background: var(--bc-danger); color: white; }
-.flightMoreButton { position: absolute; z-index: 3; top: 7px; right: 7px; display: grid; width: 38px; height: 38px; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--bc-surface) 88%, transparent); color: var(--bc-text-secondary); }
+.flightCardHeader { display: flex; min-height: 32px; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.flightMoreButton { position: relative; z-index: 3; display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; margin: -7px -8px 0 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--bc-surface) 88%, transparent); color: var(--bc-text-secondary); }
+.flightCardBody { display: grid; grid-template-columns: minmax(0, 1fr) minmax(76px, 27%); align-items: center; gap: 13px; }
+.flightCardInformation { min-width: 0; }
 
 .flightCardSelected {
   border-color: var(--bc-border-strong);
@@ -592,23 +592,30 @@
 }
 
 .flightRoute {
-  margin-top: 4px;
+  display: -webkit-box;
+  margin-top: 1px;
   overflow: hidden;
-  font-size: clamp(0.9rem, 4vw, 1.05rem);
+  font-size: clamp(0.95rem, 4.2vw, 1.08rem);
   font-weight: 600;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
+
+.flightTakeoffTime { margin-top: 5px; overflow: hidden; color: var(--bc-text-muted); font-size: .7rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 
 .flightMetrics {
   display: flex;
-  gap: 10px;
-  margin-top: 9px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 12px;
+  margin-top: 12px;
   color: var(--bc-text-secondary);
   font-size: 0.76rem;
   font-variant-numeric: tabular-nums;
 }
+.flightMetrics > span { flex: 0 0 auto; white-space: nowrap; }
 
 .pendingLogbook {
   color: var(--bc-accent);
@@ -617,7 +624,7 @@
 
 .thumbnail {
   width: 100%;
-  height: 72px;
+  height: 78px;
   border-radius: 16px;
   background: rgb(255 255 255 / 3%);
 }
@@ -865,8 +872,12 @@
 
 @media (max-width: 370px) {
   .flightCard {
-    grid-template-columns: minmax(0, 1fr) 104px;
+    min-height: 160px;
+    padding-inline: 14px;
   }
+
+  .flightCardBody { grid-template-columns: minmax(0, 1fr) 74px; gap: 10px; }
+  .flightMetrics { gap-inline: 8px; }
 
   .moduleCard {
     min-height: 118px;

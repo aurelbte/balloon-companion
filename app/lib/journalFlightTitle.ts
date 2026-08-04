@@ -43,12 +43,14 @@ export function formatJournalTakeoffTime(startedAt: number, timeZone?: string): 
 export function buildGeneratedFlightTitle({
   departure,
   arrival,
-  takeoffTime,
-}: Pick<JournalFlight, "departure" | "arrival" | "takeoffTime">): string {
+}: Pick<JournalFlight, "departure" | "arrival">): string {
   const from = clean(departure) ?? UNKNOWN_DEPARTURE;
   const to = clean(arrival) ?? UNKNOWN_ARRIVAL;
-  const time = clean(takeoffTime) ?? "—:—";
-  return `${from} → ${to} · ${time}`;
+  return `${from} → ${to}`;
+}
+
+export function buildFactualFlightLabel(flight: Pick<JournalFlight, "departure" | "arrival" | "takeoffTime">): string {
+  return `${buildGeneratedFlightTitle(flight)} · ${clean(flight.takeoffTime) ?? "—:—"}`;
 }
 
 export function getJournalFlightDisplayTitle(flight: JournalFlight): string {

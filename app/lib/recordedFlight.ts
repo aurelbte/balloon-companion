@@ -33,6 +33,9 @@ export interface RecordedFlight {
   createdAt: number;
   updatedAt: number;
   balloonRegistration?: string;
+  startLocationLabel?: string;
+  endLocationLabel?: string;
+  generatedTitle?: string;
 }
 
 export type PointRejectionReason =

@@ -24,6 +24,8 @@ import {
 import { persistRecordedFlightInJournal } from "../lib/flightCompletionStorage";
 import { loadFlightSession } from "../lib/flightSessionStorage";
 import { legacyFlightSessionToRecordedFlight } from "../lib/realFlightJournal";
+import { resolveRecordedFlightLocations } from "../lib/flightLocationResolver";
+import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 
 interface UseFlightTrackingOptions {
   isEnabled?: boolean;
@@ -231,8 +233,12 @@ export function useFlightTracking(
 
   const completeFlight = useCallback(
     async (flight: RecordedFlight): Promise<RecordedFlight | null> => {
-      const completed = finalizeRecordedFlight(flight);
+      const finalized = finalizeRecordedFlight(flight);
       try {
+        const completed = await resolveRecordedFlightLocations(
+          finalized,
+          loadPreparationDraft()?.launchSite?.name,
+        );
         await persistenceChainRef.current.catch(() => undefined);
         await storageRef.current.completeFlight(completed);
         persistRecordedFlightInJournal(completed);
