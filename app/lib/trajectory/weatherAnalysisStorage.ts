@@ -62,6 +62,19 @@ export const DEFAULT_ANALYSIS_LAYERS: AnalysisLayerSettings = {
   arrivalMarkers: true,
 };
 
+/** Les couches sont temporaires et repartent de cet état à chaque ouverture depuis Prépa. */
+export function newAnalysisLayerSettings(): AnalysisLayerSettings {
+  return {
+    ...DEFAULT_ANALYSIS_LAYERS,
+    trajectories: true,
+    airspaces: false,
+    aeronauticalMap: false,
+    satellite: false,
+    timeMarkers: true,
+    arrivalMarkers: true,
+  };
+}
+
 function readJson(key: string): unknown {
   if (typeof window === "undefined") return null;
   try {

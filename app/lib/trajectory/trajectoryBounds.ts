@@ -36,6 +36,65 @@ export function calculateTrajectoryBounds(
 
 export function analysisFitPadding(width: number): { top: number; right: number; bottom: number; left: number } {
   return width < 768
-    ? { top: 88, right: 88, bottom: 118, left: 88 }
+    ? { top: 95, right: 105, bottom: 125, left: 105 }
     : { top: 72, right: 96, bottom: 110, left: 96 };
+}
+
+export function analysisFitMaxZoom(width: number): number {
+  return width < 768 ? 11 : 12;
+}
+
+export function trajectoryContentKey(
+  trajectories: readonly WeatherAnalysisTrace[],
+): string {
+  return trajectories.map((trace) => {
+    const points = trace.projection.points;
+    const first = points[0];
+    const last = points.at(-1);
+    const coordinate = (point: (typeof points)[number] | undefined) => point
+      ? `${point.latitude.toFixed(6)},${point.longitude.toFixed(6)}`
+      : "none";
+    return [
+      trace.traceId,
+      trace.model.id,
+      trace.altitudeKey,
+      trace.calculatedAtIso,
+      points.length,
+      coordinate(first),
+      coordinate(last),
+    ].join(":");
+  }).sort().join("|");
+}
+
+export function createTrajectoryFitKey({
+  analysisKey,
+  visibleTraceIds,
+  width,
+  height,
+  recenterToken,
+  trajectoryKey,
+}: {
+  analysisKey: string;
+  visibleTraceIds: readonly string[];
+  width: number;
+  height: number;
+  recenterToken: number;
+  trajectoryKey: string;
+}): string {
+  return [
+    analysisKey,
+    [...visibleTraceIds].sort().join(","),
+    `${Math.round(width)}x${Math.round(height)}`,
+    recenterToken,
+    trajectoryKey,
+  ].join("|");
+}
+
+export function countValidTrajectoryPoints(
+  trajectories: readonly WeatherAnalysisTrace[],
+): number {
+  return trajectories.reduce(
+    (total, trace) => total + trace.projection.points.filter((point) => valid(point.latitude, point.longitude)).length,
+    0,
+  );
 }

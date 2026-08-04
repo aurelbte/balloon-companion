@@ -35,7 +35,7 @@ import {
   type NumericAltitudeOption,
 } from "../lib/trajectory/integration";
 import { saveTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
-import { addFavoriteLaunchSite, loadFavoriteLaunchSites, removeFavoriteLaunchSite, sameLaunchSite, saveFavoriteLaunchSites, type FavoriteLaunchSite } from "../lib/favoriteLaunchSites";
+import { addFavoriteLaunchSite, loadFavoriteLaunchSites, removeFavoriteLaunchSite, saveFavoriteLaunchSites, updateFavoriteLaunchSite, type FavoriteLaunchSite } from "../lib/favoriteLaunchSites";
 import { normalizeTimeInput, validDurationMinutes } from "../lib/preparationInputs";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
@@ -263,11 +263,11 @@ export default function PreparePage() {
     update("time", normalized.time);
   };
 
-  const toggleFavorite = (terrain: GeocodingResult) => {
+  const updateFavorites = (
+    updater: (current: FavoriteLaunchSite[]) => FavoriteLaunchSite[],
+  ) => {
     setFavoriteTerrains((current) => {
-      const next = current.some((item) => sameLaunchSite(item, terrain))
-        ? removeFavoriteLaunchSite(current, terrain)
-        : addFavoriteLaunchSite(current, terrain);
+      const next = updater(current);
       saveFavoriteLaunchSites(next);
       return next;
     });
@@ -472,7 +472,34 @@ export default function PreparePage() {
             onLocate={useCurrentPosition}
             favoriteTerrains={favoriteTerrains}
             selectedTerrain={form.launchSite}
-            onToggleFavorite={toggleFavorite}
+            onAddFavorite={(terrain, displayName) => {
+              const duplicate = favoriteTerrains.find((favorite) =>
+                Math.abs(favorite.latitude - terrain.latitude) < 0.0000005 &&
+                Math.abs(favorite.longitude - terrain.longitude) < 0.0000005,
+              );
+              if (duplicate) return `Un favori existe déjà à cet emplacement : ${duplicate.name}.`;
+              const next = addFavoriteLaunchSite(favoriteTerrains, terrain, undefined, displayName);
+              setFavoriteTerrains(next);
+              saveFavoriteLaunchSites(next);
+              return null;
+            }}
+            onUpdateFavorite={(favoriteId, point, displayName) => {
+              const result = updateFavoriteLaunchSite(favoriteTerrains, favoriteId, {
+                name: displayName,
+                latitude: point.latitude,
+                longitude: point.longitude,
+                sourceName: point.name,
+              });
+              if (result.duplicate) return `Un favori existe déjà à cet emplacement : ${result.duplicate.name}.`;
+              setFavoriteTerrains(result.favorites);
+              saveFavoriteLaunchSites(result.favorites);
+              return null;
+            }}
+            onRemoveFavorite={(terrain) =>
+              updateFavorites((current) =>
+                removeFavoriteLaunchSite(current, terrain),
+              )
+            }
             onSelectFavorite={(favorite) => {
               setForm((current) => ({
                 ...current,

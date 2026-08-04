@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -37,7 +37,7 @@ import type {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import type { BaseMap } from "../types/flight";
 import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
-import { analysisFitPadding, calculateTrajectoryBounds, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
+import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, countValidTrajectoryPoints, createTrajectoryFitKey, trajectoryContentKey, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -54,6 +54,7 @@ interface PreparationMapProps {
   visibleTraceIds: string[];
   launchSiteName: string;
   launchSite: BoundsLaunchSite;
+  analysisKey: string;
   baseMap: BaseMap;
   layers: AnalysisLayerSettings;
   airspaces?: AirspaceFeatureCollection;
@@ -193,6 +194,7 @@ export default function PreparationMap({
   visibleTraceIds,
   launchSiteName,
   launchSite,
+  analysisKey,
   baseMap,
   layers,
   airspaces = EMPTY_AIRSPACES,
@@ -203,7 +205,8 @@ export default function PreparationMap({
 }: PreparationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const hasCompletedInitialFit = useRef(false);
+  const lastFittedAnalysisKey = useRef("");
+  const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
   const mapPressRef = useRef(onMapPress);
@@ -630,33 +633,91 @@ export default function PreparationMap({
   }, [airspaces, layers.aeronauticalMap, layers.airspaces]);
 
   useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    const updateDimensions = () => {
+      const next = { width: element.clientWidth, height: element.clientHeight };
+      setMapDimensions((current) =>
+        current.width === next.width && current.height === next.height ? current : next,
+      );
+    };
+    updateDimensions();
+    const observer = new ResizeObserver(updateDimensions);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const visible = new Set(visibleTraceIds);
+    const visibleTraces = traces.filter((trace) => visible.has(trace.traceId));
+    const rawPointCount = visibleTraces.reduce((total, trace) => total + trace.projection.points.length, 0);
+    const pointCount = countValidTrajectoryPoints(visibleTraces);
+    if (!analysisKey || pointCount === 0) return;
+    const bounds = calculateTrajectoryBounds(visibleTraces, launchSite);
+    if (!bounds) return;
+    const fitKey = createTrajectoryFitKey({
+      analysisKey,
+      visibleTraceIds,
+      width: mapDimensions.width,
+      height: mapDimensions.height,
+      recenterToken,
+      trajectoryKey: trajectoryContentKey(visibleTraces),
+    });
+    if (fitKey === lastFittedAnalysisKey.current) return;
+    let frame = 0;
     const fit = () => {
-      const visible = new Set(visibleTraceIds);
-      const bounds = calculateTrajectoryBounds(traces.filter((trace) => visible.has(trace.traceId)), launchSite);
-      if (bounds) {
-        map.resize();
+      map.resize();
+      frame = window.requestAnimationFrame(() => {
+        if (mapRef.current !== map) return;
+        if (!map.isStyleLoaded()) {
+          fitWhenReady();
+          return;
+        }
         map.fitBounds([[bounds.west, bounds.south], [bounds.east, bounds.north]], {
           padding: analysisFitPadding(map.getContainer().clientWidth),
-          maxZoom: 14,
-          ...(recenterToken
-            ? REFERENCE_ORIENTATION
-            : { bearing: map.getBearing(), pitch: 0 }),
-          duration:
-            recenterToken || hasCompletedInitialFit.current ? 320 : 0,
+          maxZoom: analysisFitMaxZoom(map.getContainer().clientWidth),
+          ...(recenterToken ? REFERENCE_ORIENTATION : { bearing: map.getBearing(), pitch: 0 }),
+          duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520,
         });
+        lastFittedAnalysisKey.current = fitKey;
+        if (process.env.NODE_ENV === "development") {
+          const endpoints = visibleTraces.map((trace) => ({
+            traceId: trace.traceId,
+            first: trace.projection.points[0] ?? null,
+            last: trace.projection.points.at(-1) ?? null,
+          }));
+          map.once("moveend", () => console.debug("[trajectory-fit]", {
+            analysisKey,
+            traceCount: visibleTraces.length,
+            rawPointCount,
+            usedPointCount: pointCount,
+            endpoints,
+            bounds,
+            zoom: map.getZoom(),
+          }));
+        }
+      });
+    };
+    const fitWhenReady = () => {
+      if (!map.getSource(TRACE_SOURCE)) {
+        map.once("load", fitWhenReady);
+        return;
       }
-      hasCompletedInitialFit.current = true;
+      if (!map.isStyleLoaded()) {
+        map.once("styledata", fitWhenReady);
+        return;
+      }
+      fit();
     };
-    if (map.loaded()) fit();
-    else map.once("load", fit);
-    window.addEventListener("resize", fit);
+    fitWhenReady();
     return () => {
-      map.off("load", fit);
-      window.removeEventListener("resize", fit);
+      map.off("load", fitWhenReady);
+      map.off("styledata", fitWhenReady);
+      window.cancelAnimationFrame(frame);
     };
-  }, [launchSite, recenterToken, traces, visibleTraceIds]);
+  }, [analysisKey, launchSite, mapDimensions.height, mapDimensions.width, recenterToken, traces, visibleTraceIds]);
 
   return (
     <div className="relative h-full w-full">

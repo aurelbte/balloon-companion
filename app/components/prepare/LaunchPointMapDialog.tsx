@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, LocateFixed, Navigation, X } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeocodingResult } from "../../lib/trajectory/integration";
@@ -10,17 +10,22 @@ type LaunchPointMapDialogProps = {
   initialPoint: GeocodingResult;
   onCancel: () => void;
   onConfirm: (point: GeocodingResult) => void;
-  /** Point d'extension pour la future création d'un favori. */
-  onRequestSaveFavorite?: (point: GeocodingResult) => void;
+  title?: string;
+  instruction?: string;
+  confirmLabel?: string;
 };
 
 export default function LaunchPointMapDialog({
   initialPoint,
   onCancel,
   onConfirm,
+  title = "Point de décollage",
+  instruction = "Touchez la carte ou déplacez le marqueur",
+  confirmLabel = "Valider ce point",
 }: LaunchPointMapDialogProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const markerRef = useRef<maplibregl.Marker | null>(null);
   const [coordinates, setCoordinates] = useState({
     latitude: initialPoint.latitude,
     longitude: initialPoint.longitude,
@@ -53,6 +58,7 @@ export default function LaunchPointMapDialog({
     })
       .setLngLat([initialPoint.longitude, initialPoint.latitude])
       .addTo(map);
+    markerRef.current = marker;
     const updateCoordinates = (longitude: number, latitude: number) => {
       marker.setLngLat([longitude, latitude]);
       setCoordinates({ longitude, latitude });
@@ -68,6 +74,7 @@ export default function LaunchPointMapDialog({
     return () => {
       map.remove();
       mapRef.current = null;
+      markerRef.current = null;
     };
   }, [initialPoint.latitude, initialPoint.longitude]);
 
@@ -86,18 +93,24 @@ export default function LaunchPointMapDialog({
           <X size={20} />
         </button>
         <div className="min-w-0 px-2 text-center">
-          <h2 className="truncate text-sm font-semibold">Point de décollage</h2>
+          <h2 className="truncate text-sm font-semibold">{title}</h2>
           <p
             className="mt-0.5 text-[10px]"
             style={{ color: "var(--bc-color-text-muted)" }}
           >
-            Touchez la carte ou déplacez le marqueur
+            {instruction}
           </p>
         </div>
         <span className="h-11 w-11" />
       </header>
 
-      <div ref={containerRef} className="min-h-0 flex-1" />
+      <div className="relative min-h-0 flex-1">
+        <div ref={containerRef} className="h-full w-full" />
+        <div className="absolute right-3 top-3 z-10 grid gap-2">
+          <button type="button" onClick={() => mapRef.current?.easeTo({ center: [coordinates.longitude, coordinates.latitude], zoom: Math.max(mapRef.current.getZoom(), 14), duration: 250 })} className="grid h-11 w-11 place-items-center rounded-full border bg-[var(--bc-color-canvas-elevated)]" style={{ borderColor: "var(--bc-border)" }} aria-label="Recentrer sur le point choisi"><Navigation size={18} /></button>
+          <button type="button" onClick={() => navigator.geolocation?.getCurrentPosition((position) => { const next = { latitude: position.coords.latitude, longitude: position.coords.longitude }; setCoordinates(next); markerRef.current?.setLngLat([next.longitude, next.latitude]); mapRef.current?.easeTo({ center: [next.longitude, next.latitude], zoom: 15, duration: 250 }); })} className="grid h-11 w-11 place-items-center rounded-full border bg-[var(--bc-color-canvas-elevated)]" style={{ borderColor: "var(--bc-border)" }} aria-label="Utiliser ma position"><LocateFixed size={18} /></button>
+        </div>
+      </div>
 
       <footer
         className="border-t px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
@@ -128,7 +141,7 @@ export default function LaunchPointMapDialog({
             color: "var(--bc-accent-foreground)",
           }}
         >
-          <Check size={18} /> Valider ce point
+          <Check size={18} /> {confirmLabel}
         </button>
       </footer>
     </div>

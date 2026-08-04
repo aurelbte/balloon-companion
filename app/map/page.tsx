@@ -57,10 +57,8 @@ import {
   MODEL_LINE_STYLES,
 } from "../lib/trajectory/analysisStyles";
 import {
-  DEFAULT_ANALYSIS_LAYERS,
-  loadWeatherAnalysis,
+  newAnalysisLayerSettings,
   saveExportedPlannedTrajectories,
-  saveWeatherAnalysis,
   type AnalysisLayerSettings,
   type ExportedPlannedTrajectory,
   type WeatherAnalysisState,
@@ -71,15 +69,7 @@ import type { BaseMap } from "../types/flight";
 import { createTrajectoryAnalysisKey, MAX_ANALYSIS_ALTITUDES, MAX_ANALYSIS_MODELS, toggleLimitedSelection } from "../lib/trajectory/analysisState";
 
 const ANALYSIS_ALTITUDE_OPTIONS = ALTITUDE_OPTIONS;
-const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = {
-  ...DEFAULT_ANALYSIS_LAYERS,
-  trajectories: true,
-  airspaces: true,
-  aeronauticalMap: false,
-  satellite: false,
-  timeMarkers: true,
-  arrivalMarkers: true,
-};
+const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = newAnalysisLayerSettings();
 
 export default function MapPage() {
   const router = useRouter();
@@ -93,7 +83,7 @@ export default function MapPage() {
     REQUIRED_ANALYSIS_LAYERS,
   );
   const [traces, setTraces] = useState<WeatherAnalysisTrace[]>([]);
-  const [failures, setFailures] = useState<WeatherAnalysisState["failures"]>([]);
+  const [, setFailures] = useState<WeatherAnalysisState["failures"]>([]);
   const [visibleTraceIds, setVisibleTraceIds] = useState<string[]>([]);
   const [exportIds, setExportIds] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -116,6 +106,7 @@ export default function MapPage() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
   const desiredSignatureRef = useRef("");
+  const [analysisSessionId, setAnalysisSessionId] = useState("");
   const [recenterToken, setRecenterToken] = useState(0);
   const satelliteAvailable = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim());
   const balloonRegistry = useBalloonRegistry();
@@ -133,6 +124,7 @@ export default function MapPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const analysisRequest = getTrajectoryAnalysisRequest();
+      setAnalysisSessionId(`analysis-${Date.now()}`);
       const demoEnabled = resolveLoadDemoMode(window.location.search);
       setTestLoadEnabled(demoEnabled);
       setShowSyntheticMargin(resolveSyntheticMarginMode(window.location.search, demoEnabled));
@@ -148,7 +140,6 @@ export default function MapPage() {
               request: legacyProjection.request,
             }
           : null);
-      const cached = loadWeatherAnalysis();
       setConfig(stored);
       setSelectedBalloonId(preparation?.balloonName ?? "");
       setPreparation(preparation);
@@ -158,39 +149,14 @@ export default function MapPage() {
           : String(preparation.targetAltitudeAmslM),
       );
       if (stored) {
-        const defaultModel =
-          WEATHER_MODEL_REGISTRY.find(
-            (model) =>
-              model.providerModelId === stored.request.weatherModel,
-          )?.id ?? "arome";
-        const models = cached?.selectedModelIds.length
-          ? cached.selectedModelIds
-          : [defaultModel];
-        const altitudes = (
-          cached?.selectedAltitudes.length
-            ? cached.selectedAltitudes
-            : stored.request.altitudesAmslM
-        )
-          .slice(0, MAX_ANALYSIS_ALTITUDES);
-        const selectedInitialModels = models.slice(0, MAX_ANALYSIS_MODELS);
-        setSelectedModels(selectedInitialModels);
-        setSelectedAltitudes(altitudes);
-        if (cached) {
-          setLayers({
-            ...cached.layers,
-            satellite: false,
-            trajectories: true,
-            aeronauticalMap: false,
-            timeMarkers: true,
-            arrivalMarkers: true,
-          });
-          const initialKey = createTrajectoryAnalysisKey(stored.request, selectedInitialModels, altitudes);
-          const cacheMatchesRequest = cached.analysisKey === initialKey;
-          setTraces(cacheMatchesRequest ? cached.traces : []);
-          setFailures(cacheMatchesRequest ? cached.failures : []);
-          setVisibleTraceIds(cacheMatchesRequest ? cached.traces.map((trace) => trace.traceId) : []);
-          if (cacheMatchesRequest && cached.traces.length > 0) signatureRef.current = initialKey;
-        }
+        setSelectedModels([]);
+        setSelectedAltitudes([]);
+        setTraces([]);
+        setFailures([]);
+        setVisibleTraceIds([]);
+        setLayers(newAnalysisLayerSettings());
+        signatureRef.current = "";
+        desiredSignatureRef.current = "";
       }
       setReady(true);
     }, 0);
@@ -239,13 +205,13 @@ export default function MapPage() {
   }, [config, preparation]);
 
   useEffect(() => {
-    if (
-      !ready ||
-      !config ||
-      selectedModels.length === 0 ||
-      selectedAltitudes.length === 0
-    )
+    if (!ready || !config) return;
+    if (selectedModels.length === 0 || selectedAltitudes.length === 0) {
+      requestAbortRef.current?.abort();
+      signatureRef.current = "";
+      desiredSignatureRef.current = "";
       return;
+    }
     const signature = createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes);
     desiredSignatureRef.current = signature;
     if (signature === signatureRef.current) return;
@@ -355,23 +321,6 @@ export default function MapPage() {
       controller.abort();
     };
   }, [config, ready, selectedAltitudes, selectedModels]);
-
-  useEffect(() => {
-    if (!ready || !config) return;
-    const timer = window.setTimeout(() => {
-      saveWeatherAnalysis({
-        version: 1,
-        updatedAtIso: new Date().toISOString(),
-        selectedModelIds: selectedModels,
-        selectedAltitudes,
-        layers,
-        traces,
-        failures,
-        analysisKey: createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes),
-      });
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [config, failures, layers, ready, selectedAltitudes, selectedModels, traces]);
 
   const airspaceCoverage = useAirspaceCoverage({
     position: null,
@@ -511,18 +460,31 @@ export default function MapPage() {
   };
 
   const toggleModel = (modelId: string) => {
-    setSelectedModels((current) => {
-      const result = toggleLimitedSelection({ current, value: modelId, maximum: MAX_ANALYSIS_MODELS });
-      if (result.limitReached) setNotice("Maximum 3 modèles simultanés.");
-      return result.values;
-    });
+    const result = toggleLimitedSelection({ current: selectedModels, value: modelId, maximum: MAX_ANALYSIS_MODELS, minimum: 0 });
+    if (result.limitReached) setNotice("Maximum 3 modèles simultanés.");
+    setSelectedModels(result.values);
+    if (result.values.length === 0 || selectedAltitudes.length === 0) {
+      requestAbortRef.current?.abort();
+      setTraces([]);
+      setVisibleTraceIds([]);
+      setFailures([]);
+      setLoading(false);
+      setNotice(null);
+    }
   };
   const toggleAltitude = (altitude: AltitudeOption) => {
-    setSelectedAltitudes((current) => {
-      const result = toggleLimitedSelection({ current, value: altitude, maximum: MAX_ANALYSIS_ALTITUDES });
-      if (result.limitReached) setNotice("Maximum 5 altitudes simultanées.");
-      return ALTITUDE_OPTIONS.filter((option) => result.values.includes(option));
-    });
+    const result = toggleLimitedSelection({ current: selectedAltitudes, value: altitude, maximum: MAX_ANALYSIS_ALTITUDES, minimum: 0 });
+    if (result.limitReached) setNotice("Maximum 5 altitudes simultanées.");
+    const values = ALTITUDE_OPTIONS.filter((option) => result.values.includes(option));
+    setSelectedAltitudes(values);
+    if (values.length === 0 || selectedModels.length === 0) {
+      requestAbortRef.current?.abort();
+      setTraces([]);
+      setVisibleTraceIds([]);
+      setFailures([]);
+      setLoading(false);
+      setNotice(null);
+    }
   };
   const handleMapPress = () => {
     setLegendOpen(false);
@@ -626,6 +588,7 @@ export default function MapPage() {
             visibleTraceIds={visibleTraceIds}
             launchSiteName={config.request.launchSite.name}
             launchSite={config.request.launchSite}
+            analysisKey={`${analysisSessionId}:${createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes)}`}
             baseMap={baseMap}
             layers={layers}
             recenterToken={recenterToken}
@@ -634,7 +597,7 @@ export default function MapPage() {
             onMapPress={handleMapPress}
             onViewportChange={setViewport}
           />
-        {displayedTraces.length === 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-sm font-bold text-white/80">{loading ? "Calcul des trajectoires…" : "Aucune trajectoire disponible"}</div>}
+        {displayedTraces.length === 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-16 text-center text-sm font-semibold text-white/80">{loading ? "Calcul des trajectoires…" : selectedModels.length === 0 || selectedAltitudes.length === 0 ? "Sélectionnez un modèle et une altitude." : "Aucune trajectoire disponible"}</div>}
 
         <FloatingAction
           onClick={() => setSelectorsVisible((value) => !value)}
