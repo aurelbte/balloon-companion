@@ -8,6 +8,7 @@ import type { CompletionJournalFlight } from "./flightCompletion.ts";
 import type { JournalFlight } from "./journalMockData.ts";
 import type { PersistedFlightSession } from "../types/flight.ts";
 import { calculateRecordedFlightSummary as calculateSummary, geoPointToRecordedFlightPoint } from "./recordedFlight.ts";
+import { buildGeneratedFlightTitle, UNKNOWN_ARRIVAL, UNKNOWN_DEPARTURE } from "./journalFlightTitle.ts";
 
 export function journalFlightsForMode(flights: readonly JournalFlight[], demoEnabled: boolean): JournalFlight[] {
   return flights.filter((flight) => demoEnabled || flight.origin === "REAL_GPS" || flight.origin === "MANUAL");
@@ -80,16 +81,19 @@ export function recordedFlightToJournalFlight(
   const last = source.points.at(-1);
   const directDistanceKm = first && last ? distanceBetweenRecordedPoints(first, last) / 1000 : 0;
   const rates = verticalRates(source.points);
+  const departure = UNKNOWN_DEPARTURE;
+  const arrival = UNKNOWN_ARRIVAL;
+  const takeoffTime = timeLabel(source.startedAt);
   return {
     id: source.id,
-    title: `Vol du ${date.date}`,
-    departure: "Point de décollage",
-    arrival: "Point d’atterrissage",
+    departure,
+    arrival,
+    generatedTitle: buildGeneratedFlightTitle({ departure, arrival, takeoffTime }),
     ...date,
     balloonRegistration: options.balloonRegistration ?? source.balloonRegistration ?? "Non renseigné",
     durationMinutes: Math.max(0, Math.round(summary.durationSeconds / 60)),
     distanceKm: summary.distanceMeters / 1000,
-    takeoffTime: timeLabel(source.startedAt),
+    takeoffTime,
     landingTime: timeLabel(endedAt),
     maxAltitudeM: summary.maxAltitudeMeters,
     maxSpeedKmh: summary.maxGroundSpeedMetersPerSecond === null ? null : summary.maxGroundSpeedMetersPerSecond * 3.6,

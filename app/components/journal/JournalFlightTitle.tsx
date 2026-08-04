@@ -8,6 +8,8 @@ type JournalFlightTitleProps = {
   automaticName: string;
   availableFlightIds: readonly string[];
   className?: string;
+  secondaryClassName?: string;
+  secondaryName?: string;
 };
 
 export default function JournalFlightTitle({
@@ -15,8 +17,11 @@ export default function JournalFlightTitle({
   automaticName,
   availableFlightIds,
   className,
+  secondaryClassName,
+  secondaryName = automaticName,
 }: JournalFlightTitleProps) {
   const [title, setTitle] = useState(automaticName);
+  const customized = title !== automaticName;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -26,5 +31,8 @@ export default function JournalFlightTitle({
     return () => window.clearTimeout(timer);
   }, [automaticName, availableFlightIds, flightId]);
 
-  return <h1 className={className}>{title}</h1>;
+  return <>
+    <h1 className={className}>{title}</h1>
+    {customized && <p className={secondaryClassName}>{secondaryName}</p>}
+  </>;
 }

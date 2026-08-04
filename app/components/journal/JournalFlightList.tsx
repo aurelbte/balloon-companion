@@ -15,17 +15,15 @@ import {
   saveJournalDemoState,
   type JournalDemoState,
 } from "../../lib/journalDemoStorage";
-import {
-  getJournalFlightAutomaticName,
-  type JournalFlight,
-} from "../../lib/journalMockData";
+import type { JournalFlight } from "../../lib/journalMockData";
 import DeleteFlightDialog from "./DeleteFlightDialog";
 import JournalTraceThumbnail from "./JournalTraceThumbnail";
 import RenameFlightDialog from "./RenameFlightDialog";
 import styles from "../../journal/Journal.module.css";
-import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal } from "../../lib/flightCompletionStorage";
+import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal, persistJournalFlightCustomTitle } from "../../lib/flightCompletionStorage";
 import { journalFlightsForMode } from "../../lib/realFlightJournal";
-import { journalSwipeAxis, journalSwipeOffset, JOURNAL_SWIPE_ACTIONS_WIDTH_PX, shouldOpenJournalSwipe, type JournalSwipeAxis } from "../../lib/journalSwipe";
+import { getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
+import { journalSwipeAxis, journalSwipeDestination, journalSwipeInitialOffset, journalSwipeOffset, JOURNAL_SWIPE_ACTIONS_WIDTH_PX, type JournalSwipeAxis, type JournalSwipeStableState, type JournalSwipeState } from "../../lib/journalSwipe";
 
 type JournalFlightListProps = { flights: readonly JournalFlight[] };
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
@@ -156,39 +154,104 @@ function InteractiveFlightCard({
 }: InteractiveFlightCardProps) {
   const router = useRouter();
   const contentRef = useRef<HTMLDivElement>(null);
-  const startRef = useRef<{ x: number; y: number; initiallyOpen: boolean } | null>(null);
+  const gestureRef = useRef<{
+    startX: number;
+    startY: number;
+    startedAt: number;
+    lastX: number;
+    lastAt: number;
+    velocityX: number;
+    initialOffsetX: number;
+    initialState: JournalSwipeStableState;
+    pointerId: number;
+  } | null>(null);
   const axisRef = useRef<JournalSwipeAxis>(null);
+  const phaseRef = useRef<JournalSwipeState>(swipeOpen ? "open" : "closed");
   const offsetRef = useRef(swipeOpen ? -JOURNAL_SWIPE_ACTIONS_WIDTH_PX : 0);
-  const draggedRef = useRef(false);
+  const suppressClickRef = useRef(false);
 
   useEffect(() => {
     const offset = swipeOpen ? -JOURNAL_SWIPE_ACTIONS_WIDTH_PX : 0;
     offsetRef.current = offset;
-    if (contentRef.current) contentRef.current.style.transform = `translateX(${offset}px)`;
+    phaseRef.current = swipeOpen ? "open" : "closed";
+    if (contentRef.current) {
+      contentRef.current.style.transform = `translateX(${offset}px)`;
+    }
   }, [swipeOpen]);
+
+  const settle = (destination: JournalSwipeStableState) => {
+    const element = contentRef.current;
+    const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    phaseRef.current = "settling";
+    offsetRef.current = journalSwipeInitialOffset(destination);
+    if (element) {
+      element.style.transition = reducedMotion
+        ? "none"
+        : "transform 190ms cubic-bezier(0.22, 1, 0.36, 1)";
+      element.style.transform = `translateX(${offsetRef.current}px)`;
+    }
+    onSetSwipeOpen(destination === "open");
+  };
 
   const beginSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    startRef.current = { x: event.clientX, y: event.clientY, initiallyOpen: swipeOpen };
+    const initialState: JournalSwipeStableState = swipeOpen ? "open" : "closed";
+    const now = performance.now();
+    gestureRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startedAt: now,
+      lastX: event.clientX,
+      lastAt: now,
+      velocityX: 0,
+      initialOffsetX: journalSwipeInitialOffset(initialState),
+      initialState,
+      pointerId: event.pointerId,
+    };
     axisRef.current = null;
-    draggedRef.current = false;
+    suppressClickRef.current = false;
+    if (!swipeOpen) onSetSwipeOpen(false);
   };
   const moveSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = startRef.current;
-    if (!start) return;
-    const deltaX = event.clientX - start.x;
-    const deltaY = event.clientY - start.y;
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
     axisRef.current ??= journalSwipeAxis(deltaX, deltaY);
+    if (axisRef.current === "vertical") {
+      if (gesture.initialState === "open") settle("closed");
+      gestureRef.current = null;
+      return;
+    }
     if (axisRef.current !== "horizontal") return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    draggedRef.current = true;
-    const offset = journalSwipeOffset(deltaX, start.initiallyOpen);
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+    phaseRef.current = "dragging";
+    suppressClickRef.current = true;
+    event.currentTarget.style.transition = "none";
+    const offset = journalSwipeOffset(deltaX, gesture.initialOffsetX);
     offsetRef.current = offset;
     event.currentTarget.style.transform = `translateX(${offset}px)`;
+    const now = performance.now();
+    const sampleDuration = Math.max(1, now - gesture.lastAt);
+    gesture.velocityX = (event.clientX - gesture.lastX) / sampleDuration;
+    gesture.lastX = event.clientX;
+    gesture.lastAt = now;
   };
-  const finishSwipe = () => {
-    if (axisRef.current === "horizontal") onSetSwipeOpen(shouldOpenJournalSwipe(offsetRef.current));
-    startRef.current = null;
+  const finishSwipe = (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (axisRef.current === "horizontal") {
+      settle(journalSwipeDestination({
+        initialState: gesture.initialState,
+        deltaX: event.clientX - gesture.startX,
+        velocityX: gesture.velocityX,
+        cancelled,
+      }));
+    } else if (cancelled) {
+      settle(gesture.initialState);
+    }
+    gestureRef.current = null;
     axisRef.current = null;
   };
 
@@ -203,9 +266,18 @@ function InteractiveFlightCard({
         aria-label={`Ouvrir le vol ${displayName}`}
         onPointerDown={beginSwipe}
         onPointerMove={moveSwipe}
-        onPointerUp={finishSwipe}
-        onPointerCancel={finishSwipe}
-        onClick={() => { if (draggedRef.current) { draggedRef.current = false; return; } if (swipeOpen) onSetSwipeOpen(false); else router.push(`/journal/${flight.id}`); }}
+        onPointerUp={(event) => finishSwipe(event)}
+        onPointerCancel={(event) => finishSwipe(event, true)}
+        onTransitionEnd={(event) => {
+          if (event.propertyName !== "transform") return;
+          event.currentTarget.style.transition = "none";
+          phaseRef.current = swipeOpen ? "open" : "closed";
+        }}
+        onClick={() => {
+          if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+          if (swipeOpen) settle("closed");
+          else router.push(`/journal/${flight.id}`);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/journal/${flight.id}`); }
         }}
@@ -339,7 +411,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   const visibleFlights = availableFlights
     .filter((flight) => {
       const displayName =
-        demoState.customNames[flight.id] ?? getJournalFlightAutomaticName(flight);
+        demoState.customNames[flight.id] ?? getJournalFlightDisplayTitle(flight);
       const searchable = normalizeSearch(
         [displayName, flight.departure, flight.arrival, flight.date, flight.balloonRegistration].join(" "),
       );
@@ -373,6 +445,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   );
 
   const resetFilters = () => {
+    setOpenSwipeFlightId(null);
     setDateFilter("all");
     setSelectedYear("");
     setSelectedDate("");
@@ -390,7 +463,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setOpenSwipeFlightId(null); setQuery(event.target.value); }}
             placeholder="Rechercher un vol..."
             aria-label="Rechercher un vol"
             autoComplete="off"
@@ -399,7 +472,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
         <button
           type="button"
           className={styles.filterButton}
-          onClick={() => setFiltersOpen((current) => !current)}
+          onClick={() => { setOpenSwipeFlightId(null); setFiltersOpen((current) => !current); }}
           aria-expanded={filtersOpen}
           aria-controls="journal-filters"
         >
@@ -417,13 +490,13 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
 
       {filtersOpen && (
         <section id="journal-filters" className={styles.filterPanel} aria-label="Filtres des vols">
-          <label><span>Date</span><select value={dateFilter} onChange={(event) => setDateFilter(event.target.value as DateFilter)}><option value="all">Toutes</option><option value="today">Aujourd’hui</option><option value="30-days">30 derniers jours</option><option value="this-year">Cette année</option><option value="year">Choisir une année</option><option value="date">Choisir une date</option></select></label>
-          {dateFilter === "year" && <label><span>Année</span><select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value)}><option value="">Sélectionner</option>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select></label>}
-          {dateFilter === "date" && <label><span>Date précise</span><input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} /></label>}
-          <label><span>Terrain</span><select value={terrain} onChange={(event) => setTerrain(event.target.value)}><option value="all">Tous</option><optgroup label="Départ">{departureTerrains.map((value) => <option key={`departure-${value}`} value={`departure:${value}`}>{value}</option>)}</optgroup><optgroup label="Arrivée">{arrivalTerrains.map((value) => <option key={`arrival-${value}`} value={`arrival:${value}`}>{value}</option>)}</optgroup></select></label>
-          <label><span>Ballon</span><select value={balloon} onChange={(event) => setBalloon(event.target.value)}><option value="all">Tous</option>{balloons.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-          <label><span>Durée</span><select value={duration} onChange={(event) => setDuration(event.target.value as DurationFilter)}><option value="all">Toutes</option><option value="under-45">&lt; 45 min</option><option value="45-to-60">45–60 min</option><option value="over-60">&gt; 60 min</option></select></label>
-          <label><span>Tri</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}><option value="recent">Plus récents</option><option value="oldest">Plus anciens</option><option value="duration">Durée la plus longue</option><option value="distance">Distance la plus longue</option></select></label>
+          <label><span>Date</span><select value={dateFilter} onChange={(event) => { setOpenSwipeFlightId(null); setDateFilter(event.target.value as DateFilter); }}><option value="all">Toutes</option><option value="today">Aujourd’hui</option><option value="30-days">30 derniers jours</option><option value="this-year">Cette année</option><option value="year">Choisir une année</option><option value="date">Choisir une date</option></select></label>
+          {dateFilter === "year" && <label><span>Année</span><select value={selectedYear} onChange={(event) => { setOpenSwipeFlightId(null); setSelectedYear(event.target.value); }}><option value="">Sélectionner</option>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select></label>}
+          {dateFilter === "date" && <label><span>Date précise</span><input type="date" value={selectedDate} onChange={(event) => { setOpenSwipeFlightId(null); setSelectedDate(event.target.value); }} /></label>}
+          <label><span>Terrain</span><select value={terrain} onChange={(event) => { setOpenSwipeFlightId(null); setTerrain(event.target.value); }}><option value="all">Tous</option><optgroup label="Départ">{departureTerrains.map((value) => <option key={`departure-${value}`} value={`departure:${value}`}>{value}</option>)}</optgroup><optgroup label="Arrivée">{arrivalTerrains.map((value) => <option key={`arrival-${value}`} value={`arrival:${value}`}>{value}</option>)}</optgroup></select></label>
+          <label><span>Ballon</span><select value={balloon} onChange={(event) => { setOpenSwipeFlightId(null); setBalloon(event.target.value); }}><option value="all">Tous</option>{balloons.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label><span>Durée</span><select value={duration} onChange={(event) => { setOpenSwipeFlightId(null); setDuration(event.target.value as DurationFilter); }}><option value="all">Toutes</option><option value="under-45">&lt; 45 min</option><option value="45-to-60">45–60 min</option><option value="over-60">&gt; 60 min</option></select></label>
+          <label><span>Tri</span><select value={sortOrder} onChange={(event) => { setOpenSwipeFlightId(null); setSortOrder(event.target.value as SortOrder); }}><option value="recent">Plus récents</option><option value="oldest">Plus anciens</option><option value="duration">Durée la plus longue</option><option value="distance">Distance la plus longue</option></select></label>
           <button type="button" onClick={resetFilters} disabled={!filtersActive} className={styles.resetFilters}>Réinitialiser</button>
         </section>
       )}
@@ -432,7 +505,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
         {visibleFlights.length > 0 ? (
           visibleFlights.map((flight) => {
             const displayName =
-              demoState.customNames[flight.id] ?? getJournalFlightAutomaticName(flight);
+              demoState.customNames[flight.id] ?? getJournalFlightDisplayTitle(flight);
             return (
               <InteractiveFlightCard
                 key={flight.id}
@@ -476,14 +549,28 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
       {pendingRename && (
         <RenameFlightDialog
           flight={pendingRename}
-          initialName={demoState.customNames[pendingRename.id] ?? getJournalFlightAutomaticName(pendingRename)}
+          initialName={demoState.customNames[pendingRename.id] ?? getJournalFlightDisplayTitle(pendingRename)}
           returnFocusTo={actionTrigger}
           onCancel={() => setPendingRename(null)}
           onConfirm={(name) => {
+            if (completionState.journalFlights.some(({ id }) => id === pendingRename.id)) {
+              persistJournalFlightCustomTitle(pendingRename.id, name);
+            }
             const nextState = {
               ...demoState,
               customNames: { ...demoState.customNames, [pendingRename.id]: name },
             };
+            saveJournalDemoState(nextState);
+            setDemoState(nextState);
+            setPendingRename(null);
+          }}
+          onRestoreAutomatic={() => {
+            if (completionState.journalFlights.some(({ id }) => id === pendingRename.id)) {
+              persistJournalFlightCustomTitle(pendingRename.id, null);
+            }
+            const customNames = { ...demoState.customNames };
+            delete customNames[pendingRename.id];
+            const nextState = { ...demoState, customNames };
             saveJournalDemoState(nextState);
             setDemoState(nextState);
             setPendingRename(null);
@@ -493,7 +580,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
 
       {pendingDelete && (
         <DeleteFlightDialog
-          flightName={demoState.customNames[pendingDelete.id] ?? getJournalFlightAutomaticName(pendingDelete)}
+          flightName={demoState.customNames[pendingDelete.id] ?? getJournalFlightDisplayTitle(pendingDelete)}
           linkedAscension={completionState.officialAscensions.some(({ sourceFlightId }) => sourceFlightId === pendingDelete.id)}
           returnFocusTo={actionTrigger}
           onCancel={() => setPendingDelete(null)}

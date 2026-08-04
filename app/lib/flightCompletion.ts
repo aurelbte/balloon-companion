@@ -4,7 +4,7 @@ import {
   type JournalFlightPoint,
 } from "./journalMockData.ts";
 
-export const FLIGHT_COMPLETION_SCHEMA_VERSION = 3;
+export const FLIGHT_COMPLETION_SCHEMA_VERSION = 4;
 export const DEMO_COMPLETION_FLIGHT_ID = "demo-flight-lfqo-merignies-2026-08-01";
 export const DEMO_COMPLETION_ASCENSION_ID = "demo-ascension-lfqo-merignies-2026-08-01";
 
@@ -125,7 +125,11 @@ export function ensureCompletionJournalFlight(
     return { ...state, journalFlights: [...state.journalFlights, flight] };
   }
   const existing = state.journalFlights[existingIndex]!;
-  const nextFlight = { ...flight, logbookStatus: existing.logbookStatus };
+  const nextFlight = {
+    ...flight,
+    logbookStatus: existing.logbookStatus,
+    ...(existing.customTitle ? { customTitle: existing.customTitle } : {}),
+  };
   const journalFlights = [...state.journalFlights];
   journalFlights[existingIndex] = nextFlight;
   return { ...state, journalFlights };
@@ -273,6 +277,23 @@ export function setJournalFlightLogbookStatus(
   return {
     ...state,
     journalFlights: state.journalFlights.map((flight) => flight.id === flightId ? { ...flight, logbookStatus: status } : flight),
+  };
+}
+
+export function setJournalFlightCustomTitle(
+  state: FlightCompletionState,
+  flightId: string,
+  customTitle: string | null,
+): FlightCompletionState {
+  return {
+    ...state,
+    journalFlights: state.journalFlights.map((flight) => {
+      if (flight.id !== flightId) return flight;
+      const next = { ...flight };
+      if (customTitle?.trim()) next.customTitle = customTitle.trim();
+      else delete next.customTitle;
+      return next;
+    }),
   };
 }
 

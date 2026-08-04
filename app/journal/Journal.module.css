@@ -98,8 +98,10 @@
   box-shadow: var(--bc-shadow-xs);
   touch-action: pan-y;
   user-select: none;
-  transition: transform var(--bc-duration-fast) var(--bc-easing-standard), border-color var(--bc-duration-fast) var(--bc-easing-standard);
+  transition: border-color var(--bc-duration-fast) var(--bc-easing-standard);
 }
+
+.automaticRouteTitle { margin: 3px 0 0; color: var(--bc-text-secondary); font-size: .82rem; }
 
 .flightCardShell {
   position: relative;

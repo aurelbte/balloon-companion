@@ -4,10 +4,11 @@ import Link from "next/link";
 import { BarChart3, ChevronRight, FileDown, Gauge, NotebookPen } from "lucide-react";
 import NavigationBar from "../NavigationBar";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
-import { getJournalFlightAutomaticName, type JournalFlight } from "../../lib/journalMockData";
+import type { JournalFlight } from "../../lib/journalMockData";
 import styles from "../../journal/Journal.module.css";
 import JournalFlightMap from "./JournalFlightMap";
 import JournalFlightTitle from "./JournalFlightTitle";
+import { buildGeneratedFlightTitle } from "../../lib/journalFlightTitle";
 
 const measured = (value: number | null, unit: string) => value === null ? "—" : `${Math.round(value)} ${unit}`;
 
@@ -18,9 +19,11 @@ export default function JournalFlightDetail({ flightId, initialFlight }: { fligh
   const ids = [...new Set([...state.journalFlights.map(({ id }) => id), flight.id])];
   const completionFlight = state.journalFlights.find(({ id }) => id === flight.id);
   const linkedAscension = state.officialAscensions.find(({ sourceFlightId }) => sourceFlightId === flight.id);
+  const routeName = `${flight.departure} → ${flight.arrival}`;
+  const factualName = buildGeneratedFlightTitle(flight);
   return <main className={styles.screen}><div className={styles.layout}>
     <Link href="/journal" className={styles.backLink}>← Journal</Link>
-    <header className={styles.detailHeader}><JournalFlightTitle flightId={flight.id} automaticName={getJournalFlightAutomaticName(flight)} availableFlightIds={ids} className={styles.routeTitle} /><p className={styles.dateLine}>{flight.date}</p><div className={styles.primaryMetrics}><p><span>Durée</span><strong>{flight.durationMinutes} min</strong></p><p><span>Distance</span><strong>{flight.distanceKm.toFixed(1)} km</strong></p></div></header>
+    <header className={styles.detailHeader}><JournalFlightTitle flightId={flight.id} automaticName={routeName} secondaryName={factualName} availableFlightIds={ids} className={styles.routeTitle} secondaryClassName={styles.automaticRouteTitle} /><p className={styles.dateLine}>{flight.date} · Décollage {flight.takeoffTime}</p><div className={styles.primaryMetrics}><p><span>Durée</span><strong>{flight.durationMinutes} min</strong></p><p><span>Distance</span><strong>{flight.distanceKm.toFixed(1)} km</strong></p></div></header>
     <JournalFlightMap flight={flight} />
     {completionFlight && <section className={styles.logbookLinkCard}><div><span>Carnet d’ascensions</span><strong>{completionFlight.logbookStatus === "CARNET_VALIDATED" ? "Carnet validé" : completionFlight.logbookStatus === "JOURNAL_ONLY" ? "Journal uniquement" : "À valider"}</strong></div>{completionFlight.logbookStatus === "CARNET_VALIDATED" && linkedAscension ? <div><Link href={`/journal/ascension/${encodeURIComponent(linkedAscension.id)}`}>Voir l’ascension</Link><Link href={`/flight/complete/ascension?flightId=${encodeURIComponent(flight.id)}`}>Modifier l’ascension</Link></div> : <Link href={`/flight/complete/ascension?flightId=${encodeURIComponent(flight.id)}`}>Ajouter au carnet</Link>}</section>}
     <section className={styles.moduleGrid} aria-label="Informations du vol">

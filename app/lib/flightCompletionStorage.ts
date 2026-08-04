@@ -10,7 +10,9 @@ import {
   type CompletionJournalFlight,
   removeJournalFlight,
   setJournalFlightLogbookStatus,
+  setJournalFlightCustomTitle,
 } from "./flightCompletion.ts";
+import { buildGeneratedFlightTitle } from "./journalFlightTitle.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
 import { legacyFlightSessionToRecordedFlight } from "./realFlightJournal.ts";
@@ -41,8 +43,18 @@ function normalizeState(value: unknown): FlightCompletionState | null {
     },
     journalFlights: state.journalFlights.map((flight) => {
       const legacyStatus = (flight as { logbookStatus?: string }).logbookStatus;
+      const legacyTitle = typeof flight.title === "string" ? flight.title.trim() : "";
+      const generatedTitle = buildGeneratedFlightTitle(flight);
+      const customTitle = typeof flight.customTitle === "string" && flight.customTitle.trim()
+        ? flight.customTitle.trim()
+        : legacyTitle && !/^Vol du\s+\d/i.test(legacyTitle) && legacyTitle !== `${flight.departure} → ${flight.arrival}`
+          ? legacyTitle
+          : undefined;
       return {
         ...flight,
+        generatedTitle,
+        ...(customTitle ? { customTitle } : {}),
+        title: undefined,
         logbookStatus: legacyStatus === "VALIDATED" ? "CARNET_VALIDATED"
           : legacyStatus === "JOURNAL_ONLY" ? "JOURNAL_ONLY"
           : legacyStatus === "CARNET_VALIDATED" ? "CARNET_VALIDATED"
@@ -159,6 +171,15 @@ export function persistJournalFlightDecision(
   decision: "CARNET_PENDING" | "JOURNAL_ONLY",
 ): FlightCompletionState {
   const state = setJournalFlightLogbookStatus(loadFlightCompletionState(), flightId, decision);
+  saveFlightCompletionState(state);
+  return state;
+}
+
+export function persistJournalFlightCustomTitle(
+  flightId: string,
+  customTitle: string | null,
+): FlightCompletionState {
+  const state = setJournalFlightCustomTitle(loadFlightCompletionState(), flightId, customTitle);
   saveFlightCompletionState(state);
   return state;
 }

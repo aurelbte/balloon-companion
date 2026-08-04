@@ -9,6 +9,7 @@ type RenameFlightDialogProps = {
   returnFocusTo: HTMLElement | null;
   onCancel: () => void;
   onConfirm: (name: string) => void;
+  onRestoreAutomatic?: () => void;
 };
 
 export default function RenameFlightDialog({
@@ -17,6 +18,7 @@ export default function RenameFlightDialog({
   returnFocusTo,
   onCancel,
   onConfirm,
+  onRestoreAutomatic,
 }: RenameFlightDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +56,7 @@ export default function RenameFlightDialog({
         <button type="button" onClick={onCancel} className="min-h-12 rounded-full border border-[var(--bc-border)] bg-[var(--bc-surface)] px-4 text-sm font-semibold">Annuler</button>
         <button type="button" disabled={!trimmedName} onClick={() => onConfirm(trimmedName)} className="min-h-12 rounded-full bg-[var(--bc-accent)] px-4 text-sm font-semibold text-[var(--bc-accent-foreground)] disabled:opacity-45">Enregistrer</button>
       </div>
+      {onRestoreAutomatic && <button type="button" onClick={onRestoreAutomatic} className="mt-3 min-h-11 w-full rounded-full px-4 text-sm font-semibold text-[var(--bc-accent)]">Rétablir le nom automatique</button>}
     </dialog>
   );
 }
