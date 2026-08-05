@@ -16,7 +16,7 @@ export interface Flight {
   updatedAt?: number;
 }
 
-export const PREPARATION_STORAGE_VERSION = 2 as const;
+export const PREPARATION_STORAGE_VERSION = 3 as const;
 
 export interface StoredFlightPreparationV2 {
   storageVersion: typeof PREPARATION_STORAGE_VERSION;
@@ -32,15 +32,10 @@ export interface StoredFlightPreparationV2 {
   targetAltitudeAmslM: number | null;
   selectedAltitudes?: AltitudeOption[];
   primaryAltitudeAmslM?: number;
-  climbRateMps?: number;
-  /**
-   * Stocké uniquement. Aucune phase de descente n’est déduite de cette valeur.
-   */
+  /** Taux pilote positif, en mètres par seconde. */
+  ascentRateMps?: number;
+  /** Taux pilote négatif, en mètres par seconde. */
   descentRateMps?: number;
-  /** Intention pilote conservée dans l’unité de saisie. */
-  ascentRateMPerMin?: number;
-  /** Valeur absolue positive de descente prévue. */
-  descentRateMPerMin?: number;
   balloonName?: string;
   /** Poids total déclaré du pilote et des passagers, sans équipement ni aéronef. */
   occupantsWeightKg?: number;
@@ -71,8 +66,12 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isPositiveOptionalNumber(value: unknown): value is number | undefined {
-  return value === undefined || (isFiniteNumber(value) && value > 0);
+function isAscentRateMps(value: unknown): value is number | undefined {
+  return value === undefined || (isFiniteNumber(value) && value > 0 && value <= 7);
+}
+
+function isDescentRateMps(value: unknown): value is number | undefined {
+  return value === undefined || (isFiniteNumber(value) && value < 0 && value >= -7);
 }
 
 function parseDurationMinutes(value: string): number | null {
@@ -160,10 +159,8 @@ function parseV2Preparation(
     (value.targetAltitudeAmslM !== null &&
       (!isFiniteNumber(value.targetAltitudeAmslM) ||
         value.targetAltitudeAmslM < 0)) ||
-    !isPositiveOptionalNumber(value.climbRateMps) ||
-    !isPositiveOptionalNumber(value.descentRateMps) ||
-    !isPositiveOptionalNumber(value.ascentRateMPerMin) ||
-    !isPositiveOptionalNumber(value.descentRateMPerMin) ||
+    !isAscentRateMps(value.ascentRateMps) ||
+    !isDescentRateMps(value.descentRateMps) ||
     !isFiniteNumber(value.createdAt) ||
     !isFiniteNumber(value.updatedAt)
   ) {
@@ -187,17 +184,11 @@ function parseV2Preparation(
     ...(isFiniteNumber(value.primaryAltitudeAmslM)
       ? { primaryAltitudeAmslM: value.primaryAltitudeAmslM }
       : {}),
-    ...(isFiniteNumber(value.climbRateMps)
-      ? { climbRateMps: value.climbRateMps }
+    ...(isFiniteNumber(value.ascentRateMps)
+      ? { ascentRateMps: value.ascentRateMps }
       : {}),
     ...(isFiniteNumber(value.descentRateMps)
       ? { descentRateMps: value.descentRateMps }
-      : {}),
-    ...(isFiniteNumber(value.ascentRateMPerMin)
-      ? { ascentRateMPerMin: value.ascentRateMPerMin }
-      : {}),
-    ...(isFiniteNumber(value.descentRateMPerMin)
-      ? { descentRateMPerMin: value.descentRateMPerMin }
       : {}),
     ...(typeof value.balloonName === "string"
       ? { balloonName: value.balloonName }
@@ -236,6 +227,27 @@ export function migrateStoredPreparation(
 
   const v2 = parseV2Preparation(value);
   if (v2) return v2;
+  if (value.storageVersion === 2) {
+    const migratedRates = {
+      ...(isFiniteNumber(value.ascentRateMPerMin) && value.ascentRateMPerMin > 0
+        ? { ascentRateMps: Math.min(7, value.ascentRateMPerMin / 60) }
+        : isFiniteNumber(value.climbRateMps) && value.climbRateMps > 0
+          ? { ascentRateMps: Math.min(7, value.climbRateMps) }
+          : {}),
+      ...(isFiniteNumber(value.descentRateMPerMin) && value.descentRateMPerMin > 0
+        ? { descentRateMps: -Math.min(7, value.descentRateMPerMin / 60) }
+        : isFiniteNumber(value.descentRateMps) && value.descentRateMps > 0
+          ? { descentRateMps: -Math.min(7, value.descentRateMps) }
+          : {}),
+    };
+    return parseV2Preparation({
+      ...value,
+      storageVersion: PREPARATION_STORAGE_VERSION,
+      ...migratedRates,
+      ascentRateMPerMin: undefined,
+      descentRateMPerMin: undefined,
+    });
+  }
   if (!isLegacyFlight(value)) return null;
 
   const createdAt = isFiniteNumber(value.createdAt) ? value.createdAt : now;
@@ -307,8 +319,8 @@ export function saveCurrentFlight(flight: Flight): boolean {
     weatherModel:
       LEGACY_TO_PROVIDER_MODEL[flight.meteo] ?? flight.meteo.trim(),
     targetAltitudeAmslM: existing?.targetAltitudeAmslM ?? null,
-    ...(existing?.climbRateMps
-      ? { climbRateMps: existing.climbRateMps }
+    ...(existing?.ascentRateMps
+      ? { ascentRateMps: existing.ascentRateMps }
       : {}),
     ...(existing?.descentRateMps
       ? { descentRateMps: existing.descentRateMps }

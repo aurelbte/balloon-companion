@@ -6,6 +6,7 @@ import {
   PREPARATION_DRAFT_STORAGE_KEY,
   savePreparationDraft,
 } from "./preparationDraftStorage.ts";
+import { PREPARATION_STORAGE_VERSION } from "./flightStorage.ts";
 
 function memoryStorage() {
   const values = new Map();
@@ -18,7 +19,7 @@ function memoryStorage() {
 
 function validDraft(overrides = {}) {
   return {
-    storageVersion: 2,
+    storageVersion: PREPARATION_STORAGE_VERSION,
     launchSite: { name: "LFQO", latitude: 50.686341, longitude: 3.079865 },
     departureTime: "2026-08-01T06:00:00.000Z",
     durationMinutes: 60,
@@ -35,7 +36,7 @@ test("conserve un brouillon validé dans la session puis le supprime", () => {
   const sessionStorage = memoryStorage();
   globalThis.window = { sessionStorage };
   const draft = {
-    storageVersion: 2,
+    storageVersion: PREPARATION_STORAGE_VERSION,
     launchSite: { name: "LFQO", latitude: 50.686341, longitude: 3.079865 },
     departureTime: "2026-08-01T06:00:00.000Z",
     durationMinutes: 60,

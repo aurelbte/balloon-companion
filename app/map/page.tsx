@@ -273,6 +273,11 @@ export default function MapPage() {
         result?.payload.ok
           ? result.payload.layerProjections.map((trace) => ({
               ...trace,
+              ...(result.payload.ok &&
+              result.payload.flightProfileProjection &&
+              trace.altitudeAmslM === config.request.primaryAltitudeAmslM
+                ? { projection: result.payload.flightProfileProjection }
+                : {}),
               traceId: `${result.model.id}:${trace.altitudeKey}`,
               model: result.model,
               calculatedAtIso,
@@ -306,10 +311,23 @@ export default function MapPage() {
           ),
         );
         signatureRef.current = signature;
+        const verticalProfileFailure = nextFailures.find(
+          (failure) =>
+            failure.code === "INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE",
+        );
+        if (verticalProfileFailure) {
+          setNotice("Profil vertical impossible avec cette durée.");
+          if (process.env.NODE_ENV === "development") {
+            console.debug("[vertical-profile]", verticalProfileFailure.details);
+          }
+        }
       } else {
         setNotice(
           navigator.onLine
-            ? nextFailures[0]?.message ?? "Aucune trajectoire exploitable pour cette sélection."
+            ? nextFailures[0]?.code ===
+              "INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE"
+              ? "Profil vertical impossible avec cette durée."
+              : nextFailures[0]?.message ?? "Aucune trajectoire exploitable pour cette sélection."
             : "Hors ligne — dernières trajectoires conservées.",
         );
       }

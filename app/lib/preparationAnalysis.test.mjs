@@ -11,7 +11,14 @@ import {
   sameLaunchSite,
   updateFavoriteLaunchSite,
 } from "./favoriteLaunchSites.ts";
-import { metersPerMinuteToMetersPerSecond, normalizeTimeInput, optionalRateMPerMin, validDurationMinutes } from "./preparationInputs.ts";
+import {
+  clampVerticalRateMps,
+  normalizeTimeInput,
+  optionalAscentRateMps,
+  optionalDescentRateMps,
+  stepVerticalRateMps,
+  validDurationMinutes,
+} from "./preparationInputs.ts";
 import {
   createTrajectoryAnalysisKey,
   toggleLimitedSelection,
@@ -73,11 +80,14 @@ test("la saisie horaire accepte les formats numériques iPad", () => {
 });
 
 test("les taux verticaux sont optionnels, positifs et convertis seulement à la frontière moteur", () => {
-  assert.equal(optionalRateMPerMin(""), undefined);
-  assert.equal(optionalRateMPerMin("150"), 150);
-  assert.equal(optionalRateMPerMin("0"), undefined);
-  assert.equal(optionalRateMPerMin("-10"), undefined);
-  assert.equal(metersPerMinuteToMetersPerSecond(150), 2.5);
+  assert.equal(optionalAscentRateMps(0), undefined);
+  assert.equal(optionalAscentRateMps(2), 2);
+  assert.equal(optionalDescentRateMps(-3), 3);
+  assert.equal(stepVerticalRateMps(0, 1), 0.5);
+  assert.equal(stepVerticalRateMps(7, 1), 7);
+  assert.equal(stepVerticalRateMps(0, -1), 0);
+  assert.equal(clampVerticalRateMps(2.24), 2);
+  assert.equal(clampVerticalRateMps(2.26), 2.5);
 });
 
 test("la clé d'analyse change avec chaque entrée métier", () => {
@@ -181,22 +191,24 @@ test("l'Analyse démarre sans sélection ni restauration visuelle du cache", () 
   assert.doesNotMatch(source, /loadWeatherAnalysis/);
 });
 
-test("le cadrage final attend les points et redimensionne avant la frame de fitBounds", () => {
+test("le cadrage final attend MapLibre idle et partage une seule fonction de fit", () => {
   const source = readFileSync(new URL("../components/PreparationMap.tsx", import.meta.url), "utf8");
   assert.match(source, /pointCount === 0/);
-  assert.ok(source.indexOf("map.resize()") < source.indexOf("window.requestAnimationFrame"));
-  assert.ok(source.indexOf("window.requestAnimationFrame") < source.indexOf("map.fitBounds"));
-  assert.match(source, /lastFittedAnalysisKey\.current = fitKey/);
+  assert.ok(source.indexOf("map.resize()") < source.indexOf('map.once("idle"'));
+  assert.match(source, /lastCompletedTrajectoryFitKey\.current = fitKey/);
   assert.match(source, /fitVisibleTrajectoryBounds/);
-  assert.ok(source.match(/requestAnimationFrame/g).length >= 2);
+  assert.match(source, /scheduleTrajectoryFit/);
+  assert.match(source, /map\.off\("idle", handleIdle\)/);
+  assert.equal(source.match(/map\.fitBounds/g).length, 1);
 });
 
-test("Prépa affiche deux saisies numériques facultatives en m\/min", () => {
+test("Prépa affiche deux steppers facultatifs en m\/s sans clavier", () => {
   const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /ascentRateMPerMin/);
-  assert.match(source, /descentRateMPerMin/);
-  assert.match(source, /inputMode="numeric"/);
-  assert.match(source, /m\/min/);
+  assert.match(source, /ascentRateMps/);
+  assert.match(source, /descentRateMps/);
+  assert.match(source, /stepVerticalRateMps/);
+  assert.doesNotMatch(source, /ascentRateMPerMin/);
+  assert.match(source, /m\/s/);
 });
 
 test("l'Analyse transmet les deux taux convertis au moteur existant", () => {

@@ -155,8 +155,8 @@ export type TrajectoryFormState = {
   targetAltitudeAmslM: string;
   selectedAltitudes: AltitudeOption[];
   weatherModel: string;
-  ascentRateMPerMin: string;
-  descentRateMPerMin: string;
+  ascentRateMps: number;
+  descentRateMps: number;
   balloonName: string;
   occupantsWeightKg: string;
 };
@@ -367,7 +367,7 @@ export function trajectoryErrorMessage(code: string): string {
     TARGET_BELOW_TERRAIN:
       "L’altitude cible doit être supérieure ou égale à l’altitude du terrain.",
     INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE:
-      "La durée prévue est insuffisante pour effectuer la montée et la descente renseignées.",
+      "Profil vertical impossible avec cette durée.",
     ALTITUDE_NOT_BRACKETED:
       "Les données météo disponibles ne couvrent pas l’une des altitudes traversées.",
     WEATHER_VERTICAL_COVERAGE_INSUFFICIENT:

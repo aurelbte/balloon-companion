@@ -29,9 +29,9 @@ test("migre un ancien stockage sans inventer coordonnées ou altitude", () => {
   assert.equal(migrated?.createdAt, 10);
 });
 
-test("conserve un taux de descente V2 sans ajouter de scénario de descente", () => {
+test("migre un ancien taux moteur V2 vers l'intention pilote signée", () => {
   const migrated = migrateStoredPreparation({
-    storageVersion: PREPARATION_STORAGE_VERSION,
+    storageVersion: 2,
     launchSite: {
       name: "Point confirmé",
       latitude: 50.6,
@@ -47,13 +47,13 @@ test("conserve un taux de descente V2 sans ajouter de scénario de descente", ()
     updatedAt: 20,
   });
 
-  assert.equal(migrated?.descentRateMps, 1.1);
+  assert.equal(migrated?.descentRateMps, -1.1);
   assert.equal("descentStartsAt" in migrated, false);
 });
 
-test("conserve les intentions pilote en mètres par minute", () => {
+test("convertit sans confusion les intentions V2 en mètres par minute", () => {
   const migrated = migrateStoredPreparation({
-    storageVersion: PREPARATION_STORAGE_VERSION,
+    storageVersion: 2,
     launchSite: { name: "Bondues", latitude: 50.68, longitude: 3.08 },
     departureTime: "2026-08-05T04:30:00.000Z",
     durationMinutes: 60,
@@ -64,6 +64,23 @@ test("conserve les intentions pilote en mètres par minute", () => {
     createdAt: 10,
     updatedAt: 20,
   });
-  assert.equal(migrated?.ascentRateMPerMin, 150);
-  assert.equal(migrated?.descentRateMPerMin, 100);
+  assert.equal(migrated?.ascentRateMps, 2.5);
+  assert.equal(migrated?.descentRateMps, -100 / 60);
+});
+
+test("conserve les taux canoniques V3 signés", () => {
+  const migrated = migrateStoredPreparation({
+    storageVersion: PREPARATION_STORAGE_VERSION,
+    launchSite: { name: "Bondues", latitude: 50.68, longitude: 3.08 },
+    departureTime: "2026-08-05T04:30:00.000Z",
+    durationMinutes: 60,
+    weatherModel: "arome_seamless",
+    targetAltitudeAmslM: null,
+    ascentRateMps: 2,
+    descentRateMps: -3,
+    createdAt: 10,
+    updatedAt: 20,
+  });
+  assert.equal(migrated?.ascentRateMps, 2);
+  assert.equal(migrated?.descentRateMps, -3);
 });

@@ -205,7 +205,7 @@ export default function PreparationMap({
 }: PreparationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const lastFittedAnalysisKey = useRef("");
+  const lastCompletedTrajectoryFitKey = useRef("");
   const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
@@ -665,49 +665,51 @@ export default function PreparationMap({
       recenterToken,
       trajectoryKey: trajectoryContentKey(visibleTraces),
     });
-    if (fitKey === lastFittedAnalysisKey.current) return;
-    let frame = 0;
-    let settleFrame = 0;
+    if (fitKey === lastCompletedTrajectoryFitKey.current) return;
+    let idleListenerAttached = false;
+    let fallbackFrame = 0;
+    let cancelled = false;
     const fitVisibleTrajectoryBounds = () => {
-      map.resize();
-      frame = window.requestAnimationFrame(() => {
-        settleFrame = window.requestAnimationFrame(() => {
-          if (mapRef.current !== map) return;
-          if (!map.isStyleLoaded()) {
-            fitWhenReady();
-            return;
-          }
-          map.fitBounds([[bounds.west, bounds.south], [bounds.east, bounds.north]], {
-            padding: analysisFitPadding(map.getContainer().clientWidth),
-            maxZoom: analysisFitMaxZoom(map.getContainer().clientWidth),
-            ...(recenterToken ? REFERENCE_ORIENTATION : { bearing: map.getBearing(), pitch: 0 }),
-            duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520,
-          });
-          lastFittedAnalysisKey.current = fitKey;
-          if (process.env.NODE_ENV === "development") {
-            const endpoints = visibleTraces.map((trace) => ({ traceId: trace.traceId, first: trace.projection.points[0] ?? null, last: trace.projection.points.at(-1) ?? null }));
-            map.once("moveend", () => console.debug("[trajectory-fit]", { analysisKey, traceCount: visibleTraces.length, rawPointCount, usedPointCount: pointCount, endpoints, bounds, zoom: map.getZoom() }));
-          }
-        });
+      if (cancelled || mapRef.current !== map) return;
+      map.fitBounds([[bounds.west, bounds.south], [bounds.east, bounds.north]], {
+        padding: analysisFitPadding(map.getContainer().clientWidth),
+        maxZoom: analysisFitMaxZoom(map.getContainer().clientWidth),
+        ...REFERENCE_ORIENTATION,
+        duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520,
       });
+      lastCompletedTrajectoryFitKey.current = fitKey;
+      if (process.env.NODE_ENV === "development") {
+        const endpoints = visibleTraces.map((trace) => ({ traceId: trace.traceId, first: trace.projection.points[0] ?? null, last: trace.projection.points.at(-1) ?? null }));
+        map.once("moveend", () => console.debug("[trajectory-fit]", { origin: recenterToken ? "manual" : "automatic-idle", fitKey, analysisKey, traceCount: visibleTraces.length, rawPointCount, usedPointCount: pointCount, endpoints, bounds, center: map.getCenter(), zoom: map.getZoom(), timestamp: new Date().toISOString() }));
+      }
     };
-    const fitWhenReady = () => {
-      if (!map.getSource(TRACE_SOURCE)) {
-        map.once("load", fitWhenReady);
-        return;
-      }
-      if (!map.isStyleLoaded()) {
-        map.once("styledata", fitWhenReady);
-        return;
-      }
+    const handleIdle = () => {
+      idleListenerAttached = false;
+      if (cancelled || fitKey === lastCompletedTrajectoryFitKey.current) return;
       fitVisibleTrajectoryBounds();
     };
-    fitWhenReady();
+    const scheduleTrajectoryFit = () => {
+      map.resize();
+      map.once("idle", handleIdle);
+      idleListenerAttached = true;
+      fallbackFrame = window.requestAnimationFrame(() => {
+        if (
+          !cancelled &&
+          map.loaded() &&
+          map.isStyleLoaded() &&
+          fitKey !== lastCompletedTrajectoryFitKey.current
+        ) {
+          if (idleListenerAttached) map.off("idle", handleIdle);
+          idleListenerAttached = false;
+          fitVisibleTrajectoryBounds();
+        }
+      });
+    };
+    scheduleTrajectoryFit();
     return () => {
-      map.off("load", fitWhenReady);
-      map.off("styledata", fitWhenReady);
-      window.cancelAnimationFrame(frame);
-      window.cancelAnimationFrame(settleFrame);
+      cancelled = true;
+      if (idleListenerAttached) map.off("idle", handleIdle);
+      window.cancelAnimationFrame(fallbackFrame);
     };
   }, [analysisKey, launchSite, mapDimensions.height, mapDimensions.width, recenterToken, traces, visibleTraceIds]);
 

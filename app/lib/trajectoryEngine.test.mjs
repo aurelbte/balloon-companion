@@ -368,6 +368,23 @@ test("une durée insuffisante est refusée avant toute préparation météo", as
   assert.equal(preparations, 0);
 });
 
+test("le scénario Bondues 60 min accepte +2 m/s et -3 m/s", async () => {
+  const result = await projectConstantAltitudeTrajectory(
+    validInput({
+      durationSeconds: 60 * 60,
+      targetAltitudeAmslM: 1000,
+      climbRateMps: 2,
+      descentRateMps: 3,
+    }),
+    fakeProvider(),
+  );
+  assert.equal(result.mode, "climb-level-descent");
+  assert.equal(result.verticalProfile.climbDurationSeconds, 488);
+  assert.equal(result.verticalProfile.descentDurationSeconds, 976 / 3);
+  assert.equal(result.points.at(-1).altitudeAmslM, 24);
+  assert.equal(result.points.at(-1).elapsedSeconds, 3600);
+});
+
 test("une montée sans altitude terrain est refusée explicitement", async () => {
   await assert.rejects(
     projectConstantAltitudeTrajectory(

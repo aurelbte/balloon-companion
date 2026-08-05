@@ -16,12 +16,27 @@ export function validDurationMinutes(raw: string): boolean {
   return /^\d+$/.test(raw) && Number.isInteger(value) && value > 0;
 }
 
-export function optionalRateMPerMin(raw: string): number | undefined {
-  if (!raw.trim()) return undefined;
-  const value = Number(raw.replace(",", "."));
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+export const VERTICAL_RATE_STEP_MPS = 0.5;
+export const MAX_VERTICAL_RATE_MPS = 7;
+
+export function clampVerticalRateMps(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(
+    MAX_VERTICAL_RATE_MPS,
+    Math.max(0, Math.round(value / VERTICAL_RATE_STEP_MPS) * VERTICAL_RATE_STEP_MPS),
+  );
 }
 
-export function metersPerMinuteToMetersPerSecond(value: number | undefined): number | undefined {
-  return value === undefined ? undefined : value / 60;
+export function stepVerticalRateMps(value: number, direction: -1 | 1): number {
+  return clampVerticalRateMps(value + direction * VERTICAL_RATE_STEP_MPS);
+}
+
+export function optionalAscentRateMps(value: number): number | undefined {
+  const normalized = clampVerticalRateMps(value);
+  return normalized === 0 ? undefined : normalized;
+}
+
+export function optionalDescentRateMps(value: number): number | undefined {
+  const normalized = clampVerticalRateMps(Math.abs(value));
+  return normalized === 0 ? undefined : normalized;
 }
