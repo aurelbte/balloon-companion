@@ -67,6 +67,7 @@ import {
 import { WEATHER_MODEL_REGISTRY } from "../lib/weather/models";
 import type { BaseMap } from "../types/flight";
 import { createTrajectoryAnalysisKey, MAX_ANALYSIS_ALTITUDES, MAX_ANALYSIS_MODELS, toggleLimitedSelection } from "../lib/trajectory/analysisState";
+import { metersPerSecondToMetersPerMinute } from "../lib/preparationInputs";
 
 const ANALYSIS_ALTITUDE_OPTIONS = ALTITUDE_OPTIONS;
 const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = newAnalysisLayerSettings();
@@ -99,6 +100,7 @@ export default function MapPage() {
   const [groundTemperatureErrorCode, setGroundTemperatureErrorCode] = useState<string | null>(null);
   const [groundTemperaturePendingKey, setGroundTemperaturePendingKey] = useState<string | null>(null);
   const [temperatureDebugEnabled, setTemperatureDebugEnabled] = useState(false);
+  const [profileDebugEnabled, setProfileDebugEnabled] = useState(false);
   const [testLoadEnabled, setTestLoadEnabled] = useState(false);
   const [showSyntheticMargin, setShowSyntheticMargin] = useState(false);
   const [loadDetailOpen, setLoadDetailOpen] = useState(false);
@@ -129,6 +131,7 @@ export default function MapPage() {
       setTestLoadEnabled(demoEnabled);
       setShowSyntheticMargin(resolveSyntheticMarginMode(window.location.search, demoEnabled));
       setTemperatureDebugEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("debugTemp") === "1");
+      setProfileDebugEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("debugProfile") === "1");
       const preparation = loadPreparationDraft();
       const legacyProjection = getTrajectoryProjectionV2();
       const stored =
@@ -618,6 +621,12 @@ export default function MapPage() {
             onViewportChange={setViewport}
           />
         {displayedTraces.length === 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-16 text-center text-sm font-semibold text-white/80">{loading ? "Calcul des trajectoires…" : selectedModels.length === 0 || selectedAltitudes.length === 0 ? "Sélectionnez un modèle et une altitude." : "Aucune trajectoire disponible"}</div>}
+        {profileDebugEnabled && (
+          <div className="pointer-events-none absolute bottom-2 left-2 z-40 rounded-lg bg-black/80 px-2 py-1 text-[9px] font-semibold text-white">
+            <div>Montée : +{(config.request.climbRateMps ?? 0).toFixed(1).replace(".", ",")} m/s → {metersPerSecondToMetersPerMinute(config.request.climbRateMps ?? 0)} m/min</div>
+            <div>Descente : −{(config.request.descentRateMps ?? 0).toFixed(1).replace(".", ",")} m/s → {metersPerSecondToMetersPerMinute(config.request.descentRateMps ?? 0)} m/min</div>
+          </div>
+        )}
 
         <FloatingAction
           onClick={() => setSelectorsVisible((value) => !value)}

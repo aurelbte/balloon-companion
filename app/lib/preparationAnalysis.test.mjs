@@ -13,6 +13,7 @@ import {
 } from "./favoriteLaunchSites.ts";
 import {
   clampVerticalRateMps,
+  metersPerSecondToMetersPerMinute,
   normalizeTimeInput,
   optionalAscentRateMps,
   optionalDescentRateMps,
@@ -84,10 +85,12 @@ test("les taux verticaux sont optionnels, positifs et convertis seulement à la 
   assert.equal(optionalAscentRateMps(2), 2);
   assert.equal(optionalDescentRateMps(-3), 3);
   assert.equal(stepVerticalRateMps(0, 1), 0.5);
-  assert.equal(stepVerticalRateMps(7, 1), 7);
+  assert.equal(stepVerticalRateMps(10, 1), 10);
   assert.equal(stepVerticalRateMps(0, -1), 0);
   assert.equal(clampVerticalRateMps(2.24), 2);
   assert.equal(clampVerticalRateMps(2.26), 2.5);
+  assert.equal(metersPerSecondToMetersPerMinute(2), 120);
+  assert.equal(metersPerSecondToMetersPerMinute(10), 600);
 });
 
 test("la clé d'analyse change avec chaque entrée métier", () => {
@@ -104,6 +107,7 @@ test("la clé d'analyse change avec chaque entrée métier", () => {
   assert.notEqual(first, createTrajectoryAnalysisKey(request, ["icon"], ["ground", 300]));
   assert.notEqual(first, createTrajectoryAnalysisKey(request, ["arome"], ["ground", 600]));
   assert.notEqual(first, createTrajectoryAnalysisKey({ ...request, launchSite: { ...request.launchSite, longitude: 3.2 } }, ["arome"], ["ground", 300]));
+  assert.notEqual(first, createTrajectoryAnalysisKey({ ...request, climbRateMps: 10, descentRateMps: 10 }, ["arome"], ["ground", 300]));
 });
 
 test("les limites de sélection autorisent une analyse vierge", () => {
@@ -209,6 +213,9 @@ test("Prépa affiche deux steppers facultatifs en m\/s sans clavier", () => {
   assert.match(source, /stepVerticalRateMps/);
   assert.doesNotMatch(source, /ascentRateMPerMin/);
   assert.match(source, /m\/s/);
+  assert.match(source, /disabled=\{magnitude === 10\}/);
+  assert.match(source, /pb-\[calc\(82px\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.match(source, /mt-2 flex min-h-14 w-full/);
 });
 
 test("l'Analyse transmet les deux taux convertis au moteur existant", () => {

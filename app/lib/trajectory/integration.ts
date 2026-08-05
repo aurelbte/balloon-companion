@@ -225,7 +225,7 @@ export function validateMultiAltitudeProjectionRequest(
     const rate = value[key];
     if (
       rate !== undefined &&
-      (!finiteNumber(rate) || rate <= 0 || rate > 7 || rate * 2 % 1 !== 0)
+      (!finiteNumber(rate) || rate <= 0 || rate > 10 || rate * 2 % 1 !== 0)
     ) {
       throw new Error(
         key === "climbRateMps"

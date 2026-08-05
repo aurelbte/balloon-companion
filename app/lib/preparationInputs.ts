@@ -17,7 +17,7 @@ export function validDurationMinutes(raw: string): boolean {
 }
 
 export const VERTICAL_RATE_STEP_MPS = 0.5;
-export const MAX_VERTICAL_RATE_MPS = 7;
+export const MAX_VERTICAL_RATE_MPS = 10;
 
 export function clampVerticalRateMps(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -39,4 +39,8 @@ export function optionalAscentRateMps(value: number): number | undefined {
 export function optionalDescentRateMps(value: number): number | undefined {
   const normalized = clampVerticalRateMps(Math.abs(value));
   return normalized === 0 ? undefined : normalized;
+}
+
+export function metersPerSecondToMetersPerMinute(value: number): number {
+  return value * 60;
 }

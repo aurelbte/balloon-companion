@@ -13,6 +13,10 @@ export function createTrajectoryAnalysisKey(
     longitude: Number(request.launchSite.longitude.toFixed(6)),
     dateTime: request.launchDateTimeIso,
     durationSeconds: request.durationSeconds,
+    ascentRateMps: request.climbRateMps ?? 0,
+    descentRateMps: request.descentRateMps === undefined
+      ? 0
+      : -Math.abs(request.descentRateMps),
     models: [...models].sort(),
     altitudes: [...altitudes].map(String).sort(),
   });

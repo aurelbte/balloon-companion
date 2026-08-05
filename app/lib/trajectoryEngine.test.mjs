@@ -385,6 +385,20 @@ test("le scénario Bondues 60 min accepte +2 m/s et -3 m/s", async () => {
   assert.equal(result.points.at(-1).elapsedSeconds, 3600);
 });
 
+test("le profil 0/0 diffère du profil +10/-10 sans allonger le vol", async () => {
+  const base = validInput({ durationSeconds: 3600, targetAltitudeAmslM: 1000 });
+  const constant = await projectConstantAltitudeTrajectory(base, fakeProvider());
+  const vertical = await projectConstantAltitudeTrajectory(
+    { ...base, climbRateMps: 10, descentRateMps: 10 },
+    fakeProvider(),
+  );
+  assert.equal(constant.mode, "constant-altitude");
+  assert.equal(vertical.mode, "climb-level-descent");
+  assert.notDeepEqual(vertical.verticalProfile, constant.verticalProfile);
+  assert.equal(vertical.durationSeconds, constant.durationSeconds);
+  assert.equal(vertical.points.at(-1).elapsedSeconds, 3600);
+});
+
 test("une montée sans altitude terrain est refusée explicitement", async () => {
   await assert.rejects(
     projectConstantAltitudeTrajectory(

@@ -67,11 +67,11 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function isAscentRateMps(value: unknown): value is number | undefined {
-  return value === undefined || (isFiniteNumber(value) && value > 0 && value <= 7);
+  return value === undefined || (isFiniteNumber(value) && value > 0 && value <= 10);
 }
 
 function isDescentRateMps(value: unknown): value is number | undefined {
-  return value === undefined || (isFiniteNumber(value) && value < 0 && value >= -7);
+  return value === undefined || (isFiniteNumber(value) && value < 0 && value >= -10);
 }
 
 function parseDurationMinutes(value: string): number | null {
@@ -230,14 +230,14 @@ export function migrateStoredPreparation(
   if (value.storageVersion === 2) {
     const migratedRates = {
       ...(isFiniteNumber(value.ascentRateMPerMin) && value.ascentRateMPerMin > 0
-        ? { ascentRateMps: Math.min(7, value.ascentRateMPerMin / 60) }
+        ? { ascentRateMps: Math.min(10, value.ascentRateMPerMin / 60) }
         : isFiniteNumber(value.climbRateMps) && value.climbRateMps > 0
-          ? { ascentRateMps: Math.min(7, value.climbRateMps) }
+          ? { ascentRateMps: Math.min(10, value.climbRateMps) }
           : {}),
       ...(isFiniteNumber(value.descentRateMPerMin) && value.descentRateMPerMin > 0
-        ? { descentRateMps: -Math.min(7, value.descentRateMPerMin / 60) }
+        ? { descentRateMps: -Math.min(10, value.descentRateMPerMin / 60) }
         : isFiniteNumber(value.descentRateMps) && value.descentRateMps > 0
-          ? { descentRateMps: -Math.min(7, value.descentRateMps) }
+          ? { descentRateMps: -Math.min(10, value.descentRateMps) }
           : {}),
     };
     return parseV2Preparation({
