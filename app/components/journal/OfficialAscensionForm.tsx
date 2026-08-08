@@ -29,9 +29,9 @@ export type OfficialAscensionFormValues = {
   observations: string;
 };
 
-type Props = { title: string; subtitle?: string; backLabel: string; submitLabel: string; gpsDurationMinutes?: number; manualDateEntry?: boolean; initialValues: OfficialAscensionFormValues; onCancel: (dirty: boolean) => void; onSubmit: (input: OfficialAscensionInput) => void };
+type Props = { title: string; subtitle?: string; backLabel: string; submitLabel: string; gpsDurationMinutes?: number; manualDateEntry?: boolean; nativeSubmit?: boolean; initialValues: OfficialAscensionFormValues; onCancel: (dirty: boolean) => void; onSubmit: (input: OfficialAscensionInput) => void };
 
-export default function OfficialAscensionForm({ title, subtitle, backLabel, submitLabel, gpsDurationMinutes, manualDateEntry = false, initialValues, onCancel, onSubmit }: Props) {
+export default function OfficialAscensionForm({ title, subtitle, backLabel, submitLabel, gpsDurationMinutes, manualDateEntry = false, nativeSubmit = false, initialValues, onCancel, onSubmit }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const balloons = useBalloons();
@@ -96,7 +96,7 @@ export default function OfficialAscensionForm({ title, subtitle, backLabel, subm
   return <main className={styles.screen}><div className={styles.layout}>
     <button type="button" className={styles.backButton} onClick={() => onCancel(dirty)}><ChevronLeft size={18} aria-hidden="true" /> {backLabel}</button>
     <header className={styles.formHeader}><p className={styles.eyebrow}>Carnet officiel</p><h1 className={styles.title}>{title}</h1>{subtitle && <p className={styles.route}>{subtitle}</p>}{gpsDurationMinutes !== undefined && <p className={styles.gpsFact}>Temps GPS <strong>{gpsDurationMinutes} min</strong></p>}</header>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={moveToNextField}>
+    <form id="official-ascension-form" className={styles.form} onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={moveToNextField}>
       <label className={styles.wide}><span>Ballon</span><select value={selectedBalloonId || MANUAL_BALLOON_VALUE} onChange={(event) => chooseBalloon(event.target.value)}><option value={MANUAL_BALLOON_VALUE}>Aucun ballon enregistré</option>{balloons.map((balloon) => <option key={balloon.id} value={balloon.id}>{balloonDisplayName(balloon)}</option>)}<option value={ADD_BALLOON_VALUE}>Ajouter un ballon…</option></select></label>
       <label><span>Immatriculation</span><input value={values.registration} readOnly={Boolean(selectedBalloon)} onChange={(e) => update("registration", e.target.value.toUpperCase())} /></label>
       <label><span>Type de ballon</span><input value={values.balloonModel} readOnly={Boolean(selectedBalloon)} onChange={(e) => update("balloonModel", e.target.value)} /></label>
@@ -110,6 +110,6 @@ export default function OfficialAscensionForm({ title, subtitle, backLabel, subm
       <label><span>Vol de nuit <small>(facultatif)</small></span><select value={values.nightFlight === true ? "yes" : values.nightFlight === false ? "no" : ""} onChange={(e) => update("nightFlight", e.target.value === "" ? null : e.target.value === "yes")}><option value="">Non renseigné</option><option value="no">Non</option><option value="yes">Oui</option></select></label>
       <label className={styles.wide}><span>Observations</span><textarea value={values.observations} onChange={(e) => update("observations", e.target.value)} /></label>
     </form>
-    <div className={styles.formActions}><button type="button" onClick={() => onCancel(dirty)}>Annuler</button><button type="button" disabled={!valid} onClick={submit}>{submitLabel}</button></div>
+    <div className={styles.formActions}><button type="button" onClick={() => onCancel(dirty)}>Annuler</button><button type={nativeSubmit ? "submit" : "button"} form={nativeSubmit ? "official-ascension-form" : undefined} disabled={!valid} onClick={nativeSubmit ? undefined : submit}>{submitLabel}</button></div>
   </div></main>;
 }

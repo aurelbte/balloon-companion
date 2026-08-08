@@ -31,6 +31,7 @@ export default function EditAscensionPage() {
       subtitle={`${ascension.departure} → ${ascension.arrival}`}
       backLabel="Ascension"
       submitLabel="Enregistrer"
+      nativeSubmit
       gpsDurationMinutes={ascension.gpsDurationMinutes ?? undefined}
       initialValues={officialAscensionToEditValues(ascension)}
       onCancel={(dirty) => {

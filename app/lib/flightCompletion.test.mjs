@@ -213,6 +213,19 @@ test("le formulaire de modification reçoit tous les champs officiels prérempli
   });
 });
 
+test("le mode édition soumet nativement le formulaire officiel", () => {
+  const formSource = readFileSync(
+    new URL("../components/journal/OfficialAscensionForm.tsx", import.meta.url),
+    "utf8",
+  );
+  const editSource = readFileSync(
+    new URL("../journal/ascension/[id]/edit/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(formSource, /form=\{nativeSubmit \? "official-ascension-form"/);
+  assert.match(editSource, /nativeSubmit/);
+});
+
 test("supprimer une ascension liée conserve le vol GPS et tous ses points", () => {
   const validated = validateOfficialAscension(
     createEmptyFlightCompletionState(),
