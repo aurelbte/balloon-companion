@@ -11,6 +11,7 @@ import {
   removeJournalFlight,
   setJournalFlightLogbookStatus,
   setJournalFlightCustomTitle,
+  updateOfficialAscension,
 } from "./flightCompletion.ts";
 import { buildGeneratedFlightTitle } from "./journalFlightTitle.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
@@ -160,6 +161,19 @@ export function persistOfficialAscension(
   const state = validateOfficialAscension(
     loadFlightCompletionState(),
     sourceFlightId,
+    input,
+  );
+  saveFlightCompletionState(state);
+  return state;
+}
+
+export function persistOfficialAscensionUpdate(
+  ascensionId: string,
+  input: OfficialAscensionInput,
+): FlightCompletionState {
+  const state = updateOfficialAscension(
+    loadFlightCompletionState(),
+    ascensionId,
     input,
   );
   saveFlightCompletionState(state);

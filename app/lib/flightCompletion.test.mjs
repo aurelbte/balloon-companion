@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   addManualOfficialAscension,
   adjustOfficialDurationMinutes,
@@ -13,8 +14,10 @@ import {
   removeOfficialAscension,
   removeJournalFlight,
   setJournalFlightLogbookStatus,
+  updateOfficialAscension,
   validateOfficialAscension,
 } from "./flightCompletion.ts";
+import { officialAscensionToEditValues } from "./officialAscensionEditing.ts";
 
 const manualInput = {
   ...defaultOfficialAscensionInput(),
@@ -153,10 +156,125 @@ test("supprimer une ascension recalcule le total et remet le Journal en attente"
   assert.equal(removed.journalFlights[0].logbookStatus, "CARNET_PENDING");
 });
 
-test("les flèches ajustent la durée officielle par cinq minutes sans atteindre zéro", () => {
-  assert.equal(adjustOfficialDurationMinutes(57, 5), 62);
-  assert.equal(adjustOfficialDurationMinutes(57, -5), 52);
-  assert.equal(adjustOfficialDurationMinutes(3, -5), 1);
+test("modifier une ascension préserve le vol GPS, sa trace et ses métadonnées mesurées", () => {
+  const validated = validateOfficialAscension(
+    createEmptyFlightCompletionState(),
+    DEMO_COMPLETION_FLIGHT_ID,
+    { ...defaultOfficialAscensionInput(), officialDurationMinutes: 69 },
+  );
+  const journalBefore = structuredClone(validated.journalFlights[0]);
+  const ascensionBefore = validated.officialAscensions[0];
+  const modified = updateOfficialAscension(validated, ascensionBefore.id, {
+    ...defaultOfficialAscensionInput(),
+    balloonModel: "Z105",
+    departure: "Bondues",
+    arrival: "Templeuve",
+    pilotFunction: "Élève",
+    officialDurationMinutes: 70,
+  });
+
+  assert.deepEqual(modified.journalFlights[0], journalBefore);
+  assert.equal(modified.officialAscensions[0].id, ascensionBefore.id);
+  assert.equal(modified.officialAscensions[0].sourceFlightId, ascensionBefore.sourceFlightId);
+  assert.equal(modified.officialAscensions[0].gpsDurationMinutes, 57);
+  assert.equal(modified.officialAscensions[0].departure, "Bondues");
+  assert.equal(modified.officialAscensions[0].balloonModel, "Z105");
+  assert.equal(modified.officialAscensions[0].pilotFunction, "Élève");
+  assert.equal(calculatePilotOfficialTotals(modified).officialDurationMinutes, 8_265);
+  assert.equal(calculatePilotOfficialTotals(modified).totalHoursExact, 8_265 / 60);
+});
+
+test("le formulaire de modification reçoit tous les champs officiels préremplis", () => {
+  const validated = validateOfficialAscension(
+    createEmptyFlightCompletionState(),
+    DEMO_COMPLETION_FLIGHT_ID,
+    {
+      ...defaultOfficialAscensionInput(),
+      balloonManufacturer: "Cameron",
+      maximumAltitudeM: 982,
+      nightFlight: true,
+      observations: "Observation conservée",
+      officialDurationMinutes: 69,
+    },
+  );
+  assert.deepEqual(officialAscensionToEditValues(validated.officialAscensions[0]), {
+    dateIso: validated.officialAscensions[0].dateIso,
+    balloonModel: validated.officialAscensions[0].balloonModel,
+    balloonManufacturer: "Cameron",
+    registration: validated.officialAscensions[0].registration,
+    departure: validated.officialAscensions[0].departure,
+    arrival: validated.officialAscensions[0].arrival,
+    category: validated.officialAscensions[0].category,
+    pilotFunction: validated.officialAscensions[0].pilotFunction,
+    nightFlight: true,
+    maximumAltitudeM: "982",
+    officialDurationMinutes: 69,
+    observations: "Observation conservée",
+  });
+});
+
+test("supprimer une ascension liée conserve le vol GPS et tous ses points", () => {
+  const validated = validateOfficialAscension(
+    createEmptyFlightCompletionState(),
+    DEMO_COMPLETION_FLIGHT_ID,
+    defaultOfficialAscensionInput(),
+  );
+  const journalBefore = structuredClone(validated.journalFlights[0]);
+  const removed = removeOfficialAscension(validated, validated.officialAscensions[0].id);
+  assert.equal(removed.officialAscensions.length, 0);
+  assert.deepEqual(
+    { ...removed.journalFlights[0], logbookStatus: journalBefore.logbookStatus },
+    journalBefore,
+  );
+  assert.equal(removed.journalFlights[0].logbookStatus, "CARNET_PENDING");
+});
+
+test("les cartes du Carnet exposent le swipe et le menu vers les mêmes actions", () => {
+  const source = readFileSync(
+    new URL("../components/journal/AscensionLog.tsx", import.meta.url),
+    "utf8",
+  );
+  const flightsSource = readFileSync(
+    new URL("../components/journal/JournalFlightList.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /useJournalCardSwipe/);
+  assert.match(flightsSource, /useJournalCardSwipe/);
+  assert.match(source, /onPointerMove=\{onPointerMove\}/);
+  assert.match(source, /setOpenSwipeId\(open \? ascension\.id : null\)/);
+  assert.match(source, /data-journal-ascension-shell/);
+  assert.match(source, /closeSwipeFromOutside/);
+  assert.match(source, /MoreHorizontal/);
+  assert.match(source, /Modifier<\/button>/);
+  assert.match(source, /Supprimer<\/button>/);
+  assert.match(source, /\/journal\/ascension\/\$\{ascension\.id\}\/edit/);
+});
+
+test("les flèches ajustent la durée officielle par une minute sans atteindre zéro", () => {
+  assert.equal(adjustOfficialDurationMinutes(69, 1), 70);
+  assert.equal(adjustOfficialDurationMinutes(69, -1), 68);
+  assert.equal(adjustOfficialDurationMinutes(1, -1), 1);
+
+  const source = readFileSync(
+    new URL("../flight/complete/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /displayedOfficialDuration, -1/);
+  assert.match(source, /displayedOfficialDuration, 1/);
+  assert.doesNotMatch(source, /durée officielle de 5 minutes/);
+});
+
+test("70 minutes officielles alimentent le Carnet et le Hero Ring sans modifier les 57 minutes GPS", () => {
+  const state = validateOfficialAscension(
+    createEmptyFlightCompletionState(),
+    DEMO_COMPLETION_FLIGHT_ID,
+    { ...defaultOfficialAscensionInput(), officialDurationMinutes: 70 },
+  );
+  const totals = calculatePilotOfficialTotals(state);
+  assert.equal(state.journalFlights[0].durationMinutes, 57);
+  assert.equal(state.officialAscensions[0].officialDurationMinutes, 70);
+  assert.equal(totals.officialDurationMinutes, 8_265);
+  assert.equal(totals.totalHoursExact, 8_265 / 60);
 });
 
 test("Je n’ai pas piloté conserve uniquement le Journal et les totaux", () => {

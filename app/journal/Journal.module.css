@@ -256,9 +256,13 @@
 .ascensionCardShell {
   position: relative;
   min-width: 0;
+  overflow: hidden;
+  border-radius: 20px;
 }
 
 .ascensionCard {
+  position: relative;
+  z-index: 2;
   display: grid;
   min-height: 100px;
   height: 100px;
@@ -273,10 +277,33 @@
   color: var(--bc-text-primary);
   text-decoration: none;
   box-shadow: var(--bc-shadow-xs);
+  touch-action: pan-y;
+  user-select: none;
 }
 
 .ascensionMain {
   min-width: 0;
+}
+
+.ascensionDetailTitleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ascensionDetailTitleRow .routeTitle {
+  min-width: 0;
+}
+
+.ascensionEditLink {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 11px 2px;
+  color: var(--bc-accent);
+  font-size: 0.84rem;
+  font-weight: 650;
+  text-decoration: none;
 }
 
 .ascensionRoute {

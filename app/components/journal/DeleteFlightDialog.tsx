@@ -50,10 +50,12 @@ export default function DeleteFlightDialog({
         id="delete-flight-description"
         className="mt-2 text-sm leading-relaxed text-[var(--bc-text-secondary)]"
       >
-        {entityLabel === "ascension" ? `L’ascension « ${flightName} » et ses données seront définitivement supprimées.` : "Ce vol et sa trace seront supprimés du Journal."}
-        {linkedAscension && " Une ascension officielle est liée : choisissez explicitement de la conserver ou de la supprimer."}
+        <span className="sr-only">Élément concerné : {flightName}. </span>
+        {entityLabel === "ascension" ? "Cette ascension sera retirée de votre Carnet." : "Ce vol et sa trace seront supprimés du Journal."}
+        {entityLabel === "ascension" && linkedAscension && " Le vol enregistré et sa trace resteront dans le Journal."}
+        {entityLabel === "vol" && linkedAscension && " Une ascension officielle est liée : choisissez explicitement de la conserver ou de la supprimer."}
       </p>
-      <div className={`mt-5 grid gap-2 ${linkedAscension ? "grid-cols-1" : "grid-cols-2"}`}>
+      <div className={`mt-5 grid gap-2 ${linkedAscension && entityLabel === "vol" ? "grid-cols-1" : "grid-cols-2"}`}>
         <button
           ref={cancelRef}
           type="button"
@@ -62,7 +64,7 @@ export default function DeleteFlightDialog({
         >
           Annuler
         </button>
-        {linkedAscension && <button
+        {linkedAscension && entityLabel === "vol" && <button
           type="button"
           onClick={() => onConfirm(false)}
           className="min-h-12 rounded-full border border-[var(--bc-border)] bg-[var(--bc-surface)] px-4 text-sm font-semibold"
@@ -74,7 +76,7 @@ export default function DeleteFlightDialog({
           onClick={() => onConfirm(linkedAscension)}
           className="min-h-12 rounded-full bg-[color-mix(in_srgb,var(--bc-danger)_72%,var(--bc-surface))] px-4 text-sm font-semibold text-white"
         >
-          {linkedAscension ? "Supprimer le vol et l’ascension" : "Supprimer"}
+          {linkedAscension && entityLabel === "vol" ? "Supprimer le vol et l’ascension" : "Supprimer"}
         </button>
       </div>
     </dialog>

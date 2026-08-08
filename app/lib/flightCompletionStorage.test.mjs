@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import {
   FLIGHT_COMPLETION_STORAGE_KEY,
   loadFlightCompletionState,
+  ensureDemoCompletionPersisted,
+  persistOfficialAscension,
   persistPilotExperience,
 } from "./flightCompletionStorage.ts";
+import { defaultOfficialAscensionInput, DEMO_COMPLETION_FLIGHT_ID } from "./flightCompletion.ts";
 
 function memoryStorage() {
   const values = new Map();
@@ -24,6 +27,22 @@ test("l’expérience confirmée survit au rechargement du stockage", () => {
   assert.equal(restored.openingBalance.confirmed, true);
   assert.equal(restored.openingBalance.officialDurationMinutes, 8_400);
   assert.equal(restored.openingBalance.ascensions, 110);
+  delete globalThis.window;
+});
+
+test("la durée officielle ajustée est persistée indépendamment de la durée GPS", () => {
+  globalThis.window = {
+    localStorage: memoryStorage(),
+    dispatchEvent: () => true,
+  };
+  ensureDemoCompletionPersisted();
+  persistOfficialAscension(DEMO_COMPLETION_FLIGHT_ID, {
+    ...defaultOfficialAscensionInput(),
+    officialDurationMinutes: 70,
+  });
+  const restored = loadFlightCompletionState();
+  assert.equal(restored.journalFlights[0].durationMinutes, 57);
+  assert.equal(restored.officialAscensions[0].officialDurationMinutes, 70);
   delete globalThis.window;
 });
 

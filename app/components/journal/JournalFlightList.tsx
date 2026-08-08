@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -23,7 +22,7 @@ import styles from "../../journal/Journal.module.css";
 import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal, persistJournalFlightCustomTitle } from "../../lib/flightCompletionStorage";
 import { journalFlightsForMode } from "../../lib/realFlightJournal";
 import { buildFactualFlightLabel, getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
-import { journalSwipeAxis, journalSwipeDestination, journalSwipeInitialOffset, journalSwipeOffset, JOURNAL_SWIPE_ACTIONS_WIDTH_PX, type JournalSwipeAxis, type JournalSwipeStableState, type JournalSwipeState } from "../../lib/journalSwipe";
+import { useJournalCardSwipe } from "../../hooks/useJournalCardSwipe";
 
 type JournalFlightListProps = { flights: readonly JournalFlight[] };
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
@@ -160,107 +159,15 @@ function InteractiveFlightCard({
   onDelete,
 }: InteractiveFlightCardProps) {
   const router = useRouter();
-  const contentRef = useRef<HTMLDivElement>(null);
-  const gestureRef = useRef<{
-    startX: number;
-    startY: number;
-    startedAt: number;
-    lastX: number;
-    lastAt: number;
-    velocityX: number;
-    initialOffsetX: number;
-    initialState: JournalSwipeStableState;
-    pointerId: number;
-  } | null>(null);
-  const axisRef = useRef<JournalSwipeAxis>(null);
-  const phaseRef = useRef<JournalSwipeState>(swipeOpen ? "open" : "closed");
-  const offsetRef = useRef(swipeOpen ? -JOURNAL_SWIPE_ACTIONS_WIDTH_PX : 0);
-  const suppressClickRef = useRef(false);
-
-  useEffect(() => {
-    const offset = swipeOpen ? -JOURNAL_SWIPE_ACTIONS_WIDTH_PX : 0;
-    offsetRef.current = offset;
-    phaseRef.current = swipeOpen ? "open" : "closed";
-    if (contentRef.current) {
-      contentRef.current.style.transform = `translateX(${offset}px)`;
-    }
-  }, [swipeOpen]);
-
-  const settle = (destination: JournalSwipeStableState) => {
-    const element = contentRef.current;
-    const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    phaseRef.current = "settling";
-    offsetRef.current = journalSwipeInitialOffset(destination);
-    if (element) {
-      element.style.transition = reducedMotion
-        ? "none"
-        : "transform 190ms cubic-bezier(0.22, 1, 0.36, 1)";
-      element.style.transform = `translateX(${offsetRef.current}px)`;
-    }
-    onSetSwipeOpen(destination === "open");
-  };
-
-  const beginSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const initialState: JournalSwipeStableState = swipeOpen ? "open" : "closed";
-    const now = performance.now();
-    gestureRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startedAt: now,
-      lastX: event.clientX,
-      lastAt: now,
-      velocityX: 0,
-      initialOffsetX: journalSwipeInitialOffset(initialState),
-      initialState,
-      pointerId: event.pointerId,
-    };
-    axisRef.current = null;
-    suppressClickRef.current = false;
-    if (!swipeOpen) onSetSwipeOpen(false);
-  };
-  const moveSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    axisRef.current ??= journalSwipeAxis(deltaX, deltaY);
-    if (axisRef.current === "vertical") {
-      if (gesture.initialState === "open") settle("closed");
-      gestureRef.current = null;
-      return;
-    }
-    if (axisRef.current !== "horizontal") return;
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
-    phaseRef.current = "dragging";
-    suppressClickRef.current = true;
-    event.currentTarget.style.transition = "none";
-    const offset = journalSwipeOffset(deltaX, gesture.initialOffsetX);
-    offsetRef.current = offset;
-    event.currentTarget.style.transform = `translateX(${offset}px)`;
-    const now = performance.now();
-    const sampleDuration = Math.max(1, now - gesture.lastAt);
-    gesture.velocityX = (event.clientX - gesture.lastX) / sampleDuration;
-    gesture.lastX = event.clientX;
-    gesture.lastAt = now;
-  };
-  const finishSwipe = (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (axisRef.current === "horizontal") {
-      settle(journalSwipeDestination({
-        initialState: gesture.initialState,
-        deltaX: event.clientX - gesture.startX,
-        velocityX: gesture.velocityX,
-        cancelled,
-      }));
-    } else if (cancelled) {
-      settle(gesture.initialState);
-    }
-    gestureRef.current = null;
-    axisRef.current = null;
-  };
+  const {
+    contentRef,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onTransitionEnd,
+    onContentClick,
+  } = useJournalCardSwipe({ open: swipeOpen, onSetOpen: onSetSwipeOpen });
 
   return (
     <article className={styles.flightCardShell} data-journal-flight-shell>
@@ -271,19 +178,15 @@ function InteractiveFlightCard({
         tabIndex={0}
         className={`${styles.flightCard} ${menuOpen ? styles.flightCardSelected : ""}`}
         aria-label={`Ouvrir le vol ${displayName}`}
-        onPointerDown={beginSwipe}
-        onPointerMove={moveSwipe}
-        onPointerUp={(event) => finishSwipe(event)}
-        onPointerCancel={(event) => finishSwipe(event, true)}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onTransitionEnd={(event) => {
-          if (event.propertyName !== "transform") return;
-          event.currentTarget.style.transition = "none";
-          phaseRef.current = swipeOpen ? "open" : "closed";
+          onTransitionEnd(event.propertyName, event.currentTarget);
         }}
         onClick={() => {
-          if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-          if (swipeOpen) settle("closed");
-          else router.push(`/journal/${flight.id}`);
+          onContentClick(() => router.push(`/journal/${flight.id}`));
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/journal/${flight.id}`); }

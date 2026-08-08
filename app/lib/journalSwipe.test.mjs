@@ -45,11 +45,13 @@ test("pointercancel restaure toujours la position stable d'origine", () => {
 
 test("l'intégration garantit exclusivité, snap et neutralisation du clic résiduel", () => {
   const source = readFileSync(new URL("../components/journal/JournalFlightList.tsx", import.meta.url), "utf8");
+  const sharedSwipe = readFileSync(new URL("../hooks/useJournalCardSwipe.ts", import.meta.url), "utf8");
   assert.match(source, /openSwipeFlightId/);
-  assert.match(source, /suppressClickRef/);
-  assert.match(source, /onPointerCancel/);
-  assert.match(source, /releasePointerCapture/);
-  assert.match(source, /transform 190ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
-  assert.match(source, /prefers-reduced-motion/);
-  assert.doesNotMatch(source, /onTouch(Start|Move|End)/);
+  assert.match(source, /useJournalCardSwipe/);
+  assert.match(sharedSwipe, /suppressClickRef/);
+  assert.match(sharedSwipe, /onPointerCancel/);
+  assert.match(sharedSwipe, /releasePointerCapture/);
+  assert.match(sharedSwipe, /transform 190ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(sharedSwipe, /prefers-reduced-motion/);
+  assert.doesNotMatch(sharedSwipe, /onTouch(Start|Move|End)/);
 });

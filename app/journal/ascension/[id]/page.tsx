@@ -55,12 +55,15 @@ export default async function AscensionDetailPage({
         </Link>
         <header className={styles.detailHeader}>
           <p className={styles.eyebrow}>Ascension</p>
-          <AscensionTitle
-            ascensionId={ascension.id}
-            automaticTitle={getAscensionAutomaticName(ascension)}
-            availableIds={ASCENSIONS.map(({ id: availableId }) => availableId)}
-            className={styles.routeTitle}
-          />
+          <div className={styles.ascensionDetailTitleRow}>
+            <AscensionTitle
+              ascensionId={ascension.id}
+              automaticTitle={getAscensionAutomaticName(ascension)}
+              availableIds={ASCENSIONS.map(({ id: availableId }) => availableId)}
+              className={styles.routeTitle}
+            />
+            <Link className={styles.ascensionEditLink} href={`/journal/ascension/${ascension.id}/edit`}>Modifier</Link>
+          </div>
         </header>
 
         <section className={styles.ascensionDetailGrid} aria-label="Informations officielles">

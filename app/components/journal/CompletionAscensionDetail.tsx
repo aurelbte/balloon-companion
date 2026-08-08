@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { formatOfficialDuration } from "../../lib/ascensionMockData";
 import styles from "../../journal/Journal.module.css";
@@ -32,7 +33,10 @@ export default function CompletionAscensionDetail({ ascensionId }: { ascensionId
     <>
       <header className={styles.detailHeader}>
         <p className={styles.eyebrow}>Ascension</p>
-        <h1 className={styles.routeTitle}>{ascension.departure} → {ascension.arrival}</h1>
+        <div className={styles.ascensionDetailTitleRow}>
+          <h1 className={styles.routeTitle}>{ascension.departure} → {ascension.arrival}</h1>
+          <Link className={styles.ascensionEditLink} href={`/journal/ascension/${ascension.id}/edit`}>Modifier</Link>
+        </div>
       </header>
       <section className={styles.ascensionDetailGrid} aria-label="Informations officielles">
         {fields.map(([label, value]) => (

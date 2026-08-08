@@ -261,6 +261,25 @@ export function removeOfficialAscension(
   };
 }
 
+export function updateOfficialAscension(
+  state: FlightCompletionState,
+  ascensionId: string,
+  input: OfficialAscensionInput,
+): FlightCompletionState {
+  const index = state.officialAscensions.findIndex(({ id }) => id === ascensionId);
+  if (index < 0) return state;
+  const current = state.officialAscensions[index]!;
+  const officialAscensions = [...state.officialAscensions];
+  officialAscensions[index] = {
+    ...input,
+    id: current.id,
+    source: current.source,
+    sourceFlightId: current.sourceFlightId,
+    gpsDurationMinutes: current.gpsDurationMinutes,
+  };
+  return { ...state, officialAscensions };
+}
+
 export function adjustOfficialDurationMinutes(currentMinutes: number, deltaMinutes: number): number {
   const safeCurrent = Number.isFinite(currentMinutes) ? Math.round(currentMinutes) : 1;
   const safeDelta = Number.isFinite(deltaMinutes) ? Math.round(deltaMinutes) : 0;
