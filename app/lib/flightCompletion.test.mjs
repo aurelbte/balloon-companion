@@ -258,9 +258,15 @@ test("les cartes du Carnet exposent le swipe et le menu vers les mêmes actions"
   assert.match(source, /data-journal-ascension-shell/);
   assert.match(source, /closeSwipeFromOutside/);
   assert.match(source, /MoreHorizontal/);
-  assert.match(source, /Modifier<\/button>/);
+  assert.match(source, /Renommer<\/button>/);
   assert.match(source, /Supprimer<\/button>/);
-  assert.match(source, /\/journal\/ascension\/\$\{ascension\.id\}\/edit/);
+  assert.doesNotMatch(source, /\/journal\/ascension\/\$\{ascension\.id\}\/edit/);
+
+  const detailSource = readFileSync(
+    new URL("../components/journal/CompletionAscensionDetail.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(detailSource, /\/journal\/ascension\/\$\{ascension\.id\}\/edit/);
 });
 
 test("les flèches ajustent la durée officielle par une minute sans atteindre zéro", () => {
@@ -275,6 +281,20 @@ test("les flèches ajustent la durée officielle par une minute sans atteindre z
   assert.match(source, /displayedOfficialDuration, -1/);
   assert.match(source, /displayedOfficialDuration, 1/);
   assert.doesNotMatch(source, /durée officielle de 5 minutes/);
+});
+
+test("l’hydratation EDIT n’est pas annulée lorsque le ballon inféré arrive après le formulaire", () => {
+  const source = readFileSync(
+    new URL("../components/journal/OfficialAscensionForm.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /const timer = window\.setTimeout\(\(\) => \{\s*if \(restoredRef\.current\) return;\s*restoredRef\.current = true;/,
+  );
+  assert.match(source, /setHydrated\(true\);[\s\S]*?\}, \[pathname\]\);/);
+  assert.doesNotMatch(source, /\}, \[inferredBalloonId, pathname\]\);/);
+  assert.match(source, /if \(!hydrated \|\| selectedBalloonId \|\| !inferredBalloonId\) return;/);
 });
 
 test("70 minutes officielles alimentent le Carnet et le Hero Ring sans modifier les 57 minutes GPS", () => {

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   loadAscensionDemoState,
   saveAscensionDemoState,
@@ -29,4 +30,15 @@ test("un titre personnel ne modifie pas les données officielles", () => {
     customTitles: { b: "Vol anniversaire" },
   });
   delete globalThis.window;
+});
+
+test("les actions du Carnet renomment sans ouvrir l’édition officielle", () => {
+  const source = readFileSync(
+    new URL("../components/journal/AscensionLog.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, />Renommer<\/button>/);
+  assert.match(source, /> Renommer<\/button>/);
+  assert.doesNotMatch(source, /router\.push\(`\/journal\/ascension\/\$\{ascension\.id\}\/edit`\)/);
+  assert.match(source, /customTitles:\s*\{\s*\.\.\.state\.customTitles,\s*\[renaming\.id\]: title/);
 });

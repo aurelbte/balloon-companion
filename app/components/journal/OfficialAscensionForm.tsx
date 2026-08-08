@@ -50,8 +50,9 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
 
   useEffect(() => {
     if (restoredRef.current) return;
-    restoredRef.current = true;
     const timer = window.setTimeout(() => {
+      if (restoredRef.current) return;
+      restoredRef.current = true;
       const rawDraft = window.sessionStorage.getItem(DRAFT_KEY);
       const returnedId = window.sessionStorage.getItem(NEW_BALLOON_SELECTION_KEY);
       const draft = parseScopedOfficialAscensionDraft<OfficialAscensionFormValues>(rawDraft, pathname);
@@ -61,12 +62,18 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
         setDirty(true);
       }
       window.sessionStorage.removeItem(DRAFT_KEY);
-      setSelectedBalloonId(returnedId || inferredBalloonId);
+      setSelectedBalloonId(returnedId || "");
       window.sessionStorage.removeItem(NEW_BALLOON_SELECTION_KEY);
       setHydrated(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [inferredBalloonId, pathname]);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!hydrated || selectedBalloonId || !inferredBalloonId) return;
+    const timer = window.setTimeout(() => setSelectedBalloonId(inferredBalloonId), 0);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, inferredBalloonId, selectedBalloonId]);
 
   useEffect(() => { const protect = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); }; window.addEventListener("beforeunload", protect); return () => window.removeEventListener("beforeunload", protect); }, [dirty]);
   useEffect(() => {
