@@ -269,6 +269,9 @@ export function updateOfficialAscension(
   const index = state.officialAscensions.findIndex(({ id }) => id === ascensionId);
   if (index < 0) return state;
   const current = state.officialAscensions[index]!;
+  const unchanged = (Object.keys(input) as Array<keyof OfficialAscensionInput>)
+    .every((key) => current[key] === input[key]);
+  if (unchanged) return state;
   const officialAscensions = [...state.officialAscensions];
   officialAscensions[index] = {
     ...input,

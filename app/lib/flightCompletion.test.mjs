@@ -184,6 +184,33 @@ test("modifier une ascension préserve le vol GPS, sa trace et ses métadonnées
   assert.equal(calculatePilotOfficialTotals(modified).totalHoursExact, 8_265 / 60);
 });
 
+test("la durée seule déclenche l’update sans normaliser l’altitude GPS", () => {
+  const originalInput = {
+    ...defaultOfficialAscensionInput(),
+    officialDurationMinutes: 69,
+    maximumAltitudeM: 550.0596481952816,
+  };
+  const initial = validateOfficialAscension(
+    createEmptyFlightCompletionState(),
+    DEMO_COMPLETION_FLIGHT_ID,
+    originalInput,
+  );
+  const ascension = initial.officialAscensions[0];
+
+  const unchanged = updateOfficialAscension(initial, ascension.id, originalInput);
+  const modified = updateOfficialAscension(initial, ascension.id, {
+    ...originalInput,
+    officialDurationMinutes: 70,
+  });
+
+  assert.equal(unchanged, initial);
+  assert.notEqual(modified, initial);
+  assert.equal(modified.officialAscensions.length, 1);
+  assert.equal(modified.officialAscensions[0].id, ascension.id);
+  assert.equal(modified.officialAscensions[0].officialDurationMinutes, 70);
+  assert.equal(modified.officialAscensions[0].maximumAltitudeM, 550.0596481952816);
+});
+
 test("le formulaire de modification reçoit tous les champs officiels préremplis", () => {
   const validated = validateOfficialAscension(
     createEmptyFlightCompletionState(),

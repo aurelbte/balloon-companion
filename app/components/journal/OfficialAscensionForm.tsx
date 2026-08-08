@@ -84,7 +84,7 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
 
   const duration = durationMinutes === "" ? Number.NaN : Number(durationMinutes);
   const altitude = values.maximumAltitudeM === "" ? null : Number(values.maximumAltitudeM);
-  const validAltitude = altitude === null || Number.isInteger(altitude) && altitude >= 0;
+  const validAltitude = altitude === null || Number.isFinite(altitude) && altitude >= 0;
   const valid = Boolean(values.dateIso && values.balloonModel.trim() && values.registration.trim() && values.departure.trim() && values.arrival.trim() && values.category && values.pilotFunction && Number.isInteger(duration) && duration > 0 && validAltitude);
 
   const update = <K extends keyof OfficialAscensionFormValues>(key: K, value: OfficialAscensionFormValues[K]) => { setValues((current) => ({ ...current, [key]: value })); setDirty(true); };
