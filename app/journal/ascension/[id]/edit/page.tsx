@@ -27,6 +27,8 @@ export default function EditAscensionPage() {
 
   return (
     <OfficialAscensionForm
+      mode="EDIT"
+      ascensionId={id}
       title="Modifier l’ascension"
       subtitle={`${ascension.departure} → ${ascension.arrival}`}
       backLabel="Ascension"
@@ -40,9 +42,12 @@ export default function EditAscensionPage() {
         }
       }}
       onSubmit={(input) => {
-        persistOfficialAscensionUpdate(id, input);
+        if (process.env.NODE_ENV === "development") console.debug("[EditAscensionPage] branch", { ascensionId: id, branch: "UPDATE" });
+        const updated = persistOfficialAscensionUpdate(id, input);
+        if (!updated) return false;
         window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
         returnToDetail();
+        return true;
       }}
     />
   );

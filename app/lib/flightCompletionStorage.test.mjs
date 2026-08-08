@@ -5,9 +5,11 @@ import {
   loadFlightCompletionState,
   ensureDemoCompletionPersisted,
   persistOfficialAscension,
+  persistOfficialAscensionUpdate,
   persistPilotExperience,
+  saveFlightCompletionState,
 } from "./flightCompletionStorage.ts";
-import { defaultOfficialAscensionInput, DEMO_COMPLETION_FLIGHT_ID } from "./flightCompletion.ts";
+import { calculatePilotOfficialTotals, createEmptyFlightCompletionState, defaultOfficialAscensionInput, DEMO_COMPLETION_FLIGHT_ID, ensureCompletionJournalFlight, validateOfficialAscension } from "./flightCompletion.ts";
 
 function memoryStorage() {
   const values = new Map();
@@ -43,6 +45,48 @@ test("la durée officielle ajustée est persistée indépendamment de la durée 
   const restored = loadFlightCompletionState();
   assert.equal(restored.journalFlights[0].durationMinutes, 57);
   assert.equal(restored.officialAscensions[0].officialDurationMinutes, 70);
+  delete globalThis.window;
+});
+
+test("EDIT met à jour A1 de 69 à 70 minutes sans duplication ni mutation du Journal GPS", () => {
+  globalThis.window = {
+    localStorage: memoryStorage(),
+    dispatchEvent: () => true,
+  };
+  const pending = ensureCompletionJournalFlight(createEmptyFlightCompletionState());
+  const sourceFlight = { ...pending.journalFlights[0], id: "J1" };
+  const linked = validateOfficialAscension(
+    { ...pending, journalFlights: [sourceFlight] },
+    "J1",
+    { ...defaultOfficialAscensionInput(), officialDurationMinutes: 69 },
+  );
+  const initial = {
+    ...linked,
+    officialAscensions: [{ ...linked.officialAscensions[0], id: "A1" }],
+  };
+  const journalBefore = structuredClone(initial.journalFlights[0]);
+  const totalsBefore = calculatePilotOfficialTotals(initial);
+  saveFlightCompletionState(initial);
+
+  const updated = persistOfficialAscensionUpdate("A1", {
+    ...defaultOfficialAscensionInput(),
+    officialDurationMinutes: 70,
+  });
+  const restored = loadFlightCompletionState();
+  const totalsAfter = calculatePilotOfficialTotals(restored);
+
+  assert.equal(updated?.id, "A1");
+  assert.equal(updated?.officialDurationMinutes, 70);
+  assert.equal(updated?.sourceFlightId, "J1");
+  assert.equal(restored.officialAscensions.length, 1);
+  assert.equal(restored.officialAscensions[0].id, "A1");
+  assert.equal(restored.journalFlights[0].id, journalBefore.id);
+  assert.equal(restored.journalFlights[0].durationMinutes, journalBefore.durationMinutes);
+  assert.equal(restored.journalFlights[0].distanceKm, journalBefore.distanceKm);
+  assert.deepEqual(restored.journalFlights[0].points, journalBefore.points);
+  assert.deepEqual(restored.journalFlights[0].statistics, journalBefore.statistics);
+  assert.equal(totalsAfter.ascensions, totalsBefore.ascensions);
+  assert.equal(totalsAfter.officialDurationMinutes, (totalsBefore.officialDurationMinutes ?? 0) + 1);
   delete globalThis.window;
 });
 

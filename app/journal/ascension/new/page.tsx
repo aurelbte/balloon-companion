@@ -25,6 +25,7 @@ export default function NewAscensionPage() {
   const router = useRouter();
   return (
     <OfficialAscensionForm
+      mode="CREATE"
       title="Nouvelle ascension"
       subtitle="Saisie manuelle sans trace GPS"
       backLabel="Carnet d’ascensions"

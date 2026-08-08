@@ -63,6 +63,7 @@ function ValidateAscensionContent() {
 
   return (
     <OfficialAscensionForm
+      mode="VALIDATE"
       title="Valider l’ascension"
       backLabel="Synthèse du vol"
       submitLabel="Valider l’ascension"

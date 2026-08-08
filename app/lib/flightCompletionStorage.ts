@@ -5,6 +5,7 @@ import {
   ensureCompletionJournalFlight,
   FLIGHT_COMPLETION_SCHEMA_VERSION,
   type FlightCompletionState,
+  type OfficialAscension,
   type OfficialAscensionInput,
   validateOfficialAscension,
   type CompletionJournalFlight,
@@ -170,14 +171,20 @@ export function persistOfficialAscension(
 export function persistOfficialAscensionUpdate(
   ascensionId: string,
   input: OfficialAscensionInput,
-): FlightCompletionState {
+): OfficialAscension | null {
   const state = updateOfficialAscension(
     loadFlightCompletionState(),
     ascensionId,
     input,
   );
+  const updated = state.officialAscensions.find(({ id }) => id === ascensionId) ?? null;
+  if (!updated) {
+    if (process.env.NODE_ENV === "development") console.debug("[flightCompletionStorage] updateOfficialAscension", { ascensionId, result: "NOT_FOUND" });
+    return null;
+  }
   saveFlightCompletionState(state);
-  return state;
+  if (process.env.NODE_ENV === "development") console.debug("[flightCompletionStorage] updateOfficialAscension", { ascensionId, result: updated });
+  return updated;
 }
 
 export function persistJournalFlightDecision(
