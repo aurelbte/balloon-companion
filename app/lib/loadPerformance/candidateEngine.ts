@@ -1,6 +1,6 @@
 import { calculateCameronMethodA2Candidate } from "./cameron/officialCalculation.ts";
 import { enabledPilotValidationLoadConfigurations } from "./modelParameters/activationRegistry.ts";
-import { cameronModelParameters, cameronZ105Parameters } from "./modelParameters/cameronModels.ts";
+import { cameronModelParameters } from "./modelParameters/cameronModels.ts";
 import type { LoadCalculationInput, LoadCalculationResult } from "./types.ts";
 
 export const CAMERON_CATALOG_VOLUME_TOLERANCE_M3 = 1;
@@ -32,14 +32,14 @@ export function calculatePilotValidationLoad(input: LoadCalculationInput): LoadC
   if (!activation) return unavailable("PENDING_VERIFICATION", "Paramètres constructeur en attente de validation.");
   if (input.configurationLimitsConfirmed !== true) return unavailable("CONFIGURATION_LIMITS_UNCONFIRMED", "Confirmez les limites du ballon dans sa fiche.");
   if (!(typeof input.applicableMtowKg === "number" && Number.isFinite(input.applicableMtowKg) && input.applicableMtowKg > 0)) return unavailable("MISSING_MTOW", "MTOM non renseignée.");
-  if (!(typeof input.volumeM3 === "number" && Number.isFinite(input.volumeM3))) return unavailable("VOLUME_MISMATCH", "Le volume enregistré ne correspond pas au modèle Cameron Z105.");
+  if (!(typeof input.volumeM3 === "number" && Number.isFinite(input.volumeM3))) return unavailable("VOLUME_MISMATCH", "Le volume enregistré ne correspond pas au modèle Cameron.");
   if (Math.abs(input.volumeM3 - (knownCameronModel.volumeM3 ?? Number.NaN)) > CAMERON_CATALOG_VOLUME_TOLERANCE_M3) {
-    return unavailable("VOLUME_MISMATCH", "Le volume enregistré ne correspond pas au modèle Cameron Z105.");
+    return unavailable("VOLUME_MISMATCH", "Le volume enregistré ne correspond pas au modèle Cameron.");
   }
 
   const calculation = calculateCameronMethodA2Candidate(
-    { ...input, model: cameronZ105Parameters.model, volumeM3: cameronZ105Parameters.volumeM3 },
-    cameronZ105Parameters,
+    { ...input, model: knownCameronModel.model, volumeM3: knownCameronModel.volumeM3 },
+    knownCameronModel,
   );
   if (!calculation) return unavailable("OUTSIDE_OFFICIAL_TABLE", "Conditions hors domaine de la méthode.");
   const availableOccupantsCapacityKg = calculation.permittedTotalMassKg - input.balloonEquipmentWeightKg!;
@@ -53,11 +53,11 @@ export function calculatePilotValidationLoad(input: LoadCalculationInput): LoadC
     marginKg: calculation.marginKg,
     limitingRule: calculation.limitingRule,
     manufacturer: "Cameron",
-    model: "Z105",
-    datasetId: "CAMERON_Z105_PILOT_VALIDATION",
-    manufacturerMethodId: cameronZ105Parameters.manufacturerMethodId,
-    modelParameterSetId: cameronZ105Parameters.id,
-    manualRevision: cameronZ105Parameters.source.manualRevision,
+    model: knownCameronModel.model.replace("Z-", "Z"),
+    datasetId: `${knownCameronModel.id}_PILOT_VALIDATION`,
+    manufacturerMethodId: knownCameronModel.manufacturerMethodId,
+    modelParameterSetId: knownCameronModel.id,
+    manualRevision: knownCameronModel.source.manualRevision,
     launchElevationMslM: input.launchElevationMslM!,
     maximumAltitudeMslM: input.plannedMaximumAltitudeMslM!,
     limitingAltitudeMslM: input.plannedMaximumAltitudeMslM!,

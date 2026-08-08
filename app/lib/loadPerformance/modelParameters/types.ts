@@ -3,7 +3,9 @@ export type LoadManufacturer = "Cameron" | "Kubíček" | "Ultramagic";
 export type ModelParameterVerificationStatus =
   | "VERIFIED_FROM_OFFICIAL_MANUAL"
   | "PENDING_HUMAN_VERIFICATION"
-  | "SUPPLEMENT_REQUIRED";
+  | "SUPPLEMENT_REQUIRED"
+  | "CANDIDATE_PILOT_VALIDATION"
+  | "PENDING_VERIFICATION";
 
 export type ModelParameterSource = Readonly<{
   manualId: string;
@@ -23,6 +25,8 @@ export type LoadModelParameterSet = Readonly<{
   model: string;
   manufacturerMethodId: string;
   volumeM3?: number;
+  standardMtomKg?: number;
+  reducedMtomKg?: number;
   tableRowId?: string;
   maximumCalculationTemperatureC?: number;
   source: ModelParameterSource;

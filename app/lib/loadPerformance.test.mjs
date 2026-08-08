@@ -262,7 +262,7 @@ test("la méthode Cameron A2 est indépendante du Z105 et exige un jeu de param�
 test("les registres séparent méthodes, paramètres modèles et limites de configuration", () => {
   assert.equal(officialLoadMethodMatrix.length, 3);
   assert.deepEqual(enabledOfficialLoadParameterCombinations, []);
-  assert.equal(cameronModelParameters.length, 11);
+  assert.equal(cameronModelParameters.length, 28);
   assert.equal(kubicekModelParameters[0].verificationStatus, "PENDING_HUMAN_VERIFICATION");
   assert.equal(ultramagicModelParameters[0].verificationStatus, "PENDING_HUMAN_VERIFICATION");
   assert.equal(officialLoadValidationStrategy.method.minimumCases, 15);

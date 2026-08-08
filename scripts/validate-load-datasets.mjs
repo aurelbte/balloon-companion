@@ -20,8 +20,8 @@ function sourceFiles(directory) {
 }
 
 const errors = validateOfficialLoadDatasets(officialLoadDatasets);
-if (enabledPilotValidationLoadConfigurations.length !== 1) errors.push("Validation pilote : seule la configuration Cameron Z105 doit être activée");
-const pilotConfiguration = enabledPilotValidationLoadConfigurations[0];
+if (enabledPilotValidationLoadConfigurations.length !== 28) errors.push("Validation pilote : les 28 configurations Cameron tracées doivent être candidates");
+const pilotConfiguration = enabledPilotValidationLoadConfigurations.find(({ modelParameterSetId }) => modelParameterSetId === "CAMERON_Z105");
 if (pilotConfiguration?.manufacturerMethodId !== "CAMERON_METHOD_A2" || pilotConfiguration?.modelParameterSetId !== "CAMERON_Z105" || pilotConfiguration?.manualRevision !== "ISSUE_10_AMENDMENT_18") errors.push("Validation pilote : identité Cameron Z105 invalide");
 const reference = CAMERON_Z105_REFERENCE_001;
 const referenceInput = {
@@ -47,8 +47,8 @@ if (candidateReference.status === "AVAILABLE") {
 }
 const unconfirmedReference = calculateOfficialLoad({ ...referenceInput, configurationLimitsConfirmed: false });
 if (unconfirmedReference.status !== "UNAVAILABLE" || unconfirmedReference.reasonCode !== "CONFIGURATION_LIMITS_UNCONFIRMED") errors.push("Validation pilote : une configuration non confirmée produit un résultat");
-const pendingModel = calculateOfficialLoad({ ...referenceInput, model: "Z350", volumeM3: 9_912 });
-if (pendingModel.status !== "UNAVAILABLE" || pendingModel.reasonCode !== "PENDING_VERIFICATION") errors.push("Validation pilote : un modèle PENDING produit un résultat");
+const ambiguousModel = calculateOfficialLoad({ ...referenceInput, model: "Z425", volumeM3: 12_036 });
+if (ambiguousModel.status !== "UNAVAILABLE" || ambiguousModel.reasonCode !== "UNSUPPORTED_MODEL") errors.push("Validation pilote : une désignation ambiguë produit un résultat");
 if (cameronZ105Official.enabled) {
   if (!cameronZ105Official.documentedData.loadTable) errors.push("CAMERON_Z105_OFFICIAL: table officielle absente");
   if (!cameronZ105Official.source.manualRevision || cameronZ105Official.source.tablePages.length === 0) errors.push("CAMERON_Z105_OFFICIAL: source ou pages exactes absentes");
