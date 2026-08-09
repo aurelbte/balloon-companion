@@ -8,6 +8,7 @@ export type Ascension = {
   id: string;
   date: string;
   dateIso: string;
+  time?: string;
   departure: string;
   arrival: string;
   registration: string;
@@ -19,6 +20,16 @@ export type Ascension = {
   officialDurationMinutes: number;
   observations: string;
 };
+
+export function sortAscensionsNewestFirst(
+  ascensions: readonly Ascension[],
+): Ascension[] {
+  return [...ascensions].sort((left, right) =>
+    right.dateIso.localeCompare(left.dateIso) ||
+    (right.time ?? "").localeCompare(left.time ?? "") ||
+    right.id.localeCompare(left.id),
+  );
+}
 
 export type AscensionOpeningBalance = {
   confirmed: boolean;

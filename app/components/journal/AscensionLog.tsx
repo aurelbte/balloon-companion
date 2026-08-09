@@ -28,6 +28,7 @@ import {
   type AscensionBalloonType,
   type AscensionFlightType,
   type AscensionFunction,
+  sortAscensionsNewestFirst,
 } from "../../lib/ascensionMockData";
 import {
   calculatePilotOfficialTotals,
@@ -204,6 +205,9 @@ export default function AscensionLog({ ascensions }: { ascensions: readonly Asce
       id: item.id,
       date: item.date,
       dateIso: item.dateIso,
+      time: item.sourceFlightId
+        ? completionState.journalFlights.find(({ id }) => id === item.sourceFlightId)?.takeoffTime
+        : undefined,
       departure: item.departure,
       arrival: item.arrival,
       registration: item.registration,
@@ -215,7 +219,7 @@ export default function AscensionLog({ ascensions }: { ascensions: readonly Asce
       officialDurationMinutes: item.officialDurationMinutes,
       observations: item.observations,
     })),
-    [completionState.officialAscensions],
+    [completionState.journalFlights, completionState.officialAscensions],
   );
   const allAscensions = useMemo(
     () => [
@@ -227,7 +231,9 @@ export default function AscensionLog({ ascensions }: { ascensions: readonly Asce
     [ascensions, completionAscensions],
   );
   const available = useMemo(
-    () => allAscensions.filter(({ id }) => !state.deletedIds.includes(id)),
+    () => sortAscensionsNewestFirst(
+      allAscensions.filter(({ id }) => !state.deletedIds.includes(id)),
+    ),
     [allAscensions, state.deletedIds],
   );
   const registrations = [...new Set(available.map((item) => item.registration))].sort();
