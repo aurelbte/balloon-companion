@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { appendRecordedFlightPoint, createRecordedFlight, finalizeRecordedFlight } from "./recordedFlight.ts";
 import { createEmptyFlightCompletionState, ensureCompletionJournalFlight } from "./flightCompletion.ts";
-import { journalFlightsForMode, legacyFlightSessionToRecordedFlight, recordedFlightToJournalFlight } from "./realFlightJournal.ts";
+import { journalFlightsForMode, legacyFlightSessionToRecordedFlight, recordedFlightPointsToJournalPoints, recordedFlightToJournalFlight } from "./realFlightJournal.ts";
 
 function longRecordedFlight() {
   const startedAt = Date.UTC(2026, 7, 2, 5, 30);
@@ -24,13 +24,15 @@ function longRecordedFlight() {
   return finalizeRecordedFlight(flight, flight.points.at(-1).timestamp);
 }
 
-test("un vol GPS long devient une entrée Journal réelle complète", () => {
+test("un vol GPS long devient une entrée Journal légère dont la trace reste récupérable", () => {
   const recorded = longRecordedFlight();
   const journal = recordedFlightToJournalFlight(recorded);
   assert.equal(journal.id, recorded.id);
   assert.equal(journal.origin, "REAL_GPS");
   assert.equal(journal.logbookStatus, "CARNET_PENDING");
-  assert.equal(journal.points.length, 420);
+  assert.equal(journal.points.length, 0);
+  assert.equal(journal.sourceFlightId, recorded.id);
+  assert.equal(recordedFlightPointsToJournalPoints(recorded).length, 420);
   assert.ok(journal.distanceKm > 30);
   assert.equal(journal.balloonRegistration, "F-HLFM");
 });

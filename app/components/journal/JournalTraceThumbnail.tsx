@@ -1,7 +1,10 @@
-import type { JournalFlightPoint } from "../../lib/journalMockData";
+"use client";
+
+import type { JournalFlight, JournalFlightPoint } from "../../lib/journalMockData";
+import { useRecordedFlightJournalPoints } from "../../hooks/useRecordedFlightJournalPoints";
 
 type JournalTraceThumbnailProps = {
-  points: readonly JournalFlightPoint[];
+  flight: JournalFlight;
   label: string;
 };
 
@@ -38,9 +41,10 @@ function tracePath(points: readonly JournalFlightPoint[]): string {
 }
 
 export default function JournalTraceThumbnail({
-  points,
+  flight,
   label,
 }: JournalTraceThumbnailProps) {
+  const points = useRecordedFlightJournalPoints(flight);
   const path = tracePath(points);
   return (
     <svg

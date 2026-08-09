@@ -208,7 +208,7 @@ function InteractiveFlightCard({
           </div>
           <div className={styles.thumbnail}>
           <JournalTraceThumbnail
-            points={flight.points}
+            flight={flight}
             label={`Miniature de la trace ${flight.departure} vers ${flight.arrival}`}
           />
           </div>

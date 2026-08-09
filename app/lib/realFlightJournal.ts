@@ -52,6 +52,18 @@ function dateLabels(timestamp: number): { date: string; dateIso: string } {
   };
 }
 
+export function recordedFlightPointsToJournalPoints(
+  source: RecordedFlight,
+): JournalFlight["points"] {
+  return source.points.map((point) => ({
+    longitude: point.longitude,
+    latitude: point.latitude,
+    elapsedMinutes: Math.max(0, (point.timestamp - source.startedAt) / 60_000),
+    altitudeM: point.altitudeMeters,
+    speedKmh: point.speedMetersPerSecond === null ? null : point.speedMetersPerSecond * 3.6,
+  }));
+}
+
 function verticalRates(points: readonly RecordedFlightPoint[]): { maximumClimbRateMps: number | null; maximumDescentRateMps: number | null } {
   const rates: number[] = [];
   for (let index = 1; index < points.length; index += 1) {
@@ -86,6 +98,7 @@ export function recordedFlightToJournalFlight(
   const takeoffTime = timeLabel(source.startedAt);
   return {
     id: source.id,
+    sourceFlightId: source.id,
     startedAt: source.startedAt,
     startLocationLabel: departure,
     endLocationLabel: arrival,
@@ -111,13 +124,8 @@ export function recordedFlightToJournalFlight(
       averageHeadingDeg: average(headings),
       directDistanceKm,
     },
-    points: source.points.map((point) => ({
-      longitude: point.longitude,
-      latitude: point.latitude,
-      elapsedMinutes: Math.max(0, (point.timestamp - source.startedAt) / 60_000),
-      altitudeM: point.altitudeMeters,
-      speedKmh: point.speedMetersPerSecond === null ? null : point.speedMetersPerSecond * 3.6,
-    })),
+    // La trace détaillée reste dans IndexedDB. Le Journal ne conserve que ses métadonnées.
+    points: [],
     logbookStatus: "CARNET_PENDING",
     origin: "REAL_GPS",
     ...(options.recovered ? { recovered: true } : {}),

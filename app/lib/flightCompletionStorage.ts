@@ -109,10 +109,21 @@ export function persistManualOfficialAscension(
 export function saveFlightCompletionState(state: FlightCompletionState): boolean {
   if (typeof window === "undefined") return false;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const lightweightState: FlightCompletionState = {
+      ...state,
+      journalFlights: state.journalFlights.map((flight) => ({
+        ...flight,
+        sourceFlightId: flight.sourceFlightId ?? flight.id,
+        points: [],
+      })),
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweightState));
     window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
     return true;
-  } catch {
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[flightCompletionStorage] Écriture Journal impossible", error);
+    }
     return false;
   }
 }
@@ -132,8 +143,16 @@ export function persistJournalFlight(flight: CompletionJournalFlight): FlightCom
 export function persistRecordedFlightInJournal(
   flight: RecordedFlight,
   options: Readonly<{ recovered?: boolean; balloonRegistration?: string }> = {},
-): FlightCompletionState {
-  return persistJournalFlight(recordedFlightToJournalFlight(flight, options));
+): { state: FlightCompletionState; persisted: boolean } {
+  const journalFlight = recordedFlightToJournalFlight(flight, options);
+  const state = ensureCompletionJournalFlight(loadFlightCompletionState(), journalFlight);
+  return { state, persisted: saveFlightCompletionState(state) };
+}
+
+export async function loadRecordedFlightForJournal(
+  sourceFlightId: string,
+): Promise<RecordedFlight | null> {
+  return new IndexedDbRecordedFlightStorage().getFlight(sourceFlightId);
 }
 
 /** Migration additive : la source IndexedDB historique est conservée intacte. */

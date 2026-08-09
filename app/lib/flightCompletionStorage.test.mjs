@@ -48,6 +48,28 @@ test("la durée officielle ajustée est persistée indépendamment de la durée 
   delete globalThis.window;
 });
 
+test("la taille du Journal localStorage reste indépendante du nombre de points GPS", () => {
+  const storage = memoryStorage();
+  globalThis.window = { localStorage: storage, dispatchEvent: () => true };
+  const state = ensureDemoCompletionPersisted();
+  const baseline = JSON.stringify(state);
+  const manyPoints = Array.from({ length: 5_000 }, (_, index) => ({
+    longitude: 3 + index / 100_000,
+    latitude: 50 + index / 100_000,
+    elapsedMinutes: index / 6,
+    altitudeM: 100 + index,
+    speedKmh: 20,
+  }));
+  saveFlightCompletionState({
+    ...state,
+    journalFlights: state.journalFlights.map((flight) => ({ ...flight, points: manyPoints })),
+  });
+  const persisted = storage.getItem(FLIGHT_COMPLETION_STORAGE_KEY);
+  assert.deepEqual(JSON.parse(persisted).journalFlights[0].points, []);
+  assert.ok(persisted.length <= baseline.length + 100);
+  delete globalThis.window;
+});
+
 test("EDIT met à jour A1 de 69 à 70 minutes sans duplication ni mutation du Journal GPS", () => {
   globalThis.window = {
     localStorage: memoryStorage(),
@@ -83,7 +105,7 @@ test("EDIT met à jour A1 de 69 à 70 minutes sans duplication ni mutation du Jo
   assert.equal(restored.journalFlights[0].id, journalBefore.id);
   assert.equal(restored.journalFlights[0].durationMinutes, journalBefore.durationMinutes);
   assert.equal(restored.journalFlights[0].distanceKm, journalBefore.distanceKm);
-  assert.deepEqual(restored.journalFlights[0].points, journalBefore.points);
+  assert.deepEqual(restored.journalFlights[0].points, []);
   assert.deepEqual(restored.journalFlights[0].statistics, journalBefore.statistics);
   assert.equal(totalsAfter.ascensions, totalsBefore.ascensions);
   assert.equal(totalsAfter.officialDurationMinutes, (totalsBefore.officialDurationMinutes ?? 0) + 1);

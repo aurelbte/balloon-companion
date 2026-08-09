@@ -241,7 +241,12 @@ export function useFlightTracking(
         );
         await persistenceChainRef.current.catch(() => undefined);
         await storageRef.current.completeFlight(completed);
-        persistRecordedFlightInJournal(completed);
+        const journalPersistence = persistRecordedFlightInJournal(completed);
+        if (!journalPersistence.persisted && process.env.NODE_ENV === "development") {
+          console.error("[useFlightTracking] Métadonnées Journal non persistées", {
+            flightId: completed.id,
+          });
+        }
         activeFlightRef.current = null;
         setActiveFlight(null);
         setRecoverableFlight(null);

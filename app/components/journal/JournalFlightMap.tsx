@@ -6,6 +6,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { JournalFlight } from "../../lib/journalMockData";
 import { TWO_DIMENSIONAL_MAP_OPTIONS } from "../../lib/mapInteraction";
+import { useRecordedFlightJournalPoints } from "../../hooks/useRecordedFlightJournalPoints";
 
 type JournalFlightMapProps = {
   flight: JournalFlight;
@@ -66,12 +67,14 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const points = useRecordedFlightJournalPoints(flight);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || flight.points.length === 0) {
+    if (!containerRef.current || mapRef.current || points.length === 0) {
       return;
     }
-    const first = flight.points[0];
+    const hydratedFlight = { ...flight, points };
+    const first = points[0];
     if (!first) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -104,7 +107,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       "top-left",
     );
     map.on("load", () => {
-      map.addSource(SOURCE_ID, { type: "geojson", data: flightGeoJson(flight) });
+      map.addSource(SOURCE_ID, { type: "geojson", data: flightGeoJson(hydratedFlight) });
       map.addLayer({
         id: "journal-track-halo",
         type: "line",
@@ -138,7 +141,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
           "circle-stroke-width": 2,
         },
       });
-      map.fitBounds(flightBounds(flight), {
+      map.fitBounds(flightBounds(hydratedFlight), {
         padding: 38,
         maxZoom: 13,
         duration: 0,
@@ -148,7 +151,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       map.remove();
       mapRef.current = null;
     };
-  }, [flight]);
+  }, [flight, points]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -156,7 +159,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
     const frame = window.requestAnimationFrame(() => {
       map.resize();
       if (expanded) {
-        map.fitBounds(flightBounds(flight), {
+        map.fitBounds(flightBounds({ ...flight, points }), {
           padding: 64,
           maxZoom: 13,
           duration: 250,
@@ -164,7 +167,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [expanded, flight]);
+  }, [expanded, flight, points]);
 
   useEffect(() => {
     if (!expanded) return;

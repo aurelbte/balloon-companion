@@ -15,6 +15,7 @@ export type PilotExperienceBalance = {
 };
 
 export type CompletionJournalFlight = JournalFlight & {
+  sourceFlightId?: string;
   logbookStatus: "CARNET_PENDING" | "CARNET_VALIDATED" | "JOURNAL_ONLY";
   origin: "REAL_GPS" | "MANUAL" | "DEMO";
   recovered?: boolean;
