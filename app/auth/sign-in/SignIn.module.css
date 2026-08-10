@@ -1,0 +1,124 @@
+.screen {
+  display: grid;
+  min-height: 100dvh;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  color: var(--bc-text-primary);
+  place-items: center;
+}
+
+.panel {
+  width: min(100%, 430px);
+}
+
+.backLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--bc-accent);
+  font-size: .76rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.eyebrow {
+  margin: 12px 0 0;
+  color: var(--bc-accent);
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.panel h1 {
+  margin: 3px 0 0;
+  font-size: clamp(1.85rem, 9vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: -.045em;
+  line-height: 1.15;
+}
+
+.form {
+  display: grid;
+  gap: 6px;
+  margin-top: 24px;
+}
+
+.field > span {
+  display: block;
+  margin: 0 0 4px 2px;
+  color: var(--bc-text-secondary);
+  font-size: .66rem;
+  font-weight: 650;
+}
+
+.field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--bc-border);
+  border-radius: 14px;
+  background: var(--bc-surface);
+  color: var(--bc-text-primary);
+  font-size: .9rem;
+}
+
+.field input[aria-invalid="true"] { border-color: var(--bc-danger); }
+
+.error {
+  display: block;
+  min-height: 14px;
+  margin: 2px 2px 0;
+  color: var(--bc-danger);
+  font-size: .62rem;
+  line-height: 1.2;
+}
+
+.forgot {
+  justify-self: end;
+  min-height: 36px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--bc-text-muted);
+  font-size: .68rem;
+  font-weight: 600;
+}
+
+.submit {
+  min-height: 52px;
+  border: 0;
+  border-radius: var(--bc-radius-round);
+  background: var(--bc-accent);
+  color: var(--bc-accent-foreground);
+  font-size: .84rem;
+  font-weight: 700;
+}
+
+.submit:disabled { opacity: .42; }
+
+.placeholder {
+  margin: 3px 2px 0;
+  color: var(--bc-text-secondary);
+  font-size: .68rem;
+  line-height: 1.4;
+}
+
+.signUpLink {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+  color: var(--bc-text-secondary);
+  font-size: .76rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+@media (max-height: 560px) {
+  .screen { place-items: start center; }
+  .eyebrow { margin-top: 4px; }
+  .form { margin-top: 12px; }
+  .field input { min-height: 42px; }
+}
+

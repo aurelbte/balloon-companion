@@ -1,0 +1,131 @@
+.screen {
+  min-height: 100dvh;
+  padding: max(12px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom));
+  color: var(--bc-text-primary);
+}
+
+.panel {
+  width: min(100%, 430px);
+  margin-inline: auto;
+}
+
+.backLink {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  color: var(--bc-accent);
+  font-size: .76rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.eyebrow {
+  margin: 4px 0 0;
+  color: var(--bc-accent);
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.panel h1 {
+  margin: 2px 0 0;
+  font-size: clamp(1.65rem, 8vw, 2.35rem);
+  font-weight: 600;
+  letter-spacing: -.04em;
+  line-height: 1.15;
+}
+
+.form {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.nameGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.field {
+  display: block;
+  min-width: 0;
+}
+
+.field > span {
+  display: block;
+  margin: 0 0 3px 2px;
+  color: var(--bc-text-secondary);
+  font-size: .65rem;
+  font-weight: 650;
+}
+
+.field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--bc-border);
+  border-radius: 14px;
+  background: var(--bc-surface);
+  color: var(--bc-text-primary);
+  font-size: .88rem;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--bc-danger);
+}
+
+.error {
+  display: block;
+  min-height: 14px;
+  margin: 2px 2px 0;
+  color: var(--bc-danger);
+  font-size: .62rem;
+  line-height: 1.2;
+}
+
+.submit {
+  min-height: 50px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: var(--bc-radius-round);
+  background: var(--bc-accent);
+  color: var(--bc-accent-foreground);
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+.submit:disabled {
+  opacity: .42;
+}
+
+.success {
+  margin: 3px 2px 0;
+  color: var(--bc-success);
+  font-size: .68rem;
+  line-height: 1.35;
+}
+
+.signInLink {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  color: var(--bc-text-secondary);
+  font-size: .75rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+@media (max-width: 360px) {
+  .nameGrid { grid-template-columns: 1fr; gap: 5px; }
+}
+
+@media (max-height: 680px) and (min-width: 361px) {
+  .form { margin-top: 10px; }
+  .field input { min-height: 40px; }
+  .submit { min-height: 46px; }
+}
+

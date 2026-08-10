@@ -60,7 +60,7 @@ export type LoadCalculationResult =
       availableOccupantsCapacityKg: number;
       performanceLimitedMassKg: number;
       limitingRule: string;
-      calculationStatus: Extract<ManufacturerCalculationStatus, "OFFICIAL_VALIDATED" | "CANDIDATE_PILOT_VALIDATION">;
+      calculationStatus: Extract<ManufacturerCalculationStatus, "OFFICIAL_VALIDATED" | "CANDIDATE_PILOT_VALIDATION" | "PENDING_VERIFICATION">;
       manufacturerMethodId: string;
       modelParameterSetId: string;
       manufacturer: string;

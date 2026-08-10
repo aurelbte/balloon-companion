@@ -30,15 +30,11 @@ test("le dispatcher Cameron retourne strictement le calcul A2 existant", () => {
   assert.deepEqual(dispatched, direct);
 });
 
-test("les moteurs non implémentés et les constructeurs inconnus sont explicites", () => {
+test("les autres constructeurs conservent strictement leur comportement", () => {
   assert.deepEqual(calculateManufacturerLoad("Ultramagic", "H65", { ...inputs, volumeM3: 1_840 }), {
     status: "UNAVAILABLE",
     reasonCode: "CONFIGURATION_LIMITS_UNCONFIRMED",
     message: "Confirmez les limites du ballon dans sa fiche.",
-  });
-  assert.deepEqual(calculateManufacturerLoad("Kubíček", "BB26Z", inputs), {
-    status: "NOT_IMPLEMENTED",
-    manufacturer: "Kubíček",
   });
   assert.deepEqual(calculateManufacturerLoad("Inconnu", "X", inputs), {
     status: "UNSUPPORTED_MANUFACTURER",

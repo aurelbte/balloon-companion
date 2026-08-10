@@ -7,11 +7,8 @@ import { resolveCameronModelParameters } from "./modelParameters/cameronModels.t
 import { ultramagicModelParameters } from "./modelParameters/ultramagicModels.ts";
 import type { LoadCalculationInput, LoadCalculationResult } from "./types.ts";
 import { calculateUltramagicLoadCandidate } from "./ultramagic/officialCalculation.ts";
-
-export type ManufacturerLoadNotImplemented = Readonly<{
-  status: "NOT_IMPLEMENTED";
-  manufacturer: "Kubíček";
-}>;
+import { findExactKubicekModel } from "./modelParameters/kubicekModels.ts";
+import { calculateKubicekLoadCandidate } from "./kubicek/officialCalculation.ts";
 
 export type UnsupportedLoadManufacturer = Readonly<{
   status: "UNSUPPORTED_MANUFACTURER";
@@ -21,7 +18,6 @@ export type UnsupportedLoadManufacturer = Readonly<{
 export type ManufacturerLoadDispatchResult =
   | CameronOfficialCalculation
   | LoadCalculationResult
-  | ManufacturerLoadNotImplemented
   | UnsupportedLoadManufacturer
   | null;
 
@@ -93,7 +89,9 @@ export function calculateManufacturerLoad(
     };
   }
   if (normalizedManufacturer === "KUBICEK") {
-    return { status: "NOT_IMPLEMENTED", manufacturer: "Kubíček" };
+    const parameters = findExactKubicekModel(model);
+    if (!parameters) return null;
+    return calculateKubicekLoadCandidate({ ...inputs, manufacturer, model }, parameters);
   }
   return { status: "UNSUPPORTED_MANUFACTURER", manufacturer };
 }

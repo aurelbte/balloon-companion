@@ -25,6 +25,7 @@ export type LoadModelParameterSet = Readonly<{
   model: string;
   manufacturerMethodId: string;
   volumeM3?: number;
+  volumeCuFt?: number;
   standardMtomKg?: number;
   reducedMtomKg?: number;
   tableRowId?: string;
