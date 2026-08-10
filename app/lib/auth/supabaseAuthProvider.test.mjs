@@ -16,6 +16,7 @@ function fakeClient(overrides = {}) {
       signUp: async () => ({ data: { user: supabaseUser }, error: null }),
       signInWithPassword: async () => ({ data: { user: supabaseUser }, error: null }),
       signOut: async () => ({ error: null }),
+      exchangeCodeForSession: async () => ({ data: { user: supabaseUser }, error: null }),
       ...overrides,
     },
   };
@@ -25,12 +26,15 @@ test("la création de compte transmet uniquement firstName et lastName en metada
   let received;
   const provider = new SupabaseAuthProvider(fakeClient({
     signUp: async (input) => { received = input; return { data: { user: supabaseUser }, error: null }; },
-  }));
+  }), () => "https://balloon.example");
   const user = await provider.signUp({ email: "pilot@example.com", password: "balloon8", firstName: "Ada", lastName: "Lovelace" });
   assert.deepEqual(received, {
     email: "pilot@example.com",
     password: "balloon8",
-    options: { data: { firstName: "Ada", lastName: "Lovelace" } },
+    options: {
+      data: { firstName: "Ada", lastName: "Lovelace" },
+      emailRedirectTo: "https://balloon.example/auth/confirmed",
+    },
   });
   assert.deepEqual(user, { id: "user-1", email: "pilot@example.com", firstName: "Ada", lastName: "Lovelace" });
 });
@@ -60,6 +64,17 @@ test("restoreSession utilise l'utilisateur Supabase courant", async () => {
   assert.deepEqual(await provider.restoreSession(), {
     id: "user-1", email: "pilot@example.com", firstName: "Ada", lastName: "Lovelace",
   });
+});
+
+test("la confirmation échange le code et restaure BalloonUser", async () => {
+  let receivedCode;
+  const provider = new SupabaseAuthProvider(fakeClient({
+    exchangeCodeForSession: async (code) => { receivedCode = code; return { data: { user: supabaseUser }, error: null }; },
+  }));
+  assert.deepEqual(await provider.confirmEmail("confirmation-code"), {
+    id: "user-1", email: "pilot@example.com", firstName: "Ada", lastName: "Lovelace",
+  });
+  assert.equal(receivedCode, "confirmation-code");
 });
 
 test("l'intégration Auth ne référence aucun stockage métier", () => {

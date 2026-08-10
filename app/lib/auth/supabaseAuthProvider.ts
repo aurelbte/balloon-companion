@@ -12,10 +12,14 @@ export type SupabaseAuthClient = Readonly<{
     signUp(input: Readonly<{
       email: string;
       password: string;
-      options: Readonly<{ data: Readonly<{ firstName: string; lastName: string }> }>;
+      options: Readonly<{
+        data: Readonly<{ firstName: string; lastName: string }>;
+        emailRedirectTo: string;
+      }>;
     }>): AuthResult;
     signInWithPassword(input: AuthCredentials): AuthResult;
     signOut(options: Readonly<{ scope: "local" }>): Promise<Readonly<{ error: Readonly<{ message: string }> | null }>>;
+    exchangeCodeForSession(code: string): AuthResult;
   }>;
 }>;
 
@@ -44,9 +48,11 @@ function requiredUser(user: User | null, error: unknown): BalloonUser {
 
 export class SupabaseAuthProvider implements AuthProvider {
   private readonly client: SupabaseAuthClient;
+  private readonly getOrigin: () => string;
 
-  constructor(client: SupabaseAuthClient) {
+  constructor(client: SupabaseAuthClient, getOrigin: () => string = () => window.location.origin) {
     this.client = client;
+    this.getOrigin = getOrigin;
   }
 
   async getCurrentUser(): Promise<BalloonUser | null> {
@@ -59,7 +65,10 @@ export class SupabaseAuthProvider implements AuthProvider {
     const { data, error } = await this.client.auth.signUp({
       email: input.email,
       password: input.password,
-      options: { data: { firstName: input.firstName, lastName: input.lastName } },
+      options: {
+        data: { firstName: input.firstName, lastName: input.lastName },
+        emailRedirectTo: `${this.getOrigin()}/auth/confirmed`,
+      },
     });
     return requiredUser(data.user, error);
   }
@@ -76,5 +85,11 @@ export class SupabaseAuthProvider implements AuthProvider {
 
   restoreSession(): Promise<BalloonUser | null> {
     return this.getCurrentUser();
+  }
+
+  async confirmEmail(code?: string): Promise<BalloonUser | null> {
+    if (!code) return this.restoreSession();
+    const { data, error } = await this.client.auth.exchangeCodeForSession(code);
+    return requiredUser(data.user, error);
   }
 }

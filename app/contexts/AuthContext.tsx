@@ -11,6 +11,7 @@ type AuthContextValue = AuthSnapshot & Readonly<{
   signUp(input: SignUpInput): Promise<void>;
   signIn(input: AuthCredentials): Promise<void>;
   signOut(): Promise<void>;
+  confirmEmail(code?: string): Promise<boolean>;
 }>;
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,7 +43,23 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     setSnapshot({ state: "SIGNED_OUT", user: null });
   }, [provider]);
 
-  return <AuthContext.Provider value={{ ...snapshot, signUp, signIn, signOut }}>{children}</AuthContext.Provider>;
+  const confirmEmail = useCallback(async (code?: string) => {
+    try {
+      const user = await provider.confirmEmail(code);
+      if (!user) {
+        setSnapshot({ state: "SIGNED_OUT", user: null });
+        return false;
+      }
+      saveLocalAuthSession(window.localStorage, user);
+      setSnapshot({ state: "SIGNED_IN", user });
+      return true;
+    } catch {
+      setSnapshot({ state: "SIGNED_OUT", user: null });
+      return false;
+    }
+  }, [provider]);
+
+  return <AuthContext.Provider value={{ ...snapshot, signUp, signIn, signOut, confirmEmail }}>{children}</AuthContext.Provider>;
 }
 
 export function useBalloonAuth(): AuthContextValue {
@@ -50,4 +67,3 @@ export function useBalloonAuth(): AuthContextValue {
   if (!context) throw new Error("useBalloonAuth must be used inside BalloonAuthProvider");
   return context;
 }
-
