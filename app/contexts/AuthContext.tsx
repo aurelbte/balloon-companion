@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { clearLocalAuthSession, restoreAuthSnapshot, saveLocalAuthSession } from "../lib/auth/session.ts";
 import { SupabaseAuthProvider } from "../lib/auth/supabaseAuthProvider.ts";
 import type { AuthCredentials, AuthSnapshot, SignUpInput } from "../lib/auth/types.ts";
@@ -18,14 +19,16 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function BalloonAuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const provider = useMemo(() => new SupabaseAuthProvider(createBrowserSupabaseClient()), []);
+  const pathname = usePathname();
   const [snapshot, setSnapshot] = useState<AuthSnapshot>(UNKNOWN_AUTH_SNAPSHOT);
 
   useEffect(() => {
+    if (pathname === "/auth/confirmed") return;
     let active = true;
     void restoreAuthSnapshot({ provider, storage: window.localStorage, online: navigator.onLine })
       .then((restored) => { if (active) setSnapshot(restored); });
     return () => { active = false; };
-  }, [provider]);
+  }, [pathname, provider]);
 
   const signUp = useCallback(async (input: SignUpInput) => {
     await provider.signUp(input);

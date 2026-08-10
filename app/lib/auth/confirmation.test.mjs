@@ -4,10 +4,10 @@ import test from "node:test";
 
 const source = readFileSync(new URL("../../auth/confirmed/page.tsx", import.meta.url), "utf8");
 
-test("la route de confirmation restaure la session et propose les deux destinations", () => {
+test("la route de confirmation restaure la session et redirige automatiquement", () => {
   assert.match(source, /confirmEmail\(code\)/);
   assert.match(source, /Adresse email confirmée\./);
-  assert.match(source, /Continuer vers Balloon Companion/);
+  assert.match(source, /router\.replace\("\/"\)/);
   assert.match(source, /AUTH_SIGN_IN_ROUTE/);
 });
 

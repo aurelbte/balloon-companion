@@ -88,8 +88,14 @@ export class SupabaseAuthProvider implements AuthProvider {
   }
 
   async confirmEmail(code?: string): Promise<BalloonUser | null> {
-    if (!code) return this.restoreSession();
-    const { data, error } = await this.client.auth.exchangeCodeForSession(code);
-    return requiredUser(data.user, error);
+    const current = await this.client.auth.getUser();
+    const currentUser = toBalloonUser(current.data.user);
+    if (!current.error && currentUser) return currentUser;
+    if (!code) return null;
+    const exchanged = await this.client.auth.exchangeCodeForSession(code);
+    const exchangedUser = toBalloonUser(exchanged.data.user);
+    if (!exchanged.error && exchangedUser) return exchangedUser;
+    const restored = await this.client.auth.getUser();
+    return restored.error ? null : toBalloonUser(restored.data.user);
   }
 }

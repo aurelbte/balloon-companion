@@ -69,12 +69,22 @@ test("restoreSession utilise l'utilisateur Supabase courant", async () => {
 test("la confirmation échange le code et restaure BalloonUser", async () => {
   let receivedCode;
   const provider = new SupabaseAuthProvider(fakeClient({
+    getUser: async () => ({ data: { user: null }, error: { message: "no session" } }),
     exchangeCodeForSession: async (code) => { receivedCode = code; return { data: { user: supabaseUser }, error: null }; },
   }));
   assert.deepEqual(await provider.confirmEmail("confirmation-code"), {
     id: "user-1", email: "pilot@example.com", firstName: "Ada", lastName: "Lovelace",
   });
   assert.equal(receivedCode, "confirmation-code");
+});
+
+test("une session déjà valide évite un second échange du code", async () => {
+  let exchanges = 0;
+  const provider = new SupabaseAuthProvider(fakeClient({
+    exchangeCodeForSession: async () => { exchanges += 1; return { data: { user: null }, error: { message: "already used" } }; },
+  }));
+  assert.equal((await provider.confirmEmail("already-exchanged"))?.id, "user-1");
+  assert.equal(exchanges, 0);
 });
 
 test("l'intégration Auth ne référence aucun stockage métier", () => {

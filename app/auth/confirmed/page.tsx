@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { AUTH_SIGN_IN_ROUTE } from "../../lib/auth/entry.ts";
@@ -10,16 +11,23 @@ type ConfirmationState = "CHECKING" | "SIGNED_IN" | "SIGNED_OUT";
 
 export default function ConfirmedPage() {
   const { confirmEmail } = useBalloonAuth();
+  const router = useRouter();
   const [confirmationState, setConfirmationState] = useState<ConfirmationState>("CHECKING");
 
   useEffect(() => {
     let active = true;
+    let redirectTimer: number | undefined;
     const code = new URLSearchParams(window.location.search).get("code") ?? undefined;
     void confirmEmail(code).then((signedIn) => {
-      if (active) setConfirmationState(signedIn ? "SIGNED_IN" : "SIGNED_OUT");
+      if (!active) return;
+      setConfirmationState(signedIn ? "SIGNED_IN" : "SIGNED_OUT");
+      if (signedIn) redirectTimer = window.setTimeout(() => router.replace("/"), 650);
     });
-    return () => { active = false; };
-  }, [confirmEmail]);
+    return () => {
+      active = false;
+      if (redirectTimer !== undefined) window.clearTimeout(redirectTimer);
+    };
+  }, [confirmEmail, router]);
 
   return (
     <main className={styles.screen}>
@@ -31,7 +39,7 @@ export default function ConfirmedPage() {
           <>
             <h1>Adresse email confirmée.</h1>
             {confirmationState === "SIGNED_IN" ? (
-              <Link className={styles.primaryAction} href="/">Continuer vers Balloon Companion</Link>
+              <p className={styles.copy}>Ouverture de Balloon Companion…</p>
             ) : (
               <><p className={styles.copy}>Connectez-vous pour continuer.</p><Link className={styles.primaryAction} href={AUTH_SIGN_IN_ROUTE}>Se connecter</Link></>
             )}
