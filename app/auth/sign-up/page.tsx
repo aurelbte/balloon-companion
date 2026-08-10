@@ -68,8 +68,12 @@ export default function SignUpPage() {
               await auth.signUp(validation.value);
               setDraft((current) => ({ ...current, firstName: validation.value.firstName, lastName: validation.value.lastName, email: validation.value.email }));
               setPlaceholderSuccess("Vérifiez votre boîte mail afin d'activer votre compte.");
-            } catch {
-              setSubmitError("Création impossible. Vérifiez vos informations.");
+            } catch (error) {
+              if (error instanceof Error && "code" in error && "status" in error) {
+                setSubmitError(`message: ${error.message} · code: ${String(error.code ?? "null")} · status: ${String(error.status ?? "null")}`);
+              } else {
+                setSubmitError("Création impossible. Vérifiez vos informations.");
+              }
             } finally {
               setSubmitting(false);
             }

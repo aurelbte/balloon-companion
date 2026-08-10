@@ -17,6 +17,7 @@ test("le formulaire de création rend les cinq champs et les actions", () => {
     assert.match(source, new RegExp(label));
   }
   assert.match(source, /AUTH_SIGN_IN_ROUTE/);
+  assert.match(source, /message: \$\{error\.message\}.*code:.*error\.code.*status:.*error\.status/);
   assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|supabase/i);
 });
 

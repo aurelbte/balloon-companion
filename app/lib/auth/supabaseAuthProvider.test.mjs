@@ -39,6 +39,32 @@ test("la création de compte transmet uniquement firstName et lastName en metada
   assert.deepEqual(user, { id: "user-1", email: "pilot@example.com", firstName: "Ada", lastName: "Lovelace" });
 });
 
+test("un échec signUp expose exactement error.message, error.code et error.status", async (context) => {
+  const expected = { message: "Email address is invalid", code: "email_address_invalid", status: 400 };
+  const calls = [];
+  const previousConsoleError = console.error;
+  console.error = (...args) => calls.push(args);
+  try {
+    const provider = new SupabaseAuthProvider(fakeClient({
+      signUp: async () => ({ data: { user: null }, error: expected }),
+    }), () => "https://balloon.example");
+    await assert.rejects(
+      () => provider.signUp({ email: "invalid", password: "balloon8", firstName: "Ada", lastName: "Lovelace" }),
+      (error) => {
+        assert.equal(error.name, "BalloonAuthError");
+        assert.equal(error.message, expected.message);
+        assert.equal(error.code, expected.code);
+        assert.equal(error.status, expected.status);
+        return true;
+      },
+    );
+  } finally {
+    console.error = previousConsoleError;
+  }
+  assert.deepEqual(calls, [["[Supabase Auth signUp]", expected]]);
+  context.diagnostic(`error.message=${expected.message}; error.code=${expected.code}; error.status=${expected.status}`);
+});
+
 test("la connexion restaure BalloonUser", async () => {
   let received;
   const provider = new SupabaseAuthProvider(fakeClient({

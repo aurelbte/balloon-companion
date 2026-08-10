@@ -3,7 +3,7 @@ import type { AuthCredentials, AuthProvider, BalloonUser, SignUpInput } from "./
 
 type AuthResult = Promise<Readonly<{
   data: Readonly<{ user: User | null }>;
-  error: Readonly<{ message: string }> | null;
+  error: Readonly<{ message: string; code?: string; status?: number }> | null;
 }>>;
 
 export type SupabaseAuthClient = Readonly<{
@@ -24,9 +24,14 @@ export type SupabaseAuthClient = Readonly<{
 }>;
 
 export class BalloonAuthError extends Error {
-  constructor() {
-    super("AUTH_OPERATION_FAILED");
+  readonly code: string | null;
+  readonly status: number | null;
+
+  constructor(error?: Readonly<{ message: string; code?: string; status?: number }>) {
+    super(error?.message ?? "AUTH_OPERATION_FAILED");
     this.name = "BalloonAuthError";
+    this.code = error?.code ?? null;
+    this.status = error?.status ?? null;
   }
 }
 
@@ -62,6 +67,10 @@ export class SupabaseAuthProvider implements AuthProvider {
   }
 
   async signUp(input: SignUpInput): Promise<BalloonUser> {
+    console.log("[Supabase Auth signUp input.email]", {
+      email: JSON.stringify(input.email),
+      length: input.email.length,
+    });
     const { data, error } = await this.client.auth.signUp({
       email: input.email,
       password: input.password,
@@ -70,7 +79,15 @@ export class SupabaseAuthProvider implements AuthProvider {
         emailRedirectTo: `${this.getOrigin()}/auth/confirmed`,
       },
     });
-    return requiredUser(data.user, error);
+    if (error) {
+      console.error("[Supabase Auth signUp]", {
+        message: error.message,
+        code: error.code ?? null,
+        status: error.status ?? null,
+      });
+      throw new BalloonAuthError(error);
+    }
+    return requiredUser(data.user, null);
   }
 
   async signIn(input: AuthCredentials): Promise<BalloonUser> {
