@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { FlightRuntimeProvider } from "./contexts/FlightRuntimeContext";
 import { BalloonAuthProvider } from "./contexts/AuthContext";
+import GpsStatsDiagnosticRunner from "./components/dev/GpsStatsDiagnosticRunner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,7 +43,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <BalloonAuthProvider><FlightRuntimeProvider>{children}</FlightRuntimeProvider></BalloonAuthProvider>
+        <BalloonAuthProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></BalloonAuthProvider>
       </body>
     </html>
   );

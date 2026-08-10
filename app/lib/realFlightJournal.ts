@@ -1,6 +1,7 @@
 import {
   calculateRecordedFlightSummary,
   distanceBetweenRecordedPoints,
+  recalculateFlightStatistics,
   type RecordedFlight,
   type RecordedFlightPoint,
 } from "./recordedFlight.ts";
@@ -64,35 +65,20 @@ export function recordedFlightPointsToJournalPoints(
   }));
 }
 
-function verticalRates(points: readonly RecordedFlightPoint[]): { maximumClimbRateMps: number | null; maximumDescentRateMps: number | null } {
-  const rates: number[] = [];
-  for (let index = 1; index < points.length; index += 1) {
-    const previous = points[index - 1]!;
-    const current = points[index]!;
-    if (previous.altitudeMeters === null || current.altitudeMeters === null) continue;
-    const seconds = (current.timestamp - previous.timestamp) / 1000;
-    if (seconds > 0) rates.push((current.altitudeMeters - previous.altitudeMeters) / seconds);
-  }
-  return {
-    maximumClimbRateMps: rates.length ? Math.max(...rates) : null,
-    maximumDescentRateMps: rates.length ? Math.min(...rates) : null,
-  };
-}
-
 export function recordedFlightToJournalFlight(
   source: RecordedFlight,
   options: Readonly<{ recovered?: boolean; balloonRegistration?: string }> = {},
 ): CompletionJournalFlight {
   const endedAt = source.endedAt ?? source.points.at(-1)?.timestamp ?? source.updatedAt;
-  const summary = calculateRecordedFlightSummary(source.points, source.startedAt, endedAt);
+  const summary = recalculateFlightStatistics(source.points, source.startedAt, endedAt);
   const date = dateLabels(source.startedAt);
-  const altitudes = finiteValues(source.points.map(({ altitudeMeters }) => altitudeMeters));
-  const speeds = finiteValues(source.points.map(({ speedMetersPerSecond }) => speedMetersPerSecond));
-  const headings = finiteValues(source.points.map(({ headingDegrees }) => headingDegrees));
-  const first = source.points[0];
-  const last = source.points.at(-1);
+  const statisticPoints = source.points.filter(({ quality }) => quality === undefined || quality === "VALID");
+  const altitudes = finiteValues(statisticPoints.map(({ altitudeMeters }) => altitudeMeters));
+  const speeds = finiteValues(statisticPoints.map(({ speedMetersPerSecond }) => speedMetersPerSecond));
+  const headings = finiteValues(statisticPoints.map(({ headingDegrees }) => headingDegrees));
+  const first = statisticPoints[0];
+  const last = statisticPoints.at(-1);
   const directDistanceKm = first && last ? distanceBetweenRecordedPoints(first, last) / 1000 : 0;
-  const rates = verticalRates(source.points);
   const departure = source.startLocationLabel?.trim() || UNKNOWN_DEPARTURE;
   const arrival = source.endLocationLabel?.trim() || UNKNOWN_ARRIVAL;
   const takeoffTime = timeLabel(source.startedAt);
@@ -120,7 +106,8 @@ export function recordedFlightToJournalFlight(
       averageAltitudeAmslM: average(altitudes),
       averageSpeedKmh: average(speeds) === null ? null : average(speeds)! * 3.6,
       minimumInFlightSpeedKmh: speeds.length ? Math.min(...speeds) * 3.6 : null,
-      ...rates,
+      maximumClimbRateMps: summary.maximumClimbRateMetersPerSecond ?? null,
+      maximumDescentRateMps: summary.maximumDescentRateMetersPerSecond ?? null,
       averageHeadingDeg: average(headings),
       directDistanceKm,
     },

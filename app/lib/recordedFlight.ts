@@ -1,4 +1,9 @@
-import type { GeoPoint } from "../types/flight.ts";
+import type {
+  GeoPoint,
+  GpsAppState,
+  GpsPointQuality,
+  GpsPointQualityReason,
+} from "../types/flight.ts";
 
 export const RECORDED_FLIGHT_SCHEMA_VERSION = 1;
 
@@ -11,6 +16,13 @@ export interface RecordedFlightPoint {
   headingDegrees: number | null;
   horizontalAccuracyMeters: number | null;
   verticalAccuracyMeters: number | null;
+  appState?: GpsAppState;
+  lastPointTimestamp?: number;
+  deltaTimeSincePreviousPoint?: number;
+  resumedAfterBackground?: boolean;
+  firstFixAfterResume?: boolean;
+  quality?: GpsPointQuality;
+  qualityReason?: GpsPointQualityReason;
 }
 
 export interface RecordedFlightSummary {
@@ -20,6 +32,8 @@ export interface RecordedFlightSummary {
   maxAltitudeMeters: number | null;
   averageGroundSpeedMetersPerSecond: number | null;
   maxGroundSpeedMetersPerSecond: number | null;
+  maximumClimbRateMetersPerSecond?: number | null;
+  maximumDescentRateMetersPerSecond?: number | null;
 }
 
 export interface RecordedFlight {
@@ -74,6 +88,11 @@ export function geoPointToRecordedFlightPoint(
     headingDegrees: finiteOrNull(point.heading),
     horizontalAccuracyMeters: finiteOrNull(point.accuracy),
     verticalAccuracyMeters: finiteOrNull(point.verticalAccuracy),
+    ...(point.appState === undefined ? {} : { appState: point.appState }),
+    ...(point.lastPointTimestamp === undefined ? {} : { lastPointTimestamp: point.lastPointTimestamp }),
+    ...(point.deltaTimeSincePreviousPoint === undefined ? {} : { deltaTimeSincePreviousPoint: point.deltaTimeSincePreviousPoint }),
+    ...(point.resumedAfterBackground === undefined ? {} : { resumedAfterBackground: point.resumedAfterBackground }),
+    ...(point.firstFixAfterResume === undefined ? {} : { firstFixAfterResume: point.firstFixAfterResume }),
   };
 }
 
@@ -89,6 +108,11 @@ export function recordedFlightPointToGeoPoint(
     heading: point.headingDegrees,
     accuracy: point.horizontalAccuracyMeters,
     verticalAccuracy: point.verticalAccuracyMeters,
+    ...(point.appState === undefined ? {} : { appState: point.appState }),
+    ...(point.lastPointTimestamp === undefined ? {} : { lastPointTimestamp: point.lastPointTimestamp }),
+    ...(point.deltaTimeSincePreviousPoint === undefined ? {} : { deltaTimeSincePreviousPoint: point.deltaTimeSincePreviousPoint }),
+    ...(point.resumedAfterBackground === undefined ? {} : { resumedAfterBackground: point.resumedAfterBackground }),
+    ...(point.firstFixAfterResume === undefined ? {} : { firstFixAfterResume: point.firstFixAfterResume }),
   };
 }
 
@@ -241,6 +265,110 @@ export function calculateRecordedFlightSummary(
   };
 }
 
+function medianPositiveIntervalMilliseconds(points: readonly RecordedFlightPoint[]): number | null {
+  const intervals: number[] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const delta = points[index].timestamp - points[index - 1].timestamp;
+    if (delta > 0) intervals.push(delta);
+  }
+  if (intervals.length === 0) return null;
+  intervals.sort((left, right) => left - right);
+  const middle = Math.floor(intervals.length / 2);
+  return intervals.length % 2 === 0
+    ? (intervals[middle - 1] + intervals[middle]) / 2
+    : intervals[middle];
+}
+
+function validStatisticSegments(points: readonly RecordedFlightPoint[]): RecordedFlightPoint[][] {
+  const normalInterval = medianPositiveIntervalMilliseconds(points) ?? 1_000;
+  const longGapThreshold = Math.max(10_000, normalInterval * 4);
+  const segments: RecordedFlightPoint[][] = [];
+  let current: RecordedFlightPoint[] = [];
+
+  points.forEach((point, index) => {
+    const previousRaw = index > 0 ? points[index - 1] : undefined;
+    const valid = point.quality === undefined || point.quality === "VALID";
+    const separated = previousRaw !== undefined && (
+      point.timestamp - previousRaw.timestamp > longGapThreshold ||
+      point.appState === "RESUME" ||
+      point.firstFixAfterResume === true ||
+      point.qualityReason === "TIME_GAP" ||
+      point.qualityReason === "BACKGROUND_RESUME"
+    );
+    if (!valid || separated || (current.length > 0 && previousRaw !== current.at(-1))) {
+      if (current.length > 0) segments.push(current);
+      current = [];
+    }
+    if (valid) current.push(point);
+  });
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
+function sustainedVerticalRates(
+  segments: readonly RecordedFlightPoint[][],
+  windowMilliseconds: number,
+): number[] {
+  const rates: number[] = [];
+  for (const segment of segments) {
+    for (let startIndex = 0; startIndex < segment.length - 2; startIndex += 1) {
+      const start = segment[startIndex];
+      if (start.altitudeMeters === null) continue;
+      for (let endIndex = startIndex + 2; endIndex < segment.length; endIndex += 1) {
+        const end = segment[endIndex];
+        const elapsed = end.timestamp - start.timestamp;
+        if (elapsed < windowMilliseconds) continue;
+        if (end.altitudeMeters !== null && elapsed > 0) {
+          rates.push((end.altitudeMeters - start.altitudeMeters) / (elapsed / 1_000));
+        }
+        break;
+      }
+    }
+  }
+  return rates;
+}
+
+/**
+ * Recalcul pur des statistiques finales. Pour compatibilité, un point ancien
+ * sans champ quality est traité comme VALID.
+ */
+export function recalculateFlightStatistics(
+  points: readonly RecordedFlightPoint[],
+  startedAt = points[0]?.timestamp ?? 0,
+  endedAt: number | null = points.at(-1)?.timestamp ?? null,
+): RecordedFlightSummary {
+  const segments = validStatisticSegments(points);
+  const validPoints = segments.flat();
+  let distanceMeters = 0;
+  let connectedDurationSeconds = 0;
+  for (const segment of segments) {
+    for (let index = 1; index < segment.length; index += 1) {
+      distanceMeters += recordedFlightSegmentDistance(segment[index - 1], segment[index]);
+      connectedDurationSeconds += Math.max(0, (segment[index].timestamp - segment[index - 1].timestamp) / 1_000);
+    }
+  }
+  const altitudes = validPoints
+    .map(({ altitudeMeters }) => altitudeMeters)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const speeds = validPoints
+    .map(({ speedMetersPerSecond }) => speedMetersPerSecond)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const normalInterval = medianPositiveIntervalMilliseconds(validPoints) ?? 1_000;
+  const varioWindowMilliseconds = Math.min(5_000, Math.max(3_000, normalInterval * 3));
+  const rates = sustainedVerticalRates(segments, varioWindowMilliseconds);
+  return {
+    durationSeconds: Math.max(0, ((endedAt ?? validPoints.at(-1)?.timestamp ?? startedAt) - startedAt) / 1_000),
+    distanceMeters,
+    minAltitudeMeters: altitudes.length > 0 ? Math.min(...altitudes) : null,
+    maxAltitudeMeters: altitudes.length > 0 ? Math.max(...altitudes) : null,
+    averageGroundSpeedMetersPerSecond:
+      connectedDurationSeconds > 0 ? distanceMeters / connectedDurationSeconds : null,
+    maxGroundSpeedMetersPerSecond: speeds.length > 0 ? Math.max(...speeds) : null,
+    maximumClimbRateMetersPerSecond: rates.length > 0 ? Math.max(...rates) : null,
+    maximumDescentRateMetersPerSecond: rates.length > 0 ? Math.min(...rates) : null,
+  };
+}
+
 function createFlightId(now: number): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -326,7 +454,7 @@ export function finalizeRecordedFlight(
 ): RecordedFlight {
   let summary = flight.summary;
   try {
-    summary = calculateRecordedFlightSummary(
+    summary = recalculateFlightStatistics(
       flight.points,
       flight.startedAt,
       endedAt,

@@ -8,12 +8,14 @@ import RecordedFlightSummaryCard from "../../components/flight/RecordedFlightSum
 import type { RecordedFlight } from "../../lib/recordedFlight";
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage";
 import NavigationBar from "../../components/NavigationBar";
+import { exportBcFlight } from "../../lib/bcFlightExport";
 
 export default function RecordedFlightPage() {
   const params = useParams<{ id: string }>();
   const [flight, setFlight] = useState<RecordedFlight | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +91,7 @@ export default function RecordedFlightPage() {
           </section>
         ) : (
           <>
-            <header style={{ margin: "24px 0 18px" }}>
+            <header style={{ position: "relative", margin: "24px 0 18px" }}>
               <p
                 style={{
                   color: "var(--bc-accent)",
@@ -105,6 +107,31 @@ export default function RecordedFlightPage() {
               >
                 Relecture du vol
               </h1>
+              <button
+                type="button"
+                aria-label="Actions du vol"
+                aria-haspopup="menu"
+                aria-expanded={exportMenuOpen}
+                onClick={() => setExportMenuOpen((open) => !open)}
+                style={{ position: "absolute", top: 0, right: 0, width: "44px", height: "44px", border: "1px solid var(--bc-border)", borderRadius: "12px", background: "var(--bc-surface)", color: "var(--bc-text-primary)", fontSize: "25px", fontWeight: 900 }}
+              >
+                ⋮
+              </button>
+              {exportMenuOpen && (
+                <div role="menu" style={{ position: "absolute", zIndex: 20, top: "48px", right: 0, minWidth: "190px", padding: "6px", border: "1px solid var(--bc-border)", borderRadius: "12px", background: "var(--bc-surface)", boxShadow: "0 12px 30px rgba(0,0,0,.24)" }}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      void exportBcFlight(flight).catch((error: unknown) => console.error("Export du vol impossible", error));
+                    }}
+                    style={{ width: "100%", minHeight: "44px", padding: "0 12px", border: 0, borderRadius: "8px", background: "transparent", color: "var(--bc-text-primary)", textAlign: "left", fontWeight: 800 }}
+                  >
+                    Exporter le vol
+                  </button>
+                </div>
+              )}
             </header>
             <FlightReplayMap flight={flight} />
             <section style={{ marginTop: "18px" }}>

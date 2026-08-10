@@ -15,7 +15,25 @@ export interface GeoPoint {
   accuracy: number | null;
   verticalAccuracy: number | null;
   timestamp: number;
+  appState?: GpsAppState;
+  lastPointTimestamp?: number;
+  deltaTimeSincePreviousPoint?: number;
+  resumedAfterBackground?: boolean;
+  firstFixAfterResume?: boolean;
 }
+
+export type GpsAppState = "FOREGROUND" | "BACKGROUND" | "RESUME";
+
+export type GpsPointQuality = "VALID" | "SUSPECT" | "INVALID";
+export type GpsPointQualityReason =
+  | "LOW_ACCURACY"
+  | "BACKGROUND_RESUME"
+  | "TIME_GAP"
+  | "ALTITUDE_SPIKE"
+  | "POSITION_JUMP"
+  | "SPEED_OUTLIER"
+  | "HEADING_OUTLIER"
+  | "NONE";
 
 /**
  * Point de projection (projection GPS ou météo)

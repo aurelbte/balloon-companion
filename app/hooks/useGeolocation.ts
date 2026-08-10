@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { GeoPoint, GeolocationState } from "../types/flight";
+import { createGpsDebugLogger, GpsQualitySession } from "../lib/gpsQuality";
 
 interface UseGeolocationOptions {
   enableHighAccuracy?: boolean;
@@ -132,6 +133,8 @@ export function useGeolocation(
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastValidPointRef = useRef<GeoPoint | null>(null);
   const stateRef = useRef<GeolocationState>("idle");
+  const gpsQualitySessionRef = useRef<GpsQualitySession | null>(null);
+  gpsQualitySessionRef.current ??= new GpsQualitySession(createGpsDebugLogger());
   const simulationStateRef = useRef<SimulationState>({
     latitude: 50.631,
     longitude: 3.058,
@@ -176,8 +179,8 @@ export function useGeolocation(
 
     if (enableDevelopmentTestMode && isDevelopmentTestRequest()) {
       const emitSimulatedPoint = () => {
-        const simulatedPoint = generateSimulatedPosition(
-          simulationStateRef.current
+        const simulatedPoint = gpsQualitySessionRef.current!.enrichPoint(
+          generateSimulatedPosition(simulationStateRef.current)
         );
         lastValidPointRef.current = simulatedPoint;
         setPoint(simulatedPoint);
@@ -204,7 +207,7 @@ export function useGeolocation(
           position.coords;
         const { speed, heading } = position.coords;
 
-        const newPoint: GeoPoint = {
+        const newPoint = gpsQualitySessionRef.current!.enrichPoint({
           latitude,
           longitude,
           altitude: altitude !== null ? altitude : null,
@@ -216,7 +219,7 @@ export function useGeolocation(
               ? altitudeAccuracy
               : null,
           timestamp: position.timestamp,
-        };
+        });
 
         if (!isUsablePoint(newPoint, lastValidPointRef.current)) return;
 
@@ -267,6 +270,18 @@ export function useGeolocation(
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        gpsQualitySessionRef.current?.enteredBackground();
+      } else {
+        gpsQualitySessionRef.current?.returnedToForeground();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
   // Cleanup au démontage
