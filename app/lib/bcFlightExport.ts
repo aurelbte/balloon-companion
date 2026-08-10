@@ -125,29 +125,79 @@ export function bcFlightFilename(flight: RecordedFlight): string {
 }
 
 export function createBcFlightFile(flight: RecordedFlight, exportedAt = new Date()): File {
+  const blob = createBcFlightBlob(flight, exportedAt);
   return new File(
-    [JSON.stringify(createBcFlightExport(flight, exportedAt), null, 2)],
+    [blob],
     bcFlightFilename(flight),
+    { type: blob.type },
+  );
+}
+
+export function createBcFlightBlob(flight: RecordedFlight, exportedAt = new Date()): Blob {
+  return new Blob(
+    [JSON.stringify(createBcFlightExport(flight, exportedAt), null, 2)],
     { type: "application/json" },
   );
 }
 
-export async function exportBcFlight(flight: RecordedFlight): Promise<"SHARED" | "DOWNLOADED"> {
-  const file = createBcFlightFile(flight);
-  const shareData: ShareData = { files: [file], title: "Balloon Companion — Export du vol" };
-  if (typeof navigator.share === "function" && navigator.canShare?.(shareData)) {
-    try {
-      await navigator.share(shareData);
-      return "SHARED";
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return "SHARED";
-    }
-  }
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
+interface BcFlightDownloadLink {
+  href: string;
+  download: string;
+  click(): void;
+  remove(): void;
+}
+
+export interface BcFlightExportEnvironment {
+  share?: (data: ShareData) => Promise<void>;
+  canShare?: (data: ShareData) => boolean;
+  createObjectUrl(blob: Blob): string;
+  revokeObjectUrl(url: string): void;
+  createDownloadLink(): BcFlightDownloadLink;
+  scheduleCleanup(callback: () => void): void;
+}
+
+function browserExportEnvironment(): BcFlightExportEnvironment {
+  return {
+    share: typeof navigator.share === "function" ? navigator.share.bind(navigator) : undefined,
+    canShare: typeof navigator.canShare === "function" ? navigator.canShare.bind(navigator) : undefined,
+    createObjectUrl: (blob) => URL.createObjectURL(blob),
+    revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+    createDownloadLink: () => {
+      const link = document.createElement("a");
+      link.style.display = "none";
+      document.body.appendChild(link);
+      return link;
+    },
+    scheduleCleanup: (callback) => window.setTimeout(callback, 1_000),
+  };
+}
+
+function downloadBcFlightFile(file: File, environment: BcFlightExportEnvironment): void {
+  const url = environment.createObjectUrl(file);
+  const link = environment.createDownloadLink();
   link.href = url;
   link.download = file.name;
   link.click();
-  URL.revokeObjectURL(url);
+  environment.scheduleCleanup(() => {
+    link.remove();
+    environment.revokeObjectUrl(url);
+  });
+}
+
+export async function exportBcFlight(
+  flight: RecordedFlight,
+  environment: BcFlightExportEnvironment = browserExportEnvironment(),
+): Promise<"SHARED" | "DOWNLOADED"> {
+  const file = createBcFlightFile(flight);
+  const shareData: ShareData = { files: [file], title: "Balloon Companion — Export du vol" };
+  try {
+    if (environment.share && environment.canShare?.(shareData)) {
+      await environment.share(shareData);
+      return "SHARED";
+    }
+  } catch {
+    // Safari peut refuser le partage après canShare : le téléchargement reste disponible.
+  }
+  downloadBcFlightFile(file, environment);
   return "DOWNLOADED";
 }

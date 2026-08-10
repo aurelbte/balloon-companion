@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createRecordedFlight, finalizeRecordedFlight } from "./recordedFlight.ts";
-import { BCFLIGHT_FORMAT, createBcFlightExport, createBcFlightFile } from "./bcFlightExport.ts";
+import { BCFLIGHT_FORMAT, createBcFlightBlob, createBcFlightExport, createBcFlightFile, exportBcFlight } from "./bcFlightExport.ts";
 
 function existingFlight({ legacy = false } = {}) {
   const point = {
@@ -41,6 +42,56 @@ test("exporte un vol existant en JSON versionné et ouvrable", async () => {
   assert.equal(parsed.recordedTrace.points.length, 1);
   assert.equal(parsed.recordedTrace.points[0].quality, "VALID");
   assert.equal(parsed.recordedTrace.points[0].appState, "FOREGROUND");
+});
+
+function exportEnvironment({ share, canShare } = {}) {
+  const calls = { shared: 0, downloaded: 0, revoked: 0, files: [] };
+  const link = { href: "", download: "", click: () => { calls.downloaded += 1; }, remove: () => undefined };
+  return {
+    calls,
+    environment: {
+      share: share ? async (data) => { calls.shared += 1; calls.files = data.files; await share(data); } : undefined,
+      canShare,
+      createObjectUrl: () => "blob:bcflight",
+      revokeObjectUrl: () => { calls.revoked += 1; },
+      createDownloadLink: () => link,
+      scheduleCleanup: (callback) => callback(),
+    },
+  };
+}
+
+test("le clic est branché et le payload Blob est généré", async () => {
+  const source = readFileSync(new URL("../flights/[id]/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /onClick=.*[\s\S]*exportBcFlight\(flight\)/);
+  const payload = JSON.parse(await createBcFlightBlob(existingFlight()).text());
+  assert.equal(payload.format, "BCFLIGHT");
+});
+
+test("share fichiers supporté appelle la feuille de partage", async () => {
+  const { calls, environment } = exportEnvironment({ share: async () => undefined, canShare: () => true });
+  assert.equal(await exportBcFlight(existingFlight(), environment), "SHARED");
+  assert.equal(calls.shared, 1);
+  assert.equal(calls.downloaded, 0);
+  assert.equal(calls.files[0].name.endsWith(".bcflight"), true);
+});
+
+test("share non supporté déclenche le téléchargement", async () => {
+  const { calls, environment } = exportEnvironment({ canShare: () => false });
+  assert.equal(await exportBcFlight(existingFlight(), environment), "DOWNLOADED");
+  assert.equal(calls.downloaded, 1);
+  assert.equal(calls.revoked, 1);
+});
+
+test("un échec de share déclenche automatiquement le téléchargement", async () => {
+  const { calls, environment } = exportEnvironment({ share: async () => { throw new Error("iOS share failed"); }, canShare: () => true });
+  assert.equal(await exportBcFlight(existingFlight(), environment), "DOWNLOADED");
+  assert.equal(calls.shared, 1);
+  assert.equal(calls.downloaded, 1);
+});
+
+test("l'export ne référence aucun stockage applicatif", () => {
+  const source = readFileSync(new URL("./bcFlightExport.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /IndexedDB|localStorage|sessionStorage|saveActiveFlight|completeFlight|Journal|Carnet/i);
 });
 
 test("n'exporte ni secret, ni session Auth, ni donnée d'un autre vol", () => {

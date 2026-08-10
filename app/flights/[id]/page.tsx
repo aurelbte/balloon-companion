@@ -124,7 +124,10 @@ export default function RecordedFlightPage() {
                     role="menuitem"
                     onClick={() => {
                       setExportMenuOpen(false);
-                      void exportBcFlight(flight).catch((error: unknown) => console.error("Export du vol impossible", error));
+                      void exportBcFlight(flight).catch((error: unknown) => {
+                        console.error("Export du vol impossible", error);
+                        window.alert("Impossible d’exporter ce vol. Réessayez depuis Safari.");
+                      });
                     }}
                     style={{ width: "100%", minHeight: "44px", padding: "0 12px", border: 0, borderRadius: "8px", background: "transparent", color: "var(--bc-text-primary)", textAlign: "left", fontWeight: 800 }}
                   >
