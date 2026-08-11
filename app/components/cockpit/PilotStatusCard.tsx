@@ -3,6 +3,7 @@
 import { BadgeCheck, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Card } from "../../design-system";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { usePilotProfile } from "../../hooks/usePilotProfile";
 import { calculatePilotOfficialTotals } from "../../lib/flightCompletion";
@@ -36,6 +37,15 @@ export default function PilotStatusCard() {
     { label: "Vol test", dateIso: profile.flightTestDueDateIso },
     { label: "Médical", dateIso: profile.medicalDueDateIso },
   ];
+  const credentialRows = rows.map((row) => ({
+    ...row,
+    visualStatus: credentialStatus(row.dateIso, now),
+  }));
+  const globalStatus = credentialRows.some(({ visualStatus }) => visualStatus === "expired")
+    ? { label: "Non conforme", visualStatus: "danger" }
+    : credentialRows.some(({ visualStatus }) => visualStatus !== "valid")
+      ? { label: "Attention", visualStatus: "attention" }
+      : { label: "Prêt à voler", visualStatus: "valid" };
   const totals = useMemo(() => calculatePilotOfficialTotals(completion), [completion]);
 
   useEffect(() => {
@@ -60,29 +70,34 @@ export default function PilotStatusCard() {
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
       >
-        <div className={styles.card}>
+        <Card className={`${styles.card} ${styles.summaryCard}`}>
           <h2 className={styles.cardTitle}>
             <BadgeCheck size={15} aria-hidden="true" />
             Statut pilote
           </h2>
           <div className={styles.rows}>
-            {rows.map(({ label, dateIso }) => {
-              const months = remainingMonthsUntil(dateIso, now);
-              const dueDate = formatProfileDate(dateIso);
-              return (
-                <div className={styles.credentialRow} key={label}>
-                  <span className={styles.credentialLabel}>{label}</span>
-                  <strong className={styles.credentialRemaining}>
-                    {months === null ? "Non renseigné" : `${months} mois restants`}
-                  </strong>
-                  <span className={styles.credentialDueDate}>
-                    Échéance&nbsp;: {dueDate ?? "Non renseignée"}
-                  </span>
-                </div>
-              );
-            })}
+            <div className={styles.row}>
+              <span className={styles.label}>Statut global</span>
+              <strong className={styles.statusValue} data-status={globalStatus.visualStatus}>
+                <span className={styles.statusDot} aria-hidden="true" />
+                {globalStatus.label}
+              </strong>
+            </div>
+            {credentialRows.map(({ label, visualStatus }) => (
+              <div className={styles.row} key={label}>
+                <span className={styles.label}>{label}</span>
+                <strong
+                  className={styles.statusValue}
+                  data-status={visualStatus === "expired" ? "danger" : visualStatus}
+                >
+                  <span className={styles.statusDot} aria-hidden="true" />
+                  {statusLabel(visualStatus)}
+                </strong>
+              </div>
+            ))}
           </div>
-        </div>
+          <span className={styles.cardAction}>Voir le détail →</span>
+        </Card>
       </button>
 
       {open && (

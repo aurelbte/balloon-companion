@@ -11,6 +11,18 @@ test("la carte entière ouvre une fiche fermable", () => {
   assert.match(component, /pilotStatusClose[\s\S]*onClick=\{\(\) => setOpen\(false\)\}[\s\S]*aria-label="Fermer la fiche Statut pilote"/);
 });
 
+test("la carte cockpit reste une synthèse alignée sur les autres cartes", () => {
+  assert.match(component, /<Card className=\{`\$\{styles\.card\} \$\{styles\.summaryCard\}`\}>/);
+  assert.match(component, /Statut global/);
+  assert.match(component, /Prêt à voler/);
+  assert.match(component, /Attention/);
+  assert.match(component, /Non conforme/);
+  assert.match(component, /Vol test/);
+  assert.match(component, /Médical/);
+  assert.match(component, /Voir le détail →/);
+  assert.doesNotMatch(component.slice(component.indexOf("pilotStatusTrigger"), component.indexOf("{open &&")), /mois restants|Échéance/);
+});
+
 test("la fiche réutilise les données pilote et les totaux officiels", () => {
   assert.match(component, /usePilotProfile\(\)/);
   assert.match(component, /useFlightCompletionState\(\)/);
