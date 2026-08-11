@@ -19,6 +19,12 @@
   margin-inline: auto;
 }
 
+.neutralLayout { grid-template-rows: auto 1fr; }
+.neutralWelcome { display: grid; align-self: center; justify-items: start; gap: 10px; padding: 20px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-panel); background: var(--bc-color-surface); }
+.neutralWelcome h2 { font-size: 1.1rem; }
+.neutralWelcome p { color: var(--bc-color-text-secondary); font-size: .8rem; line-height: 1.45; }
+.neutralWelcome a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 16px; border-radius: var(--bc-radius-round); background: var(--bc-color-action); color: var(--bc-color-action-foreground); font-size: .78rem; font-weight: 700; text-decoration: none; }
+
 .header {
   display: grid;
   gap: 2px;

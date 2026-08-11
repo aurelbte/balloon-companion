@@ -11,8 +11,8 @@
 .accountCard h2 { font-size: .92rem; font-weight: 600; }
 .authLoading { margin-top: 8px; color: var(--bc-text-muted); font-size: .72rem; }
 .accountActions { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
-.accountActions a, .accountActions span { color: var(--bc-accent); font-size: .72rem; font-weight: 650; text-decoration: none; }
-.accountActions span { color: var(--bc-text-secondary); }
+.accountActions a, .accountActions button { border: 0; background: transparent; color: var(--bc-accent); font-size: .72rem; font-weight: 650; text-decoration: none; }
+.accountActions button { padding: 0; color: var(--bc-text-secondary); }
 .accountIdentity { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin-top: 9px; }
 .accountIdentity strong, .accountIdentity span, .accountIdentity em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .accountIdentity strong { font-size: .82rem; }

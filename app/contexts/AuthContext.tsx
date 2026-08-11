@@ -11,7 +11,7 @@ import { createPendingLocalDataMigration, inspectLegacyLocalData, type PendingLo
 import { getOrCreateDeviceIdentity } from "../lib/auth/deviceIdentity.ts";
 import { getLocalDataMigrationDecision, saveLocalDataMigrationDecision, type LocalDataMigrationDecision } from "../lib/auth/localDataMigrationDecision.ts";
 import { BrowserLocalDataMigrationRepository, hasCompletedLegacyMigration, migrateApprovedLegacyData, type LocalDataMigrationState } from "../lib/auth/localDataMigration.ts";
-import { DATA_SCOPE_CHANGED_EVENT, setRuntimeAuthSnapshot } from "../lib/auth/dataScopeRuntime.ts";
+import { DATA_SCOPE_CHANGED_EVENT, setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "../lib/auth/dataScopeRuntime.ts";
 
 type AuthContextValue = AuthSnapshot & Readonly<{
   signUp(input: SignUpInput): Promise<void>;
@@ -21,6 +21,8 @@ type AuthContextValue = AuthSnapshot & Readonly<{
   pendingLocalDataMigration: PendingLocalDataMigration | null;
   decideLocalDataMigration(decision: LocalDataMigrationDecision): void;
   localDataMigrationState: LocalDataMigrationState | null;
+  authChoiceState: "AUTH_CHOICE_PENDING" | "GUEST_ACTIVE";
+  activateGuestMode(): void;
 }>;
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -31,7 +33,9 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const [snapshot, setSnapshot] = useState<AuthSnapshot>(UNKNOWN_AUTH_SNAPSHOT);
   const [pendingLocalDataMigration, setPendingLocalDataMigration] = useState<PendingLocalDataMigration | null>(null);
   const [localDataMigrationState, setLocalDataMigrationState] = useState<LocalDataMigrationState | null>(null);
+  const [authChoiceState, setAuthChoiceState] = useState<"AUTH_CHOICE_PENDING" | "GUEST_ACTIVE">("AUTH_CHOICE_PENDING");
   setRuntimeAuthSnapshot(snapshot);
+  setRuntimeGuestModeActive(authChoiceState === "GUEST_ACTIVE");
 
   useEffect(() => { window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT)); }, [snapshot]);
 
@@ -94,14 +98,23 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const signIn = useCallback(async (input: AuthCredentials) => {
     const user = await provider.signIn(input);
     saveLocalAuthSession(window.localStorage, user);
+    setAuthChoiceState("AUTH_CHOICE_PENDING");
     setSnapshot({ state: "SIGNED_IN", user });
   }, [provider]);
 
   const signOut = useCallback(async () => {
     await provider.signOut();
     clearLocalAuthSession(window.localStorage);
+    setAuthChoiceState("AUTH_CHOICE_PENDING");
     setSnapshot({ state: "SIGNED_OUT", user: null });
   }, [provider]);
+
+  const activateGuestMode = useCallback(() => {
+    if (snapshot.state !== "SIGNED_OUT") return;
+    setAuthChoiceState("GUEST_ACTIVE");
+    setRuntimeGuestModeActive(true);
+    window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT));
+  }, [snapshot.state]);
 
   const confirmEmail = useCallback(async (code?: string) => {
     try {
@@ -119,9 +132,9 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     }
   }, [provider]);
 
-  const runtimeKey = snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION" ? `USER:${snapshot.user?.id}` : snapshot.state;
+  const runtimeKey = snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION" ? `USER:${snapshot.user?.id}` : `${snapshot.state}:${authChoiceState}`;
   const runtimeChildren = snapshot.state === "UNKNOWN" && pathname !== "/auth/confirmed" ? null : <Fragment key={runtimeKey}>{children}</Fragment>;
-  return <AuthContext.Provider value={{ ...snapshot, signUp, signIn, signOut, confirmEmail, pendingLocalDataMigration, decideLocalDataMigration, localDataMigrationState }}>{runtimeChildren}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ ...snapshot, signUp, signIn, signOut, confirmEmail, pendingLocalDataMigration, decideLocalDataMigration, localDataMigrationState, authChoiceState, activateGuestMode }}>{runtimeChildren}</AuthContext.Provider>;
 }
 
 export function useBalloonAuth(): AuthContextValue {

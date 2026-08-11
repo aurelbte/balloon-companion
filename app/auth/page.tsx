@@ -47,6 +47,7 @@ export default function AuthEntryPage() {
               type="button"
               onClick={() => {
                 continueWithoutAccount();
+                auth.activateGuestMode();
                 router.replace(AUTH_CONTINUE_ROUTE);
               }}
             >

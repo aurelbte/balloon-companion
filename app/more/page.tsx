@@ -32,7 +32,7 @@ export default function MorePage() {
         <div className={styles.accountActions}>
           <Link href={AUTH_SIGN_UP_ROUTE}>Créer un compte</Link>
           <Link href={AUTH_SIGN_IN_ROUTE}>Se connecter</Link>
-          <span>Continuer sans compte</span>
+          <button type="button" onClick={auth.activateGuestMode}>Continuer sans compte</button>
         </div>
       ) : (
         <div className={styles.accountIdentity}>

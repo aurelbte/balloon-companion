@@ -20,7 +20,7 @@ import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
 import { legacyFlightSessionToRecordedFlight } from "./realFlightJournal.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { loadFlightSession } from "./flightSessionStorage.ts";
-import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 
 export const FLIGHT_COMPLETION_STORAGE_KEY = "balloon-companion-flight-completion-v1";
 const STORAGE_KEY = FLIGHT_COMPLETION_STORAGE_KEY;
@@ -70,11 +70,16 @@ function normalizeState(value: unknown): FlightCompletionState | null {
 
 export function loadFlightCompletionState(): FlightCompletionState {
   if (typeof window === "undefined") return createEmptyFlightCompletionState();
+  const scope = getRuntimeDataScope();
+  const blank: FlightCompletionState = { version: FLIGHT_COMPLETION_SCHEMA_VERSION, openingBalance: { confirmed: false, ascensions: null, officialDurationMinutes: null }, journalFlights: [], officialAscensions: [] };
+  if (!scope) return blank;
   try {
-    const value: unknown = JSON.parse(readScopedBusinessValue(window.localStorage, STORAGE_KEY) ?? "null");
-    return normalizeState(value) ?? createEmptyFlightCompletionState();
+    const raw = readScopedBusinessValue(window.localStorage, STORAGE_KEY);
+    if (!raw && scope !== "GUEST") return blank;
+    const value: unknown = JSON.parse(raw ?? "null");
+    return normalizeState(value) ?? (scope === "GUEST" ? createEmptyFlightCompletionState() : blank);
   } catch {
-    return createEmptyFlightCompletionState();
+    return scope === "GUEST" ? createEmptyFlightCompletionState() : blank;
   }
 }
 

@@ -7,6 +7,7 @@ import {
   scopedBusinessStorageKey,
   scopedIndexedDbName,
   setRuntimeAuthSnapshot,
+  setRuntimeGuestModeActive,
   writeScopedBusinessValue,
 } from "./dataScopeRuntime.ts";
 
@@ -19,6 +20,7 @@ function storage(entries = {}) {
 test("GUEST lit et écrit le legacy compatible sans le modifier lors d'un passage USER", () => {
   const local = storage({ journal: "legacy" });
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
   assert.equal(getRuntimeDataScope(), "GUEST");
   assert.equal(readScopedBusinessValue(local, "journal"), "legacy");
   writeScopedBusinessValue(local, "journal", "guest-update");
@@ -27,6 +29,16 @@ test("GUEST lit et écrit le legacy compatible sans le modifier lors d'un passag
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("A") });
   assert.equal(readScopedBusinessValue(local, "journal"), null);
   assert.equal(local.getItem("journal"), "guest-update");
+});
+
+test("SIGNED_OUT reste sans scope avant le choix explicite du mode invité", () => {
+  const local = storage({ journal: "legacy-secret" });
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(false);
+  assert.equal(getRuntimeDataScope(), null);
+  assert.equal(readScopedBusinessValue(local, "journal"), null);
+  assert.equal(writeScopedBusinessValue(local, "journal", "interdit"), false);
+  assert.equal(local.getItem("journal"), "legacy-secret");
 });
 
 test("USER A et USER B sont isolés sans fallback legacy", () => {
