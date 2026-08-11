@@ -1,5 +1,6 @@
 import {
   calculateRecordedFlightSummary,
+  calculateFlightGapDistanceLinks,
   recalculateFlightStatistics,
   type RecordedFlight,
   type RecordedFlightPoint,
@@ -7,6 +8,8 @@ import {
 } from "./recordedFlight.ts";
 import type { RecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { classifyGpsTraceQuality } from "./gpsPointQuality.ts";
+import { buildFlightSegments, type FlightSegmentBreakReason } from "./flightSegments.ts";
+import { calculateFilteredHorizontalDistance } from "./filteredHorizontalDistance.ts";
 
 export interface GpsRecordDiagnostic {
   timestamp: number | null;
@@ -24,6 +27,29 @@ export interface GpsStatisticsDiagnostic {
   newStatistics: RecordedFlightSummary;
   pointCounts: Readonly<{ total: number; valid: number; suspect: number; invalid: number }>;
   gapOrBackgroundCount: number;
+  segmentCount: number;
+  segments: readonly Readonly<{
+    id: string;
+    breakReason: FlightSegmentBreakReason | null;
+    startedAt: number;
+    endedAt: number;
+    durationMilliseconds: number;
+    pointCount: number;
+    distanceMeters: number;
+    minAltitudeMeters: number | null;
+    maxAltitudeMeters: number | null;
+  }>[];
+  gapDistanceLinks: ReturnType<typeof calculateFlightGapDistanceLinks>;
+  distanceDiagnostic: Readonly<{
+    rawDistanceMeters: number;
+    segmentedDistanceMeters: number;
+    filteredDistanceMeters: number;
+    gapDistanceMeters: number;
+    finalDistanceMeters: number;
+    removedNoiseMeters: number;
+    removedPercentage: number;
+    neutralizedMicroOscillations: number;
+  }>;
   records: Readonly<{
     maximumSpeed: GpsRecordDiagnostic;
     maximumClimb: GpsRecordDiagnostic;
@@ -57,6 +83,24 @@ function medianInterval(points: readonly RecordedFlightPoint[]): number {
 }
 
 function validSegments(points: readonly RecordedFlightPoint[]): RecordedFlightPoint[][] {
+  const usesSegmentIds = points.some(({ segmentId }) => segmentId !== undefined);
+  if (usesSegmentIds) {
+    const segments: RecordedFlightPoint[][] = [];
+    let segment: RecordedFlightPoint[] = [];
+    let segmentId: string | undefined;
+    for (const point of points) {
+      if (point.quality !== "VALID" || (segment.length > 0 && point.segmentId !== segmentId)) {
+        if (segment.length > 0) segments.push(segment);
+        segment = [];
+      }
+      if (point.quality === "VALID") {
+        segmentId = point.segmentId;
+        segment.push(point);
+      }
+    }
+    if (segment.length > 0) segments.push(segment);
+    return segments;
+  }
   const threshold = Math.max(10_000, medianInterval(points) * 4);
   const segments: RecordedFlightPoint[][] = [];
   let segment: RecordedFlightPoint[] = [];
@@ -130,10 +174,16 @@ function varioRecords(points: readonly RecordedFlightPoint[]): {
 
 export function diagnoseRecordedFlight(flight: RecordedFlight): GpsStatisticsDiagnostic {
   const classified = classifyGpsTraceQuality(flight.points);
+  const segments = buildFlightSegments(classified);
+  const segmentedPoints = segments.flatMap(({ points }) => points);
   const oldBase = calculateRecordedFlightSummary(flight.points, flight.startedAt, flight.endedAt);
   const rates = legacyRates(flight.points);
-  const newStatistics = recalculateFlightStatistics(classified, flight.startedAt, flight.endedAt);
-  const varios = varioRecords(classified);
+  const newStatistics = recalculateFlightStatistics(segmentedPoints, flight.startedAt, flight.endedAt);
+  const horizontalDistance = calculateFilteredHorizontalDistance(segmentedPoints);
+  const gapDistanceLinks = calculateFlightGapDistanceLinks(segmentedPoints);
+  const gapDistanceMeters = gapDistanceLinks.filter(({ retained }) => retained)
+    .reduce((total, { distanceMeters }) => total + distanceMeters, 0);
+  const varios = varioRecords(segmentedPoints);
   return {
     flightId: flight.id,
     oldStatistics: {
@@ -143,15 +193,38 @@ export function diagnoseRecordedFlight(flight: RecordedFlight): GpsStatisticsDia
     },
     newStatistics,
     pointCounts: {
-      total: classified.length,
-      valid: classified.filter(({ quality }) => quality === "VALID").length,
-      suspect: classified.filter(({ quality }) => quality === "SUSPECT").length,
-      invalid: classified.filter(({ quality }) => quality === "INVALID").length,
+      total: segmentedPoints.length,
+      valid: segmentedPoints.filter(({ quality }) => quality === "VALID").length,
+      suspect: segmentedPoints.filter(({ quality }) => quality === "SUSPECT").length,
+      invalid: segmentedPoints.filter(({ quality }) => quality === "INVALID").length,
     },
-    gapOrBackgroundCount: classified.filter(({ qualityReason }) =>
-      qualityReason === "TIME_GAP" || qualityReason === "BACKGROUND_RESUME").length,
+    gapOrBackgroundCount: segments.slice(1).filter(({ breakReason }) =>
+      breakReason === "TIME_GAP" || breakReason === "BACKGROUND" || breakReason === "LOW_ACCURACY").length,
+    segmentCount: segments.length,
+    segments: segments.map((segment) => ({
+      id: segment.id,
+      breakReason: segment.breakReason,
+      startedAt: segment.startedAt,
+      endedAt: segment.endedAt,
+      durationMilliseconds: segment.durationMilliseconds,
+      pointCount: segment.points.length,
+      distanceMeters: segment.distanceMeters,
+      minAltitudeMeters: segment.minAltitudeMeters,
+      maxAltitudeMeters: segment.maxAltitudeMeters,
+    })),
+    gapDistanceLinks,
+    distanceDiagnostic: {
+      rawDistanceMeters: oldBase.distanceMeters,
+      segmentedDistanceMeters: horizontalDistance.rawDistanceMeters,
+      filteredDistanceMeters: horizontalDistance.filteredDistanceMeters,
+      gapDistanceMeters,
+      finalDistanceMeters: horizontalDistance.filteredDistanceMeters + gapDistanceMeters,
+      removedNoiseMeters: horizontalDistance.removedNoiseMeters,
+      removedPercentage: horizontalDistance.removedPercentage,
+      neutralizedMicroOscillations: horizontalDistance.neutralizedMicroOscillations,
+    },
     records: {
-      maximumSpeed: speedRecord(classified),
+      maximumSpeed: speedRecord(segmentedPoints),
       maximumClimb: varios.maximumClimb,
       maximumDescent: varios.maximumDescent,
     },

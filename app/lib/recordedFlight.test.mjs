@@ -63,6 +63,14 @@ test("rejette un doublon strict et un timestamp antérieur", () => {
   );
 });
 
+test("conserve deux callbacks successifs aux coordonnées identiques si leurs timestamps diffèrent", () => {
+  const previous = point({ timestamp: 1_000 });
+  assert.equal(
+    canAppendRecordedFlightPoint(point({ timestamp: 2_000 }), previous).accepted,
+    true,
+  );
+});
+
 test("un point GPS invalide ne supprime pas les points existants", () => {
   const flight = createRecordedFlight({
     id: "flight",

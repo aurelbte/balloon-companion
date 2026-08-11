@@ -21,6 +21,11 @@ function existingFlight({ legacy = false } = {}) {
       lastPointTimestamp: 1_700_000_000_000,
       resumedAfterBackground: false,
       firstFixAfterResume: false,
+      gpsTimestamp: 1_700_000_000_000,
+      receivedAt: 1_700_000_000_025,
+      callbackSequence: 1,
+      deliveryLatencyMs: 25,
+      sameCoordinatesAsPrevious: false,
     }),
   };
   return finalizeRecordedFlight(createRecordedFlight({
@@ -42,6 +47,9 @@ test("exporte un vol existant en JSON versionné et ouvrable", async () => {
   assert.equal(parsed.recordedTrace.points.length, 1);
   assert.equal(parsed.recordedTrace.points[0].quality, "VALID");
   assert.equal(parsed.recordedTrace.points[0].appState, "FOREGROUND");
+  assert.equal(parsed.recordedTrace.points[0].gpsTimestamp, 1_700_000_000_000);
+  assert.equal(parsed.recordedTrace.points[0].receivedAt, 1_700_000_000_025);
+  assert.equal(parsed.recordedTrace.points[0].callbackSequence, 1);
 });
 
 function exportEnvironment({ share, canShare } = {}) {

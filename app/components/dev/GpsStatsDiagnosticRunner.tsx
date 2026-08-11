@@ -19,6 +19,26 @@ export default function GpsStatsDiagnosticRunner() {
         console.group(`[GPS Stats] ${diagnostic.flightId} — lecture seule`);
         console.table({ ANCIEN: diagnostic.oldStatistics, NOUVEAU: diagnostic.newStatistics });
         console.table({ ...diagnostic.pointCounts, gapsBackground: diagnostic.gapOrBackgroundCount });
+        console.info(`Segments: ${diagnostic.segmentCount}`);
+        console.table(diagnostic.segments);
+        console.table(diagnostic.gapDistanceLinks.map((gap) => ({
+          gap: `Gap ${gap.gapNumber}`,
+          distanceMeters: gap.distanceMeters,
+          durationMilliseconds: gap.durationMilliseconds,
+          implicitSpeedMetersPerSecond: gap.implicitSpeedMetersPerSecond,
+          retained: gap.retained ? "OUI" : "NON",
+          reason: gap.reason,
+        })));
+        console.table({
+          distanceBrute: diagnostic.distanceDiagnostic.rawDistanceMeters,
+          distanceSegmentee: diagnostic.distanceDiagnostic.segmentedDistanceMeters,
+          distanceFiltree: diagnostic.distanceDiagnostic.filteredDistanceMeters,
+          distanceGaps: diagnostic.distanceDiagnostic.gapDistanceMeters,
+          distanceTotaleFinale: diagnostic.distanceDiagnostic.finalDistanceMeters,
+          bruitRetire: diagnostic.distanceDiagnostic.removedNoiseMeters,
+          pourcentageRetire: diagnostic.distanceDiagnostic.removedPercentage,
+          microOscillationsNeutralisees: diagnostic.distanceDiagnostic.neutralizedMicroOscillations,
+        });
         console.info("Records vitesse/vario", diagnostic.records);
         console.groupEnd();
       })

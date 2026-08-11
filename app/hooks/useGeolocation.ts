@@ -179,8 +179,10 @@ export function useGeolocation(
 
     if (enableDevelopmentTestMode && isDevelopmentTestRequest()) {
       const emitSimulatedPoint = () => {
+        const receivedAt = Date.now();
         const simulatedPoint = gpsQualitySessionRef.current!.enrichPoint(
-          generateSimulatedPosition(simulationStateRef.current)
+          generateSimulatedPosition(simulationStateRef.current),
+          receivedAt,
         );
         lastValidPointRef.current = simulatedPoint;
         setPoint(simulatedPoint);
@@ -203,11 +205,12 @@ export function useGeolocation(
     // Démarrer le suivi GPS réel
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        const receivedAt = Date.now();
         const { latitude, longitude, altitude, accuracy, altitudeAccuracy } =
           position.coords;
         const { speed, heading } = position.coords;
 
-        const newPoint = gpsQualitySessionRef.current!.enrichPoint({
+        const callbackPoint: GeoPoint = {
           latitude,
           longitude,
           altitude: altitude !== null ? altitude : null,
@@ -219,9 +222,13 @@ export function useGeolocation(
               ? altitudeAccuracy
               : null,
           timestamp: position.timestamp,
-        });
+        };
 
-        if (!isUsablePoint(newPoint, lastValidPointRef.current)) return;
+        if (!isUsablePoint(callbackPoint, lastValidPointRef.current)) return;
+        const newPoint = gpsQualitySessionRef.current!.enrichPoint(
+          callbackPoint,
+          receivedAt,
+        );
 
         lastValidPointRef.current = newPoint;
         setPoint(newPoint);

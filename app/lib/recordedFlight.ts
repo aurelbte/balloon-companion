@@ -4,11 +4,22 @@ import type {
   GpsPointQuality,
   GpsPointQualityReason,
 } from "../types/flight.ts";
+import { calculateFilteredHorizontalDistance } from "./filteredHorizontalDistance.ts";
 
 export const RECORDED_FLIGHT_SCHEMA_VERSION = 1;
 
 export interface RecordedFlightPoint {
+  /** Timestamp d'acquisition CoreLocation/WebKit. `timestamp` conserve cette même valeur. */
   timestamp: number;
+  gpsTimestamp?: number;
+  receivedAt?: number;
+  callbackSequence?: number;
+  deliveryLatencyMs?: number;
+  sameCoordinatesAsPrevious?: boolean;
+  sameAltitudeAsPrevious?: boolean;
+  sameGpsTimestampAsPrevious?: boolean;
+  deltaGpsTimestampMs?: number;
+  deltaReceivedAtMs?: number;
   latitude: number;
   longitude: number;
   altitudeMeters: number | null;
@@ -23,6 +34,7 @@ export interface RecordedFlightPoint {
   firstFixAfterResume?: boolean;
   quality?: GpsPointQuality;
   qualityReason?: GpsPointQualityReason;
+  segmentId?: string;
 }
 
 export interface RecordedFlightSummary {
@@ -34,6 +46,64 @@ export interface RecordedFlightSummary {
   maxGroundSpeedMetersPerSecond: number | null;
   maximumClimbRateMetersPerSecond?: number | null;
   maximumDescentRateMetersPerSecond?: number | null;
+}
+
+export const MAX_GAP_SPEED_MS = 20;
+
+export interface FlightGapDistanceLink {
+  gapNumber: number;
+  fromSegmentId: string;
+  toSegmentId: string;
+  distanceMeters: number;
+  durationMilliseconds: number;
+  implicitSpeedMetersPerSecond: number | null;
+  retained: boolean;
+  reason: "PLAUSIBLE_SPEED" | "INVALID_POINT" | "UNCLASSIFIED_POINT" | "NON_POSITIVE_DURATION" | "SPEED_ABOVE_LIMIT";
+}
+
+export function calculateFlightGapDistanceLinks(
+  points: readonly RecordedFlightPoint[],
+  maxGapSpeedMetersPerSecond = MAX_GAP_SPEED_MS,
+): FlightGapDistanceLink[] {
+  const links: FlightGapDistanceLink[] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (
+      previous.segmentId === undefined ||
+      current.segmentId === undefined ||
+      previous.segmentId === current.segmentId
+    ) continue;
+    const distanceMeters = distanceBetweenRecordedPoints(previous, current);
+    const durationMilliseconds = current.timestamp - previous.timestamp;
+    const implicitSpeedMetersPerSecond = durationMilliseconds > 0
+      ? distanceMeters / (durationMilliseconds / 1_000)
+      : null;
+    const invalidBoundary = previous.quality === "INVALID" || current.quality === "INVALID";
+    const classifiedBoundary =
+      (previous.quality === "VALID" || previous.quality === "SUSPECT") &&
+      (current.quality === "VALID" || current.quality === "SUSPECT");
+    const retained = !invalidBoundary && classifiedBoundary &&
+      implicitSpeedMetersPerSecond !== null &&
+      implicitSpeedMetersPerSecond <= maxGapSpeedMetersPerSecond;
+    links.push({
+      gapNumber: links.length + 1,
+      fromSegmentId: previous.segmentId,
+      toSegmentId: current.segmentId,
+      distanceMeters,
+      durationMilliseconds,
+      implicitSpeedMetersPerSecond,
+      retained,
+      reason: invalidBoundary
+        ? "INVALID_POINT"
+        : !classifiedBoundary
+          ? "UNCLASSIFIED_POINT"
+        : implicitSpeedMetersPerSecond === null
+          ? "NON_POSITIVE_DURATION"
+          : retained ? "PLAUSIBLE_SPEED" : "SPEED_ABOVE_LIMIT",
+    });
+  }
+  return links;
 }
 
 export interface RecordedFlight {
@@ -88,6 +158,15 @@ export function geoPointToRecordedFlightPoint(
     headingDegrees: finiteOrNull(point.heading),
     horizontalAccuracyMeters: finiteOrNull(point.accuracy),
     verticalAccuracyMeters: finiteOrNull(point.verticalAccuracy),
+    ...(point.gpsTimestamp === undefined ? {} : { gpsTimestamp: point.gpsTimestamp }),
+    ...(point.receivedAt === undefined ? {} : { receivedAt: point.receivedAt }),
+    ...(point.callbackSequence === undefined ? {} : { callbackSequence: point.callbackSequence }),
+    ...(point.deliveryLatencyMs === undefined ? {} : { deliveryLatencyMs: point.deliveryLatencyMs }),
+    ...(point.sameCoordinatesAsPrevious === undefined ? {} : { sameCoordinatesAsPrevious: point.sameCoordinatesAsPrevious }),
+    ...(point.sameAltitudeAsPrevious === undefined ? {} : { sameAltitudeAsPrevious: point.sameAltitudeAsPrevious }),
+    ...(point.sameGpsTimestampAsPrevious === undefined ? {} : { sameGpsTimestampAsPrevious: point.sameGpsTimestampAsPrevious }),
+    ...(point.deltaGpsTimestampMs === undefined ? {} : { deltaGpsTimestampMs: point.deltaGpsTimestampMs }),
+    ...(point.deltaReceivedAtMs === undefined ? {} : { deltaReceivedAtMs: point.deltaReceivedAtMs }),
     ...(point.appState === undefined ? {} : { appState: point.appState }),
     ...(point.lastPointTimestamp === undefined ? {} : { lastPointTimestamp: point.lastPointTimestamp }),
     ...(point.deltaTimeSincePreviousPoint === undefined ? {} : { deltaTimeSincePreviousPoint: point.deltaTimeSincePreviousPoint }),
@@ -108,6 +187,15 @@ export function recordedFlightPointToGeoPoint(
     heading: point.headingDegrees,
     accuracy: point.horizontalAccuracyMeters,
     verticalAccuracy: point.verticalAccuracyMeters,
+    ...(point.gpsTimestamp === undefined ? {} : { gpsTimestamp: point.gpsTimestamp }),
+    ...(point.receivedAt === undefined ? {} : { receivedAt: point.receivedAt }),
+    ...(point.callbackSequence === undefined ? {} : { callbackSequence: point.callbackSequence }),
+    ...(point.deliveryLatencyMs === undefined ? {} : { deliveryLatencyMs: point.deliveryLatencyMs }),
+    ...(point.sameCoordinatesAsPrevious === undefined ? {} : { sameCoordinatesAsPrevious: point.sameCoordinatesAsPrevious }),
+    ...(point.sameAltitudeAsPrevious === undefined ? {} : { sameAltitudeAsPrevious: point.sameAltitudeAsPrevious }),
+    ...(point.sameGpsTimestampAsPrevious === undefined ? {} : { sameGpsTimestampAsPrevious: point.sameGpsTimestampAsPrevious }),
+    ...(point.deltaGpsTimestampMs === undefined ? {} : { deltaGpsTimestampMs: point.deltaGpsTimestampMs }),
+    ...(point.deltaReceivedAtMs === undefined ? {} : { deltaReceivedAtMs: point.deltaReceivedAtMs }),
     ...(point.appState === undefined ? {} : { appState: point.appState }),
     ...(point.lastPointTimestamp === undefined ? {} : { lastPointTimestamp: point.lastPointTimestamp }),
     ...(point.deltaTimeSincePreviousPoint === undefined ? {} : { deltaTimeSincePreviousPoint: point.deltaTimeSincePreviousPoint }),
@@ -280,6 +368,25 @@ function medianPositiveIntervalMilliseconds(points: readonly RecordedFlightPoint
 }
 
 function validStatisticSegments(points: readonly RecordedFlightPoint[]): RecordedFlightPoint[][] {
+  const segmented = points.some(({ segmentId }) => segmentId !== undefined);
+  if (segmented) {
+    const segments: RecordedFlightPoint[][] = [];
+    let current: RecordedFlightPoint[] = [];
+    let currentId: string | undefined;
+    for (const point of points) {
+      const valid = point.quality === undefined || point.quality === "VALID";
+      if (!valid || (current.length > 0 && point.segmentId !== currentId)) {
+        if (current.length > 0) segments.push(current);
+        current = [];
+      }
+      if (valid) {
+        currentId = point.segmentId;
+        current.push(point);
+      }
+    }
+    if (current.length > 0) segments.push(current);
+    return segments;
+  }
   const normalInterval = medianPositiveIntervalMilliseconds(points) ?? 1_000;
   const longGapThreshold = Math.max(10_000, normalInterval * 4);
   const segments: RecordedFlightPoint[][] = [];
@@ -336,17 +443,23 @@ export function recalculateFlightStatistics(
   points: readonly RecordedFlightPoint[],
   startedAt = points[0]?.timestamp ?? 0,
   endedAt: number | null = points.at(-1)?.timestamp ?? null,
+  options: Readonly<{ maxGapSpeedMetersPerSecond?: number }> = {},
 ): RecordedFlightSummary {
   const segments = validStatisticSegments(points);
   const validPoints = segments.flat();
-  let distanceMeters = 0;
+  const horizontalDistance = calculateFilteredHorizontalDistance(points);
+  const segmentDistanceMeters = horizontalDistance.filteredDistanceMeters;
   let connectedDurationSeconds = 0;
   for (const segment of segments) {
     for (let index = 1; index < segment.length; index += 1) {
-      distanceMeters += recordedFlightSegmentDistance(segment[index - 1], segment[index]);
       connectedDurationSeconds += Math.max(0, (segment[index].timestamp - segment[index - 1].timestamp) / 1_000);
     }
   }
+  const gapDistanceMeters = calculateFlightGapDistanceLinks(
+    points,
+    options.maxGapSpeedMetersPerSecond ?? MAX_GAP_SPEED_MS,
+  ).filter(({ retained }) => retained)
+    .reduce((total, { distanceMeters }) => total + distanceMeters, 0);
   const altitudes = validPoints
     .map(({ altitudeMeters }) => altitudeMeters)
     .filter((value): value is number => value !== null && Number.isFinite(value));
@@ -358,11 +471,11 @@ export function recalculateFlightStatistics(
   const rates = sustainedVerticalRates(segments, varioWindowMilliseconds);
   return {
     durationSeconds: Math.max(0, ((endedAt ?? validPoints.at(-1)?.timestamp ?? startedAt) - startedAt) / 1_000),
-    distanceMeters,
+    distanceMeters: segmentDistanceMeters + gapDistanceMeters,
     minAltitudeMeters: altitudes.length > 0 ? Math.min(...altitudes) : null,
     maxAltitudeMeters: altitudes.length > 0 ? Math.max(...altitudes) : null,
     averageGroundSpeedMetersPerSecond:
-      connectedDurationSeconds > 0 ? distanceMeters / connectedDurationSeconds : null,
+      connectedDurationSeconds > 0 ? segmentDistanceMeters / connectedDurationSeconds : null,
     maxGroundSpeedMetersPerSecond: speeds.length > 0 ? Math.max(...speeds) : null,
     maximumClimbRateMetersPerSecond: rates.length > 0 ? Math.max(...rates) : null,
     maximumDescentRateMetersPerSecond: rates.length > 0 ? Math.min(...rates) : null,

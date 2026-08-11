@@ -14,6 +14,17 @@ export interface GeoPoint {
   heading: number | null;
   accuracy: number | null;
   verticalAccuracy: number | null;
+  /** Timestamp d'acquisition fourni par GeolocationPosition. Identique à timestamp. */
+  gpsTimestamp?: number;
+  /** Instant auquel Balloon Companion a reçu le callback GeolocationPosition. */
+  receivedAt?: number;
+  callbackSequence?: number;
+  deliveryLatencyMs?: number;
+  sameCoordinatesAsPrevious?: boolean;
+  sameAltitudeAsPrevious?: boolean;
+  sameGpsTimestampAsPrevious?: boolean;
+  deltaGpsTimestampMs?: number;
+  deltaReceivedAtMs?: number;
   timestamp: number;
   appState?: GpsAppState;
   lastPointTimestamp?: number;

@@ -27,6 +27,7 @@ import { legacyFlightSessionToRecordedFlight } from "../lib/realFlightJournal";
 import { resolveRecordedFlightLocations } from "../lib/flightLocationResolver";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { classifyGpsTraceQuality } from "../lib/gpsPointQuality";
+import { assignFlightSegmentIds } from "../lib/flightSegments";
 
 interface UseFlightTrackingOptions {
   isEnabled?: boolean;
@@ -222,7 +223,7 @@ export function useFlightTracking(
       });
       const flight = {
         ...createdFlight,
-        points: classifyGpsTraceQuality(createdFlight.points),
+        points: assignFlightSegmentIds(classifyGpsTraceQuality(createdFlight.points)),
       };
       setCompletedFlight(null);
       applyActiveFlight(flight);
@@ -347,7 +348,7 @@ export function useFlightTracking(
     const previousRecordedPoint = flight.points.at(-1);
     const nextFlight = {
       ...result.flight,
-      points: classifyGpsTraceQuality(result.flight.points),
+      points: assignFlightSegmentIds(classifyGpsTraceQuality(result.flight.points)),
     };
     const nextPoints = [...pointsRef.current, point];
     const nextMetrics: FlightMetrics = {
