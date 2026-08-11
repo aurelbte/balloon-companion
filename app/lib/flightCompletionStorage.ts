@@ -71,15 +71,15 @@ function normalizeState(value: unknown): FlightCompletionState | null {
 export function loadFlightCompletionState(): FlightCompletionState {
   if (typeof window === "undefined") return createEmptyFlightCompletionState();
   const scope = getRuntimeDataScope();
-  const blank: FlightCompletionState = { version: FLIGHT_COMPLETION_SCHEMA_VERSION, openingBalance: { confirmed: false, ascensions: null, officialDurationMinutes: null }, journalFlights: [], officialAscensions: [] };
+  const blank: FlightCompletionState = { version: FLIGHT_COMPLETION_SCHEMA_VERSION, openingBalance: scope === "GUEST" ? { confirmed: true, ascensions: 0, officialDurationMinutes: 0 } : { confirmed: false, ascensions: null, officialDurationMinutes: null }, journalFlights: [], officialAscensions: [] };
   if (!scope) return blank;
   try {
     const raw = readScopedBusinessValue(window.localStorage, STORAGE_KEY);
-    if (!raw && scope !== "GUEST") return blank;
+    if (!raw) return blank;
     const value: unknown = JSON.parse(raw ?? "null");
-    return normalizeState(value) ?? (scope === "GUEST" ? createEmptyFlightCompletionState() : blank);
+    return normalizeState(value) ?? blank;
   } catch {
-    return scope === "GUEST" ? createEmptyFlightCompletionState() : blank;
+    return blank;
   }
 }
 

@@ -19,11 +19,16 @@
   margin-inline: auto;
 }
 
-.neutralLayout { grid-template-rows: auto 1fr; }
-.neutralWelcome { display: grid; align-self: center; justify-items: start; gap: 10px; padding: 20px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-panel); background: var(--bc-color-surface); }
-.neutralWelcome h2 { font-size: 1.1rem; }
-.neutralWelcome p { color: var(--bc-color-text-secondary); font-size: .8rem; line-height: 1.45; }
-.neutralWelcome a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 16px; border-radius: var(--bc-radius-round); background: var(--bc-color-action); color: var(--bc-color-action-foreground); font-size: .78rem; font-weight: 700; text-decoration: none; }
+.welcomeScreen { display: grid; min-height: 100dvh; padding: max(28px, env(safe-area-inset-top)) 22px max(28px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); place-items: center; }
+.welcomePanel { display: grid; width: min(100%, 430px); justify-items: center; text-align: center; }
+.welcomeLogo { width: 68px; height: 68px; margin-bottom: 28px; border-radius: 19px; box-shadow: var(--bc-shadow-panel); }
+.welcomePanel h1 { font-size: clamp(2rem, 10vw, 3rem); font-weight: 600; letter-spacing: -.05em; line-height: 1.02; }
+.welcomePanel h1 span { color: var(--bc-color-action); }
+.welcomePanel > p { max-width: 310px; margin-top: 18px; color: var(--bc-color-text-secondary); font-size: .88rem; line-height: 1.5; }
+.welcomeActions { display: grid; width: 100%; gap: 10px; margin-top: 44px; }
+.welcomeActions a, .welcomeActions button { display: flex; min-height: 52px; align-items: center; justify-content: center; padding: 0 16px; border: 1px solid var(--bc-color-border-strong); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); color: var(--bc-color-text); font-size: .84rem; font-weight: 700; text-decoration: none; }
+.welcomeActions a:first-child { border-color: transparent; background: var(--bc-color-action); color: var(--bc-color-action-foreground); }
+.welcomeActions button { min-height: 44px; border: 0; background: transparent; color: var(--bc-color-text-secondary); font-size: .76rem; }
 
 .header {
   display: grid;

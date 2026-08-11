@@ -43,6 +43,8 @@ export default function PilotStatusCard() {
   }));
   const globalStatus = credentialRows.some(({ visualStatus }) => visualStatus === "expired")
     ? { label: "Non conforme", visualStatus: "danger" }
+    : credentialRows.every(({ visualStatus }) => visualStatus === "unknown")
+      ? { label: "Non renseigné", visualStatus: "unknown" }
     : credentialRows.some(({ visualStatus }) => visualStatus !== "valid")
       ? { label: "Attention", visualStatus: "attention" }
       : { label: "Prêt à voler", visualStatus: "valid" };

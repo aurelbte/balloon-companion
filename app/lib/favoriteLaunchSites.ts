@@ -112,12 +112,12 @@ export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]
 }
 
 export function loadFavoriteLaunchSites(): FavoriteLaunchSite[] {
-  if (typeof window === "undefined") return [...DEFAULT_FAVORITE_LAUNCH_SITES];
+  if (typeof window === "undefined") return [];
   try {
     const raw = readScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY);
-    if (!raw) return [...DEFAULT_FAVORITE_LAUNCH_SITES];
+    if (!raw) return [];
     const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object" || (value as { version?: unknown }).version !== FAVORITE_LAUNCH_SITES_VERSION || !Array.isArray((value as { favorites?: unknown }).favorites)) return [...DEFAULT_FAVORITE_LAUNCH_SITES];
+    if (!value || typeof value !== "object" || (value as { version?: unknown }).version !== FAVORITE_LAUNCH_SITES_VERSION || !Array.isArray((value as { favorites?: unknown }).favorites)) return [];
     return (value as { favorites: FavoriteLaunchSite[] }).favorites.filter((site) =>
       typeof site.id === "string" && Boolean(site.id.trim()) && typeof site.name === "string" && Boolean(site.name.trim()) &&
       Number.isFinite(site.latitude) && site.latitude >= -90 && site.latitude <= 90 &&
@@ -139,6 +139,6 @@ export function loadFavoriteLaunchSites(): FavoriteLaunchSite[] {
       return next;
     }, []);
   } catch {
-    return [...DEFAULT_FAVORITE_LAUNCH_SITES];
+    return [];
   }
 }

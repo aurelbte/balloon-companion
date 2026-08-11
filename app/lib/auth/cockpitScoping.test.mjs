@@ -8,10 +8,16 @@ const authEntry = readFileSync(new URL("../../auth/page.tsx", import.meta.url), 
 
 test("SIGNED_OUT sans choix affiche un cockpit neutre sans identité ni statistiques legacy", () => {
   assert.match(cockpit, /auth\.state === "SIGNED_OUT" && auth\.authChoiceState === "AUTH_CHOICE_PENDING"/);
-  assert.match(cockpit, /if \(choicePending\)[\s\S]*Bienvenue[\s\S]*Choisir comment continuer/);
+  assert.match(cockpit, /if \(choicePending\)[\s\S]*Bienvenue[\s\S]*Balloon Companion[\s\S]*Le copilote numérique des pilotes de montgolfière\./);
   const neutral = cockpit.slice(cockpit.indexOf("if (choicePending)"), cockpit.indexOf("return (", cockpit.indexOf("if (choicePending)")));
   assert.doesNotMatch(neutral, /CockpitHeroRing|PilotStatusCard|LastFlightCard|MyBalloonsCard|Aurélien|MOCK_COCKPIT_DATA/);
   assert.doesNotMatch(cockpit, /Bonjour Aurélien/);
+});
+
+test("la welcome screen expose directement les trois actions sans navigation métier", () => {
+  const welcome = cockpit.slice(cockpit.indexOf("if (choicePending)"), cockpit.indexOf("return (", cockpit.indexOf("if (choicePending)")));
+  for (const label of ["Se connecter", "Créer un compte", "Continuer en mode invité"]) assert.match(welcome, new RegExp(label));
+  assert.doesNotMatch(welcome, /NavigationBar|Votre cockpit est prêt|Choisir comment continuer|Balloon-Companion/);
 });
 
 test("Continuer sans compte active explicitement GUEST", () => {

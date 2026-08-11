@@ -28,10 +28,18 @@ export default function CockpitPage() {
   const firstName = auth.state === "SIGNED_IN" || auth.state === "OFFLINE_SESSION" ? auth.user?.firstName : profile.firstName;
 
   if (choicePending) {
-    return <main className={styles.screen}><div className={`${styles.layout} ${styles.neutralLayout}`}>
-      <header className={styles.header}><div className={styles.brand}><Image className={styles.logo} src={appIcon} alt="" priority sizes="24px" /><span>Balloon Companion</span></div><h1 className={styles.welcome}>Bienvenue</h1></header>
-      <section className={styles.neutralWelcome}><h2>Votre cockpit est prêt</h2><p>Créez un compte, connectez-vous ou choisissez de continuer sans compte.</p><Link href="/auth">Choisir comment continuer</Link></section>
-    </div><NavigationBar activeItem="Cockpit" /></main>;
+    return <main className={styles.welcomeScreen}>
+      <section className={styles.welcomePanel}>
+        <Image className={styles.welcomeLogo} src={appIcon} alt="" priority sizes="68px" />
+        <h1>Bienvenue<br />sur<br /><span>Balloon Companion</span></h1>
+        <p>Le copilote numérique des pilotes de montgolfière.</p>
+        <div className={styles.welcomeActions}>
+          <Link href="/auth/sign-in">Se connecter</Link>
+          <Link href="/auth/sign-up">Créer un compte</Link>
+          <button type="button" onClick={auth.activateGuestMode}>Continuer en mode invité</button>
+        </div>
+      </section>
+    </main>;
   }
 
   return (

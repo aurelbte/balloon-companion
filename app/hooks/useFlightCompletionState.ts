@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createEmptyFlightCompletionState } from "../lib/flightCompletion";
+import { createEmptyFlightCompletionState, type FlightCompletionState } from "../lib/flightCompletion";
 import {
   FLIGHT_COMPLETION_EVENT,
   loadFlightCompletionState,
@@ -9,7 +9,10 @@ import {
 import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 
 export function useFlightCompletionState() {
-  const [state, setState] = useState(createEmptyFlightCompletionState);
+  const [state, setState] = useState<FlightCompletionState>(() => ({
+    ...createEmptyFlightCompletionState(),
+    openingBalance: { confirmed: false, ascensions: null, officialDurationMinutes: null },
+  }));
 
   useEffect(() => {
     const refresh = () => setState(loadFlightCompletionState());

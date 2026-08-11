@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   getRuntimeDataScope,
+  guestBusinessStorageKey,
   readScopedBusinessValue,
   scopedBusinessStorageKey,
   scopedIndexedDbName,
@@ -17,18 +18,19 @@ function storage(entries = {}) {
   return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), snapshot: () => Object.fromEntries(values) };
 }
 
-test("GUEST lit et écrit le legacy compatible sans le modifier lors d'un passage USER", () => {
+test("GUEST utilise son stockage propre et laisse le legacy intact", () => {
   const local = storage({ journal: "legacy" });
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
   setRuntimeGuestModeActive(true);
   assert.equal(getRuntimeDataScope(), "GUEST");
-  assert.equal(readScopedBusinessValue(local, "journal"), "legacy");
+  assert.equal(readScopedBusinessValue(local, "journal"), null);
   writeScopedBusinessValue(local, "journal", "guest-update");
-  assert.equal(local.getItem("journal"), "guest-update");
+  assert.equal(local.getItem("journal"), "legacy");
+  assert.equal(local.getItem(guestBusinessStorageKey("journal")), "guest-update");
 
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("A") });
   assert.equal(readScopedBusinessValue(local, "journal"), null);
-  assert.equal(local.getItem("journal"), "guest-update");
+  assert.equal(local.getItem("journal"), "legacy");
 });
 
 test("SIGNED_OUT reste sans scope avant le choix explicite du mode invité", () => {
@@ -67,7 +69,7 @@ test("OFFLINE_SESSION retrouve exactement le scope du même user", () => {
 });
 
 test("les bases vols et documents changent avec le scope", () => {
-  assert.equal(scopedIndexedDbName("GUEST", "balloon-companion-flights"), "balloon-companion-flights");
+  assert.equal(scopedIndexedDbName("GUEST", "balloon-companion-flights"), "balloon-companion-flights:guest");
   assert.notEqual(scopedIndexedDbName("USER:A", "balloon-companion-flights"), scopedIndexedDbName("USER:B", "balloon-companion-flights"));
 });
 
