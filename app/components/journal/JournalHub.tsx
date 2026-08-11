@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Ascension } from "../../lib/ascensionMockData";
-import type { JournalFlight } from "../../lib/journalMockData";
 import styles from "../../journal/Journal.module.css";
 import AscensionLog from "./AscensionLog";
 import JournalFlightList from "./JournalFlightList";
@@ -10,12 +8,7 @@ import JournalFlightList from "./JournalFlightList";
 type JournalView = "flights" | "logbook";
 const SESSION_KEY = "balloon-companion-journal-view";
 
-type JournalHubProps = {
-  flights: readonly JournalFlight[];
-  ascensions: readonly Ascension[];
-};
-
-export default function JournalHub({ flights, ascensions }: JournalHubProps) {
+export default function JournalHub() {
   const [activeView, setActiveView] = useState<JournalView>("flights");
 
   useEffect(() => {
@@ -59,9 +52,9 @@ export default function JournalHub({ flights, ascensions }: JournalHubProps) {
 
       <div role="tabpanel">
         {activeView === "flights" ? (
-          <JournalFlightList flights={flights} />
+          <JournalFlightList />
         ) : (
-          <AscensionLog ascensions={ascensions} />
+          <AscensionLog />
         )}
       </div>
     </>

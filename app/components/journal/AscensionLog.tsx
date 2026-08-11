@@ -145,7 +145,7 @@ function AscensionCard({
   );
 }
 
-export default function AscensionLog({ ascensions }: { ascensions: readonly Ascension[] }) {
+export default function AscensionLog() {
   const completionState = useFlightCompletionState();
   const [state, setState] = useState<AscensionDemoState>(EMPTY_STATE);
   const [query, setQuery] = useState("");
@@ -177,13 +177,12 @@ export default function AscensionLog({ ascensions }: { ascensions: readonly Asce
   useEffect(() => {
     const timer = window.setTimeout(
       () => setState(loadAscensionDemoState([
-        ...ascensions.map(({ id }) => id),
         ...completionState.officialAscensions.map(({ id }) => id),
       ])),
       0,
     );
     return () => window.clearTimeout(timer);
-  }, [ascensions, completionState.officialAscensions]);
+  }, [completionState.officialAscensions]);
   useEffect(() => {
     if (window.sessionStorage.getItem("balloon-companion-ascension-added") !== "1") return;
     window.sessionStorage.removeItem("balloon-companion-ascension-added");
@@ -221,15 +220,7 @@ export default function AscensionLog({ ascensions }: { ascensions: readonly Asce
     })),
     [completionState.journalFlights, completionState.officialAscensions],
   );
-  const allAscensions = useMemo(
-    () => [
-      ...completionAscensions,
-      ...ascensions.filter(
-        (item) => !completionAscensions.some(({ id }) => id === item.id),
-      ),
-    ],
-    [ascensions, completionAscensions],
-  );
+  const allAscensions = completionAscensions;
   const available = useMemo(
     () => sortAscensionsNewestFirst(
       allAscensions.filter(({ id }) => !state.deletedIds.includes(id)),

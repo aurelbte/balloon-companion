@@ -24,7 +24,6 @@ import { journalFlightsForMode } from "../../lib/realFlightJournal";
 import { buildFactualFlightLabel, getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
 import { useJournalCardSwipe } from "../../hooks/useJournalCardSwipe";
 
-type JournalFlightListProps = { flights: readonly JournalFlight[] };
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
 type DurationFilter = "all" | "under-45" | "45-to-60" | "over-60";
 type SortOrder = "recent" | "oldest" | "duration" | "distance";
@@ -226,7 +225,7 @@ function InteractiveFlightCard({
   );
 }
 
-export default function JournalFlightList({ flights }: JournalFlightListProps) {
+export default function JournalFlightList() {
   const completionState = useFlightCompletionState();
   const [demoState, setDemoState] = useState<JournalDemoState>(EMPTY_STATE);
   const [storageReady, setStorageReady] = useState(false);
@@ -245,11 +244,9 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   const [pendingDelete, setPendingDelete] = useState<JournalFlight | null>(null);
   const [actionTrigger, setActionTrigger] = useState<HTMLElement | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
-  const [demoEnabled, setDemoEnabled] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setDemoEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1");
       void migrateCompletedRecordedFlightsToJournal().catch((error: unknown) => {
         console.error("Migration non destructive des vols GPS impossible", error);
       });
@@ -258,13 +255,8 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
   }, []);
 
   const allFlights = useMemo(
-    () => [
-      ...journalFlightsForMode(completionState.journalFlights, demoEnabled),
-      ...(demoEnabled ? flights : []).filter(
-        (flight) => !completionState.journalFlights.some(({ id }) => id === flight.id),
-      ),
-    ],
-    [completionState.journalFlights, demoEnabled, flights],
+    () => journalFlightsForMode(completionState.journalFlights, false),
+    [completionState.journalFlights],
   );
 
   useEffect(() => {
@@ -458,7 +450,7 @@ export default function JournalFlightList({ flights }: JournalFlightListProps) {
           })
         ) : (
           <p className={styles.emptyState}>
-            {query || filtersActive ? "Aucun vol trouvé" : "Aucun vol dans le journal."}
+            {query || filtersActive ? "Aucun vol trouvé" : "Aucun vol enregistré"}
           </p>
         )}
       </section>

@@ -1,7 +1,5 @@
 import NavigationBar from "../components/NavigationBar";
 import JournalHub from "../components/journal/JournalHub";
-import { ASCENSIONS } from "../lib/ascensionMockData";
-import { JOURNAL_FLIGHTS } from "../lib/journalMockData";
 import styles from "./Journal.module.css";
 
 export default function JournalPage() {
@@ -14,7 +12,7 @@ export default function JournalPage() {
           <p className={styles.subtitle}>Vols enregistrés et carnet d’ascensions</p>
         </header>
 
-        <JournalHub flights={JOURNAL_FLIGHTS} ascensions={ASCENSIONS} />
+        <JournalHub />
       </div>
       <NavigationBar activeItem="Journal" />
     </main>
