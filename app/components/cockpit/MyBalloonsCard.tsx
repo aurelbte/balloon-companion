@@ -37,10 +37,8 @@ export default function MyBalloonsCard({
           Mes ballons
         </h2>
         <div className={styles.activeBalloon}>
-          <strong>
-            {primary.manufacturer} {primary.model}
-          </strong>
-          <span>Ballon actif</span>
+          <strong>{primary.registration}</strong>
+          <span>{primary.manufacturer} {primary.model}</span>
         </div>
         <span className={styles.cardAction}>Voir mes ballons →</span>
       </Card>

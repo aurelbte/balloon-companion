@@ -10,7 +10,7 @@
 
 .layout {
   display: grid;
-  grid-template-rows: repeat(5, auto);
+  grid-template-rows: auto auto auto auto minmax(52px, 1fr) auto;
   align-content: start;
   gap: 7px;
   width: 100%;
@@ -91,8 +91,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: min(92vw, 420px);
-  height: min(81vw, 370px);
+  width: min(86vw, 390px);
+  height: min(75vw, 344px);
   max-width: 100%;
 }
 
@@ -100,8 +100,8 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(76vw, 348px);
-  height: min(76vw, 348px);
+  width: min(70.5vw, 324px);
+  height: min(70.5vw, 324px);
   transform: translate(-50%, -50%);
 }
 
@@ -324,6 +324,125 @@
 
 .pilotStatusTrigger > .card {
   height: 100%;
+  min-height: 176px;
+  padding-block: 13px;
+}
+
+.weatherCard {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 176px;
+  height: 100%;
+  padding-block: 13px;
+}
+
+.weatherHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+}
+
+.weatherHeader .cardTitle {
+  margin-bottom: 0;
+}
+
+.sunTimes {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  margin-top: -1px;
+  color: var(--bc-color-text-muted);
+  font-size: 0.5rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.sunTimes span {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.sunTimes svg {
+  color: var(--bc-color-action);
+}
+
+.weatherLocation {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 7px;
+}
+
+.weatherLocation span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--bc-color-text-muted);
+  font-size: 0.58rem;
+  line-height: 1.1;
+}
+
+.weatherLocation span svg {
+  color: var(--bc-color-action);
+}
+
+.weatherLocation strong {
+  overflow: hidden;
+  font-size: 0.71rem;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hourlyForecast {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(59 88 120 / 38%);
+}
+
+.hourlyForecast div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  justify-items: center;
+  gap: 2px;
+}
+
+.hourlyForecast strong,
+.hourlyForecast span,
+.hourlyForecast small {
+  white-space: nowrap;
+}
+
+.hourlyForecast strong {
+  font-size: 0.61rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.hourlyForecast svg {
+  color: var(--bc-color-action);
+}
+
+.hourlyForecast span {
+  font-size: 0.62rem;
+  font-weight: var(--bc-font-weight-semibold);
+  line-height: 1.1;
+}
+
+.hourlyForecast small {
+  color: var(--bc-color-text-muted);
+  font-size: 0.49rem;
+  line-height: 1.1;
 }
 
 .pilotStatusTrigger:focus-visible {
@@ -754,6 +873,7 @@
 }
 
 .cta {
+  align-self: end;
   min-height: 52px;
   border: 1px solid rgb(158 200 236 / 34%);
   background: var(--bc-color-navigation);
@@ -785,7 +905,7 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   align-content: stretch;
-  min-height: 142px;
+  min-height: 112px;
   height: 100%;
 }
 
@@ -921,21 +1041,45 @@
   line-height: 1.15;
 }
 
-.activeBalloon {
+.emptyFlight {
   display: grid;
-  align-content: start;
-  gap: 5px;
+  align-content: center;
+  gap: 4px;
 }
 
-.activeBalloon strong {
-  font-size: 0.96rem;
+.emptyFlight strong {
+  font-size: 0.72rem;
   font-weight: var(--bc-font-weight-semibold);
   line-height: 1.15;
 }
 
+.emptyFlight span {
+  color: var(--bc-color-text-muted);
+  font-size: 0.62rem;
+  line-height: 1.25;
+}
+
+.activeBalloon {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 5px;
+  text-align: center;
+}
+
+.activeBalloon strong {
+  overflow: hidden;
+  font-size: 1.35rem;
+  font-weight: var(--bc-font-weight-bold);
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .activeBalloon span {
   color: var(--bc-color-text-muted);
-  font-size: 0.66rem;
+  font-size: 0.68rem;
   line-height: 1.15;
 }
 
@@ -1027,19 +1171,47 @@
 .experiencePrompt a { display: inline-flex; align-items: center; }
 .experiencePrompt button { color: var(--bc-text-secondary); }
 
+@media (max-height: 880px) {
+  .layout {
+    gap: 5px;
+  }
+
+  .ringInstrument {
+    width: min(78vw, 310px);
+    height: min(68vw, 270px);
+  }
+
+  .ringDial {
+    width: min(64vw, 250px);
+    height: min(64vw, 250px);
+  }
+
+  .experiencePrompt {
+    padding-block: 7px;
+  }
+
+  .summaryCard {
+    min-height: 108px;
+  }
+
+  .cta {
+    min-height: 48px;
+  }
+}
+
 @media (max-height: 760px) {
   .screen {
     padding-top: max(var(--bc-space-2), env(safe-area-inset-top));
   }
 
   .layout {
-    grid-template-rows: repeat(5, auto);
+    grid-template-rows: auto auto auto auto minmax(46px, 1fr) auto;
     gap: 4px;
   }
 
   .ringInstrument {
-    width: min(76vw, 280px);
-    height: min(66vw, 240px);
+    width: min(62vw, 220px);
+    height: min(53vw, 196px);
   }
 
   .hero {
@@ -1048,8 +1220,8 @@
   }
 
   .ringDial {
-    width: min(62vw, 226px);
-    height: min(62vw, 226px);
+    width: min(50vw, 184px);
+    height: min(50vw, 184px);
   }
 
   .ringValue {
@@ -1078,7 +1250,25 @@
   }
 
   .summaryCard {
-    min-height: 120px;
+    min-height: 100px;
+  }
+
+  .pilotStatusTrigger > .card,
+  .weatherCard {
+    min-height: 150px;
+    padding-block: 9px;
+  }
+
+  .weatherLocation {
+    margin-bottom: 4px;
+  }
+
+  .hourlyForecast {
+    padding-top: 4px;
+  }
+
+  .hourlyForecast div {
+    gap: 1px;
   }
 
   .routeThumbnail {
@@ -1093,6 +1283,83 @@
 
   .balloonFooter {
     margin-top: 5px;
+  }
+}
+
+@media (max-height: 700px) {
+  .screen {
+    padding-top: max(6px, env(safe-area-inset-top));
+  }
+
+  .layout {
+    grid-template-rows: auto auto auto auto minmax(42px, 1fr) auto;
+    gap: 3px;
+  }
+
+  .header {
+    gap: 0;
+  }
+
+  .brand {
+    min-height: 24px;
+  }
+
+  .welcome {
+    font-size: 1.2rem;
+  }
+
+  .hero {
+    margin-block: -5px 0;
+  }
+
+  .ringInstrument {
+    width: min(56vw, 196px);
+    height: min(47vw, 166px);
+  }
+
+  .ringDial {
+    width: min(43vw, 158px);
+    height: min(43vw, 158px);
+  }
+
+  .ringValue {
+    font-size: clamp(1.75rem, 9vw, 2.2rem);
+  }
+
+  .ringStats {
+    margin-top: 3px;
+  }
+
+  .experiencePrompt {
+    gap: 5px;
+    padding: 5px 8px;
+  }
+
+  .experiencePrompt a,
+  .experiencePrompt button {
+    min-height: 32px;
+  }
+
+  .card {
+    padding-block: 7px;
+  }
+
+  .pilotStatusTrigger > .card,
+  .weatherCard {
+    min-height: 141px;
+    padding-block: 8px;
+  }
+
+  .summaryCard {
+    min-height: 94px;
+  }
+
+  .cta {
+    min-height: 42px;
+  }
+
+  .cardAction {
+    margin-top: 4px;
   }
 }
 

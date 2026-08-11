@@ -1,74 +1,44 @@
-"use client";
-
-import { ArrowUp, CloudSun } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { Cloud, CloudSun, Moon, Star, Sun, Sunrise } from "lucide-react";
 import { Card } from "../../design-system";
-import type { ConditionsData } from "./types";
 import styles from "./Cockpit.module.css";
 
+const FORECAST = [
+  { time: "21 h", temperature: "16°C", wind: "12 km/h", Icon: Sun },
+  { time: "22 h", temperature: "15°C", wind: "11 km/h", Icon: CloudSun },
+  { time: "23 h", temperature: "14°C", wind: "10 km/h", Icon: Cloud },
+  { time: "00 h", temperature: "13°C", wind: "9 km/h", Icon: Cloud },
+] as const;
+
 type ConditionsCardProps = {
-  data: ConditionsData;
+  sunrise: string;
+  sunset: string;
 };
 
-function timeToMinutes(time: string) {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function subscribeToMinute(callback: () => void) {
-  const interval = window.setInterval(callback, 60_000);
-  return () => window.clearInterval(interval);
-}
-
-export default function ConditionsCard({ data }: ConditionsCardProps) {
-  const isSunrise = useSyncExternalStore(
-    subscribeToMinute,
-    () => {
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      return currentMinutes < timeToMinutes(data.sunrise);
-    },
-    () => false,
-  );
-
+export default function ConditionsCard({ sunrise, sunset }: ConditionsCardProps) {
   return (
-    <Card className={styles.card}>
-      <h2 className={styles.cardTitle}>
-        <CloudSun size={15} aria-hidden="true" />
-        Conditions
-      </h2>
-
-      <div className={styles.conditionDirection}>
-        <span>Direction du vent</span>
-        <strong>
-          <ArrowUp
-            size={18}
-            style={{ transform: `rotate(${data.windDirectionDeg}deg)` }}
-            aria-hidden="true"
-          />
-          {data.windDirectionDeg}°
-        </strong>
-      </div>
-
-      <div className={styles.conditionMetrics}>
-        <div>
-          <span>Vent</span>
-          <strong>{data.wind}</strong>
-        </div>
-        <div>
-          <span>Rafales</span>
-          <strong>{data.gusts}</strong>
-        </div>
-        <div>
-          <span>Température</span>
-          <strong>{data.temperature}</strong>
+    <Card className={`${styles.card} ${styles.weatherCard}`}>
+      <div className={styles.weatherHeader}>
+        <h2 className={styles.cardTitle}>Météo</h2>
+        <div className={styles.sunTimes} aria-label="Lever et coucher du soleil">
+          <span><Sunrise size={11} aria-hidden="true" />{sunrise}</span>
+          <span><Moon size={10} aria-hidden="true" />{sunset}</span>
         </div>
       </div>
-
-      <div className={styles.sunEvent}>
-        <span>{isSunrise ? "Lever" : "Coucher"}</span>
-        <strong>{isSunrise ? data.sunrise : data.sunset}</strong>
+      <div className={styles.weatherLocation}>
+        <span>Aérodrome favori <Star size={11} fill="currentColor" aria-hidden="true" /></span>
+        <strong>LFQO – Lille / Lesquin</strong>
       </div>
+      <div className={styles.hourlyForecast} aria-label="Prévision météo heure par heure">
+        {FORECAST.map(({ time, temperature, wind, Icon }) => (
+          <div key={time}>
+            <strong>{time}</strong>
+            <Icon size={16} aria-hidden="true" />
+            <span>{temperature}</span>
+            <small>{wind}</small>
+          </div>
+        ))}
+      </div>
+      <span className={styles.cardAction}>Voir le détail météo →</span>
     </Card>
   );
 }

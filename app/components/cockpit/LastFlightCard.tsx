@@ -12,13 +12,19 @@ type LastFlightCardProps = {
 export default function LastFlightCard({ data, href }: LastFlightCardProps) {
   if (!data) {
     return (
-      <Card className={`${styles.card} ${styles.summaryCard}`}>
-        <h2 className={styles.cardTitle}>
-          <Route size={15} aria-hidden="true" />
-          Dernier vol
-        </h2>
-        <p className={styles.unavailableCard}>Information indisponible</p>
-      </Card>
+      <Link className={styles.cardLink} href={href} aria-label="Voir le journal">
+        <Card className={`${styles.card} ${styles.summaryCard}`}>
+          <h2 className={styles.cardTitle}>
+            <Route size={15} aria-hidden="true" />
+            Dernier vol
+          </h2>
+          <div className={styles.emptyFlight}>
+            <strong>Aucun vol enregistré.</strong>
+            <span>Votre prochain vol n’attend que vous.</span>
+          </div>
+          <span className={styles.cardAction}>Voir le journal →</span>
+        </Card>
+      </Link>
     );
   }
 
