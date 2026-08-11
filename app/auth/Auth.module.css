@@ -67,6 +67,28 @@
   margin-top: var(--bc-space-12);
 }
 
+.authLoading {
+  margin-top: var(--bc-space-12);
+  color: var(--bc-text-muted);
+  font-size: .8rem;
+}
+
+.signedInAccount {
+  display: grid;
+  gap: var(--bc-space-2);
+  margin-top: var(--bc-space-12);
+  padding: var(--bc-space-5);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-panel);
+  background: var(--bc-surface);
+}
+
+.signedInAccount strong { font-size: 1rem; }
+.signedInAccount span { color: var(--bc-text-secondary); font-size: .8rem; }
+.signedInAccount em { color: var(--bc-accent); font-size: .72rem; font-style: normal; font-weight: var(--bc-font-weight-bold); }
+.signedInAccount button { min-height: 48px; margin-top: var(--bc-space-4); border: 1px solid var(--bc-border-strong); border-radius: var(--bc-radius-round); background: transparent; color: var(--bc-text-primary); font-weight: var(--bc-font-weight-bold); }
+.signedInAccount button:disabled { opacity: .5; }
+
 .primaryAction,
 .secondaryAction,
 .continueAction {
@@ -128,4 +150,3 @@
   .brand { margin-bottom: var(--bc-space-4); }
   .actions { margin-top: var(--bc-space-6); }
 }
-

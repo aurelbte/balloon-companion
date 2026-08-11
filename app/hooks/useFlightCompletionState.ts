@@ -6,6 +6,7 @@ import {
   FLIGHT_COMPLETION_EVENT,
   loadFlightCompletionState,
 } from "../lib/flightCompletionStorage";
+import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 
 export function useFlightCompletionState() {
   const [state, setState] = useState(createEmptyFlightCompletionState);
@@ -15,10 +16,12 @@ export function useFlightCompletionState() {
     const timer = window.setTimeout(refresh, 0);
     window.addEventListener(FLIGHT_COMPLETION_EVENT, refresh);
     window.addEventListener("storage", refresh);
+    window.addEventListener(DATA_SCOPE_CHANGED_EVENT, refresh);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener(FLIGHT_COMPLETION_EVENT, refresh);
       window.removeEventListener("storage", refresh);
+      window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, refresh);
     };
   }, []);
 

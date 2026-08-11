@@ -2,10 +2,14 @@ import {
   RECORDED_FLIGHT_SCHEMA_VERSION,
   type RecordedFlight,
 } from "./recordedFlight.ts";
+import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
+import type { LocalDataScope } from "./auth/dataScope.ts";
 
-const DATABASE_NAME = "balloon-companion-flights";
+export const RECORDED_FLIGHT_DB_NAME = "balloon-companion-flights";
 const DATABASE_VERSION = 1;
-const FLIGHTS_STORE = "flights";
+export const RECORDED_FLIGHTS_STORE = "flights";
+const DATABASE_NAME = RECORDED_FLIGHT_DB_NAME;
+const FLIGHTS_STORE = RECORDED_FLIGHTS_STORE;
 const ACTIVE_FLIGHT_STORE = "activeFlight";
 const ACTIVE_FLIGHT_KEY = "current";
 
@@ -75,13 +79,16 @@ export class MemoryRecordedFlightStorage implements RecordedFlightStorage {
 
 export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
   private databasePromise: Promise<IDBDatabase> | null = null;
+  private scope: LocalDataScope | null = null;
 
   private database(): Promise<IDBDatabase> {
     if (typeof indexedDB === "undefined") {
       return Promise.reject(new Error("IndexedDB indisponible"));
     }
+    this.scope ??= getRuntimeDataScope();
+    if (!this.scope) return Promise.reject(new Error("Scope local indisponible"));
     this.databasePromise ??= new Promise((resolve, reject) => {
-      const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+      const request = indexedDB.open(scopedIndexedDbName(this.scope!, DATABASE_NAME), DATABASE_VERSION);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(FLIGHTS_STORE)) {
           request.result.createObjectStore(FLIGHTS_STORE, { keyPath: "id" });

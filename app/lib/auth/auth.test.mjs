@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEVICE_IDENTITY_STORAGE_KEY, getOrCreateDeviceIdentity } from "./deviceIdentity.ts";
-import { restoreAuthSnapshot, saveLocalAuthSession } from "./session.ts";
+import { clearLocalAuthSession, LOCAL_AUTH_SESSION_STORAGE_KEY, restoreAuthSnapshot, saveLocalAuthSession } from "./session.ts";
 
 function memoryStorage() {
   const values = new Map();
@@ -57,4 +57,17 @@ test("une session locale existante permet OFFLINE_SESSION", async () => {
   saveLocalAuthSession(storage, user);
   const snapshot = await restoreAuthSnapshot({ provider: provider(null), storage, online: false });
   assert.deepEqual(snapshot, { state: "OFFLINE_SESSION", user });
+});
+
+test("la déconnexion locale ne supprime que la session Auth", () => {
+  const storage = memoryStorage();
+  storage.setItem(LOCAL_AUTH_SESSION_STORAGE_KEY, JSON.stringify(user));
+  storage.setItem("balloon-companion-flights", "vols");
+  storage.setItem("balloon-companion-device", "deviceId");
+
+  clearLocalAuthSession(storage);
+
+  assert.equal(storage.getItem(LOCAL_AUTH_SESSION_STORAGE_KEY), null);
+  assert.equal(storage.getItem("balloon-companion-flights"), "vols");
+  assert.equal(storage.getItem("balloon-companion-device"), "deviceId");
 });

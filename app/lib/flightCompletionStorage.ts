@@ -20,6 +20,7 @@ import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
 import { legacyFlightSessionToRecordedFlight } from "./realFlightJournal.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { loadFlightSession } from "./flightSessionStorage.ts";
+import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 
 export const FLIGHT_COMPLETION_STORAGE_KEY = "balloon-companion-flight-completion-v1";
 const STORAGE_KEY = FLIGHT_COMPLETION_STORAGE_KEY;
@@ -70,7 +71,7 @@ function normalizeState(value: unknown): FlightCompletionState | null {
 export function loadFlightCompletionState(): FlightCompletionState {
   if (typeof window === "undefined") return createEmptyFlightCompletionState();
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");
+    const value: unknown = JSON.parse(readScopedBusinessValue(window.localStorage, STORAGE_KEY) ?? "null");
     return normalizeState(value) ?? createEmptyFlightCompletionState();
   } catch {
     return createEmptyFlightCompletionState();
@@ -117,7 +118,7 @@ export function saveFlightCompletionState(state: FlightCompletionState): boolean
         points: [],
       })),
     };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweightState));
+    if (!writeScopedBusinessValue(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState))) return false;
     window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
     return true;
   } catch (error) {

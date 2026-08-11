@@ -113,9 +113,8 @@ test("une session déjà valide évite un second échange du code", async () => 
   assert.equal(exchanges, 0);
 });
 
-test("l'intégration Auth ne référence aucun stockage métier", () => {
+test("l'intégration Supabase ne référence aucun stockage métier", () => {
   const sources = [
-    "../../contexts/AuthContext.tsx",
     "./supabaseAuthProvider.ts",
     "../supabase/client.ts",
     "../supabase/server.ts",

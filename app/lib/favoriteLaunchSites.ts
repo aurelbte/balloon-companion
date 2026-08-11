@@ -1,4 +1,5 @@
 import type { GeocodingResult } from "./trajectory/integration.ts";
+import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 
 export const FAVORITE_LAUNCH_SITES_STORAGE_KEY = "balloon-companion-favorite-launch-sites-v1";
 export const FAVORITE_LAUNCH_SITES_VERSION = 1 as const;
@@ -103,7 +104,7 @@ export function removeFavoriteLaunchSite(
 export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]): boolean {
   if (typeof window === "undefined") return false;
   try {
-    window.localStorage.setItem(FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
+    writeScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
     return true;
   } catch {
     return false;
@@ -113,7 +114,7 @@ export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]
 export function loadFavoriteLaunchSites(): FavoriteLaunchSite[] {
   if (typeof window === "undefined") return [...DEFAULT_FAVORITE_LAUNCH_SITES];
   try {
-    const raw = window.localStorage.getItem(FAVORITE_LAUNCH_SITES_STORAGE_KEY);
+    const raw = readScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY);
     if (!raw) return [...DEFAULT_FAVORITE_LAUNCH_SITES];
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object" || (value as { version?: unknown }).version !== FAVORITE_LAUNCH_SITES_VERSION || !Array.isArray((value as { favorites?: unknown }).favorites)) return [...DEFAULT_FAVORITE_LAUNCH_SITES];

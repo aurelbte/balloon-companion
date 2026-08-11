@@ -1,9 +1,12 @@
 import { sortBalloonDocuments, supportedBalloonDocumentMimeType, validateBalloonDocumentFile, type BalloonDocument, type BalloonDocumentChanges, type BalloonDocumentStorage, type NewBalloonDocumentMetadata } from "./balloonDocuments.ts";
+import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 
 export const BALLOON_DOCUMENT_DB_NAME = "balloon-companion-documents";
 export const BALLOON_DOCUMENT_DB_VERSION = 1;
-const DOCUMENTS_STORE = "documents";
-const FILES_STORE = "files";
+export const BALLOON_DOCUMENTS_STORE = "documents";
+const DOCUMENTS_STORE = BALLOON_DOCUMENTS_STORE;
+export const BALLOON_DOCUMENT_FILES_STORE = "files";
+const FILES_STORE = BALLOON_DOCUMENT_FILES_STORE;
 const BALLOON_INDEX = "balloonId";
 export const BALLOON_DOCUMENTS_CHANGED_EVENT = "balloon-companion:documents-changed";
 
@@ -35,7 +38,7 @@ function storageError(error: unknown, fallback: "WRITE_FAILED" | "DELETE_FAILED"
 function identifier(): string { return globalThis.crypto?.randomUUID?.() ?? `document-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
 
 export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
-  private databasePromise: Promise<IDBDatabase> | null = null;
+  private readonly databasePromises = new Map<string, Promise<IDBDatabase>>();
   private readonly factory: IDBFactory | undefined;
 
   constructor(factory: IDBFactory | undefined = typeof indexedDB === "undefined" ? undefined : indexedDB) {
@@ -44,8 +47,11 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
 
   private database(): Promise<IDBDatabase> {
     if (!this.factory) return Promise.reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le stockage local des documents n’est pas disponible sur cet appareil."));
-    if (!this.databasePromise) this.databasePromise = new Promise((resolve, reject) => {
-      const request = this.factory!.open(BALLOON_DOCUMENT_DB_NAME, BALLOON_DOCUMENT_DB_VERSION);
+    const scope = getRuntimeDataScope();
+    if (!scope) return Promise.reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le scope local n’est pas encore disponible."));
+    const databaseName = scopedIndexedDbName(scope, BALLOON_DOCUMENT_DB_NAME);
+    if (!this.databasePromises.has(databaseName)) this.databasePromises.set(databaseName, new Promise((resolve, reject) => {
+      const request = this.factory!.open(databaseName, BALLOON_DOCUMENT_DB_VERSION);
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains(DOCUMENTS_STORE)) database.createObjectStore(DOCUMENTS_STORE, { keyPath: "id" }).createIndex(BALLOON_INDEX, "balloonId", { unique: false });
@@ -54,8 +60,8 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
       request.onblocked = () => reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le stockage local est occupé par une autre version de l’application."));
-    });
-    return this.databasePromise;
+    }));
+    return this.databasePromises.get(databaseName)!;
   }
 
   async listByBalloonId(balloonId: string): Promise<readonly BalloonDocument[]> {
