@@ -299,6 +299,158 @@
   box-shadow: 0 4px 12px rgb(1 7 16 / 9%);
 }
 
+.pilotStatusTrigger {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--bc-radius-control);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pilotStatusTrigger > .card {
+  height: 100%;
+}
+
+.pilotStatusTrigger:focus-visible {
+  outline: none;
+  box-shadow: var(--bc-shadow-focus);
+}
+
+.pilotStatusTrigger:active > .card {
+  border-color: var(--bc-color-border-strong);
+  background: var(--bc-color-surface-hover);
+}
+
+.pilotStatusDetail {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: var(--bc-color-canvas);
+  color: var(--bc-color-text);
+}
+
+.pilotStatusDetailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: max(var(--bc-space-3), env(safe-area-inset-top)) var(--bc-space-4) var(--bc-space-3);
+  border-bottom: 1px solid var(--bc-color-border);
+}
+
+.pilotStatusDetailHeader h2 {
+  font-size: 1.25rem;
+  font-weight: var(--bc-font-weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.pilotStatusClose {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--bc-color-border);
+  border-radius: var(--bc-radius-round);
+  background: var(--bc-color-surface);
+  color: var(--bc-color-text);
+}
+
+.pilotStatusDetailContent {
+  display: grid;
+  align-content: start;
+  gap: var(--bc-space-3);
+  width: min(100%, 560px);
+  margin-inline: auto;
+  padding: var(--bc-space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.pilotStatusBlock {
+  padding: var(--bc-space-4);
+  border: 1px solid var(--bc-color-border);
+  border-radius: var(--bc-radius-control);
+  background: var(--bc-color-surface);
+}
+
+.pilotStatusBlockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bc-space-3);
+  margin-bottom: var(--bc-space-3);
+}
+
+.pilotStatusBlockHeader h3 {
+  font-size: 0.95rem;
+  font-weight: var(--bc-font-weight-bold);
+}
+
+.pilotStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--bc-color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: var(--bc-font-weight-semibold);
+}
+
+.pilotStatusBadge > span {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--bc-radius-round);
+  background: var(--bc-color-text-muted);
+}
+
+.pilotStatusBadge[data-status="valid"] > span { background: var(--bc-color-success); }
+.pilotStatusBadge[data-status="attention"] > span { background: var(--bc-color-warning); }
+.pilotStatusBadge[data-status="expired"] > span { background: var(--bc-color-danger); }
+
+.pilotStatusFacts {
+  display: grid;
+}
+
+.pilotStatusFacts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bc-space-4);
+  padding-block: 9px;
+  border-top: 1px solid var(--bc-color-border);
+}
+
+.pilotStatusFacts > div:first-child { border-top: 0; }
+.pilotStatusFacts dt { color: var(--bc-color-text-muted); font-size: 0.78rem; }
+.pilotStatusFacts dd { min-width: 0; overflow-wrap: anywhere; font-size: 0.84rem; font-weight: var(--bc-font-weight-semibold); text-align: right; }
+
+.pilotStatusDetailFooter {
+  padding: var(--bc-space-3) var(--bc-space-4) max(var(--bc-space-4), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--bc-color-border);
+  background: var(--bc-color-canvas);
+}
+
+.pilotStatusDetailFooter > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bc-space-2);
+  width: min(100%, 528px);
+  min-height: 48px;
+  margin-inline: auto;
+  border: 0;
+  border-radius: var(--bc-radius-round);
+  background: var(--bc-color-action);
+  color: var(--bc-color-action-foreground);
+  font-weight: var(--bc-font-weight-bold);
+}
+
 .cardTitle {
   display: flex;
   align-items: center;
