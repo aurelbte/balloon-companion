@@ -24,10 +24,16 @@ test("les états vides météo, METAR et TAF sont prévus sans valeurs exemples"
 });
 
 test("jour et heure ont des contrôles indépendants et une carte météo unique", () => {
-  assert.match(page, /setDayIndex/);
-  assert.match(page, /setTimeIndex/);
+  assert.match(page, /setSelectedDay/);
+  assert.match(page, /setSelectedTime/);
   assert.match(page, /<Stepper label="Jour"/);
   assert.match(page, /<Stepper label="Heure"/);
   assert.match(page, /<SelectedWeatherCard slot=\{selectedSlot\}/);
   assert.doesNotMatch(page, /Heure par heure/);
+});
+
+test("la page consomme le service normalisé sans appeler Open-Meteo", () => {
+  assert.match(page, /loadHourlyWeatherForecast/);
+  assert.match(page, /WeatherHourlyPoint/);
+  assert.doesNotMatch(page, /open-meteo\.com/);
 });

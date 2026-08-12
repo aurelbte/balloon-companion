@@ -153,6 +153,19 @@ export function createOpenMeteoClient(
       return fetchJson(fetchImpl, url);
     },
 
+    async fetchHourlyForecast(request) {
+      const url = new URL(forecastUrl);
+      url.searchParams.set("latitude", String(request.latitude));
+      url.searchParams.set("longitude", String(request.longitude));
+      url.searchParams.set("hourly", ["temperature_2m", "relative_humidity_2m", "precipitation", "weather_code", "cloud_cover", "visibility", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"].join(","));
+      url.searchParams.set("wind_speed_unit", "kmh");
+      url.searchParams.set("timezone", "auto");
+      url.searchParams.set("forecast_days", "7");
+      url.searchParams.set("models", request.weatherModel);
+      addApiKey(url);
+      return fetchJson(fetchImpl, url);
+    },
+
     async fetchElevation(latitude: number, longitude: number) {
       const url = new URL(elevationUrl);
       url.searchParams.set("latitude", String(latitude));

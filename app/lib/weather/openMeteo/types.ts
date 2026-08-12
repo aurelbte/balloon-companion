@@ -38,6 +38,33 @@ export type OpenMeteoWindColumn = {
   slices: OpenMeteoWindColumnSlice[];
 };
 
+export type NormalizedWeatherCode = "CLEAR" | "PARTLY_CLOUDY" | "CLOUDY" | "OVERCAST" | "FOG" | "RAIN" | "HEAVY_RAIN" | "THUNDERSTORM" | "SNOW" | "UNKNOWN";
+
+/** Unités internes: °C, degrés vrais, km/h, mm, mètres et pourcentages. */
+export type WeatherHourlyPoint = {
+  timestamp: string;
+  temperatureC?: number;
+  windDirectionDeg?: number;
+  windSpeedKmh?: number;
+  windGustKmh?: number;
+  humidityPercent?: number;
+  precipitationMm?: number;
+  visibilityM?: number;
+  cloudCoverPercent?: number;
+  weatherCode: NormalizedWeatherCode;
+  model: OpenMeteoWeatherModel;
+  /** Open-Meteo n'expose pas le run ici: heure réelle de récupération. */
+  sourceUpdatedAt: string;
+};
+
+export type WeatherHourlyForecast = {
+  model: OpenMeteoWeatherModel;
+  latitude: number;
+  longitude: number;
+  sourceUpdatedAt: string;
+  points: WeatherHourlyPoint[];
+};
+
 export type OpenMeteoApiTier = "free" | "commercial";
 
 export type OpenMeteoClientConfig = {
@@ -52,6 +79,11 @@ export interface OpenMeteoClient {
     latitude: number;
     longitude: number;
     validAt: string;
+    weatherModel: OpenMeteoWeatherModel;
+  }): Promise<unknown>;
+  fetchHourlyForecast(request: {
+    latitude: number;
+    longitude: number;
     weatherModel: OpenMeteoWeatherModel;
   }): Promise<unknown>;
   fetchElevation(latitude: number, longitude: number): Promise<unknown>;
