@@ -38,7 +38,7 @@ export type OpenMeteoWindColumn = {
   slices: OpenMeteoWindColumnSlice[];
 };
 
-export type NormalizedWeatherCode = "CLEAR" | "PARTLY_CLOUDY" | "CLOUDY" | "OVERCAST" | "FOG" | "RAIN" | "HEAVY_RAIN" | "THUNDERSTORM" | "SNOW" | "UNKNOWN";
+export type NormalizedWeatherCode = "CLEAR" | "MAINLY_CLEAR" | "PARTLY_CLOUDY" | "OVERCAST" | "FOG" | "RIME_FOG" | "LIGHT_DRIZZLE" | "MODERATE_DRIZZLE" | "DENSE_DRIZZLE" | "LIGHT_FREEZING_DRIZZLE" | "DENSE_FREEZING_DRIZZLE" | "LIGHT_RAIN" | "MODERATE_RAIN" | "HEAVY_RAIN" | "LIGHT_FREEZING_RAIN" | "HEAVY_FREEZING_RAIN" | "LIGHT_SNOW" | "MODERATE_SNOW" | "HEAVY_SNOW" | "SNOW_GRAINS" | "LIGHT_RAIN_SHOWERS" | "MODERATE_RAIN_SHOWERS" | "VIOLENT_RAIN_SHOWERS" | "LIGHT_SNOW_SHOWERS" | "HEAVY_SNOW_SHOWERS" | "THUNDERSTORM" | "THUNDERSTORM_LIGHT_HAIL" | "THUNDERSTORM_HEAVY_HAIL" | "UNKNOWN";
 
 /** Unités internes: °C, degrés vrais, km/h, mm, mètres et pourcentages. */
 export type WeatherHourlyPoint = {

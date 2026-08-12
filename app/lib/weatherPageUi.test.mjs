@@ -70,3 +70,11 @@ test("la grande carte utilise une hiérarchie unique sans encadrés internes", (
   assert.match(page, /Visibilité/);
   assert.doesNotMatch(page, /const details =/);
 });
+
+test("chaque état WMO normalisé possède une icône et un libellé dédiés", () => {
+  for (const state of ["CLEAR", "MAINLY_CLEAR", "PARTLY_CLOUDY", "OVERCAST", "FOG", "RIME_FOG", "LIGHT_DRIZZLE", "MODERATE_DRIZZLE", "DENSE_DRIZZLE", "LIGHT_FREEZING_DRIZZLE", "DENSE_FREEZING_DRIZZLE", "LIGHT_RAIN", "MODERATE_RAIN", "HEAVY_RAIN", "LIGHT_FREEZING_RAIN", "HEAVY_FREEZING_RAIN", "LIGHT_SNOW", "MODERATE_SNOW", "HEAVY_SNOW", "SNOW_GRAINS", "LIGHT_RAIN_SHOWERS", "MODERATE_RAIN_SHOWERS", "VIOLENT_RAIN_SHOWERS", "LIGHT_SNOW_SHOWERS", "HEAVY_SNOW_SHOWERS", "THUNDERSTORM", "THUNDERSTORM_LIGHT_HAIL", "THUNDERSTORM_HEAVY_HAIL", "UNKNOWN"]) {
+    assert.match(page, new RegExp(`${state}:`));
+  }
+  assert.match(page, /UNKNOWN: Cloud/);
+  assert.match(page, /WEATHER_LABELS\[slot\.weatherCode\]/);
+});

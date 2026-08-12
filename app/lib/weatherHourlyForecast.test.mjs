@@ -26,6 +26,23 @@ test("normalise les codes météo sans exposer d'icône", () => {
   assert.equal(normalizeWeatherCode(undefined), "UNKNOWN");
 });
 
+test("prend en charge exhaustivement la table WMO publiée par Open-Meteo", () => {
+  const expected = {
+    0: "CLEAR", 1: "MAINLY_CLEAR", 2: "PARTLY_CLOUDY", 3: "OVERCAST",
+    45: "FOG", 48: "RIME_FOG",
+    51: "LIGHT_DRIZZLE", 53: "MODERATE_DRIZZLE", 55: "DENSE_DRIZZLE",
+    56: "LIGHT_FREEZING_DRIZZLE", 57: "DENSE_FREEZING_DRIZZLE",
+    61: "LIGHT_RAIN", 63: "MODERATE_RAIN", 65: "HEAVY_RAIN",
+    66: "LIGHT_FREEZING_RAIN", 67: "HEAVY_FREEZING_RAIN",
+    71: "LIGHT_SNOW", 73: "MODERATE_SNOW", 75: "HEAVY_SNOW", 77: "SNOW_GRAINS",
+    80: "LIGHT_RAIN_SHOWERS", 81: "MODERATE_RAIN_SHOWERS", 82: "VIOLENT_RAIN_SHOWERS",
+    85: "LIGHT_SNOW_SHOWERS", 86: "HEAVY_SNOW_SHOWERS",
+    95: "THUNDERSTORM", 96: "THUNDERSTORM_LIGHT_HAIL", 99: "THUNDERSTORM_HEAVY_HAIL",
+  };
+  for (const [code, normalized] of Object.entries(expected)) assert.equal(normalizeWeatherCode(Number(code)), normalized);
+  for (const code of [4, 44, 50, 58, 64, 68, 76, 83, 87, 94, 97, 98, 100, -1]) assert.equal(normalizeWeatherCode(code), "UNKNOWN");
+});
+
 test("met en cache un jeu complet par lieu et modèle", async () => {
   clearHourlyForecastCacheForTests();
   let calls = 0;

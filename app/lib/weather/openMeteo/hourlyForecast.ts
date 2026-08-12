@@ -10,15 +10,19 @@ function at(values: unknown, index: number): number | undefined { return Array.i
 
 export function normalizeWeatherCode(value: number | undefined): NormalizedWeatherCode {
   if (value === undefined) return "UNKNOWN";
-  if (value === 0) return "CLEAR";
-  if (value === 1 || value === 2) return "PARTLY_CLOUDY";
-  if (value === 3) return "OVERCAST";
-  if (value === 45 || value === 48) return "FOG";
-  if ([51, 53, 55, 56, 57, 61, 63, 66, 80, 81].includes(value)) return "RAIN";
-  if ([65, 67, 82].includes(value)) return "HEAVY_RAIN";
-  if ([71, 73, 75, 77, 85, 86].includes(value)) return "SNOW";
-  if (value >= 95 && value <= 99) return "THUNDERSTORM";
-  return "UNKNOWN";
+  const codes: Record<number, NormalizedWeatherCode> = {
+    0: "CLEAR", 1: "MAINLY_CLEAR", 2: "PARTLY_CLOUDY", 3: "OVERCAST",
+    45: "FOG", 48: "RIME_FOG",
+    51: "LIGHT_DRIZZLE", 53: "MODERATE_DRIZZLE", 55: "DENSE_DRIZZLE",
+    56: "LIGHT_FREEZING_DRIZZLE", 57: "DENSE_FREEZING_DRIZZLE",
+    61: "LIGHT_RAIN", 63: "MODERATE_RAIN", 65: "HEAVY_RAIN",
+    66: "LIGHT_FREEZING_RAIN", 67: "HEAVY_FREEZING_RAIN",
+    71: "LIGHT_SNOW", 73: "MODERATE_SNOW", 75: "HEAVY_SNOW", 77: "SNOW_GRAINS",
+    80: "LIGHT_RAIN_SHOWERS", 81: "MODERATE_RAIN_SHOWERS", 82: "VIOLENT_RAIN_SHOWERS",
+    85: "LIGHT_SNOW_SHOWERS", 86: "HEAVY_SNOW_SHOWERS",
+    95: "THUNDERSTORM", 96: "THUNDERSTORM_LIGHT_HAIL", 99: "THUNDERSTORM_HEAVY_HAIL",
+  };
+  return codes[value] ?? "UNKNOWN";
 }
 
 export function parseHourlyForecast(payload: unknown, model: OpenMeteoWeatherModel, fetchedAt = new Date().toISOString()): WeatherHourlyForecast {
