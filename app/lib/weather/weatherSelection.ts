@@ -18,9 +18,7 @@ export function closestAvailableTime(times: readonly string[], preferred: string
 }
 export function relativeUpdateLabel(sourceUpdatedAt: string, now = Date.now()): string {
   const elapsedMinutes = Math.max(0, Math.floor((now - Date.parse(sourceUpdatedAt)) / 60_000));
-  if (elapsedMinutes < 1) return "à l’instant";
-  if (elapsedMinutes === 1) return "il y a 1 min";
-  if (elapsedMinutes < 60) return `il y a ${elapsedMinutes} min`;
-  const hours = Math.floor(elapsedMinutes / 60);
-  return hours === 1 ? "il y a 1 h" : `il y a ${hours} h`;
+  if (elapsedMinutes < 60) return `Il y a ${elapsedMinutes} min`;
+  const updatedAt = new Date(sourceUpdatedAt);
+  return `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(updatedAt)}`;
 }

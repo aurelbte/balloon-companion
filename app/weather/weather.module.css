@@ -37,7 +37,7 @@
 .stepper strong { overflow: hidden; font-size: .72rem; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .weatherDetail { display: grid; gap: 10px; min-height: 270px; }
 .weatherDetail > .empty { align-self: center; text-align: center; }
-.weatherHero { display: flex; align-items: baseline; justify-content: center; gap: 8px; text-align: center; }
+.weatherHero { display: grid; justify-items: center; gap: 3px; text-align: center; }
 .weatherHero svg { color: var(--bc-color-action); }
 .weatherHero strong { font-size: clamp(1.45rem, 6vw, 2rem); letter-spacing: -.03em; line-height: 1; }
 .weatherHero span { color: var(--bc-color-text-secondary); font-size: .75rem; }

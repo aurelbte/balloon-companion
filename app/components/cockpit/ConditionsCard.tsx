@@ -4,7 +4,8 @@ import { Moon, Navigation, Star, Sunrise } from "lucide-react";
 import Link from "next/link";
 import { Card } from "../../design-system";
 import { useWeatherPreferences } from "../../contexts/WeatherPreferencesContext";
-import { WEATHER_ICONS } from "../../weather/presentation";
+import { WeatherIcon } from "../../weather/presentation";
+import { relativeUpdateLabel } from "../../lib/weather/weatherSelection";
 import styles from "./Cockpit.module.css";
 
 type ConditionsCardProps = {
@@ -16,7 +17,6 @@ type ConditionsCardProps = {
 export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCardProps) {
   const preferences = useWeatherPreferences();
   const point = preferences.selectedPoint;
-  const Icon = point ? WEATHER_ICONS[point.weatherCode] : null;
   return (
     <Link className={styles.cardLink} href={href} aria-label="Ouvrir la météo">
       <Card className={`${styles.card} ${styles.weatherCard}`}>
@@ -28,7 +28,7 @@ export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCard
           </div>
         </div>
         <div className={styles.weatherLocation}>
-          {Icon && <Icon size={22} aria-hidden="true" />}
+          {point && <WeatherIcon code={point.weatherCode} size={22} />}
           <div><span>Lieu favori <Star size={11} fill="currentColor" aria-hidden="true" /></span><strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}</strong><small>{preferences.modelName || "Aucun modèle"}</small></div>
         </div>
         <div className={styles.cockpitWeatherMetrics}>
@@ -36,7 +36,7 @@ export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCard
           <div><span>Rafales</span><strong>{point?.windGustKmh === undefined ? "—" : `${point.windGustKmh} km/h`}</strong></div>
           <div><span>Température</span><strong>{point?.temperatureC === undefined ? "—" : `${point.temperatureC}°C`}</strong></div>
         </div>
-        <span className={styles.cardAction}>Voir le détail météo →</span>
+        <div className={styles.weatherFooter}><span className={styles.cardAction}>Voir le détail météo →</span>{point && <small>{relativeUpdateLabel(point.sourceUpdatedAt)}</small>}</div>
       </Card>
     </Link>
   );

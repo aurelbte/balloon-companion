@@ -21,7 +21,7 @@ test("sélectionne automatiquement le jour réel le plus proche", () => {
 
 test("formate l'âge depuis le vrai timestamp", () => {
   const now = Date.parse("2026-08-12T12:00:00Z");
-  assert.equal(relativeUpdateLabel("2026-08-12T12:00:00Z", now), "à l’instant");
-  assert.equal(relativeUpdateLabel("2026-08-12T11:59:00Z", now), "il y a 1 min");
-  assert.equal(relativeUpdateLabel("2026-08-12T10:00:00Z", now), "il y a 2 h");
+  assert.equal(relativeUpdateLabel("2026-08-12T12:00:00Z", now), "Il y a 0 min");
+  assert.equal(relativeUpdateLabel("2026-08-12T11:59:00Z", now), "Il y a 1 min");
+  assert.match(relativeUpdateLabel("2026-08-12T10:00:00Z", now), /^Actualisé à \d{2}:\d{2}$/);
 });

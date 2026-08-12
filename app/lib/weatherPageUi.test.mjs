@@ -73,6 +73,11 @@ test("la grande carte utilise une hiérarchie unique sans encadrés internes", (
 });
 
 test("chaque état WMO normalisé possède une icône et un libellé dédiés", () => {
-  assert.match(page, /WEATHER_ICONS\[slot\.weatherCode\]/);
+  assert.match(page, /<WeatherIcon code=\{slot\.weatherCode\}/);
   assert.match(page, /WEATHER_LABELS\[slot\.weatherCode\]/);
+});
+
+test("la consultation temporelle revient au créneau courant à l'entrée et à la sortie", () => {
+  assert.match(page, /preferences\.resetToCurrent\(\)/);
+  assert.match(page, /return preferences\.resetToCurrent/);
 });

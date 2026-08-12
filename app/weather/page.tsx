@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight, Cloud, CloudRain, Droplets, Eye, Moon, Navigation, Star, Sunrise } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWeatherPreferences } from "../contexts/WeatherPreferencesContext";
 import { SUPPORTED_WEATHER_MODELS } from "../lib/weather/models";
 import { relativeUpdateLabel } from "../lib/weather/weatherSelection";
 import type { WeatherHourlyPoint } from "../lib/weather/openMeteo/types";
 import type { MetarReading, TafReading, WeatherPageData, WeatherPlace } from "./types";
-import { WEATHER_ICONS, WEATHER_LABELS } from "./presentation";
+import { WeatherIcon, WEATHER_LABELS } from "./presentation";
 import styles from "./weather.module.css";
 
 const EMPTY_DATA: WeatherPageData = { weatherPlace: null, aviationStation: null, sunTimes: null, forecast: [], metar: null, taf: null };
@@ -27,9 +27,8 @@ function SelectedWeatherCard({ slot, modelName, loading, error, onRetry }: { slo
   if (loading) return <section className={`${styles.card} ${styles.weatherDetail}`}><p className={styles.empty}>Chargement des prévisions…</p></section>;
   if (error) return <section className={`${styles.card} ${styles.weatherDetail}`}><div className={styles.weatherError}><p>Prévisions indisponibles</p><button type="button" onClick={onRetry}>Réessayer</button></div></section>;
   if (!slot) return <section className={`${styles.card} ${styles.weatherDetail}`}><p className={styles.empty}>Prévision indisponible pour ce créneau</p></section>;
-  const Icon = WEATHER_ICONS[slot.weatherCode];
   const secondary = [{ label: "Humidité", value: valueOrDash(slot.humidityPercent, "%"), Icon: Droplets }, { label: "Précipitations", value: valueOrDash(slot.precipitationMm, " mm"), Icon: CloudRain }, { label: "Couverture", value: valueOrDash(slot.cloudCoverPercent, "%"), Icon: Cloud }, { label: "Visibilité", value: visibilityLabel(slot.visibilityM), Icon: Eye }];
-  return <article className={`${styles.card} ${styles.weatherDetail}`}><div className={styles.windFocus}><Icon size={46} /><div><Navigation size={23} /><strong>{valueOrDash(slot.windDirectionDeg, "°")}</strong><span>{valueOrDash(slot.windSpeedKmh, " km/h")}</span></div><p>Rafales <strong>{valueOrDash(slot.windGustKmh, " km/h")}</strong></p></div><div className={styles.weatherHero}><strong>{valueOrDash(slot.temperatureC, "°C")}</strong><span>{WEATHER_LABELS[slot.weatherCode]}</span></div><dl className={styles.weatherSecondary}>{secondary.map(({ label, value, Icon: DetailIcon }) => <div key={label}><dt><DetailIcon size={15} />{label}</dt><dd>{value}</dd></div>)}</dl><footer><strong>{modelName}</strong><span>Actualisé {relativeUpdateLabel(slot.sourceUpdatedAt)}</span></footer></article>;
+  return <article className={`${styles.card} ${styles.weatherDetail}`}><div className={styles.windFocus}><WeatherIcon code={slot.weatherCode} size={46} /><div><Navigation size={23} /><strong>{valueOrDash(slot.windDirectionDeg, "°")}</strong><span>{valueOrDash(slot.windSpeedKmh, " km/h")}</span></div><p>Rafales <strong>{valueOrDash(slot.windGustKmh, " km/h")}</strong></p></div><div className={styles.weatherHero}><strong>{valueOrDash(slot.temperatureC, "°C")}</strong><span>{WEATHER_LABELS[slot.weatherCode]}</span></div><dl className={styles.weatherSecondary}>{secondary.map(({ label, value, Icon: DetailIcon }) => <div key={label}><dt><DetailIcon size={15} />{label}</dt><dd>{value}</dd></div>)}</dl><footer><strong>{modelName}</strong><span>{relativeUpdateLabel(slot.sourceUpdatedAt)}</span></footer></article>;
 }
 
 function ReportCard({ title, report }: { title: "METAR"; report: MetarReading | null } | { title: "TAF"; report: TafReading | null }) {
@@ -43,6 +42,7 @@ export default function WeatherPage() {
   const data = EMPTY_DATA;
   const preferences = useWeatherPreferences();
   const [tab, setTab] = useState<"weather" | "aviation">("weather");
+  useEffect(() => { preferences.resetToCurrent(); return preferences.resetToCurrent; }, [preferences.resetToCurrent]);
   const model = preferences.weatherModel ?? "";
   const dayLabel = preferences.selectedDay ? new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${preferences.selectedDay}T12:00:00`)) : "Jour";
   const previousTimeDisabled = preferences.timeIndex <= 0 && preferences.dayIndex <= 0;

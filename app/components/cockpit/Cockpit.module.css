@@ -415,6 +415,8 @@
 .cockpitWind svg { grid-row: span 2; color: var(--bc-color-action); transform: rotate(45deg); }
 .cockpitWind strong { font-size: .8rem; }
 .cockpitWind b { font-size: .88rem; line-height: 1; }
+.weatherFooter { display: flex; align-items: end; justify-content: space-between; gap: 6px; }
+.weatherFooter small { color: var(--bc-color-text-muted); font-size: .48rem; line-height: 1.1; text-align: right; white-space: nowrap; }
 
 .hourlyForecast {
   display: grid;

@@ -27,3 +27,10 @@ test("cockpit et page météo consomment le même contexte", () => {
   assert.ok(sources.every((source) => source.includes("useWeatherPreferences")));
   assert.ok(sources.every((source) => source.includes("selectedPoint")));
 });
+
+test("le contexte expose la remise au créneau météo courant sans requête dédiée", () => {
+  const context = readFileSync(new URL("../contexts/WeatherPreferencesContext.tsx", import.meta.url), "utf8");
+  assert.match(context, /resetToCurrent/);
+  assert.match(context, /closestAvailableDay/);
+  assert.match(context, /closestAvailableTime/);
+});
