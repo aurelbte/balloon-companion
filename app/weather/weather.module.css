@@ -1,0 +1,40 @@
+.screen { min-height: 100dvh; overflow-x: hidden; padding: max(18px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); }
+.screen > header, .tabs, .content { width: min(100%, 780px); margin-inline: auto; }
+.screen > header { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.screen > header a { display: grid; width: 42px; height: 42px; border: 1px solid var(--bc-color-border); border-radius: 50%; color: inherit; place-items: center; }
+.screen h1 { font-size: 1.5rem; letter-spacing: -.03em; }
+.screen h2 { margin-bottom: 10px; font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; }
+.screen h3 { margin: 16px 0 8px; color: var(--bc-color-text-secondary); font-size: .7rem; text-transform: uppercase; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; margin-block: 18px; padding: 3px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); }
+.tabs button { min-height: 42px; border: 0; border-radius: var(--bc-radius-round); background: transparent; color: var(--bc-color-text-muted); font-weight: 700; }
+.tabs button[aria-selected="true"] { background: var(--bc-color-navigation); color: var(--bc-color-text); }
+.content { display: grid; gap: 14px; }
+.card, .hourCard { padding: 16px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-control); background: var(--bc-color-surface); box-shadow: var(--bc-shadow-panel); }
+.placeCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.placeCard > div { display: grid; min-width: 0; gap: 5px; }
+.placeCard strong { display: flex; align-items: center; gap: 5px; }
+.placeCard strong svg { color: var(--bc-color-action); }
+.placeCard small, .eyebrow, .empty { color: var(--bc-color-text-muted); }
+.eyebrow { font-size: .66rem; text-transform: uppercase; }
+.placeCard button { min-height: 40px; padding-inline: 12px; border: 0; background: transparent; color: var(--bc-color-action); font-weight: 700; }
+.settings { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; }
+.settings label { display: grid; gap: 7px; font-size: .7rem; font-weight: 700; text-transform: uppercase; }
+.settings select { min-height: 42px; padding-inline: 10px; border: 1px solid var(--bc-color-border); border-radius: 10px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text); }
+.sunBlock { display: grid; gap: 7px; color: var(--bc-color-text-secondary); font-size: .72rem; }
+.sunBlock span { display: flex; align-items: center; gap: 6px; }
+.sunBlock svg { color: var(--bc-color-action); }
+.hourlyList { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 9px; }
+.hourCard { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; }
+.hourCard > svg { color: var(--bc-color-action); }
+.hourCard > span { font-weight: 700; }
+.hourCard > div { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; padding-top: 8px; border-top: 1px solid var(--bc-color-border); }
+.hourCard > div b { grid-row: span 2; align-self: center; font-size: 1rem; }
+.hourCard > div span, .hourCard > div small { color: var(--bc-color-text-secondary); font-size: .68rem; }
+.hourCard > div small { font-weight: 700; }
+.reportGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.reportGrid div { min-width: 0; }
+.reportGrid dt { color: var(--bc-color-text-muted); font-size: .63rem; }
+.reportGrid dd { margin-top: 3px; font-weight: 700; }
+.card pre { overflow-x: auto; padding: 12px; border-radius: 10px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text-secondary); font: .72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .settings { grid-template-columns: 1fr; gap: 12px; } .hourlyList { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 360px) { .screen { padding-inline: 12px; } .hourlyList, .reportGrid { grid-template-columns: 1fr; } .placeCard { align-items: start; } }
