@@ -4,6 +4,12 @@ export function dayKey(timestamp: string): string { return timestamp.slice(0, 10
 export function timeKey(timestamp: string): string { return timestamp.slice(11, 16); }
 export function availableDays(points: readonly WeatherHourlyPoint[]): string[] { return [...new Set(points.map(({ timestamp }) => dayKey(timestamp)))]; }
 export function availableTimes(points: readonly WeatherHourlyPoint[], day: string): string[] { return points.filter(({ timestamp }) => dayKey(timestamp) === day).map(({ timestamp }) => timeKey(timestamp)); }
+export function closestAvailableDay(days: readonly string[], preferred: string): string | undefined {
+  if (days.length === 0) return undefined;
+  if (days.includes(preferred)) return preferred;
+  const target = Date.parse(`${preferred}T12:00:00`);
+  return [...days].sort((left, right) => Math.abs(Date.parse(`${left}T12:00:00`) - target) - Math.abs(Date.parse(`${right}T12:00:00`) - target))[0];
+}
 export function closestAvailableTime(times: readonly string[], preferred: string | undefined): string | undefined {
   if (times.length === 0) return undefined;
   if (!preferred || times.includes(preferred)) return preferred ?? times[0];

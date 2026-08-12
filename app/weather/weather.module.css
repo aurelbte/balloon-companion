@@ -10,7 +10,7 @@
 .tabs button[aria-selected="true"] { background: var(--bc-color-navigation); color: var(--bc-color-text); }
 .content { display: grid; gap: 14px; }
 .card { padding: 16px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-control); background: var(--bc-color-surface); box-shadow: var(--bc-shadow-panel); }
-.placeCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.placeCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
 .placeCard > div { display: grid; min-width: 0; gap: 5px; }
 .placeCard strong { display: flex; align-items: center; gap: 5px; }
 .placeCard strong svg { color: var(--bc-color-action); }
@@ -40,6 +40,13 @@
 .weatherDetail dd { margin-top: 4px; font-weight: 700; }
 .weatherDetail footer { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--bc-color-border); }
 .weatherDetail footer span { color: var(--bc-color-text-muted); font-size: .68rem; }
+.weatherError { display: grid; align-self: center; justify-items: center; gap: 12px; }
+.weatherError button { min-height: 40px; padding-inline: 18px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-navigation); color: var(--bc-color-text); font-weight: 700; }
+.modalBackdrop { position: fixed; z-index: 150; inset: 0; display: grid; align-items: end; padding: 18px; background: rgb(1 7 16 / 72%); }
+.placePanel { display: grid; width: min(100%, 520px); max-height: min(70dvh, 560px); margin-inline: auto; overflow-y: auto; gap: 8px; padding: 18px; border: 1px solid var(--bc-color-border); border-radius: 20px; background: var(--bc-color-canvas-elevated); box-shadow: var(--bc-shadow-panel); }
+.placePanel > button { display: flex; min-height: 46px; align-items: center; gap: 8px; padding-inline: 12px; border: 1px solid var(--bc-color-border); border-radius: 12px; background: var(--bc-color-surface); color: var(--bc-color-text); text-align: left; }
+.placePanel > button svg { color: var(--bc-color-action); }
+.placePanel > button:last-child { justify-content: center; border: 0; background: transparent; color: var(--bc-color-action); }
 .reportGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .reportGrid div { min-width: 0; }
 .reportGrid dt { color: var(--bc-color-text-muted); font-size: .63rem; }

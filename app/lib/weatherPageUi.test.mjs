@@ -37,3 +37,11 @@ test("la page consomme le service normalisé sans appeler Open-Meteo", () => {
   assert.match(page, /WeatherHourlyPoint/);
   assert.doesNotMatch(page, /open-meteo\.com/);
 });
+
+test("le lieu, le chargement et l'erreur météo sont interactifs", () => {
+  assert.match(page, /loadFavoriteLaunchSites/);
+  assert.match(page, /setPlacePanelOpen\(true\)/);
+  assert.match(page, /Chargement des prévisions/);
+  assert.match(page, /Prévisions indisponibles/);
+  assert.match(page, /Réessayer/);
+});
