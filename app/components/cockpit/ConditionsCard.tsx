@@ -1,6 +1,6 @@
 "use client";
 
-import { Moon, Star, Sunrise } from "lucide-react";
+import { Moon, Navigation, Star, Sunrise } from "lucide-react";
 import Link from "next/link";
 import { Card } from "../../design-system";
 import { useWeatherPreferences } from "../../contexts/WeatherPreferencesContext";
@@ -28,14 +28,13 @@ export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCard
           </div>
         </div>
         <div className={styles.weatherLocation}>
-          <span>Aérodrome favori <Star size={11} fill="currentColor" aria-hidden="true" /></span>
-          <strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}{preferences.modelName ? ` · ${preferences.modelName}` : ""}</strong>
+          {Icon && <Icon size={22} aria-hidden="true" />}
+          <div><span>Lieu favori <Star size={11} fill="currentColor" aria-hidden="true" /></span><strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}</strong><small>{preferences.modelName || "Aucun modèle"}</small></div>
         </div>
-        <div className={styles.hourlyForecast} aria-label="Prévision météo heure par heure">
-          <div><strong>{preferences.selectedDay ?? "—"}</strong><small>Jour</small></div>
-          <div><strong>{preferences.selectedTime ?? "—"}</strong><small>Heure</small></div>
-          <div>{Icon && <Icon size={16} aria-hidden="true" />}<span>{point?.temperatureC === undefined ? "—" : `${point.temperatureC}°C`}</span></div>
-          <div><strong>{point?.windSpeedKmh === undefined ? "—" : `${point.windSpeedKmh}`}</strong><small>km/h</small></div>
+        <div className={styles.cockpitWeatherMetrics}>
+          <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" /><strong>{point?.windDirectionDeg === undefined ? "—" : `${point.windDirectionDeg}°`}</strong><b>{point?.windSpeedKmh === undefined ? "—" : `${point.windSpeedKmh} km/h`}</b></div>
+          <div><span>Rafales</span><strong>{point?.windGustKmh === undefined ? "—" : `${point.windGustKmh} km/h`}</strong></div>
+          <div><span>Température</span><strong>{point?.temperatureC === undefined ? "—" : `${point.temperatureC}°C`}</strong></div>
         </div>
         <span className={styles.cardAction}>Voir le détail météo →</span>
       </Card>

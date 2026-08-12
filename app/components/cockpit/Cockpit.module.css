@@ -374,10 +374,14 @@
 }
 
 .weatherLocation {
-  display: grid;
-  gap: 2px;
-  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
 }
+
+.weatherLocation > svg { flex: none; color: var(--bc-color-action); }
+.weatherLocation > div { display: grid; min-width: 0; gap: 1px; }
 
 .weatherLocation span {
   display: flex;
@@ -400,6 +404,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.weatherLocation small { overflow: hidden; color: var(--bc-color-text-muted); font-size: .54rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.cockpitWeatherMetrics { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 4px 8px; padding-top: 6px; border-top: 1px solid rgb(59 88 120 / 38%); }
+.cockpitWeatherMetrics > div { display: grid; gap: 1px; }
+.cockpitWeatherMetrics span { color: var(--bc-color-text-muted); font-size: .52rem; }
+.cockpitWeatherMetrics strong { font-size: .68rem; }
+.cockpitWind { grid-row: span 2; grid-template-columns: auto 1fr; align-items: center; }
+.cockpitWind svg { grid-row: span 2; color: var(--bc-color-action); transform: rotate(45deg); }
+.cockpitWind strong { font-size: .8rem; }
+.cockpitWind b { font-size: .88rem; line-height: 1; }
 
 .hourlyForecast {
   display: grid;
