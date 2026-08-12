@@ -9,7 +9,7 @@ test("persiste un ICAO Aviation indépendamment du favori météo", () => {
   globalThis.window = { localStorage: storage() };
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "A", email: "a@example.com", firstName: "", lastName: "" } });
   assert.equal(loadAviationPreferences(), null);
-  assert.deepEqual(saveAviationPreferences(" lfqq "), { airportIcao: "LFQQ", initialized: true });
+  assert.deepEqual(saveAviationPreferences(" lfqq ", [{ icao: "lfqq", name: "Lille Lesquin" }]), { airportIcao: "LFQQ", favorites: [{ icao: "LFQQ", name: "Lille Lesquin" }], initialized: true });
   assert.equal(loadAviationPreferences().airportIcao, "LFQQ");
   delete globalThis.window;
 });
@@ -18,6 +18,6 @@ test("une préférence initialisée sans aérodrome reste distincte d'une absenc
   globalThis.window = { localStorage: storage() };
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "B", email: "b@example.com", firstName: "", lastName: "" } });
   saveAviationPreferences(null);
-  assert.deepEqual(loadAviationPreferences(), { airportIcao: null, initialized: true });
+  assert.deepEqual(loadAviationPreferences(), { airportIcao: null, favorites: [], initialized: true });
   delete globalThis.window;
 });
