@@ -45,3 +45,21 @@ test("le lieu, le chargement et l'erreur météo sont interactifs", () => {
   assert.match(page, /Prévisions indisponibles/);
   assert.match(page, /Réessayer/);
 });
+
+test("la navigation horaire traverse les frontières de journée", () => {
+  assert.match(page, /offset > 0 \? adjacentTimes\[0\] : adjacentTimes\.at\(-1\)/);
+  assert.match(page, /setSelectedDay\(adjacentDay\)/);
+  assert.match(page, /previousTimeDisabled/);
+  assert.match(page, /nextTimeDisabled/);
+});
+
+test("la grande carte utilise une hiérarchie unique sans encadrés internes", () => {
+  assert.match(page, /WEATHER_LABELS\[slot\.weatherCode\]/);
+  assert.match(page, /styles\.windFocus/);
+  assert.match(page, /styles\.weatherSecondary/);
+  assert.match(page, /Humidité/);
+  assert.match(page, /Précipitations/);
+  assert.match(page, /Couverture/);
+  assert.match(page, /Visibilité/);
+  assert.doesNotMatch(page, /const details =/);
+});
