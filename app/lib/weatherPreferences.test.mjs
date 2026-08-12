@@ -25,4 +25,5 @@ test("persiste et restaure les préférences séparément pour USER et GUEST", (
 test("cockpit et page météo consomment le même contexte", () => {
   const sources = ["../weather/page.tsx", "../components/cockpit/ConditionsCard.tsx"].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
   assert.ok(sources.every((source) => source.includes("useWeatherPreferences")));
+  assert.ok(sources.every((source) => source.includes("selectedPoint")));
 });

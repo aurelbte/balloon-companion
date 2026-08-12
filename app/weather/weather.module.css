@@ -1,14 +1,14 @@
-.screen { min-height: 100dvh; overflow-x: hidden; padding: max(18px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); }
+.screen { min-height: 100dvh; overflow-x: hidden; padding: max(14px, env(safe-area-inset-top)) 18px max(14px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); }
 .screen > header, .tabs, .content { width: min(100%, 780px); margin-inline: auto; }
 .screen > header { display: flex; align-items: center; gap: 12px; min-height: 44px; }
 .screen > header a { display: grid; width: 42px; height: 42px; border: 1px solid var(--bc-color-border); border-radius: 50%; color: inherit; place-items: center; }
 .screen h1 { font-size: 1.5rem; letter-spacing: -.03em; }
 .screen h2 { margin-bottom: 10px; font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; }
 .screen h3 { margin: 16px 0 8px; color: var(--bc-color-text-secondary); font-size: .7rem; text-transform: uppercase; }
-.tabs { display: grid; grid-template-columns: 1fr 1fr; margin-block: 18px; padding: 3px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; margin-block: 12px; padding: 3px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); }
 .tabs button { min-height: 42px; border: 0; border-radius: var(--bc-radius-round); background: transparent; color: var(--bc-color-text-muted); font-weight: 700; }
 .tabs button[aria-selected="true"] { background: var(--bc-color-navigation); color: var(--bc-color-text); }
-.content { display: grid; gap: 14px; }
+.content { display: grid; gap: 10px; }
 .card { padding: 16px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-control); background: var(--bc-color-surface); box-shadow: var(--bc-shadow-panel); }
 .placeCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
 .placeCard > div { display: grid; min-width: 0; gap: 5px; }
@@ -35,7 +35,7 @@
 .stepper button { display: grid; width: 38px; height: 42px; padding: 0; border: 0; background: transparent; color: var(--bc-color-action); place-items: center; }
 .stepper button:disabled { color: var(--bc-color-text-muted); opacity: .45; }
 .stepper strong { overflow: hidden; font-size: .72rem; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.weatherDetail { display: grid; gap: 12px; min-height: 300px; }
+.weatherDetail { display: grid; gap: 10px; min-height: 270px; }
 .weatherDetail > .empty { align-self: center; text-align: center; }
 .weatherHero { display: grid; justify-items: center; gap: 2px; padding-top: 5px; text-align: center; }
 .weatherHero svg { color: var(--bc-color-action); }
