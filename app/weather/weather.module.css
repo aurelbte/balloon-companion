@@ -72,6 +72,12 @@
 .aviationCard details { padding-top: 9px; border-top: 1px solid var(--bc-color-border); }
 .aviationCard summary { color: var(--bc-color-action); font-size: .7rem; font-weight: 700; cursor: pointer; }
 .aviationCard details pre { margin-top: 9px; }
+.aviationAirport { display: grid; gap: 8px; }
+.aviationAirport label { color: var(--bc-color-text-muted); font-size: .66rem; text-transform: uppercase; }
+.aviationAirport > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.aviationAirport input { min-width: 0; min-height: 42px; padding-inline: 12px; border: 1px solid var(--bc-color-border); border-radius: 11px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text); font: inherit; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.aviationAirport button { min-height: 42px; padding-inline: 14px; border: 0; border-radius: var(--bc-radius-round); background: var(--bc-color-navigation); color: var(--bc-color-action); font-weight: 700; }
+.aviationAirport > strong { font-size: .72rem; letter-spacing: .08em; }
 .modalBackdrop { position: fixed; z-index: 150; inset: 0; display: grid; align-items: end; padding: 18px; background: rgb(1 7 16 / 72%); }
 .placePanel { display: grid; width: min(100%, 520px); max-height: min(70dvh, 560px); margin-inline: auto; overflow-y: auto; gap: 8px; padding: 18px; border: 1px solid var(--bc-color-border); border-radius: 20px; background: var(--bc-color-canvas-elevated); box-shadow: var(--bc-shadow-panel); }
 .placePanel > button { display: flex; min-height: 46px; align-items: center; gap: 8px; padding-inline: 12px; border: 1px solid var(--bc-color-border); border-radius: 12px; background: var(--bc-color-surface); color: var(--bc-color-text); text-align: left; }
