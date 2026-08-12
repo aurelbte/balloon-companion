@@ -9,7 +9,7 @@
 .tabs button { min-height: 42px; border: 0; border-radius: var(--bc-radius-round); background: transparent; color: var(--bc-color-text-muted); font-weight: 700; }
 .tabs button[aria-selected="true"] { background: var(--bc-color-navigation); color: var(--bc-color-text); }
 .content { display: grid; gap: 14px; }
-.card, .hourCard { padding: 16px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-control); background: var(--bc-color-surface); box-shadow: var(--bc-shadow-panel); }
+.card { padding: 16px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-control); background: var(--bc-color-surface); box-shadow: var(--bc-shadow-panel); }
 .placeCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .placeCard > div { display: grid; min-width: 0; gap: 5px; }
 .placeCard strong { display: flex; align-items: center; gap: 5px; }
@@ -23,18 +23,27 @@
 .sunBlock { display: grid; gap: 7px; color: var(--bc-color-text-secondary); font-size: .72rem; }
 .sunBlock span { display: flex; align-items: center; gap: 6px; }
 .sunBlock svg { color: var(--bc-color-action); }
-.hourlyList { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 9px; }
-.hourCard { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; }
-.hourCard > svg { color: var(--bc-color-action); }
-.hourCard > span { font-weight: 700; }
-.hourCard > div { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; padding-top: 8px; border-top: 1px solid var(--bc-color-border); }
-.hourCard > div b { grid-row: span 2; align-self: center; font-size: 1rem; }
-.hourCard > div span, .hourCard > div small { color: var(--bc-color-text-secondary); font-size: .68rem; }
-.hourCard > div small { font-weight: 700; }
+.forecast { display: grid; gap: 10px; }
+.temporalNav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stepper { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; min-width: 0; min-height: 44px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); }
+.stepper button { display: grid; width: 38px; height: 42px; padding: 0; border: 0; background: transparent; color: var(--bc-color-action); place-items: center; }
+.stepper button:disabled { color: var(--bc-color-text-muted); opacity: .45; }
+.stepper strong { overflow: hidden; font-size: .72rem; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.weatherDetail { display: grid; gap: 18px; min-height: 300px; }
+.weatherDetail > .empty { align-self: center; text-align: center; }
+.weatherHero { display: flex; align-items: center; justify-content: center; gap: 18px; padding-block: 12px; }
+.weatherHero svg { color: var(--bc-color-action); }
+.weatherHero strong { font-size: clamp(2.3rem, 10vw, 3.5rem); letter-spacing: -.04em; }
+.weatherDetail dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.weatherDetail dl div { min-width: 0; padding: 10px; border-radius: 11px; background: var(--bc-color-canvas-elevated); }
+.weatherDetail dt { color: var(--bc-color-text-muted); font-size: .64rem; }
+.weatherDetail dd { margin-top: 4px; font-weight: 700; }
+.weatherDetail footer { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--bc-color-border); }
+.weatherDetail footer span { color: var(--bc-color-text-muted); font-size: .68rem; }
 .reportGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .reportGrid div { min-width: 0; }
 .reportGrid dt { color: var(--bc-color-text-muted); font-size: .63rem; }
 .reportGrid dd { margin-top: 3px; font-weight: 700; }
 .card pre { overflow-x: auto; padding: 12px; border-radius: 10px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text-secondary); font: .72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 520px) { .settings { grid-template-columns: 1fr; gap: 12px; } .hourlyList { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 360px) { .screen { padding-inline: 12px; } .hourlyList, .reportGrid { grid-template-columns: 1fr; } .placeCard { align-items: start; } }
+@media (max-width: 520px) { .settings { grid-template-columns: 1fr; gap: 12px; } }
+@media (max-width: 360px) { .screen { padding-inline: 12px; } .temporalNav { gap: 5px; } .stepper { grid-template-columns: 32px minmax(0, 1fr) 32px; } .stepper button { width: 32px; } .stepper strong { font-size: .65rem; } .weatherDetail dl, .reportGrid { grid-template-columns: 1fr; } .placeCard { align-items: start; } }

@@ -1,21 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Cloud, CloudFog, CloudLightning, CloudRain, CloudSun, Moon, Snowflake, Star, Sun, Sunrise } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSun, Moon, Snowflake, Star, Sun, Sunrise } from "lucide-react";
+import { useMemo, useState } from "react";
 import { SUPPORTED_WEATHER_MODELS } from "../lib/weather/models";
-import type { HourlyWeather, MetarReading, TafReading, WeatherIconKind, WeatherPageData, WeatherPlace } from "./types";
+import type { MetarReading, TafReading, WeatherIconKind, WeatherPageData, WeatherPlace, WeatherSlot } from "./types";
 import styles from "./weather.module.css";
 
-const EMPTY_DATA: WeatherPageData = { weatherPlace: null, aviationStation: null, sunTimes: null, hourly: [], metar: null, taf: null };
+const EMPTY_DATA: WeatherPageData = { weatherPlace: null, aviationStation: null, sunTimes: null, forecast: [], metar: null, taf: null };
 const ICONS = { "clear-day": Sun, "clear-night": Moon, "partly-cloudy": CloudSun, cloudy: Cloud, overcast: Cloud, fog: CloudFog, rain: CloudRain, "heavy-rain": CloudRain, thunderstorm: CloudLightning, snow: Snowflake } satisfies Record<WeatherIconKind, typeof Sun>;
 
 function PlaceCard({ title, place, aviation = false }: { title: string; place: WeatherPlace | null; aviation?: boolean }) {
   return <section className={`${styles.card} ${styles.placeCard}`}><div><span className={styles.eyebrow}>{title}</span>{place ? <><strong><Star size={14} fill="currentColor" />{place.name}</strong>{place.detail && <small>{place.detail}</small>}</> : <strong>{aviation ? "Aucun aérodrome sélectionné" : "Aucun lieu météo sélectionné"}</strong>}</div><button type="button">{place ? "Modifier" : aviation ? "Choisir un aérodrome" : "Choisir un lieu"}</button></section>;
 }
 
-function HourlySection({ hours }: { hours: readonly HourlyWeather[] }) {
-  return <section><h2>Heure par heure</h2>{hours.length === 0 ? <div className={`${styles.card} ${styles.empty}`}>Prévisions horaires indisponibles</div> : <div className={styles.hourlyList}>{hours.map((hour) => { const Icon = ICONS[hour.icon]; return <article className={styles.hourCard} key={hour.id}><strong>{hour.time}</strong><Icon size={24} /><span>{hour.temperature}</span><div><b>{hour.windDirection}</b><span>Vent {hour.windSpeed}</span><small>Rafales {hour.gusts}</small></div></article>; })}</div>}</section>;
+function Stepper({ label, value, onPrevious, onNext, disabled }: { label: string; value: string; onPrevious: () => void; onNext: () => void; disabled: boolean }) {
+  return <div className={styles.stepper} aria-label={label}><button type="button" onClick={onPrevious} disabled={disabled} aria-label={`${label} précédent`}><ChevronLeft size={18} /></button><strong>{value}</strong><button type="button" onClick={onNext} disabled={disabled} aria-label={`${label} suivant`}><ChevronRight size={18} /></button></div>;
+}
+
+function SelectedWeatherCard({ slot }: { slot: WeatherSlot | null }) {
+  if (!slot) return <section className={`${styles.card} ${styles.weatherDetail}`}><p className={styles.empty}>Prévision indisponible pour ce créneau</p></section>;
+  const Icon = ICONS[slot.icon];
+  const details = [["Direction", slot.windDirection], ["Vent moyen", slot.windSpeed], ["Rafales", slot.gusts], ["Humidité", slot.humidity], ["Précipitations", slot.precipitation], ["Visibilité", slot.visibility], ["Couverture nuageuse", slot.cloudCover]];
+  return <article className={`${styles.card} ${styles.weatherDetail}`}><div className={styles.weatherHero}><Icon size={58} /><strong>{slot.temperature}</strong></div><dl>{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><footer><strong>{slot.modelName}</strong><span>Actualisé {slot.updatedAgo}</span></footer></article>;
 }
 
 function ReportCard({ title, report }: { title: "METAR"; report: MetarReading | null } | { title: "TAF"; report: TafReading | null }) {
@@ -29,5 +36,14 @@ export default function WeatherPage() {
   const data = EMPTY_DATA;
   const [tab, setTab] = useState<"weather" | "aviation">("weather");
   const [model, setModel] = useState(SUPPORTED_WEATHER_MODELS[0]?.providerModelId ?? "");
-  return <main className={styles.screen}><header><Link href="/" aria-label="Retour au cockpit"><ArrowLeft /></Link><h1>Météo</h1></header><div className={styles.tabs} role="tablist"><button role="tab" aria-selected={tab === "weather"} onClick={() => setTab("weather")}>Météo</button><button role="tab" aria-selected={tab === "aviation"} onClick={() => setTab("aviation")}>Aviation</button></div>{tab === "weather" ? <div className={styles.content}><PlaceCard title="Lieu météo" place={data.weatherPlace} /><section className={`${styles.card} ${styles.settings}`}><label>Modèle météo<select value={model} onChange={(event) => setModel(event.target.value)}>{SUPPORTED_WEATHER_MODELS.map((item) => <option key={item.id} value={item.providerModelId}>{item.label}</option>)}</select></label><div className={styles.sunBlock}>{data.sunTimes ? <><span><Sunrise size={16} />Lever — {data.sunTimes.sunrise}</span><span><Moon size={15} />Coucher — {data.sunTimes.sunset}</span></> : <span>Lever et coucher indisponibles</span>}</div></section><HourlySection hours={data.hourly} /></div> : <div className={styles.content}><PlaceCard title="Aérodrome" place={data.aviationStation} aviation /><ReportCard title="METAR" report={data.metar} /><ReportCard title="TAF" report={data.taf} /></div>}</main>;
+  const days = useMemo(() => [...new Map(data.forecast.map((slot) => [slot.dayId, slot.dayLabel])).entries()], [data.forecast]);
+  const times = useMemo(() => [...new Set(data.forecast.map((slot) => slot.time))], [data.forecast]);
+  const [dayIndex, setDayIndex] = useState(0);
+  const [timeIndex, setTimeIndex] = useState(0);
+  const selectedDay = days[dayIndex];
+  const selectedTime = times[timeIndex];
+  const selectedSlot = data.forecast.find((slot) => slot.dayId === selectedDay?.[0] && slot.time === selectedTime) ?? null;
+  const stepDay = (offset: number) => setDayIndex((current) => (current + offset + days.length) % days.length);
+  const stepTime = (offset: number) => setTimeIndex((current) => (current + offset + times.length) % times.length);
+  return <main className={styles.screen}><header><Link href="/" aria-label="Retour au cockpit"><ArrowLeft /></Link><h1>Météo</h1></header><div className={styles.tabs} role="tablist"><button role="tab" aria-selected={tab === "weather"} onClick={() => setTab("weather")}>Météo</button><button role="tab" aria-selected={tab === "aviation"} onClick={() => setTab("aviation")}>Aviation</button></div>{tab === "weather" ? <div className={styles.content}><PlaceCard title="Lieu météo" place={data.weatherPlace} /><section className={`${styles.card} ${styles.settings}`}><label>Modèle météo<select value={model} onChange={(event) => setModel(event.target.value)}>{SUPPORTED_WEATHER_MODELS.map((item) => <option key={item.id} value={item.providerModelId}>{item.label}</option>)}</select></label><div className={styles.sunBlock}>{data.sunTimes ? <><span><Sunrise size={16} />Lever — {data.sunTimes.sunrise}</span><span><Moon size={15} />Coucher — {data.sunTimes.sunset}</span></> : <span>Lever et coucher indisponibles</span>}</div></section><section className={styles.forecast}><div className={styles.temporalNav}><Stepper label="Jour" value={selectedDay?.[1] ?? "Jour"} onPrevious={() => stepDay(-1)} onNext={() => stepDay(1)} disabled={days.length < 2} /><Stepper label="Heure" value={selectedTime ?? "Heure"} onPrevious={() => stepTime(-1)} onNext={() => stepTime(1)} disabled={times.length < 2} /></div><SelectedWeatherCard slot={selectedSlot} /></section></div> : <div className={styles.content}><PlaceCard title="Aérodrome" place={data.aviationStation} aviation /><ReportCard title="METAR" report={data.metar} /><ReportCard title="TAF" report={data.taf} /></div>}</main>;
 }

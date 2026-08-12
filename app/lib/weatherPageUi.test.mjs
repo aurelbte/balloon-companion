@@ -22,3 +22,12 @@ test("les états vides météo, METAR et TAF sont prévus sans valeurs exemples"
   assert.match(page, /TAF non disponible/);
   assert.doesNotMatch(page, /LFQO|Lille|06:12|21:48/);
 });
+
+test("jour et heure ont des contrôles indépendants et une carte météo unique", () => {
+  assert.match(page, /setDayIndex/);
+  assert.match(page, /setTimeIndex/);
+  assert.match(page, /<Stepper label="Jour"/);
+  assert.match(page, /<Stepper label="Heure"/);
+  assert.match(page, /<SelectedWeatherCard slot=\{selectedSlot\}/);
+  assert.doesNotMatch(page, /Heure par heure/);
+});
