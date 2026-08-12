@@ -58,6 +58,20 @@
 .weatherDetail footer span { color: var(--bc-color-text-muted); font-size: .68rem; }
 .weatherError { display: grid; align-self: center; justify-items: center; gap: 12px; }
 .weatherError button { min-height: 40px; padding-inline: 18px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-navigation); color: var(--bc-color-text); font-weight: 700; }
+.aviationCard { display: grid; gap: 12px; }
+.aviationRows { display: grid; gap: 7px; }
+.aviationRows div { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.aviationRows dt { display: flex; align-items: center; gap: 7px; color: var(--bc-color-text-secondary); font-size: .7rem; }
+.aviationRows dt svg { color: var(--bc-color-action); }
+.aviationRows dd { min-width: 0; font-size: .76rem; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.tafValidity { color: var(--bc-color-text-secondary); font-size: .72rem; }
+.tafValidity strong { margin-left: 5px; color: var(--bc-color-text); }
+.tafPeriods { display: grid; gap: 9px; }
+.tafPeriods section { display: grid; grid-template-columns: minmax(90px, .8fr) repeat(3, minmax(0, 1fr)); gap: 7px; padding-block: 8px; border-top: 1px solid var(--bc-color-border); }
+.tafPeriods section span { color: var(--bc-color-text-secondary); font-size: .66rem; overflow-wrap: anywhere; }
+.aviationCard details { padding-top: 9px; border-top: 1px solid var(--bc-color-border); }
+.aviationCard summary { color: var(--bc-color-action); font-size: .7rem; font-weight: 700; cursor: pointer; }
+.aviationCard details pre { margin-top: 9px; }
 .modalBackdrop { position: fixed; z-index: 150; inset: 0; display: grid; align-items: end; padding: 18px; background: rgb(1 7 16 / 72%); }
 .placePanel { display: grid; width: min(100%, 520px); max-height: min(70dvh, 560px); margin-inline: auto; overflow-y: auto; gap: 8px; padding: 18px; border: 1px solid var(--bc-color-border); border-radius: 20px; background: var(--bc-color-canvas-elevated); box-shadow: var(--bc-shadow-panel); }
 .placePanel > button { display: flex; min-height: 46px; align-items: center; gap: 8px; padding-inline: 12px; border: 1px solid var(--bc-color-border); border-radius: 12px; background: var(--bc-color-surface); color: var(--bc-color-text); text-align: left; }
@@ -69,4 +83,5 @@
 .reportGrid dd { margin-top: 3px; font-weight: 700; }
 .card pre { overflow-x: auto; padding: 12px; border-radius: 10px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text-secondary); font: .72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 520px) { .settings { grid-template-columns: 1fr; gap: 12px; } }
-@media (max-width: 360px) { .screen { padding-inline: 12px; } .temporalNav { gap: 5px; } .stepper { grid-template-columns: 32px minmax(0, 1fr) 32px; } .stepper button { width: 32px; } .stepper strong { font-size: .65rem; } .weatherDetail dl, .reportGrid { grid-template-columns: 1fr; } .placeCard { align-items: start; } }
+@media (max-width: 520px) { .tafPeriods section { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 360px) { .screen { padding-inline: 12px; } .temporalNav { gap: 5px; } .stepper { grid-template-columns: 32px minmax(0, 1fr) 32px; } .stepper button { width: 32px; } .stepper strong { font-size: .65rem; } .weatherDetail dl, .reportGrid { grid-template-columns: 1fr; } .placeCard { align-items: start; } .tafPeriods section { grid-template-columns: 1fr; } }
