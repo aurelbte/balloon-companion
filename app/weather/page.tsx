@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSun, Droplets, Eye, Moon, Navigation, Snowflake, Star, Sun, Sunrise } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadFavoriteLaunchSites, type FavoriteLaunchSite } from "../lib/favoriteLaunchSites";
+import { useWeatherPreferences } from "../contexts/WeatherPreferencesContext";
 import { loadHourlyWeatherForecast } from "../lib/weather/hourlyForecastService";
 import { SUPPORTED_WEATHER_MODELS } from "../lib/weather/models";
 import { availableDays, availableTimes, closestAvailableDay, closestAvailableTime, dayKey, relativeUpdateLabel, timeKey } from "../lib/weather/weatherSelection";
@@ -44,13 +44,10 @@ function ReportCard({ title, report }: { title: "METAR"; report: MetarReading | 
 
 export default function WeatherPage() {
   const data = EMPTY_DATA;
+  const preferences = useWeatherPreferences();
   const [tab, setTab] = useState<"weather" | "aviation">("weather");
-  const [place, setPlace] = useState<WeatherPlace | null>(null);
-  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [model, setModel] = useState("");
   const [points, setPoints] = useState<readonly WeatherHourlyPoint[]>([]);
   const [favorites, setFavorites] = useState<FavoriteLaunchSite[]>([]);
-  const [placePanelOpen, setPlacePanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [weatherError, setWeatherError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -59,12 +56,11 @@ export default function WeatherPage() {
 
   useEffect(() => {
     setFavorites(loadFavoriteLaunchSites());
-    const preparation = loadPreparationDraft();
-    if (!preparation?.launchSite) return;
-    setPlace({ name: preparation.launchSite.name });
-    setCoordinates({ latitude: preparation.launchSite.latitude, longitude: preparation.launchSite.longitude });
-    setModel(preparation.weatherModel);
   }, []);
+
+  const activeFavorite = favorites.find(({ id }) => id === preferences.favoriteWeatherLocationId) ?? null;
+  const coordinates = useMemo(() => activeFavorite ? { latitude: activeFavorite.latitude, longitude: activeFavorite.longitude } : null, [activeFavorite]);
+  const model = preferences.weatherModel ?? "";
 
   useEffect(() => {
     if (!coordinates || !model) { setPoints([]); setLoading(false); setWeatherError(false); return; }
@@ -103,9 +99,9 @@ export default function WeatherPage() {
     setSelectedDay(adjacentDay);
     setSelectedTime(adjacentTime);
   };
-  const choosePlace = (favorite: FavoriteLaunchSite) => { setPlace({ name: favorite.name, ...(favorite.icaoCode ? { detail: favorite.icaoCode } : {}) }); setCoordinates({ latitude: favorite.latitude, longitude: favorite.longitude }); setPlacePanelOpen(false); };
+  const choosePlace = (favorite: FavoriteLaunchSite) => preferences.setFavoriteWeatherLocationId(favorite.id);
 
   const previousTimeDisabled = timeIndex <= 0 && dayIndex <= 0;
   const nextTimeDisabled = timeIndex < 0 || (timeIndex >= times.length - 1 && dayIndex >= days.length - 1);
-  return <main className={styles.screen}><header><Link href="/" aria-label="Retour au cockpit"><ArrowLeft /></Link><h1>Météo</h1></header><div className={styles.tabs} role="tablist"><button role="tab" aria-selected={tab === "weather"} onClick={() => setTab("weather")}>Météo</button><button role="tab" aria-selected={tab === "aviation"} onClick={() => setTab("aviation")}>Aviation</button></div>{tab === "weather" ? <div className={styles.content}><PlaceCard title="Lieu météo" place={place} onSelect={() => setPlacePanelOpen(true)} /><section className={`${styles.card} ${styles.settings}`}><label>Modèle météo<select value={model} disabled={!coordinates} onChange={(event) => setModel(event.target.value)}><option value="">—</option>{SUPPORTED_WEATHER_MODELS.map((item) => <option key={item.id} value={item.providerModelId}>{item.label}</option>)}</select></label><div className={styles.sunBlock}>{data.sunTimes ? <><span><Sunrise size={16} />Lever — {data.sunTimes.sunrise}</span><span><Moon size={15} />Coucher — {data.sunTimes.sunset}</span></> : <span>Lever et coucher indisponibles</span>}</div></section><section className={styles.forecast}><div className={styles.temporalNav}><Stepper label="Jour" value={dayLabel} onPrevious={() => changeDay(-1)} onNext={() => changeDay(1)} previousDisabled={dayIndex <= 0} nextDisabled={dayIndex < 0 || dayIndex >= days.length - 1} /><Stepper label="Heure" value={selectedTime ?? "Heure"} onPrevious={() => changeTime(-1)} onNext={() => changeTime(1)} previousDisabled={previousTimeDisabled} nextDisabled={nextTimeDisabled} /></div><SelectedWeatherCard slot={selectedSlot} modelName={modelName} loading={loading} error={weatherError} onRetry={() => setRetryKey((value) => value + 1)} /></section></div> : <div className={styles.content}><PlaceCard title="Aérodrome" place={data.aviationStation} aviation /><ReportCard title="METAR" report={data.metar} /><ReportCard title="TAF" report={data.taf} /></div>}{placePanelOpen && <div className={styles.modalBackdrop} role="presentation" onClick={() => setPlacePanelOpen(false)}><section className={styles.placePanel} role="dialog" aria-modal="true" aria-label="Choisir un lieu météo" onClick={(event) => event.stopPropagation()}><h2>Choisir un lieu météo</h2>{favorites.length === 0 ? <p className={styles.empty}>Aucun lieu favori enregistré</p> : favorites.map((favorite) => <button type="button" key={favorite.id} onClick={() => choosePlace(favorite)}><Star size={14} />{favorite.name}</button>)}<button type="button" onClick={() => setPlacePanelOpen(false)}>Fermer</button></section></div>}</main>;
+  return <main className={styles.screen}><header><Link href="/" aria-label="Retour au cockpit"><ArrowLeft /></Link><h1>Météo</h1></header><div className={styles.tabs} role="tablist"><button role="tab" aria-selected={tab === "weather"} onClick={() => setTab("weather")}>Météo</button><button role="tab" aria-selected={tab === "aviation"} onClick={() => setTab("aviation")}>Aviation</button></div>{tab === "weather" ? <div className={styles.content}><section className={`${styles.card} ${styles.preferenceGroup}`}><div className={styles.preferenceHeading}><span className={styles.eyebrow}>Lieu météo</span><button type="button" aria-label="Gérer les lieux favoris">+</button></div><div className={styles.chips}>{favorites.length === 0 ? <span className={styles.empty}>Aucun lieu météo sélectionné</span> : favorites.map((favorite) => <button type="button" key={favorite.id} aria-pressed={favorite.id === preferences.favoriteWeatherLocationId} onClick={() => choosePlace(favorite)}>{favorite.name}</button>)}</div></section><section className={`${styles.card} ${styles.preferenceGroup}`}><span className={styles.eyebrow}>Modèle météo</span><div className={styles.chips}>{SUPPORTED_WEATHER_MODELS.map((item) => <button type="button" key={item.id} aria-pressed={item.providerModelId === model} onClick={() => preferences.setWeatherModel(item.providerModelId)}>{item.label}</button>)}</div><div className={styles.sunBlock}>{data.sunTimes ? <><span><Sunrise size={16} />Lever — {data.sunTimes.sunrise}</span><span><Moon size={15} />Coucher — {data.sunTimes.sunset}</span></> : <span>Lever et coucher indisponibles</span>}</div></section><section className={styles.forecast}><div className={styles.temporalNav}><Stepper label="Jour" value={dayLabel} onPrevious={() => changeDay(-1)} onNext={() => changeDay(1)} previousDisabled={dayIndex <= 0} nextDisabled={dayIndex < 0 || dayIndex >= days.length - 1} /><Stepper label="Heure" value={selectedTime ?? "Heure"} onPrevious={() => changeTime(-1)} onNext={() => changeTime(1)} previousDisabled={previousTimeDisabled} nextDisabled={nextTimeDisabled} /></div><SelectedWeatherCard slot={selectedSlot} modelName={modelName} loading={loading} error={weatherError} onRetry={() => setRetryKey((value) => value + 1)} /></section></div> : <div className={styles.content}><PlaceCard title="Aérodrome" place={data.aviationStation} aviation /><ReportCard title="METAR" report={data.metar} /><ReportCard title="TAF" report={data.taf} /></div>}</main>;
 }

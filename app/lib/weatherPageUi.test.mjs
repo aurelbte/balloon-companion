@@ -40,10 +40,17 @@ test("la page consomme le service normalisé sans appeler Open-Meteo", () => {
 
 test("le lieu, le chargement et l'erreur météo sont interactifs", () => {
   assert.match(page, /loadFavoriteLaunchSites/);
-  assert.match(page, /setPlacePanelOpen\(true\)/);
+  assert.match(page, /preferences\.setFavoriteWeatherLocationId/);
+  assert.match(page, /aria-pressed=\{favorite\.id === preferences\.favoriteWeatherLocationId\}/);
   assert.match(page, /Chargement des prévisions/);
   assert.match(page, /Prévisions indisponibles/);
   assert.match(page, /Réessayer/);
+});
+
+test("favoris et modèles utilisent des chips reliées au contexte global", () => {
+  assert.match(page, /useWeatherPreferences/);
+  assert.match(page, /preferences\.setWeatherModel/);
+  assert.doesNotMatch(page, /<select/);
 });
 
 test("la navigation horaire traverse les frontières de journée", () => {

@@ -23,6 +23,12 @@
 .sunBlock { display: grid; gap: 7px; color: var(--bc-color-text-secondary); font-size: .72rem; }
 .sunBlock span { display: flex; align-items: center; gap: 6px; }
 .sunBlock svg { color: var(--bc-color-action); }
+.preferenceGroup { display: grid; gap: 10px; }
+.preferenceHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.preferenceHeading > button { width: 34px; height: 34px; border: 1px solid var(--bc-color-border); border-radius: 50%; background: transparent; color: var(--bc-color-action); font-size: 1.15rem; }
+.chips { display: flex; max-width: 100%; flex-wrap: wrap; gap: 7px; }
+.chips button { min-height: 38px; padding: 0 13px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-canvas-elevated); color: var(--bc-color-text-secondary); font-size: .7rem; font-weight: 700; }
+.chips button[aria-pressed="true"] { border-color: var(--bc-color-action); background: var(--bc-color-navigation); color: var(--bc-color-text); box-shadow: inset 0 0 0 1px rgb(91 155 213 / 22%); }
 .forecast { display: grid; gap: 10px; }
 .temporalNav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .stepper { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; min-width: 0; min-height: 44px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); }

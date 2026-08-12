@@ -1,6 +1,12 @@
+"use client";
+
 import { Cloud, CloudSun, Moon, Star, Sun, Sunrise } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Card } from "../../design-system";
+import { useWeatherPreferences } from "../../contexts/WeatherPreferencesContext";
+import { loadFavoriteLaunchSites } from "../../lib/favoriteLaunchSites";
+import { SUPPORTED_WEATHER_MODELS } from "../../lib/weather/models";
 import styles from "./Cockpit.module.css";
 
 const FORECAST = [
@@ -17,6 +23,10 @@ type ConditionsCardProps = {
 };
 
 export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCardProps) {
+  const preferences = useWeatherPreferences();
+  const [locationName, setLocationName] = useState<string | null>(null);
+  useEffect(() => { setLocationName(loadFavoriteLaunchSites().find(({ id }) => id === preferences.favoriteWeatherLocationId)?.name ?? null); }, [preferences.favoriteWeatherLocationId]);
+  const modelName = SUPPORTED_WEATHER_MODELS.find(({ providerModelId }) => providerModelId === preferences.weatherModel)?.label;
   return (
     <Link className={styles.cardLink} href={href} aria-label="Ouvrir la météo">
       <Card className={`${styles.card} ${styles.weatherCard}`}>
@@ -29,7 +39,7 @@ export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCard
         </div>
         <div className={styles.weatherLocation}>
           <span>Aérodrome favori <Star size={11} fill="currentColor" aria-hidden="true" /></span>
-          <strong>LFQO – Lille / Lesquin</strong>
+          <strong>{locationName ?? "Aucun lieu sélectionné"}{modelName ? ` · ${modelName}` : ""}</strong>
         </div>
         <div className={styles.hourlyForecast} aria-label="Prévision météo heure par heure">
           {FORECAST.map(({ time, temperature, wind, Icon }) => (

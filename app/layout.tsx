@@ -5,6 +5,7 @@ import { FlightRuntimeProvider } from "./contexts/FlightRuntimeContext";
 import { BalloonAuthProvider } from "./contexts/AuthContext";
 import GpsStatsDiagnosticRunner from "./components/dev/GpsStatsDiagnosticRunner";
 import LocalDataMigrationDialog from "./components/auth/LocalDataMigrationDialog";
+import { WeatherPreferencesProvider } from "./contexts/WeatherPreferencesContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,7 +45,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <BalloonAuthProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
+        <BalloonAuthProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
       </body>
     </html>
   );
