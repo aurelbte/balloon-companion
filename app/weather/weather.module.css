@@ -72,17 +72,22 @@
 .aviationCard details { padding-top: 9px; border-top: 1px solid var(--bc-color-border); }
 .aviationCard summary { color: var(--bc-color-action); font-size: .7rem; font-weight: 700; cursor: pointer; }
 .aviationCard details pre { margin-top: 9px; }
+.aviationAnalysis { display: grid; gap: 8px; }
+.aviationAnalysis h2 { display: flex; align-items: center; gap: 7px; }
+.aviationAnalysis p { color: var(--bc-color-text-secondary); font-size: .72rem; line-height: 1.5; }
 .aviationActions { display: flex; gap: 5px; }
 .aviationActions button { display: flex; min-height: 34px; align-items: center; gap: 4px; padding-inline: 9px; border: 1px solid var(--bc-color-border); border-radius: var(--bc-radius-round); background: transparent; color: var(--bc-color-action); font-size: .64rem; font-weight: 700; }
 .editableChip { display: inline-flex; align-items: center; border-radius: var(--bc-radius-round); background: var(--bc-color-canvas-elevated); }
 .editableChip > button:last-child:not(:first-child) { display: grid; width: 30px; height: 38px; padding: 0; border: 0; background: transparent; color: var(--bc-color-text-muted); place-items: center; }
 .airportSearch { display: grid; gap: 7px; padding-top: 9px; border-top: 1px solid var(--bc-color-border); }
-.airportSearch > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
 .airportSearch input { min-width: 0; min-height: 42px; padding-inline: 11px; border: 1px solid var(--bc-color-border); border-radius: 11px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text); }
-.airportSearch button { min-height: 40px; padding-inline: 11px; border: 1px solid var(--bc-color-border); border-radius: 11px; background: var(--bc-color-surface); color: var(--bc-color-text); }
-.airportSearch > button { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; text-align: left; }
-.airportSearch > button span { overflow: hidden; color: var(--bc-color-text-secondary); font-size: .64rem; text-overflow: ellipsis; white-space: nowrap; }
-.airportSearch > button:last-child { display: block; border: 0; background: transparent; color: var(--bc-color-action); text-align: center; }
+.airportSearchStatus { margin: 2px 4px; color: var(--bc-color-text-muted); font-size: .68rem; }
+.airportSearchResult { display: flex; min-height: 58px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; padding: 9px 12px; border: 1px solid var(--bc-color-border); border-radius: 11px; background: var(--bc-color-surface); color: var(--bc-color-text); text-align: left; transition: background-color 180ms ease, transform 180ms ease; }
+.airportSearchResult strong { color: var(--bc-color-text); font-size: .88rem; line-height: 1.1; }
+.airportSearchResult span { width: 100%; overflow: hidden; color: var(--bc-color-text-secondary); font-size: .68rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.airportSearchResult:hover { background: var(--bc-color-canvas-elevated); }
+.airportSearchResult:active { background: var(--bc-color-canvas-elevated); transform: scale(.99); }
+.airportSearchClose { min-height: 40px; padding-inline: 11px; border: 0; border-radius: 11px; background: transparent; color: var(--bc-color-action); text-align: center; }
 .modalBackdrop { position: fixed; z-index: 150; inset: 0; display: grid; align-items: end; padding: 18px; background: rgb(1 7 16 / 72%); }
 .placePanel { display: grid; width: min(100%, 520px); max-height: min(70dvh, 560px); margin-inline: auto; overflow-y: auto; gap: 8px; padding: 18px; border: 1px solid var(--bc-color-border); border-radius: 20px; background: var(--bc-color-canvas-elevated); box-shadow: var(--bc-shadow-panel); }
 .placePanel > button { display: flex; min-height: 46px; align-items: center; gap: 8px; padding-inline: 12px; border: 1px solid var(--bc-color-border); border-radius: 12px; background: var(--bc-color-surface); color: var(--bc-color-text); text-align: left; }
