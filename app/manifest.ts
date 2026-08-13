@@ -11,22 +11,10 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#020817",
     icons: [
       {
-        src: "/icons/balloon-companion-192.png",
-        sizes: "192x192",
+        src: "/branding/balloon-companion-icone-app.png",
+        sizes: "256x256",
         type: "image/png",
         purpose: "any",
-      },
-      {
-        src: "/icons/balloon-companion-512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/icons/balloon-companion-512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "maskable",
       },
     ],
   };

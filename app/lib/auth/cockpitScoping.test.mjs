@@ -8,7 +8,7 @@ const authEntry = readFileSync(new URL("../../auth/page.tsx", import.meta.url), 
 
 test("SIGNED_OUT sans choix affiche un cockpit neutre sans identité ni statistiques legacy", () => {
   assert.match(cockpit, /auth\.state === "SIGNED_OUT" && auth\.authChoiceState === "AUTH_CHOICE_PENDING"/);
-  assert.match(cockpit, /if \(choicePending\)[\s\S]*Bienvenue[\s\S]*Balloon Companion[\s\S]*Le copilote numérique des pilotes de montgolfière\./);
+  assert.match(cockpit, /if \(choicePending\)[\s\S]*welcomeLogo[\s\S]*Bienvenue/);
   const neutral = cockpit.slice(cockpit.indexOf("if (choicePending)"), cockpit.indexOf("return (", cockpit.indexOf("if (choicePending)")));
   assert.doesNotMatch(neutral, /CockpitHeroRing|PilotStatusCard|LastFlightCard|MyBalloonsCard|Aurélien|MOCK_COCKPIT_DATA/);
   assert.doesNotMatch(cockpit, /Bonjour Aurélien/);

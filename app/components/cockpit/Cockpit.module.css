@@ -21,43 +21,32 @@
 
 .welcomeScreen { display: grid; min-height: 100dvh; padding: max(28px, env(safe-area-inset-top)) 22px max(28px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); place-items: center; }
 .welcomePanel { display: grid; width: min(100%, 430px); justify-items: center; text-align: center; }
-.welcomeLogo { width: 68px; height: 68px; margin-bottom: 28px; border-radius: 19px; box-shadow: var(--bc-shadow-panel); }
+.welcomeLogo { width: min(100%, 340px); height: auto; margin-bottom: 24px; }
 .welcomePanel h1 { font-size: clamp(2rem, 10vw, 3rem); font-weight: 600; letter-spacing: -.05em; line-height: 1.02; }
-.welcomePanel h1 span { color: var(--bc-color-action); }
-.welcomePanel > p { max-width: 310px; margin-top: 18px; color: var(--bc-color-text-secondary); font-size: .88rem; line-height: 1.5; }
-.welcomeActions { display: grid; width: 100%; gap: 10px; margin-top: 44px; }
+.welcomeActions { display: grid; width: 100%; gap: 10px; margin-top: 32px; }
 .welcomeActions a, .welcomeActions button { display: flex; min-height: 52px; align-items: center; justify-content: center; padding: 0 16px; border: 1px solid var(--bc-color-border-strong); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); color: var(--bc-color-text); font-size: .84rem; font-weight: 700; text-decoration: none; }
 .welcomeActions a:first-child { border-color: transparent; background: var(--bc-color-action); color: var(--bc-color-action-foreground); }
 .welcomeActions button { min-height: 44px; border: 0; background: transparent; color: var(--bc-color-text-secondary); font-size: .76rem; }
 
 .header {
   display: grid;
-  gap: 2px;
-}
-
-.brand {
-  display: flex;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--bc-space-2);
-  min-height: 28px;
-  color: var(--bc-color-text-secondary);
-  font-size: 0.72rem;
-  font-weight: var(--bc-font-weight-semibold);
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  gap: 10px;
 }
 
 .logo {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
+  width: clamp(82px, 23vw, 96px);
+  height: auto;
 }
 
 .welcome {
+  min-width: 0;
   font-size: clamp(1.35rem, 6vw, 1.65rem);
   font-weight: var(--bc-font-weight-bold);
   letter-spacing: -0.035em;
   line-height: 1.1;
+  text-align: right;
 }
 
 .hero {

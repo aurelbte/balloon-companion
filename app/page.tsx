@@ -16,8 +16,10 @@ import { useBalloonAuth } from "./contexts/AuthContext";
 import { useFlightCompletionState } from "./hooks/useFlightCompletionState";
 import { usePilotProfile } from "./hooks/usePilotProfile";
 import { latestRealJournalFlight } from "./lib/realFlightJournal";
-import appIcon from "./icon.png";
 import styles from "./components/cockpit/Cockpit.module.css";
+
+const cockpitLogo = "/branding/balloon-companion-logo-marine-fond-bleu.png";
+const welcomeLogo = "/branding/balloon-companion-logo-principal-horizontal.png";
 
 export default function CockpitPage() {
   const auth = useBalloonAuth();
@@ -30,9 +32,8 @@ export default function CockpitPage() {
   if (choicePending) {
     return <main className={styles.welcomeScreen}>
       <section className={styles.welcomePanel}>
-        <Image className={styles.welcomeLogo} src={appIcon} alt="" priority sizes="68px" />
-        <h1>Bienvenue<br />sur<br /><span>Balloon Companion</span></h1>
-        <p>Le copilote numérique des pilotes de montgolfière.</p>
+        <Image className={styles.welcomeLogo} src={welcomeLogo} alt="Balloon Companion — Le copilote numérique des pilotes de montgolfière" width={720} height={335} priority sizes="(max-width: 430px) calc(100vw - 44px), 340px" />
+        <h1>Bienvenue</h1>
         <div className={styles.welcomeActions}>
           <Link href="/auth/sign-in">Se connecter</Link>
           <Link href="/auth/sign-up">Créer un compte</Link>
@@ -45,7 +46,7 @@ export default function CockpitPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.layout}>
-        <header className={styles.header}><div className={styles.brand}><Image className={styles.logo} src={appIcon} alt="" priority sizes="24px" /><span>Balloon Companion</span></div><h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1></header>
+        <header className={styles.header}><Image className={styles.logo} src={cockpitLogo} alt="Balloon Companion" width={409} height={202} priority sizes="96px" /><h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1></header>
         <CockpitHeroRing />
         <CockpitExperiencePrompt />
         <div className={styles.pair}><PilotStatusCard /><ConditionsCard href="/weather" /></div>
