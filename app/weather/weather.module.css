@@ -40,7 +40,7 @@
 .weatherHero strong { font-size: clamp(1.45rem, 6vw, 2rem); letter-spacing: -.03em; line-height: 1; }
 .windFocus { display: grid; justify-items: center; gap: 5px; padding-block: 9px 11px; border-bottom: 1px solid var(--bc-color-border); }
 .windFocus > div { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.windFocus .windArrow { color: var(--bc-color-action); transform: rotate(45deg); }
+.windFocus .windArrow { color: var(--bc-color-action); }
 .windFocus > div strong { font-size: 1.55rem; }
 .windFocus > div span { font-size: 1.5rem; font-weight: 700; }
 .windFocus p { color: var(--bc-color-text-secondary); font-size: .72rem; }

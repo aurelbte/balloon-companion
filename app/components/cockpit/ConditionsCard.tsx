@@ -6,6 +6,7 @@ import { Card } from "../../design-system";
 import { useWeatherPreferences } from "../../contexts/WeatherPreferencesContext";
 import { WeatherIcon } from "../../weather/presentation";
 import { relativeUpdateLabel } from "../../lib/weather/weatherSelection";
+import { windArrowRotationDegrees } from "../../weather/windArrow";
 import styles from "./Cockpit.module.css";
 import { cockpitWindDirection, cockpitWindSpeed } from "./weatherCardPresentation";
 
@@ -27,7 +28,7 @@ export default function ConditionsCard({ href }: { href: string }) {
           <div><span>Lieu favori <Star size={11} fill="currentColor" aria-hidden="true" /></span><strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}</strong><small>{preferences.modelName || "Aucun modèle"}</small></div>
         </div>
         <div className={styles.cockpitWeatherMetrics}>
-          <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" /><strong>{cockpitWindDirection(point?.windDirectionDeg)}</strong><b>{cockpitWindSpeed(point?.windSpeedKmh)}</b></div>
+          <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" style={{ transform: `rotate(${windArrowRotationDegrees(point?.windDirectionDeg)}deg)` }} /><strong>{cockpitWindDirection(point?.windDirectionDeg)}</strong><b>{cockpitWindSpeed(point?.windSpeedKmh)}</b></div>
           <div><span>Rafales</span><strong>{cockpitWindSpeed(point?.windGustKmh)}</strong></div>
           <div><span>Température</span><strong>{point?.temperatureC === undefined ? "—" : `${point.temperatureC}°C`}</strong></div>
         </div>
