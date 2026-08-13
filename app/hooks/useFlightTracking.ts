@@ -28,6 +28,7 @@ import { resolveRecordedFlightLocations } from "../lib/flightLocationResolver";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { classifyGpsTraceQuality } from "../lib/gpsPointQuality";
 import { assignFlightSegmentIds } from "../lib/flightSegments";
+import type { FlightWeatherSnapshot } from "../lib/trajectory/weatherAnalysisStorage";
 
 interface UseFlightTrackingOptions {
   isEnabled?: boolean;
@@ -46,7 +47,7 @@ interface UseFlightTrackingResult {
   completedFlight: RecordedFlight | null;
   markAcquiring: () => void;
   markReady: () => void;
-  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string; weatherModel?: string }) => void;
+  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot }) => void;
   stopTracking: () => Promise<RecordedFlight | null>;
   resumeInterruptedFlight: () => void;
   completeInterruptedFlight: () => Promise<RecordedFlight | null>;
@@ -204,7 +205,7 @@ export function useFlightTracking(
   }, [updateStatus]);
 
   const startTracking = useCallback(
-    (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string; weatherModel?: string } = {}) => {
+    (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot } = {}) => {
       if (
         !isEnabled ||
         statusRef.current === "recording" ||
@@ -221,6 +222,7 @@ export function useFlightTracking(
         firstPoint,
         balloonRegistration: context.balloonRegistration,
         weatherModel: context.weatherModel,
+        weatherSnapshot: context.weatherSnapshot,
       });
       const flight = {
         ...createdFlight,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind, predictedWindProfile, resolvePredictedWindModel } from "./flightWindProfile.ts";
+import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind, predictedWindProfile, snapshotWindProfile } from "./flightWindProfile.ts";
 import { extractPredictedWind } from "./trajectory/weatherAnalysisStorage.ts";
 import { orchestrateMultiAltitudeProjection } from "./trajectory/multiProjectionServer.ts";
 
@@ -137,12 +137,11 @@ test("la projection prépare tous les niveaux VENTS même si seules quelques alt
   assert.equal(result.body.windProfile.find(({ levelM }) => levelM === 200)?.directionFromDeg, 20);
 });
 
-test("le modèle suit la Prépa hors vol et reste figé pendant un vol actif", () => {
-  assert.equal(resolvePredictedWindModel({ isRecording: false, preparationModel: "arome_seamless" }), "arome_seamless");
-  assert.equal(resolvePredictedWindModel({ isRecording: false, preparationModel: "icon_seamless" }), "icon_seamless");
-  assert.equal(resolvePredictedWindModel({ isRecording: true, activeFlightModel: "icon_seamless", startingFlightModel: "icon_seamless", preparationModel: "arome_seamless" }), "icon_seamless");
-  assert.equal(resolvePredictedWindModel({ isRecording: false, startingFlightModel: "icon_seamless", preparationModel: "arome_seamless" }), "arome_seamless");
-  assert.equal(resolvePredictedWindModel({ isRecording: false, recoverableFlightModel: "icon_seamless", preparationModel: "arome_seamless" }), "icon_seamless");
+test("le panneau lit le snapshot validé et non les trajectoires ou le brouillon", () => {
+  assert.equal(snapshotWindProfile(null).size, 0);
   const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /weatherModel: preparation\.weatherModel/);
+  assert.match(page, /activeFlight\?\.weatherSnapshot/);
+  assert.match(page, /recoverableFlight\?\.weatherSnapshot/);
+  assert.match(page, /snapshotWindProfile\(flightWeatherSnapshot\)/);
+  assert.doesNotMatch(page, /predictedWindProfile\(plannedTrajectories/);
 });

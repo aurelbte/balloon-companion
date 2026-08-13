@@ -60,6 +60,7 @@ import {
   extractPredictedWind,
   newAnalysisLayerSettings,
   saveExportedPlannedTrajectories,
+  saveFlightWeatherSnapshot,
   type AnalysisLayerSettings,
   type ExportedPlannedTrajectory,
   type WeatherAnalysisState,
@@ -285,6 +286,7 @@ export default function MapPage() {
               model: result.model,
               calculatedAtIso,
               forecastAtIso: config.request.launchDateTimeIso,
+              terrainAltitudeAmslM: payload.terrainAltitudeAmslM,
               predictedWindProfile: payload.windProfile,
             }));
       });
@@ -521,8 +523,11 @@ export default function MapPage() {
     if (key === "airspaces" && !value) closeSelection();
   };
   const exportToFlight = () => {
-    const exports: ExportedPlannedTrajectory[] = displayedTraces
-      .filter((trace) => exportIds.includes(trace.traceId))
+    if (!config) return;
+    const exportedTraces = displayedTraces.filter((trace) =>
+      exportIds.includes(trace.traceId),
+    );
+    const exports: ExportedPlannedTrajectory[] = exportedTraces
       .map((trace) => {
         const predictedWind = extractPredictedWind(trace.projection.points);
         return {
@@ -548,7 +553,29 @@ export default function MapPage() {
             : {}),
         };
       });
-    if (saveExportedPlannedTrajectories(exports)) {
+    const referenceModelId = selectedModels.findLast((modelId) =>
+      exportedTraces.some((trace) => trace.model.id === modelId),
+    );
+    const referenceTrace = exportedTraces.find(
+      (trace) => trace.model.id === referenceModelId,
+    );
+    const snapshotSaved = referenceTrace?.predictedWindProfile
+      ? saveFlightWeatherSnapshot({
+          version: 1,
+          weatherModel: referenceTrace.model.providerModelId,
+          modelLabel: referenceTrace.model.label,
+          referenceLocation: {
+            name: config.request.launchSite.name,
+            latitude: config.request.launchSite.latitude,
+            longitude: config.request.launchSite.longitude,
+            terrainAltitudeAmslM: referenceTrace.terrainAltitudeAmslM,
+          },
+          forecastAtIso: referenceTrace.forecastAtIso,
+          sourceUpdatedAt: referenceTrace.calculatedAtIso,
+          windProfile: referenceTrace.predictedWindProfile,
+        })
+      : false;
+    if (saveExportedPlannedTrajectories(exports) && snapshotSaved) {
       setNotice(
         `${exports.length} trajectoire${exports.length > 1 ? "s" : ""} disponible${exports.length > 1 ? "s" : ""} en Vol.`,
       );

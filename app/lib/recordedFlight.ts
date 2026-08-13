@@ -5,6 +5,7 @@ import type {
   GpsPointQualityReason,
 } from "../types/flight.ts";
 import { calculateFilteredHorizontalDistance } from "./filteredHorizontalDistance.ts";
+import type { FlightWeatherSnapshot } from "./trajectory/weatherAnalysisStorage.ts";
 
 export const RECORDED_FLIGHT_SCHEMA_VERSION = 1;
 
@@ -118,6 +119,7 @@ export interface RecordedFlight {
   updatedAt: number;
   balloonRegistration?: string;
   weatherModel?: string;
+  weatherSnapshot?: FlightWeatherSnapshot;
   startLocationLabel?: string;
   endLocationLabel?: string;
   generatedTitle?: string;
@@ -496,12 +498,14 @@ export function createRecordedFlight({
   firstPoint = null,
   balloonRegistration,
   weatherModel,
+  weatherSnapshot,
 }: {
   startedAt?: number;
   id?: string;
   firstPoint?: RecordedFlightPoint | null;
   balloonRegistration?: string;
   weatherModel?: string;
+  weatherSnapshot?: FlightWeatherSnapshot;
 } = {}): RecordedFlight {
   const points =
     firstPoint && canAppendRecordedFlightPoint(firstPoint, null).accepted
@@ -519,6 +523,7 @@ export function createRecordedFlight({
     updatedAt: startedAt,
     ...(balloonRegistration ? { balloonRegistration } : {}),
     ...(weatherModel ? { weatherModel } : {}),
+    ...(weatherSnapshot ? { weatherSnapshot } : {}),
   };
 }
 

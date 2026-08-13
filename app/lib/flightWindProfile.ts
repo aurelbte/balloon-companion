@@ -1,5 +1,5 @@
 import type { GeoPoint } from "../types/flight.ts";
-import type { ExportedPlannedTrajectory } from "./trajectory/weatherAnalysisStorage.ts";
+import type { ExportedPlannedTrajectory, FlightWeatherSnapshot } from "./trajectory/weatherAnalysisStorage.ts";
 
 export const FLIGHT_WIND_ALTITUDE_LEVELS = [
   0, 100, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 2500, 3000,
@@ -11,19 +11,6 @@ export interface ObservedWind {
   directionDeg: number;
   speedKt: number;
   sampleCount: number;
-}
-
-export function resolvePredictedWindModel(input: {
-  isRecording: boolean;
-  activeFlightModel?: string | null;
-  recoverableFlightModel?: string | null;
-  startingFlightModel?: string | null;
-  preparationModel?: string | null;
-}): string | null {
-  if (input.isRecording) {
-    return input.activeFlightModel ?? input.startingFlightModel ?? null;
-  }
-  return input.recoverableFlightModel ?? input.preparationModel ?? null;
 }
 
 export function closestFlightWindLevel(altitudeM: number): FlightWindLevel {
@@ -85,6 +72,20 @@ export function predictedWindProfile(
         sampleCount: 1,
       });
     }
+  }
+  return profile;
+}
+
+export function snapshotWindProfile(
+  snapshot: FlightWeatherSnapshot | null,
+): Map<FlightWindLevel, ObservedWind> {
+  const profile = new Map<FlightWindLevel, ObservedWind>();
+  for (const wind of snapshot?.windProfile ?? []) {
+    profile.set(closestFlightWindLevel(wind.levelM), {
+      directionDeg: wind.directionFromDeg,
+      speedKt: wind.speedMps * 1.943844,
+      sampleCount: 1,
+    });
   }
   return profile;
 }

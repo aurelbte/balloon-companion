@@ -22,6 +22,7 @@ export type WeatherAnalysisTrace = AltitudeProjectionResult & {
   model: WeatherModelDefinition;
   calculatedAtIso: string;
   forecastAtIso: string;
+  terrainAltitudeAmslM: number;
   predictedWindProfile?: PredictedWindProfileLevel[];
 };
 
@@ -30,6 +31,21 @@ export type PredictedWindProfileLevel = {
   altitudeAmslM: number;
   directionFromDeg: number;
   speedMps: number;
+};
+
+export type FlightWeatherSnapshot = {
+  version: 1;
+  weatherModel: string;
+  modelLabel: string;
+  referenceLocation: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    terrainAltitudeAmslM: number;
+  };
+  forecastAtIso: string;
+  sourceUpdatedAt: string;
+  windProfile: PredictedWindProfileLevel[];
 };
 
 export type WeatherAnalysisState = {
@@ -78,6 +94,7 @@ export function extractPredictedWind(
 
 const ANALYSIS_KEY = "balloon_companion_weather_analysis_v1";
 const FLIGHT_EXPORT_KEY = "balloon_companion_planned_trajectories_v1";
+const FLIGHT_WEATHER_SNAPSHOT_KEY = "balloon_companion_flight_weather_snapshot_v1";
 
 export const DEFAULT_ANALYSIS_LAYERS: AnalysisLayerSettings = {
   trajectories: true,
@@ -166,4 +183,39 @@ export function saveExportedPlannedTrajectories(
   } catch {
     return false;
   }
+}
+
+export function loadFlightWeatherSnapshot(): FlightWeatherSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const serialized = readScopedBusinessValue(
+      window.localStorage,
+      FLIGHT_WEATHER_SNAPSHOT_KEY,
+    );
+    if (!serialized) return null;
+    const value = JSON.parse(serialized) as Partial<FlightWeatherSnapshot>;
+    return value.version === 1 &&
+      typeof value.weatherModel === "string" &&
+      typeof value.modelLabel === "string" &&
+      typeof value.referenceLocation === "object" &&
+      value.referenceLocation !== null &&
+      typeof value.forecastAtIso === "string" &&
+      typeof value.sourceUpdatedAt === "string" &&
+      Array.isArray(value.windProfile)
+      ? (value as FlightWeatherSnapshot)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveFlightWeatherSnapshot(
+  snapshot: FlightWeatherSnapshot,
+): boolean {
+  if (typeof window === "undefined") return false;
+  return writeScopedBusinessValue(
+    window.localStorage,
+    FLIGHT_WEATHER_SNAPSHOT_KEY,
+    JSON.stringify(snapshot),
+  );
 }

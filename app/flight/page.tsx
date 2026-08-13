@@ -49,12 +49,13 @@ import type {
 } from "../types/flight";
 import {
   loadExportedPlannedTrajectories,
+  loadFlightWeatherSnapshot,
   type ExportedPlannedTrajectory,
+  type FlightWeatherSnapshot,
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
-import { aggregateObservedWind, predictedWindProfile, resolvePredictedWindModel } from "../lib/flightWindProfile";
-import { weatherModelByProviderId } from "../lib/weather/models";
+import { aggregateObservedWind, snapshotWindProfile } from "../lib/flightWindProfile";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
 import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
@@ -84,7 +85,8 @@ export default function FlightPage() {
   const [plannedTrajectories, setPlannedTrajectories] = useState<
     ExportedPlannedTrajectory[]
   >([]);
-  const [flightWeatherModel, setFlightWeatherModel] = useState<string | null>(null);
+  const [validatedWeatherSnapshot, setValidatedWeatherSnapshot] =
+    useState<FlightWeatherSnapshot | null>(null);
   const [airspaceViewport, setAirspaceViewport] =
     useState<AirspaceCoverageViewport | null>(null);
   const [airspaceSelectionOrigin, setAirspaceSelectionOrigin] = useState<
@@ -100,6 +102,7 @@ export default function FlightPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPlannedTrajectories(loadExportedPlannedTrajectories());
+      setValidatedWeatherSnapshot(loadFlightWeatherSnapshot());
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -249,10 +252,15 @@ export default function FlightPage() {
     if ((geoState === "active" || geoState === "simulation") && !isStale) {
       const preparation = loadPreparationDraft();
       const selectedBalloonId = preparation?.balloonName;
-      setFlightWeatherModel(preparation?.weatherModel ?? null);
+      const weatherSnapshot = validatedWeatherSnapshot;
       startTracking(currentPosition, {
         ...(selectedBalloonId ? { balloonRegistration: selectedBalloonId } : {}),
-        ...(preparation?.weatherModel ? { weatherModel: preparation.weatherModel } : {}),
+        ...(weatherSnapshot
+          ? {
+              weatherModel: weatherSnapshot.weatherModel,
+              weatherSnapshot,
+            }
+          : {}),
       });
     } else {
       markAcquiring();
@@ -266,6 +274,7 @@ export default function FlightPage() {
     requestPermission,
     startTracking,
     storageReady,
+    validatedWeatherSnapshot,
   ]);
 
   const handleDemoFlightEnd = useCallback(() => {
@@ -514,20 +523,15 @@ export default function FlightPage() {
     () => aggregateObservedWind(flightSession.trajectory.points),
     [flightSession.trajectory.points],
   );
-  const preparationWeatherModel = resolvePredictedWindModel({
-    isRecording: tracking.status === "recording",
-    activeFlightModel: activeFlight?.weatherModel,
-    recoverableFlightModel: recoverableFlight?.weatherModel,
-    startingFlightModel: flightWeatherModel,
-    preparationModel: loadPreparationDraft()?.weatherModel,
-  });
+  const flightWeatherSnapshot =
+    activeFlight?.weatherSnapshot ??
+    recoverableFlight?.weatherSnapshot ??
+    validatedWeatherSnapshot;
   const predictedWinds = useMemo(
-    () => predictedWindProfile(plannedTrajectories, preparationWeatherModel),
-    [plannedTrajectories, preparationWeatherModel],
+    () => snapshotWindProfile(flightWeatherSnapshot),
+    [flightWeatherSnapshot],
   );
-  const predictedModelLabel = preparationWeatherModel
-    ? weatherModelByProviderId(preparationWeatherModel)?.label ?? preparationWeatherModel
-    : null;
+  const predictedModelLabel = flightWeatherSnapshot?.modelLabel ?? null;
 
   return (
     <div

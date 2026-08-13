@@ -6,11 +6,14 @@ import {
 } from "./trajectory/analysisStyles.ts";
 import {
   loadExportedPlannedTrajectories,
+  loadFlightWeatherSnapshot,
   loadWeatherAnalysis,
   saveExportedPlannedTrajectories,
+  saveFlightWeatherSnapshot,
   saveWeatherAnalysis,
   DEFAULT_ANALYSIS_LAYERS,
 } from "./trajectory/weatherAnalysisStorage.ts";
+import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
 
 test("la couleur d’altitude reste fixe et indépendante du modèle", () => {
   assert.deepEqual(ALTITUDE_ANALYSIS_COLORS, {
@@ -37,8 +40,7 @@ test("chaque modèle possède un motif stable et distinct", () => {
 
 test("l’analyse et les exports Vol survivent au rechargement local", () => {
   const data = new Map();
-  globalThis.window = {};
-  globalThis.localStorage = {
+  const storage = {
     setItem(key, value) {
       data.set(key, value);
     },
@@ -46,6 +48,9 @@ test("l’analyse et les exports Vol survivent au rechargement local", () => {
       return data.get(key) ?? null;
     },
   };
+  globalThis.localStorage = storage;
+  globalThis.window = { localStorage: storage };
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-a" } });
   const analysis = {
     version: 1,
     updatedAtIso: "2026-07-29T18:30:00.000Z",
@@ -80,6 +85,27 @@ test("l’analyse et les exports Vol survivent au rechargement local", () => {
   ];
   assert.equal(saveExportedPlannedTrajectories(exported), true);
   assert.deepEqual(loadExportedPlannedTrajectories(), exported);
+
+  const snapshot = {
+    version: 1,
+    weatherModel: "arome_seamless",
+    modelLabel: "AROME",
+    referenceLocation: { name: "LFQO", latitude: 50.68, longitude: 3.08, terrainAltitudeAmslM: 20 },
+    forecastAtIso: "2026-07-29T18:30:00.000Z",
+    sourceUpdatedAt: "2026-07-29T18:00:00.000Z",
+    windProfile: [{ levelM: 200, altitudeAmslM: 200, directionFromDeg: 120, speedMps: 3 }],
+  };
+  assert.equal(saveFlightWeatherSnapshot(snapshot), true);
+  assert.deepEqual(loadFlightWeatherSnapshot(), snapshot);
+  assert.equal(saveFlightWeatherSnapshot({ ...snapshot, weatherModel: "icon_seamless", modelLabel: "ICON" }), true);
+  assert.equal(loadFlightWeatherSnapshot()?.weatherModel, "icon_seamless");
+  assert.equal(saveFlightWeatherSnapshot({ ...snapshot, weatherModel: "gfs_seamless", modelLabel: "GFS" }), true);
+  assert.equal(loadFlightWeatherSnapshot()?.weatherModel, "gfs_seamless");
+
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  assert.equal(loadFlightWeatherSnapshot(), null);
+  setRuntimeGuestModeActive(false);
   delete globalThis.localStorage;
   delete globalThis.window;
 });
