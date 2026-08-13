@@ -5,6 +5,10 @@ import {
   type AirspaceVerticalContext,
 } from "../lib/airspaceAltitude";
 import type { AirspaceGeoJsonProperties } from "../lib/openaip";
+import {
+  adjacentAirspaceIndex,
+  uniqueSelectedAirspaces,
+} from "../lib/airspaceSelectionNavigation";
 
 interface UseSelectedAirspaceResult {
   selectedAirspaces: AirspaceGeoJsonProperties[];
@@ -41,8 +45,9 @@ export function useSelectedAirspace(
 
   const selectAirspaces = useCallback(
     (airspaces: AirspaceGeoJsonProperties[]) => {
-      selectedAirspacesRef.current = airspaces;
-      setSelectedAirspaces(airspaces);
+      const unique = uniqueSelectedAirspaces(airspaces);
+      selectedAirspacesRef.current = unique;
+      setSelectedAirspaces(unique);
       setSelectedIndex(0);
     },
     []
@@ -52,9 +57,7 @@ export function useSelectedAirspace(
     setSelectedIndex((currentIndex) => {
       const count = selectedAirspacesRef.current.length;
       if (count === 0) return 0;
-      return (
-        (currentIndex - 1 + count) % count
-      );
+      return adjacentAirspaceIndex(currentIndex, count, -1);
     });
   }, []);
 
@@ -62,7 +65,7 @@ export function useSelectedAirspace(
     setSelectedIndex((currentIndex) => {
       const count = selectedAirspacesRef.current.length;
       if (count === 0) return 0;
-      return (currentIndex + 1) % count;
+      return adjacentAirspaceIndex(currentIndex, count, 1);
     });
   }, []);
 

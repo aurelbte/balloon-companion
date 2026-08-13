@@ -31,6 +31,7 @@ export interface CreateFlightSessionInput {
   weatherProjection: readonly ProjectionPoint[];
   plannedTrajectories: readonly ExportedPlannedTrajectory[];
   flightContext: FlightContext;
+  qnhHpa?: number | null;
 }
 
 /**
@@ -119,7 +120,7 @@ export function createFlightSession(
     altitude: {
       amslMeters: metrics.altitude,
       groundMeters: null,
-      qnhHpa: 1013,
+      qnhHpa: input.qnhHpa ?? null,
     },
     motion: {
       groundSpeedMetersPerSecond: metrics.groundSpeed,

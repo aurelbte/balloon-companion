@@ -80,7 +80,7 @@ export interface FlightSession {
   altitude: {
     amslMeters: number | null;
     groundMeters: null;
-    qnhHpa: 1013;
+    qnhHpa: number | null;
   };
   motion: {
     groundSpeedMetersPerSecond: number | null;

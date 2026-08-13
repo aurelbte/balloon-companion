@@ -55,6 +55,9 @@ import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
 import { aggregateObservedWind } from "../lib/flightWindProfile";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
+import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
+import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
+import { qnhHpaFromMetar } from "../weather/aviationPresentation";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -88,6 +91,7 @@ export default function FlightPage() {
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [flightActionBusy, setFlightActionBusy] = useState(false);
   const [demoFlightEnding, setDemoFlightEnding] = useState(false);
+  const [qnhHpa, setQnhHpa] = useState<number | null>(null);
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -103,6 +107,18 @@ export default function FlightPage() {
     const timer = window.setTimeout(() => router.push("/flight/complete"), 850);
     return () => window.clearTimeout(timer);
   }, [demoFlightEnding, router]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const airport = loadAviationPreferences()?.airportIcao ?? null;
+    if (!airport) return () => controller.abort();
+    loadAviationWeatherForAirport(airport, controller.signal)
+      .then((result) => setQnhHpa(qnhHpaFromMetar(result.data?.metarRaw ?? null)))
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setQnhHpa(null);
+      });
+    return () => controller.abort();
+  }, []);
 
   const { geolocation, tracking } = useFlightRuntime();
   const {
@@ -467,6 +483,7 @@ export default function FlightPage() {
         weatherProjection,
         plannedTrajectories,
         flightContext,
+        qnhHpa,
       }),
     [
       activeFlight,
@@ -474,6 +491,7 @@ export default function FlightPage() {
       currentPosition,
       displayedMetrics,
       flightContext,
+      qnhHpa,
       geoState,
       gpsProjection,
       isStale,

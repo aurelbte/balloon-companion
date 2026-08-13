@@ -282,7 +282,7 @@ export default function FlightInstruments({
           <div>
             <div className="flight-altimeter__label">QNH</div>
             <div className="flight-altimeter__secondary">
-              {session.altitude.qnhHpa} hPa
+              {session.altitude.qnhHpa === null ? "—" : `${session.altitude.qnhHpa} hPa`}
             </div>
           </div>
         </div>

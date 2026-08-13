@@ -1,4 +1,9 @@
 export type MetarDisplay = { wind: string; visibility?: string; clouds?: string; phenomena?: string; cavok: boolean; temperature: string; dewPoint: string; qnh: string };
+
+export function qnhHpaFromMetar(raw: string | null): number | null {
+  const match = raw?.match(/\bQ(\d{4})\b/);
+  return match ? Number(match[1]) : null;
+}
 export type TafPeriodDisplay = { label: string; wind: string; visibility?: string; clouds?: string; phenomena?: string; cavok: boolean };
 
 const missing = "—";
@@ -42,10 +47,10 @@ function readablePhenomena(raw: string): string | undefined {
 
 export function metarDisplay(raw: string): MetarDisplay {
   const temperature = raw.match(/\b(M?\d{2})\/(M?\d{2})\b/);
-  const qnh = raw.match(/\bQ(\d{4})\b/);
+  const qnh = qnhHpaFromMetar(raw);
   const altimeter = raw.match(/\bA(\d{4})\b/);
   const cavok = /\bCAVOK\b/.test(raw); const visibility = readableVisibility(raw); const clouds = readableClouds(raw); const phenomena = readablePhenomena(raw);
-  return { wind: readableWind(raw), ...(!cavok && visibility !== missing ? { visibility } : {}), ...(clouds ? { clouds } : {}), ...(!cavok && phenomena ? { phenomena } : {}), cavok, temperature: temperature ? signed(temperature[1]) : missing, dewPoint: temperature ? signed(temperature[2]) : missing, qnh: qnh ? `${Number(qnh[1])} hPa` : altimeter ? `${altimeter[1].slice(0, 2)}.${altimeter[1].slice(2)} inHg` : missing };
+  return { wind: readableWind(raw), ...(!cavok && visibility !== missing ? { visibility } : {}), ...(clouds ? { clouds } : {}), ...(!cavok && phenomena ? { phenomena } : {}), cavok, temperature: temperature ? signed(temperature[1]) : missing, dewPoint: temperature ? signed(temperature[2]) : missing, qnh: qnh !== null ? `${qnh} hPa` : altimeter ? `${altimeter[1].slice(0, 2)}.${altimeter[1].slice(2)} inHg` : missing };
 }
 
 export function tafValidity(raw: string): string {
