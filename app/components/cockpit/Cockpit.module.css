@@ -411,7 +411,7 @@
 .cockpitWeatherMetrics > div { display: grid; gap: 1px; }
 .cockpitWeatherMetrics span { color: var(--bc-color-text-muted); font-size: .52rem; }
 .cockpitWeatherMetrics strong { font-size: .68rem; }
-.cockpitWind { grid-row: span 2; grid-template-columns: auto 1fr; align-items: center; }
+.cockpitWind { grid-row: span 2; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 7px; }
 .cockpitWind svg { grid-row: span 2; color: var(--bc-color-action); transform: rotate(45deg); }
 .cockpitWind strong { font-size: .8rem; }
 .cockpitWind b { font-size: .88rem; line-height: 1; }
