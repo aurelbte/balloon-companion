@@ -11,8 +11,8 @@ function readableWind(raw: string): string {
   if (!match) return missing;
   const knots = Number(match[2]);
   const direction = match[1] === "VRB" ? "Variable" : `${compass[Math.round(Number(match[1]) / 22.5) % 16]} (${match[1]}°)`;
-  const gust = match[3] ? ` · rafales ${Number(match[3])} kt (${Math.round(Number(match[3]) * 1.852)} km/h)` : "";
-  return `${direction} · ${knots} kt (${Math.round(knots * 1.852)} km/h)${gust}`;
+  const gust = match[3] ? ` · rafales ${Number(match[3])} kt` : "";
+  return `${direction} · ${knots} kt${gust}`;
 }
 
 function readableVisibility(raw: string): string {

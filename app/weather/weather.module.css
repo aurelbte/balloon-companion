@@ -1,6 +1,6 @@
 .screen { min-height: 100dvh; overflow-x: hidden; padding: max(14px, env(safe-area-inset-top)) 18px max(14px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); }
 .screen > header, .content { width: min(100%, 780px); margin-inline: auto; }
-.screen > header { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.screen > header { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-bottom: 9px; }
 .screen > header a { display: grid; width: 42px; height: 42px; flex: 0 0 42px; border: 1px solid var(--bc-color-border); border-radius: 50%; color: inherit; place-items: center; }
 .screen h2 { margin-bottom: 10px; font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; }
 .screen h3 { margin: 16px 0 8px; color: var(--bc-color-text-secondary); font-size: .7rem; text-transform: uppercase; }

@@ -23,6 +23,13 @@ test("le header aligne le retour et les onglets sans titre redondant", () => {
   assert.match(page, /role="tab" aria-selected=\{tab === "aviation"\}/);
 });
 
+test("le header conserve un espacement discret avant les contenus des deux onglets", () => {
+  const styles = readFileSync(new URL("../weather/weather.module.css", import.meta.url), "utf8");
+  assert.match(styles, /\.screen > header \{[^}]*margin-bottom: 9px/);
+  assert.match(page, /\{tab === "weather" \? <div className=\{styles\.content\}/);
+  assert.match(page, /: <div className=\{styles\.content\}><AviationAirportPicker/);
+});
+
 test("les états vides météo, METAR et TAF sont prévus sans valeurs exemples", () => {
   assert.match(page, /Aucun lieu météo sélectionné/);
   assert.match(page, /Aucun aérodrome sélectionné/);
