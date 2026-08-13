@@ -1,5 +1,5 @@
-export type MetarDisplay = { wind: string; visibility: string; clouds: string; temperature: string; dewPoint: string; qnh: string };
-export type TafPeriodDisplay = { label: string; wind: string; visibility: string; clouds: string };
+export type MetarDisplay = { wind: string; visibility?: string; clouds?: string; phenomena?: string; cavok: boolean; temperature: string; dewPoint: string; qnh: string };
+export type TafPeriodDisplay = { label: string; wind: string; visibility?: string; clouds?: string; phenomena?: string; cavok: boolean };
 
 const missing = "—";
 const compass = ["Nord", "Nord-Nord-Est", "Nord-Est", "Est-Nord-Est", "Est", "Est-Sud-Est", "Sud-Est", "Sud-Sud-Est", "Sud", "Sud-Sud-Ouest", "Sud-Ouest", "Ouest-Sud-Ouest", "Ouest", "Ouest-Nord-Ouest", "Nord-Ouest", "Nord-Nord-Ouest"];
@@ -16,7 +16,7 @@ function readableWind(raw: string): string {
 }
 
 function readableVisibility(raw: string): string {
-  if (/\bCAVOK\b/.test(raw) || /\b9999\b/.test(raw)) return "> 10 km";
+  if (/\b9999\b/.test(raw)) return "> 10 km";
   const metres = raw.match(/(?:^|\s)(\d{4})(?=\s|$)/);
   if (metres) return `${Number(metres[1]) / 1_000} km`;
   const statuteMiles = raw.match(/\b(\d+(?:\/\d+)?)SM\b/);
@@ -26,19 +26,26 @@ function readableVisibility(raw: string): string {
   return `${Math.round(miles * 1.609 * 10) / 10} km`;
 }
 
-function readableClouds(raw: string): string {
-  if (/\bCAVOK\b/.test(raw)) return "Aucun nuage significatif · Pas de phénomène météo";
-  if (/\b(?:NSC|NCD|SKC|CLR)\b/.test(raw)) return "Aucun nuage significatif";
+function readableClouds(raw: string): string | undefined {
+  if (/\b(?:CAVOK|NSC|NCD|SKC|CLR)\b/.test(raw)) return undefined;
   const labels: Record<string, string> = { FEW: "Quelques nuages", SCT: "Nuages épars", BKN: "Nuages fragmentés", OVC: "Couvert", VV: "Visibilité verticale" };
   const groups = [...raw.matchAll(/\b(FEW|SCT|BKN|OVC|VV)(\d{3})(?:CB|TCU)?\b/g)];
-  return groups.length ? groups.map((group) => `${labels[group[1]]} à ${Number(group[2]) * 100} ft`).join(" · ") : missing;
+  return groups.length ? groups.map((group) => `${labels[group[1]]} à ${Number(group[2]) * 100} ft`).join(" · ") : undefined;
+}
+
+function readablePhenomena(raw: string): string | undefined {
+  const labels: Record<string, string> = { DZ: "Bruine", RA: "Pluie", SN: "Neige", SG: "Neige en grains", PL: "Granules de glace", GR: "Grêle", GS: "Grésil", FG: "Brouillard", BR: "Brume", HZ: "Brume sèche", FU: "Fumée", TS: "Orage", SH: "Averses", FZ: "Précipitations verglaçantes" };
+  const found: string[] = [];
+  for (const match of raw.matchAll(/(?:^|\s)(?:[-+]|VC)?(?:MI|PR|BC|DR|BL)?(DZ|RA|SN|SG|PL|GR|GS|FG|BR|HZ|FU|TS|SH|FZ)(?:DZ|RA|SN|SG|PL|GR|GS|FG|BR)?(?=\s|$)/g)) { const label = labels[match[1]]; if (label && !found.includes(label)) found.push(label); }
+  return found.length ? found.join(" · ") : undefined;
 }
 
 export function metarDisplay(raw: string): MetarDisplay {
   const temperature = raw.match(/\b(M?\d{2})\/(M?\d{2})\b/);
   const qnh = raw.match(/\bQ(\d{4})\b/);
   const altimeter = raw.match(/\bA(\d{4})\b/);
-  return { wind: readableWind(raw), visibility: readableVisibility(raw), clouds: readableClouds(raw), temperature: temperature ? signed(temperature[1]) : missing, dewPoint: temperature ? signed(temperature[2]) : missing, qnh: qnh ? `${Number(qnh[1])} hPa` : altimeter ? `${altimeter[1].slice(0, 2)}.${altimeter[1].slice(2)} inHg` : missing };
+  const cavok = /\bCAVOK\b/.test(raw); const visibility = readableVisibility(raw); const clouds = readableClouds(raw); const phenomena = readablePhenomena(raw);
+  return { wind: readableWind(raw), ...(!cavok && visibility !== missing ? { visibility } : {}), ...(clouds ? { clouds } : {}), ...(!cavok && phenomena ? { phenomena } : {}), cavok, temperature: temperature ? signed(temperature[1]) : missing, dewPoint: temperature ? signed(temperature[2]) : missing, qnh: qnh ? `${Number(qnh[1])} hPa` : altimeter ? `${altimeter[1].slice(0, 2)}.${altimeter[1].slice(2)} inHg` : missing };
 }
 
 export function tafValidity(raw: string): string {
@@ -52,7 +59,7 @@ export function tafPeriods(raw: string): TafPeriodDisplay[] {
   const start = validity?.index === undefined ? 0 : validity.index + validity[0].length;
   const label = (marker: string) => marker.startsWith("FM") ? `À partir du ${dayHour(marker.slice(2, 6))} UTC` : marker === "TEMPO" ? "Temporairement" : marker === "BECMG" ? "Évolution" : `Probabilité ${marker.slice(4)} %`;
   const slices = [{ label: "Période initiale", start, end: markers[0]?.index ?? raw.length }, ...markers.map((marker, index) => ({ label: label(marker[0]), start: (marker.index ?? 0) + marker[0].length, end: markers[index + 1]?.index ?? raw.length }))];
-  return slices.map((period) => { const source = raw.slice(period.start, period.end); return { label: period.label, wind: readableWind(source), visibility: readableVisibility(source), clouds: readableClouds(source) }; });
+  return slices.map((period) => { const source = raw.slice(period.start, period.end); const cavok = /\bCAVOK\b/.test(source); const visibility = readableVisibility(source); const clouds = readableClouds(source); const phenomena = readablePhenomena(source); return { label: period.label, wind: readableWind(source), ...(!cavok && visibility !== missing ? { visibility } : {}), ...(clouds ? { clouds } : {}), ...(!cavok && phenomena ? { phenomena } : {}), cavok }; });
 }
 
 type WindGroup = { speed: number; gust?: number };

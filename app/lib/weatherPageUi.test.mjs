@@ -16,6 +16,13 @@ test("Météo est sélectionné par défaut et Aviation reste indépendant", () 
   assert.match(page, /weatherPlace: null, aviationStation: null/);
 });
 
+test("le header aligne le retour et les onglets sans titre redondant", () => {
+  assert.match(page, /<header><Link[^>]+><ArrowLeft \/><\/Link><div className=\{styles\.tabs\}/);
+  assert.doesNotMatch(page, /<h1>Météo<\/h1>/);
+  assert.match(page, /role="tab" aria-selected=\{tab === "weather"\}/);
+  assert.match(page, /role="tab" aria-selected=\{tab === "aviation"\}/);
+});
+
 test("les états vides météo, METAR et TAF sont prévus sans valeurs exemples", () => {
   assert.match(page, /Aucun lieu météo sélectionné/);
   assert.match(page, /Aucun aérodrome sélectionné/);
