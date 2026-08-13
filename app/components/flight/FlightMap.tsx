@@ -542,7 +542,7 @@ export default function FlightMap({
     map.current.addControl(
       new maplibregl.NavigationControl({
         showCompass: true,
-        showZoom: true,
+        showZoom: false,
         visualizePitch: false,
       }),
       "bottom-right"

@@ -22,6 +22,7 @@ import {
   selectOperationalFrequency,
 } from "../lib/operationalFrequency";
 import FlightMap from "../components/flight/FlightMap";
+import WindProfilePanel from "../components/flight/WindProfilePanel";
 import FlightInstruments from "../components/flight/FlightInstruments";
 import FlightControls from "../components/flight/FlightControls";
 import MapOptionsPopover from "../components/flight/MapOptionsPopover";
@@ -52,6 +53,7 @@ import {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
+import { aggregateObservedWind } from "../lib/flightWindProfile";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 
 export default function FlightPage() {
@@ -67,6 +69,7 @@ export default function FlightPage() {
   });
 
   const [isMapOptionsOpen, setIsMapOptionsOpen] = useState(false);
+  const [isWindProfileOpen, setIsWindProfileOpen] = useState(false);
   const [followPosition, setFollowPosition] = useState(true);
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [fitProjectionRequest, setFitProjectionRequest] = useState(0);
@@ -483,6 +486,10 @@ export default function FlightPage() {
       weatherProjection,
     ],
   );
+  const observedWindProfile = useMemo(
+    () => aggregateObservedWind(flightSession.trajectory.points),
+    [flightSession.trajectory.points],
+  );
 
   return (
     <div
@@ -537,6 +544,12 @@ export default function FlightPage() {
       </div>
 
       {/* Panneau d'instruments */}
+      <WindProfilePanel
+        open={isWindProfileOpen}
+        observed={observedWindProfile}
+        onToggle={() => setIsWindProfileOpen((open) => !open)}
+        onClose={() => setIsWindProfileOpen(false)}
+      />
       <FlightInstruments
         session={flightSession}
         highContrast={layerSettings.highContrast}
