@@ -53,7 +53,7 @@ export default function FlightControls({
           padding: "var(--bc-space-1)",
           border: "1px solid var(--bc-color-border-glass)",
           borderRadius: "var(--bc-radius-dock)",
-          boxShadow: "var(--bc-shadow-floating)",
+          boxShadow: "var(--bc-shadow-card)",
           backdropFilter: "blur(20px)",
         }}
       >

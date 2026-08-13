@@ -48,11 +48,11 @@ export default function AirspaceDetails({
         width: "min(330px, calc(100vw - 92px))",
         maxHeight: "42vh",
         overflowY: "auto",
-        padding: "12px",
-        borderRadius: "14px",
+        padding: "var(--bc-space-3)",
+        borderRadius: "var(--bc-radius-dock)",
         border: "1px solid rgba(196, 181, 253, 0.55)",
         background: "rgba(7, 17, 31, 0.94)",
-        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.34)",
+        boxShadow: "var(--bc-shadow-floating)",
         color: "var(--bc-text-primary)",
         backdropFilter: "blur(10px)",
       }}
@@ -105,12 +105,12 @@ export default function AirspaceDetails({
           aria-label="Fermer la fiche"
           style={{
             flex: "0 0 auto",
-            width: "36px",
-            height: "36px",
+            width: "40px",
+            height: "40px",
             display: "grid",
             placeItems: "center",
             border: "none",
-            borderRadius: "9px",
+            borderRadius: "var(--bc-radius-control)",
             background: "rgba(255, 255, 255, 0.09)",
             color: "inherit",
           }}
@@ -213,9 +213,9 @@ export default function AirspaceDetails({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            marginTop: "12px",
-            paddingTop: "10px",
-            borderTop: "1px solid rgba(255, 255, 255, 0.12)",
+            marginTop: "var(--bc-space-3)",
+            paddingTop: "var(--bc-space-2)",
+            borderTop: "1px solid var(--bc-color-border-glass)",
           }}
         >
           <button
@@ -226,7 +226,7 @@ export default function AirspaceDetails({
           >
             <ChevronLeft size={20} />
           </button>
-          <span style={{ fontSize: "12px", fontWeight: 750 }}>
+          <span style={{ color: "var(--bc-color-text-secondary)", fontSize: "12px", fontWeight: 750, fontVariantNumeric: "tabular-nums" }}>
             {currentIndex + 1} / {totalCount}
           </span>
           <button
@@ -255,12 +255,12 @@ export default function AirspaceDetails({
 }
 
 const navigationButtonStyle = {
-  width: "38px",
-  height: "38px",
+  width: "40px",
+  height: "40px",
   display: "grid",
   placeItems: "center",
   border: "1px solid rgba(255, 255, 255, 0.16)",
-  borderRadius: "9px",
+  borderRadius: "var(--bc-radius-control)",
   background: "rgba(255, 255, 255, 0.08)",
   color: "inherit",
   cursor: "pointer",
