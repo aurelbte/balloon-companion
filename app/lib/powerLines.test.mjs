@@ -39,13 +39,22 @@ test("le calque reste désactivé et ne charge rien par défaut", () => {
   assert.match(map, /if \(!showPowerLines\) return/);
   assert.match(map, /map\.current\.on\("moveend"/);
   assert.match(map, /powerLineBoundsContain/);
-  assert.match(map, /visibility: showPowerLinesRef\.current \? "visible" : "none"/);
+  assert.match(map, /visibility: showPowerLinesRef\.current \? "visible" as const : "none" as const/);
 });
 
 test("la route utilise le POST accepté par Overpass", () => {
   const route = readFileSync(new URL("../api/osm/power-lines/route.ts", import.meta.url), "utf8");
   assert.match(route, /method: "POST"/);
   assert.match(route, /application\/x-www-form-urlencoded/);
+});
+
+test("le rendu utilise un double trait épais au-dessus des espaces et sous les trajectoires", () => {
+  const map = readFileSync(new URL("../components/flight/FlightMap.tsx", import.meta.url), "utf8");
+  assert.match(map, /POWER_LINES_CASING_LAYER_ID/);
+  assert.match(map, /8, 4\.6, 14, 7/);
+  assert.match(map, /8, 2\.8, 14, 4\.6/);
+  assert.ok(map.indexOf("id: AIRSPACES_SELECTED_OUTLINE_LAYER_ID") < map.lastIndexOf("id: POWER_LINES_CASING_LAYER_ID"));
+  assert.ok(map.lastIndexOf("id: POWER_LINES_LAYER_ID") < map.indexOf("map.current.addSource(PLANNED_TRAJECTORIES_SOURCE_ID"));
 });
 
 test("le fond initial reflète la sélection et la modale n'affiche pas de point d'interrogation isolé", () => {

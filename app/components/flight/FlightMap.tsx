@@ -65,6 +65,7 @@ const AIRSPACES_SOURCE_ID = "airspaces-source";
 const AIRSPACES_SELECTED_FILL_LAYER_ID = "airspaces-selected-fill";
 const AIRSPACES_SELECTED_OUTLINE_LAYER_ID = "airspaces-selected-outline";
 const POWER_LINES_SOURCE_ID = "osm-power-lines-source";
+const POWER_LINES_CASING_LAYER_ID = "osm-power-lines-casing-layer";
 const POWER_LINES_LAYER_ID = "osm-power-lines-layer";
 const PLANNED_TRAJECTORIES_SOURCE_ID = "planned-trajectories-source";
 const NO_SELECTED_AIRSPACE_ID = "__no_selected_airspace__";
@@ -462,7 +463,9 @@ export default function FlightMap({
   useEffect(() => {
     showPowerLinesRef.current = showPowerLines;
     if (!map.current?.getLayer(POWER_LINES_LAYER_ID)) return;
-    map.current.setLayoutProperty(POWER_LINES_LAYER_ID, "visibility", showPowerLines ? "visible" : "none");
+    for (const layerId of [POWER_LINES_CASING_LAYER_ID, POWER_LINES_LAYER_ID]) {
+      map.current.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
+    }
     if (!showPowerLines) return;
     void fetchPowerLinesForViewport();
   }, [showPowerLines]);
@@ -681,25 +684,6 @@ export default function FlightMap({
           attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
         });
       }
-      if (!map.current.getLayer(POWER_LINES_LAYER_ID)) {
-        map.current.addLayer({
-          id: POWER_LINES_LAYER_ID,
-          type: "line",
-          source: POWER_LINES_SOURCE_ID,
-          filter: ["==", ["get", "power"], "line"],
-          minzoom: 8,
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-            visibility: showPowerLinesRef.current ? "visible" : "none",
-          },
-          paint: {
-            "line-color": "#dc2626",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.4, 14, 2.5],
-            "line-opacity": 0.88,
-          },
-        });
-      }
       void fetchPowerLinesForViewport();
 
       if (!map.current.getSource(AIRSPACES_SOURCE_ID)) {
@@ -817,6 +801,41 @@ export default function FlightMap({
             "line-color": AIRSPACE_MAP_PALETTE.SELECTED,
             "line-width": 3.2,
             "line-opacity": 1,
+          },
+        });
+      }
+
+      const powerLineLayout = {
+        "line-cap": "round" as const,
+        "line-join": "round" as const,
+        visibility: showPowerLinesRef.current ? "visible" as const : "none" as const,
+      };
+      if (!map.current.getLayer(POWER_LINES_CASING_LAYER_ID)) {
+        map.current.addLayer({
+          id: POWER_LINES_CASING_LAYER_ID,
+          type: "line",
+          source: POWER_LINES_SOURCE_ID,
+          filter: ["==", ["get", "power"], "line"],
+          minzoom: 8,
+          layout: powerLineLayout,
+          paint: {
+            "line-color": "rgba(7, 17, 31, 0.82)",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4.6, 14, 7],
+          },
+        });
+      }
+      if (!map.current.getLayer(POWER_LINES_LAYER_ID)) {
+        map.current.addLayer({
+          id: POWER_LINES_LAYER_ID,
+          type: "line",
+          source: POWER_LINES_SOURCE_ID,
+          filter: ["==", ["get", "power"], "line"],
+          minzoom: 8,
+          layout: powerLineLayout,
+          paint: {
+            "line-color": "#dc2626",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.8, 14, 4.6],
+            "line-opacity": 0.96,
           },
         });
       }
