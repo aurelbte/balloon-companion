@@ -690,7 +690,7 @@ export default function FlightPage() {
             }}
           >
             <h2 style={{ fontSize: "23px", fontWeight: 950 }}>
-              Arrêter et enregistrer ce vol ?
+              Arrêter et enregistrer ce vol
             </h2>
             <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
               <Button

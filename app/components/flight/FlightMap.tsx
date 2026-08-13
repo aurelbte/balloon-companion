@@ -482,6 +482,7 @@ export default function FlightMap({
         source: "osm-tiles",
         minzoom: 0,
         maxzoom: 19,
+        layout: { visibility: baseMapRef.current === "plan" ? "visible" : "none" },
       },
     ];
 
@@ -502,7 +503,7 @@ export default function FlightMap({
         source: SATELLITE_SOURCE_ID,
         minzoom: 0,
         maxzoom: 22,
-        layout: { visibility: "none" },
+        layout: { visibility: baseMapRef.current === "satellite" ? "visible" : "none" },
       });
     }
 

@@ -24,3 +24,17 @@ test("le calque reste désactivé et ne charge rien par défaut", () => {
   assert.match(map, /if \(!showPowerLines\) return/);
   assert.match(map, /visibility: showPowerLinesRef\.current \? "visible" : "none"/);
 });
+
+test("la route utilise le POST accepté par Overpass", () => {
+  const route = readFileSync(new URL("../api/osm/power-lines/route.ts", import.meta.url), "utf8");
+  assert.match(route, /method: "POST"/);
+  assert.match(route, /application\/x-www-form-urlencoded/);
+});
+
+test("le fond initial reflète la sélection et la modale n'affiche pas de point d'interrogation isolé", () => {
+  const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
+  const map = readFileSync(new URL("../components/flight/FlightMap.tsx", import.meta.url), "utf8");
+  assert.match(map, /visibility: baseMapRef\.current === "plan" \? "visible" : "none"/);
+  assert.match(map, /visibility: baseMapRef\.current === "satellite" \? "visible" : "none"/);
+  assert.doesNotMatch(page, /Arrêter et enregistrer ce vol \?/);
+});

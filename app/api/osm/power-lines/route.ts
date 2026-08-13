@@ -21,8 +21,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const url = `${OVERPASS_URL}?data=${encodeURIComponent(buildPowerLinesQuery(bounds))}`;
-    const response = await fetch(url, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(12_000) });
+    const response = await fetch(OVERPASS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "BalloonCompanion/1.0",
+      },
+      body: new URLSearchParams({ data: buildPowerLinesQuery(bounds) }),
+      signal: AbortSignal.timeout(12_000),
+    });
     if (!response.ok) throw new Error(`Overpass ${response.status}`);
     const data = await response.json() as OverpassPowerLineResponse;
     return Response.json(toPowerLineGeoJson(data), { headers: { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" } });
