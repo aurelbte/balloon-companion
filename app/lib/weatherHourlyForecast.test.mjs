@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clearHourlyForecastCacheForTests, normalizeWeatherCode, OpenMeteoHourlyForecastProvider, parseHourlyForecast } from "./weather/openMeteo/hourlyForecast.ts";
 
-const payload = { latitude: 50.7, longitude: 3.1, hourly: { time: ["2026-08-12T06:00", "2026-08-12T09:00"], temperature_2m: [14, null], relative_humidity_2m: [81, 72], precipitation: [0.2, 0], weather_code: [2, 95], cloud_cover: [35, 80], visibility: [18000, 9000], wind_speed_10m: [8, 11], wind_direction_10m: [240, 260], wind_gusts_10m: [15, 22] } };
+const payload = { latitude: 50.7, longitude: 3.1, timezone: "Europe/Paris", hourly: { time: ["2026-08-12T06:00", "2026-08-12T09:00"], temperature_2m: [14, null], relative_humidity_2m: [81, 72], precipitation: [0.2, 0], weather_code: [2, 95], cloud_cover: [35, 80], visibility: [18000, 9000], wind_speed_10m: [8, 11], wind_direction_10m: [240, 260], wind_gusts_10m: [15, 22] } };
 
 test("normalise les vrais créneaux et conserve unités, modèle et récupération", () => {
   const value = parseHourlyForecast(payload, "arome_seamless", "2026-08-12T04:01:00.000Z");
@@ -12,6 +12,7 @@ test("normalise les vrais créneaux et conserve unités, modèle et récupérati
   assert.equal(value.points[0].precipitationMm, 0.2);
   assert.equal(value.points[0].model, "arome_seamless");
   assert.equal(value.points[0].sourceUpdatedAt, "2026-08-12T04:01:00.000Z");
+  assert.equal(value.timezone, "Europe/Paris");
 });
 
 test("ne transforme jamais un champ absent en zéro", () => {

@@ -62,6 +62,7 @@ export type WeatherHourlyForecast = {
   latitude: number;
   longitude: number;
   sourceUpdatedAt: string;
+  timezone?: string;
   points: WeatherHourlyPoint[];
 };
 

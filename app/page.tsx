@@ -10,7 +10,6 @@ import ConditionsCard from "./components/cockpit/ConditionsCard";
 import CockpitHeroRing from "./components/cockpit/CockpitHeroRing";
 import CockpitExperiencePrompt from "./components/cockpit/CockpitExperiencePrompt";
 import LastFlightCard from "./components/cockpit/LastFlightCard";
-import { MOCK_COCKPIT_DATA } from "./components/cockpit/mockCockpitData";
 import MyBalloonsCard from "./components/cockpit/MyBalloonsCard";
 import PilotStatusCard from "./components/cockpit/PilotStatusCard";
 import { useBalloonAuth } from "./contexts/AuthContext";
@@ -48,7 +47,7 @@ export default function CockpitPage() {
         <header className={styles.header}><div className={styles.brand}><Image className={styles.logo} src={appIcon} alt="" priority sizes="24px" /><span>Balloon Companion</span></div><h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1></header>
         <CockpitHeroRing />
         <CockpitExperiencePrompt />
-        <div className={styles.pair}><PilotStatusCard /><ConditionsCard href="/weather" sunrise={MOCK_COCKPIT_DATA.conditions.sunrise} sunset={MOCK_COCKPIT_DATA.conditions.sunset} /></div>
+        <div className={styles.pair}><PilotStatusCard /><ConditionsCard href="/weather" /></div>
         <Button className={styles.cta} href="/prepare" fullWidth aria-label="Préparer mon vol"><ClipboardCheck size={19} aria-hidden="true" />Préparer mon vol</Button>
         <div className={styles.pair}>
           <LastFlightCard data={lastFlight ? { date: lastFlight.date, duration: `${lastFlight.durationMinutes} min`, departure: lastFlight.departure, arrival: lastFlight.arrival } : null} href={lastFlight ? `/journal/${encodeURIComponent(lastFlight.id)}` : "/journal"} />

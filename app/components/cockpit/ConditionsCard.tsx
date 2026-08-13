@@ -8,13 +8,7 @@ import { WeatherIcon } from "../../weather/presentation";
 import { relativeUpdateLabel } from "../../lib/weather/weatherSelection";
 import styles from "./Cockpit.module.css";
 
-type ConditionsCardProps = {
-  href: string;
-  sunrise: string;
-  sunset: string;
-};
-
-export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCardProps) {
+export default function ConditionsCard({ href }: { href: string }) {
   const preferences = useWeatherPreferences();
   const point = preferences.selectedPoint;
   return (
@@ -23,8 +17,8 @@ export default function ConditionsCard({ href, sunrise, sunset }: ConditionsCard
         <div className={styles.weatherHeader}>
           <h2 className={styles.cardTitle}>Météo</h2>
           <div className={styles.sunTimes} aria-label="Lever et coucher du soleil">
-            <span><Sunrise size={11} aria-hidden="true" />{sunrise}</span>
-            <span><Moon size={10} aria-hidden="true" />{sunset}</span>
+            <span><Sunrise size={11} aria-hidden="true" />{preferences.sunTimes?.sunrise ?? "—"}</span>
+            <span><Moon size={10} aria-hidden="true" />{preferences.sunTimes?.sunset ?? "—"}</span>
           </div>
         </div>
         <div className={styles.weatherLocation}>

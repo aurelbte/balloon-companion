@@ -31,6 +31,7 @@ export function parseHourlyForecast(payload: unknown, model: OpenMeteoWeatherMod
   const times = Array.isArray(hourly?.time) ? hourly.time : [];
   const latitude = optionalNumber(root?.latitude);
   const longitude = optionalNumber(root?.longitude);
+  const timezone = typeof root?.timezone === "string" && root.timezone.trim() ? root.timezone : undefined;
   if (latitude === undefined || longitude === undefined || !hourly) throw new Error("Réponse météo horaire invalide.");
   const points = times.flatMap<WeatherHourlyPoint>((timestamp, index) => {
     if (typeof timestamp !== "string" || !timestamp.trim()) return [];
@@ -39,7 +40,7 @@ export function parseHourlyForecast(payload: unknown, model: OpenMeteoWeatherMod
     for (const [key, value] of Object.entries(fields)) if (value !== undefined) Object.assign(point, { [key]: value });
     return [point];
   });
-  return { model, latitude, longitude, sourceUpdatedAt: fetchedAt, points };
+  return { model, latitude, longitude, sourceUpdatedAt: fetchedAt, ...(timezone ? { timezone } : {}), points };
 }
 
 export class OpenMeteoHourlyForecastProvider {

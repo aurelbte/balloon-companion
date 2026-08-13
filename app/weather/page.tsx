@@ -58,8 +58,8 @@ function AviationAirportPicker({ favorites, selected, onChange }: { favorites: r
 }
 
 export default function WeatherPage() {
-  const data = EMPTY_DATA;
   const preferences = useWeatherPreferences();
+  const data = { ...EMPTY_DATA, sunTimes: preferences.sunTimes };
   const [tab, setTab] = useState<"weather" | "aviation">("weather");
   const [aviation, setAviation] = useState<AviationWeatherResult | null>(null);
   const [aviationLoading, setAviationLoading] = useState(false);
