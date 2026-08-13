@@ -5,6 +5,7 @@ import type {
 } from "./integration.ts";
 import type { WeatherModelDefinition } from "../weather/models.ts";
 import { readScopedBusinessValue, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
+import type { TrajectoryPoint } from "./types.ts";
 
 export type AnalysisLayerSettings = {
   trajectories: boolean;
@@ -53,6 +54,18 @@ export type ExportedPlannedTrajectory = {
     speedMps: number;
   };
 };
+
+export function extractPredictedWind(
+  points: readonly Pick<TrajectoryPoint, "windUsed">[],
+): ExportedPlannedTrajectory["predictedWind"] {
+  const windUsed = points.find((point) => point.windUsed)?.windUsed;
+  return windUsed
+    ? {
+        directionFromDeg: windUsed.directionFromDeg,
+        speedMps: windUsed.speedMps,
+      }
+    : undefined;
+}
 
 const ANALYSIS_KEY = "balloon_companion_weather_analysis_v1";
 const FLIGHT_EXPORT_KEY = "balloon_companion_planned_trajectories_v1";

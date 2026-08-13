@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind, predictedWindProfile } from "./flightWindProfile.ts";
+import { extractPredictedWind } from "./trajectory/weatherAnalysisStorage.ts";
 
 const point = (altitude, speed, heading, timestamp) => ({ latitude: 50, longitude: 3, altitude, speed, heading, accuracy: 5, verticalAccuracy: 8, timestamp });
 
@@ -43,6 +44,31 @@ test("branche uniquement les vents prévus du modèle figé et laisse les niveau
   assert.equal(formatObservedWind(profile.get(300)), "110° / 5 kt");
   assert.equal(profile.has(400), false);
   assert.equal(predictedWindProfile(trajectories, null).size, 0);
+});
+
+test("exporte le premier windUsed disponible quand le point initial de projection n'en contient pas", () => {
+  const windUsed = {
+    queryAltitudeAmslM: 300,
+    speedMps: 2.57222,
+    directionFromDeg: 110,
+    movementDirectionToDeg: 290,
+    sourceModel: "arome_seamless",
+    sourceSlices: [],
+  };
+  const predictedWind = extractPredictedWind([
+    { windUsed: undefined },
+    { windUsed },
+  ]);
+  const trajectories = [{
+    version: 1, traceId: "arome-300", modelId: "arome", modelLabel: "AROME",
+    providerModelId: "arome_seamless", altitudeKey: "300", altitudeAmslM: 300,
+    altitudeLabel: "300 m", color: "#fff", dasharray: [], geometry: [],
+    calculatedAtIso: "2026-08-13T10:00:00Z", forecastAtIso: "2026-08-13T12:00:00Z",
+    predictedWind,
+  }];
+
+  assert.deepEqual(predictedWind, { directionFromDeg: 110, speedMps: 2.57222 });
+  assert.equal(formatObservedWind(predictedWindProfile(trajectories, "arome_seamless").get(300)), "110° / 5 kt");
 });
 
 test("le mode Vol privilégie toujours le modèle persisté du vol restauré", () => {

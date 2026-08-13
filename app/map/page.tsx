@@ -57,6 +57,7 @@ import {
   MODEL_LINE_STYLES,
 } from "../lib/trajectory/analysisStyles";
 import {
+  extractPredictedWind,
   newAnalysisLayerSettings,
   saveExportedPlannedTrajectories,
   type AnalysisLayerSettings,
@@ -522,32 +523,28 @@ export default function MapPage() {
   const exportToFlight = () => {
     const exports: ExportedPlannedTrajectory[] = displayedTraces
       .filter((trace) => exportIds.includes(trace.traceId))
-      .map((trace) => ({
-        version: 1,
-        traceId: trace.traceId,
-        modelId: trace.model.id,
-        modelLabel: trace.model.label,
-        providerModelId: trace.model.providerModelId,
-        altitudeKey: trace.altitudeKey,
-        altitudeAmslM: trace.altitudeAmslM,
-        altitudeLabel: trace.label,
-        color: trace.color,
-        dasharray: MODEL_LINE_STYLES[trace.model.id].dasharray,
-        geometry: trace.projection.points.map((point) => [
-          point.longitude,
-          point.latitude,
-        ]),
-        calculatedAtIso: trace.calculatedAtIso,
-        forecastAtIso: trace.forecastAtIso,
-        ...(trace.projection.points[0]?.windUsed
-          ? {
-              predictedWind: {
-                directionFromDeg: trace.projection.points[0].windUsed.directionFromDeg,
-                speedMps: trace.projection.points[0].windUsed.speedMps,
-              },
-            }
-          : {}),
-      }));
+      .map((trace) => {
+        const predictedWind = extractPredictedWind(trace.projection.points);
+        return {
+          version: 1,
+          traceId: trace.traceId,
+          modelId: trace.model.id,
+          modelLabel: trace.model.label,
+          providerModelId: trace.model.providerModelId,
+          altitudeKey: trace.altitudeKey,
+          altitudeAmslM: trace.altitudeAmslM,
+          altitudeLabel: trace.label,
+          color: trace.color,
+          dasharray: MODEL_LINE_STYLES[trace.model.id].dasharray,
+          geometry: trace.projection.points.map((point) => [
+            point.longitude,
+            point.latitude,
+          ]),
+          calculatedAtIso: trace.calculatedAtIso,
+          forecastAtIso: trace.forecastAtIso,
+          ...(predictedWind ? { predictedWind } : {}),
+        };
+      });
     if (saveExportedPlannedTrajectories(exports)) {
       setNotice(
         `${exports.length} trajectoire${exports.length > 1 ? "s" : ""} disponible${exports.length > 1 ? "s" : ""} en Vol.`,
