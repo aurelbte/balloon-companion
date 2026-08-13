@@ -61,6 +61,7 @@ export default function FlightPage() {
     gpsProjection: true,
     weatherProjection: false,
     airspaces: false,
+    powerLines: false,
     aeronauticalMap: false,
     highContrast: false,
   });
@@ -516,6 +517,7 @@ export default function FlightPage() {
           plannedTrajectories={flightSession.projections.planned}
           airspaces={airspaces}
           showAirspaces={layerSettings.airspaces}
+          showPowerLines={layerSettings.powerLines}
           selectedAirspaceId={selectedAirspace?.airspaceId ?? null}
           showGpsProjection={
             layerSettings.gpsProjection && flightSession.state.isRecording

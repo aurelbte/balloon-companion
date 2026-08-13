@@ -30,6 +30,7 @@ interface MapOptionsPopoverProps {
 
 const optionKeys = [
   ["airspaces", "Espaces aériens"],
+  ["powerLines", "Lignes haute tension"],
   ["gpsProjection", "Projection GPS"],
   ["weatherProjection", "Projection météo"],
   ["highContrast", "Contraste élevé"],

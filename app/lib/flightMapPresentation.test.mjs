@@ -136,11 +136,14 @@ test("le menu Carte s'ouvre, se referme et active les espaces aériens", () => {
     gpsProjection: true,
     weatherProjection: false,
     airspaces: false,
+    powerLines: false,
     aeronauticalMap: false,
     highContrast: false,
   };
   assert.equal(toggleMapLayerSetting(settings, "airspaces").airspaces, true);
   assert.equal(settings.airspaces, false);
+  assert.equal(toggleMapLayerSetting(settings, "powerLines").powerLines, true);
+  assert.equal(settings.powerLines, false);
 });
 
 test("le marqueur est agrandi de 28 à 40 px sans dépendre du zoom", () => {

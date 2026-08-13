@@ -51,6 +51,10 @@ import {
   REFERENCE_ORIENTATION,
   TWO_DIMENSIONAL_MAP_OPTIONS,
 } from "../../lib/mapInteraction";
+import {
+  normalizePowerLineBounds,
+  powerLineBoundsKey,
+} from "../../lib/powerLines";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
@@ -58,6 +62,8 @@ const PLAN_LAYER_ID = "osm-tiles";
 const AIRSPACES_SOURCE_ID = "airspaces-source";
 const AIRSPACES_SELECTED_FILL_LAYER_ID = "airspaces-selected-fill";
 const AIRSPACES_SELECTED_OUTLINE_LAYER_ID = "airspaces-selected-outline";
+const POWER_LINES_SOURCE_ID = "osm-power-lines-source";
+const POWER_LINES_LAYER_ID = "osm-power-lines-layer";
 const PLANNED_TRAJECTORIES_SOURCE_ID = "planned-trajectories-source";
 const NO_SELECTED_AIRSPACE_ID = "__no_selected_airspace__";
 const SATELLITE_FAILURE_MESSAGE = "Satellite indisponible — fond Plan restauré";
@@ -65,6 +71,7 @@ const SATELLITE_ERROR_WINDOW_MS = 10_000;
 const SATELLITE_LOAD_TIMEOUT_MS = 12_000;
 const MAX_SATELLITE_ERRORS = 3;
 const FOLLOW_CAMERA_DURATION_MS = 180;
+const powerLinesCache = new Map<string, Promise<GeoJSON.FeatureCollection>>();
 
 interface ProjectionTimeMarker {
   minutes: number;
@@ -179,6 +186,7 @@ interface FlightMapProps {
   plannedTrajectories: readonly ExportedPlannedTrajectory[];
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
+  showPowerLines: boolean;
   selectedAirspaceId: string | null;
   showGpsProjection: boolean;
   showWeatherProjection: boolean;
@@ -246,6 +254,7 @@ export default function FlightMap({
   plannedTrajectories,
   airspaces,
   showAirspaces,
+  showPowerLines,
   selectedAirspaceId,
   showGpsProjection,
   showWeatherProjection,
@@ -311,6 +320,7 @@ export default function FlightMap({
   );
   const selectedAirspaceIdRef = useRef(selectedAirspaceId);
   const showAirspacesRef = useRef(showAirspaces);
+  const showPowerLinesRef = useRef(showPowerLines);
   const baseMapRef = useRef(baseMap);
   const onSatelliteErrorRef = useRef(onSatelliteError);
   const satelliteErrorsRef = useRef<number[]>([]);
@@ -402,6 +412,44 @@ export default function FlightMap({
   useEffect(() => {
     showAirspacesRef.current = showAirspaces;
   }, [showAirspaces]);
+
+  const fetchPowerLinesForViewport = async () => {
+    if (!showPowerLinesRef.current || !map.current) return;
+    const bounds = map.current.getBounds();
+    const normalized = normalizePowerLineBounds({
+      west: bounds.getWest(),
+      south: bounds.getSouth(),
+      east: bounds.getEast(),
+      north: bounds.getNorth(),
+    });
+    if (normalized.east - normalized.west > 2 || normalized.north - normalized.south > 2) return;
+    const key = powerLineBoundsKey(normalized);
+    let request = powerLinesCache.get(key);
+    if (!request) {
+      const params = new URLSearchParams(Object.entries(normalized).map(([name, value]) => [name, String(value)]));
+      request = fetch(`/api/osm/power-lines?${params}`).then((response) => {
+        if (!response.ok) throw new Error("Power lines unavailable");
+        return response.json() as Promise<GeoJSON.FeatureCollection>;
+      });
+      powerLinesCache.set(key, request);
+      request.catch(() => powerLinesCache.delete(key));
+    }
+    try {
+      const data = await request;
+      if (!showPowerLinesRef.current || !map.current) return;
+      (map.current.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(data);
+    } catch {
+      // Le calque optionnel ne doit jamais interrompre le mode Vol.
+    }
+  };
+
+  useEffect(() => {
+    showPowerLinesRef.current = showPowerLines;
+    if (!map.current?.getLayer(POWER_LINES_LAYER_ID)) return;
+    map.current.setLayoutProperty(POWER_LINES_LAYER_ID, "visibility", showPowerLines ? "visible" : "none");
+    if (!showPowerLines) return;
+    void fetchPowerLinesForViewport();
+  }, [showPowerLines]);
 
   useEffect(() => {
     baseMapRef.current = baseMap;
@@ -501,7 +549,10 @@ export default function FlightMap({
       });
     };
 
-    map.current.on("moveend", notifyViewportChange);
+    map.current.on("moveend", () => {
+      notifyViewportChange();
+      void fetchPowerLinesForViewport();
+    });
     map.current.on("dragstart", (event) => {
       if (!map.current || !followPositionRef.current) return;
 
@@ -605,6 +656,34 @@ export default function FlightMap({
     // Ajouter une source pour les projections
     map.current.on("load", () => {
       if (!map.current) return;
+
+      if (!map.current.getSource(POWER_LINES_SOURCE_ID)) {
+        map.current.addSource(POWER_LINES_SOURCE_ID, {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+          attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
+        });
+      }
+      if (!map.current.getLayer(POWER_LINES_LAYER_ID)) {
+        map.current.addLayer({
+          id: POWER_LINES_LAYER_ID,
+          type: "line",
+          source: POWER_LINES_SOURCE_ID,
+          filter: ["==", ["get", "power"], "line"],
+          minzoom: 8,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+            visibility: showPowerLinesRef.current ? "visible" : "none",
+          },
+          paint: {
+            "line-color": "#dc2626",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.2, 14, 2.2],
+            "line-opacity": 0.88,
+          },
+        });
+      }
+      void fetchPowerLinesForViewport();
 
       if (!map.current.getSource(AIRSPACES_SOURCE_ID)) {
         map.current.addSource(AIRSPACES_SOURCE_ID, {

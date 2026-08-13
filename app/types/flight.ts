@@ -102,6 +102,7 @@ export interface FlightLayerSettings {
   gpsProjection: boolean;
   weatherProjection: boolean;
   airspaces: boolean;
+  powerLines: boolean;
   aeronauticalMap: boolean;
   highContrast: boolean;
 }
