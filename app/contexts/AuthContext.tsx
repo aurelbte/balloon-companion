@@ -37,7 +37,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   setRuntimeAuthSnapshot(snapshot);
   setRuntimeGuestModeActive(authChoiceState === "GUEST_ACTIVE");
 
-  useEffect(() => { window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT)); }, [snapshot]);
+  useEffect(() => { window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT)); }, [snapshot, authChoiceState]);
 
   const startApprovedMigration = useCallback((userId: string, deviceId: string) => {
     setLocalDataMigrationState("MIGRATION_APPROVED");

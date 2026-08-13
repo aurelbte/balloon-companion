@@ -4,6 +4,7 @@ import type {
   GeoPoint,
   PersistedFlightSession,
 } from "../types/flight";
+import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 
 const STORAGE_KEY = "balloon_companion_flight_session";
 const STORAGE_VERSION = 1;
@@ -63,7 +64,7 @@ function isMetrics(value: unknown): value is FlightMetrics {
 
 export function loadFlightSession(): PersistedFlightSession | null {
   try {
-    const serialized = localStorage.getItem(STORAGE_KEY);
+    const serialized = readScopedBusinessValue(localStorage, STORAGE_KEY);
     if (!serialized) return null;
 
     const value = JSON.parse(serialized) as Partial<PersistedFlightSession>;
@@ -94,8 +95,7 @@ export function saveFlightSession(
       version: STORAGE_VERSION,
       savedAt: Date.now(),
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
-    return true;
+    return writeScopedBusinessValue(localStorage, STORAGE_KEY, JSON.stringify(persisted));
   } catch (error) {
     console.error("Impossible de sauvegarder la session de vol", error);
     return false;

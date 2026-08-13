@@ -2,6 +2,7 @@ import {
   migrateStoredPreparation,
   type StoredFlightPreparationV2,
 } from "./flightStorage.ts";
+import { readScopedBusinessValue, removeScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 
 export const PREPARATION_DRAFT_STORAGE_KEY =
   "balloon-companion-preparation-draft";
@@ -10,7 +11,7 @@ export function loadPreparationDraft(): StoredFlightPreparationV2 | null {
   if (typeof window === "undefined") return null;
 
   try {
-    const raw = window.sessionStorage.getItem(PREPARATION_DRAFT_STORAGE_KEY);
+    const raw = readScopedBusinessValue(window.sessionStorage, PREPARATION_DRAFT_STORAGE_KEY);
     return raw ? migrateStoredPreparation(JSON.parse(raw)) : null;
   } catch {
     return null;
@@ -26,11 +27,7 @@ export function savePreparationDraft(
   if (!validated) return false;
 
   try {
-    window.sessionStorage.setItem(
-      PREPARATION_DRAFT_STORAGE_KEY,
-      JSON.stringify(validated),
-    );
-    return true;
+    return writeScopedBusinessValue(window.sessionStorage, PREPARATION_DRAFT_STORAGE_KEY, JSON.stringify(validated));
   } catch {
     return false;
   }
@@ -38,5 +35,5 @@ export function savePreparationDraft(
 
 export function clearPreparationDraft(): void {
   if (typeof window === "undefined") return;
-  window.sessionStorage.removeItem(PREPARATION_DRAFT_STORAGE_KEY);
+  removeScopedBusinessValue(window.sessionStorage, PREPARATION_DRAFT_STORAGE_KEY);
 }

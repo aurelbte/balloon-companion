@@ -8,6 +8,7 @@ import type { OpenMeteoWeatherModel, WeatherHourlyPoint } from "../lib/weather/o
 import { availableDays, availableTimes, closestAvailableDay, closestAvailableTime, dayKey, timeKey } from "../lib/weather/weatherSelection";
 import { EMPTY_WEATHER_PREFERENCES, loadWeatherPreferences, saveWeatherPreferences, type WeatherPreferences } from "../lib/weatherPreferencesStorage";
 import { calculateSunTimes, type SunTimes } from "../lib/weather/sunTimes";
+import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 
 type WeatherPreferencesContextValue = WeatherPreferences & {
   favorites: readonly FavoriteLaunchSite[];
@@ -43,7 +44,7 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   const [error, setError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
-  useEffect(() => { setPreferences(loadWeatherPreferences()); setFavorites(loadFavoriteLaunchSites()); }, []);
+  useEffect(() => { const refresh = () => { setPreferences(loadWeatherPreferences()); setFavorites(loadFavoriteLaunchSites()); setPoints([]); setForecastTimeZone(undefined); setSelectedDay(undefined); setSelectedTime(undefined); }; refresh(); window.addEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); return () => window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); }, []);
   const update = useCallback((changes: Partial<WeatherPreferences>) => setPreferences((current) => { const next = { ...current, ...changes }; saveWeatherPreferences(next); return next; }), []);
   const activeFavorite = favorites.find(({ id }) => id === preferences.favoriteWeatherLocationId) ?? null;
   const coordinates = useMemo(() => activeFavorite ? { latitude: activeFavorite.latitude, longitude: activeFavorite.longitude } : null, [activeFavorite]);

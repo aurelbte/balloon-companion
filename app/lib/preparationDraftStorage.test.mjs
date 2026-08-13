@@ -7,6 +7,7 @@ import {
   savePreparationDraft,
 } from "./preparationDraftStorage.ts";
 import { PREPARATION_STORAGE_VERSION } from "./flightStorage.ts";
+import { guestBusinessStorageKey, scopedBusinessStorageKey, setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
 
 function memoryStorage() {
   const values = new Map();
@@ -32,9 +33,13 @@ function validDraft(overrides = {}) {
   };
 }
 
+const user = { id: "pilot-prepa", email: "pilot@example.com", firstName: "", lastName: "" };
+function activateGuest() { setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true); }
+
 test("conserve un brouillon validé dans la session puis le supprime", () => {
   const sessionStorage = memoryStorage();
   globalThis.window = { sessionStorage };
+  activateGuest();
   const draft = {
     storageVersion: PREPARATION_STORAGE_VERSION,
     launchSite: { name: "LFQO", latitude: 50.686341, longitude: 3.079865 },
@@ -51,7 +56,7 @@ test("conserve un brouillon validé dans la session puis le supprime", () => {
 
   assert.equal(savePreparationDraft(draft), true);
   assert.deepEqual(loadPreparationDraft(), draft);
-  assert.ok(sessionStorage.getItem(PREPARATION_DRAFT_STORAGE_KEY));
+  assert.ok(sessionStorage.getItem(guestBusinessStorageKey(PREPARATION_DRAFT_STORAGE_KEY)));
   clearPreparationDraft();
   assert.equal(loadPreparationDraft(), null);
   delete globalThis.window;
@@ -60,6 +65,7 @@ test("conserve un brouillon validé dans la session puis le supprime", () => {
 test("Prépa transmet et recharge exactement occupantsWeightKg", () => {
   const sessionStorage = memoryStorage();
   globalThis.window = { sessionStorage };
+  activateGuest();
   const draft = validDraft({ occupantsWeightKg: 250 });
   assert.equal(savePreparationDraft(draft), true);
   assert.equal(loadPreparationDraft()?.occupantsWeightKg, 250);
@@ -70,6 +76,7 @@ test("Prépa transmet et recharge exactement occupantsWeightKg", () => {
 test("un ancien passengerWeightKg est migré vers la propriété canonique", () => {
   const sessionStorage = memoryStorage();
   globalThis.window = { sessionStorage };
+  activateGuest();
   const legacyNamedDraft = { ...validDraft(), passengerWeightKg: 250 };
   assert.equal(savePreparationDraft(legacyNamedDraft), true);
   const loaded = loadPreparationDraft();
@@ -81,7 +88,31 @@ test("un ancien passengerWeightKg est migré vers la propriété canonique", () 
 test("ignore un brouillon invalide", () => {
   const sessionStorage = memoryStorage();
   globalThis.window = { sessionStorage };
-  sessionStorage.setItem(PREPARATION_DRAFT_STORAGE_KEY, "{\"bad\":true}");
+  activateGuest();
+  sessionStorage.setItem(guestBusinessStorageKey(PREPARATION_DRAFT_STORAGE_KEY), "{\"bad\":true}");
   assert.equal(loadPreparationDraft(), null);
+  delete globalThis.window;
+});
+
+test("USER avec LFQO puis GUEST neuf ne partage jamais le brouillon Prépa", () => {
+  const sessionStorage = memoryStorage();
+  globalThis.window = { sessionStorage };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user });
+  const userDraft = validDraft();
+  assert.equal(savePreparationDraft(userDraft), true);
+
+  activateGuest();
+  assert.equal(loadPreparationDraft(), null);
+  assert.equal(sessionStorage.getItem(guestBusinessStorageKey(PREPARATION_DRAFT_STORAGE_KEY)), null);
+
+  const guestDraft = validDraft({ launchSite: { name: "Terrain invité", latitude: 48.8, longitude: 2.3 } });
+  assert.equal(savePreparationDraft(guestDraft), true);
+  assert.equal(loadPreparationDraft()?.launchSite?.name, "Terrain invité");
+
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user });
+  assert.deepEqual(loadPreparationDraft(), userDraft);
+  assert.ok(sessionStorage.getItem(scopedBusinessStorageKey("USER:pilot-prepa", PREPARATION_DRAFT_STORAGE_KEY)));
   delete globalThis.window;
 });
