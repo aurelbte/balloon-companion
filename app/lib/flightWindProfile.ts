@@ -57,12 +57,21 @@ export function predictedWindProfile(
   const profile = new Map<FlightWindLevel, ObservedWind>();
   if (!providerModelId) return profile;
   for (const trajectory of trajectories) {
-    if (trajectory.providerModelId !== providerModelId || !trajectory.predictedWind) continue;
-    profile.set(closestFlightWindLevel(trajectory.altitudeAmslM), {
-      directionDeg: trajectory.predictedWind.directionFromDeg,
-      speedKt: trajectory.predictedWind.speedMps * 1.943844,
-      sampleCount: 1,
-    });
+    if (trajectory.providerModelId !== providerModelId) continue;
+    for (const wind of trajectory.predictedWindProfile ?? []) {
+      profile.set(closestFlightWindLevel(wind.levelM), {
+        directionDeg: wind.directionFromDeg,
+        speedKt: wind.speedMps * 1.943844,
+        sampleCount: 1,
+      });
+    }
+    if (trajectory.predictedWind && !trajectory.predictedWindProfile?.length) {
+      profile.set(closestFlightWindLevel(trajectory.altitudeAmslM), {
+        directionDeg: trajectory.predictedWind.directionFromDeg,
+        speedKt: trajectory.predictedWind.speedMps * 1.943844,
+        sampleCount: 1,
+      });
+    }
   }
   return profile;
 }

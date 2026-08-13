@@ -272,22 +272,22 @@ export default function MapPage() {
         }),
       );
       if (controller.signal.aborted || desiredSignatureRef.current !== signature) return;
-      const nextTraces = results.flatMap((result) =>
-        result?.payload.ok
-          ? result.payload.layerProjections.map((trace) => ({
+      const nextTraces = results.flatMap((result) => {
+        if (!result?.payload.ok) return [];
+        const payload = result.payload;
+        return payload.layerProjections.map((trace) => ({
               ...trace,
-              ...(result.payload.ok &&
-              result.payload.flightProfileProjection &&
+              ...(payload.flightProfileProjection &&
               trace.altitudeAmslM === config.request.primaryAltitudeAmslM
-                ? { projection: result.payload.flightProfileProjection }
+                ? { projection: payload.flightProfileProjection }
                 : {}),
               traceId: `${result.model.id}:${trace.altitudeKey}`,
               model: result.model,
               calculatedAtIso,
               forecastAtIso: config.request.launchDateTimeIso,
-            }))
-          : [],
-      );
+              predictedWindProfile: payload.windProfile,
+            }));
+      });
       const nextFailures = results.flatMap((result) => {
         if (!result) return [];
         if (!result.payload.ok) {
@@ -543,6 +543,9 @@ export default function MapPage() {
           calculatedAtIso: trace.calculatedAtIso,
           forecastAtIso: trace.forecastAtIso,
           ...(predictedWind ? { predictedWind } : {}),
+          ...(trace.predictedWindProfile
+            ? { predictedWindProfile: trace.predictedWindProfile }
+            : {}),
         };
       });
     if (saveExportedPlannedTrajectories(exports)) {

@@ -117,6 +117,12 @@ export type MultiAltitudeProjectionSuccess = {
   selectedAltitudes: AltitudeOption[];
   primaryAltitudeAmslM?: number;
   layerProjections: AltitudeProjectionResult[];
+  windProfile: Array<{
+    levelM: number;
+    altitudeAmslM: number;
+    directionFromDeg: number;
+    speedMps: number;
+  }>;
   flightProfileProjection?: TrajectoryProjectionResult;
   failures: AltitudeProjectionFailure[];
 };

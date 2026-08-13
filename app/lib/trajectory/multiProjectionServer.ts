@@ -11,6 +11,7 @@ import {
 } from "./integration.ts";
 import { TrajectoryDomainError, type WindProvider } from "./types.ts";
 import { weatherModelByProviderId } from "../weather/models.ts";
+import { FLIGHT_WIND_ALTITUDE_LEVELS } from "../flightWindProfile.ts";
 
 export type MultiProjectionServerDependencies = {
   getTerrainAltitude(latitude: number, longitude: number): Promise<number>;
@@ -213,6 +214,32 @@ export async function orchestrateMultiAltitudeProjection(
     }
   }
 
+  const windProfile = (
+    await Promise.all(
+      FLIGHT_WIND_ALTITUDE_LEVELS.map(async (levelM) => {
+        const altitudeAmslM = levelM === 0 ? terrainAltitudeAmslM : levelM;
+        if (altitudeAmslM < terrainAltitudeAmslM) return null;
+        try {
+          const sample = await preparedProvider.getWind({
+            latitude: launchSite.latitude,
+            longitude: launchSite.longitude,
+            validAt: request.launchDateTimeIso,
+            altitudeAmslM,
+            weatherModel: request.weatherModel,
+          });
+          return {
+            levelM,
+            altitudeAmslM,
+            directionFromDeg: sample.wind.directionFromDeg,
+            speedMps: sample.wind.speedMps,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    )
+  ).filter((value) => value !== null);
+
   if (layerProjections.length === 0) {
     return {
       status: 422,
@@ -244,6 +271,7 @@ export async function orchestrateMultiAltitudeProjection(
         ? {}
         : { primaryAltitudeAmslM: request.primaryAltitudeAmslM }),
       layerProjections,
+      windProfile,
       ...(flightProfileProjection ? { flightProfileProjection } : {}),
       failures,
     },

@@ -22,6 +22,14 @@ export type WeatherAnalysisTrace = AltitudeProjectionResult & {
   model: WeatherModelDefinition;
   calculatedAtIso: string;
   forecastAtIso: string;
+  predictedWindProfile?: PredictedWindProfileLevel[];
+};
+
+export type PredictedWindProfileLevel = {
+  levelM: number;
+  altitudeAmslM: number;
+  directionFromDeg: number;
+  speedMps: number;
 };
 
 export type WeatherAnalysisState = {
@@ -53,6 +61,7 @@ export type ExportedPlannedTrajectory = {
     directionFromDeg: number;
     speedMps: number;
   };
+  predictedWindProfile?: PredictedWindProfileLevel[];
 };
 
 export function extractPredictedWind(
