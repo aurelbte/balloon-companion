@@ -117,6 +117,7 @@ export interface RecordedFlight {
   createdAt: number;
   updatedAt: number;
   balloonRegistration?: string;
+  weatherModel?: string;
   startLocationLabel?: string;
   endLocationLabel?: string;
   generatedTitle?: string;
@@ -494,11 +495,13 @@ export function createRecordedFlight({
   id = createFlightId(startedAt),
   firstPoint = null,
   balloonRegistration,
+  weatherModel,
 }: {
   startedAt?: number;
   id?: string;
   firstPoint?: RecordedFlightPoint | null;
   balloonRegistration?: string;
+  weatherModel?: string;
 } = {}): RecordedFlight {
   const points =
     firstPoint && canAppendRecordedFlightPoint(firstPoint, null).accepted
@@ -515,6 +518,7 @@ export function createRecordedFlight({
     createdAt: startedAt,
     updatedAt: startedAt,
     ...(balloonRegistration ? { balloonRegistration } : {}),
+    ...(weatherModel ? { weatherModel } : {}),
   };
 }
 

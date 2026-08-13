@@ -53,7 +53,8 @@ import {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
-import { aggregateObservedWind } from "../lib/flightWindProfile";
+import { aggregateObservedWind, predictedWindProfile } from "../lib/flightWindProfile";
+import { weatherModelByProviderId } from "../lib/weather/models";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
 import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
@@ -83,6 +84,7 @@ export default function FlightPage() {
   const [plannedTrajectories, setPlannedTrajectories] = useState<
     ExportedPlannedTrajectory[]
   >([]);
+  const [flightWeatherModel, setFlightWeatherModel] = useState<string | null>(null);
   const [airspaceViewport, setAirspaceViewport] =
     useState<AirspaceCoverageViewport | null>(null);
   const [airspaceSelectionOrigin, setAirspaceSelectionOrigin] = useState<
@@ -245,8 +247,13 @@ export default function FlightPage() {
   const handleStartTracking = useCallback(() => {
     if (!storageReady) return;
     if ((geoState === "active" || geoState === "simulation") && !isStale) {
-      const selectedBalloonId = loadPreparationDraft()?.balloonName;
-      startTracking(currentPosition, selectedBalloonId ? { balloonRegistration: selectedBalloonId } : undefined);
+      const preparation = loadPreparationDraft();
+      const selectedBalloonId = preparation?.balloonName;
+      setFlightWeatherModel(preparation?.weatherModel ?? null);
+      startTracking(currentPosition, {
+        ...(selectedBalloonId ? { balloonRegistration: selectedBalloonId } : {}),
+        ...(preparation?.weatherModel ? { weatherModel: preparation.weatherModel } : {}),
+      });
     } else {
       markAcquiring();
       requestPermission();
@@ -507,6 +514,14 @@ export default function FlightPage() {
     () => aggregateObservedWind(flightSession.trajectory.points),
     [flightSession.trajectory.points],
   );
+  const preparationWeatherModel = activeFlight?.weatherModel ?? recoverableFlight?.weatherModel ?? flightWeatherModel ?? (tracking.status === "recording" ? null : loadPreparationDraft()?.weatherModel ?? null);
+  const predictedWinds = useMemo(
+    () => predictedWindProfile(plannedTrajectories, preparationWeatherModel),
+    [plannedTrajectories, preparationWeatherModel],
+  );
+  const predictedModelLabel = preparationWeatherModel
+    ? weatherModelByProviderId(preparationWeatherModel)?.label ?? preparationWeatherModel
+    : null;
 
   return (
     <div
@@ -564,6 +579,8 @@ export default function FlightPage() {
       <WindProfilePanel
         open={isWindProfileOpen}
         observed={observedWindProfile}
+        predicted={predictedWinds}
+        predictedModelLabel={predictedModelLabel}
         onToggle={() => setIsWindProfileOpen((open) => !open)}
         onClose={() => setIsWindProfileOpen(false)}
       />

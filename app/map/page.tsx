@@ -539,6 +539,14 @@ export default function MapPage() {
         ]),
         calculatedAtIso: trace.calculatedAtIso,
         forecastAtIso: trace.forecastAtIso,
+        ...(trace.projection.points[0]?.windUsed
+          ? {
+              predictedWind: {
+                directionFromDeg: trace.projection.points[0].windUsed.directionFromDeg,
+                speedMps: trace.projection.points[0].windUsed.speedMps,
+              },
+            }
+          : {}),
       }));
     if (saveExportedPlannedTrajectories(exports)) {
       setNotice(

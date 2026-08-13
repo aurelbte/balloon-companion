@@ -1,4 +1,5 @@
 import type { GeoPoint } from "../types/flight.ts";
+import type { ExportedPlannedTrajectory } from "./trajectory/weatherAnalysisStorage.ts";
 
 export const FLIGHT_WIND_ALTITUDE_LEVELS = [
   0, 100, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 2500, 3000,
@@ -47,4 +48,21 @@ export function aggregateObservedWind(points: readonly GeoPoint[]): Map<FlightWi
 
 export function formatObservedWind(value: ObservedWind | undefined): string {
   return value ? `${String(Math.round(value.directionDeg) % 360).padStart(3, "0")}° / ${Math.round(value.speedKt)} kt` : "—";
+}
+
+export function predictedWindProfile(
+  trajectories: readonly ExportedPlannedTrajectory[],
+  providerModelId: string | null,
+): Map<FlightWindLevel, ObservedWind> {
+  const profile = new Map<FlightWindLevel, ObservedWind>();
+  if (!providerModelId) return profile;
+  for (const trajectory of trajectories) {
+    if (trajectory.providerModelId !== providerModelId || !trajectory.predictedWind) continue;
+    profile.set(closestFlightWindLevel(trajectory.altitudeAmslM), {
+      directionDeg: trajectory.predictedWind.directionFromDeg,
+      speedKt: trajectory.predictedWind.speedMps * 1.943844,
+      sampleCount: 1,
+    });
+  }
+  return profile;
 }

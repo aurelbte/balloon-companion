@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind } from "./flightWindProfile.ts";
+import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind, predictedWindProfile } from "./flightWindProfile.ts";
 
 const point = (altitude, speed, heading, timestamp) => ({ latitude: 50, longitude: 3, altitude, speed, heading, accuracy: 5, verticalAccuracy: 8, timestamp });
 
@@ -33,6 +33,20 @@ test("Observé et Prévu restent distincts et les boutons de zoom sont retirés"
   const panel = readFileSync(new URL("../components/flight/WindProfilePanel.tsx", import.meta.url), "utf8");
   const map = readFileSync(new URL("../components/flight/FlightMap.tsx", import.meta.url), "utf8");
   assert.match(panel, />Observé</);
-  assert.match(panel, />Prévu</);
+  assert.match(panel, />Prévu · \{predictedModelLabel/);
   assert.match(map, /showZoom: false/);
+});
+
+test("branche uniquement les vents prévus du modèle figé et laisse les niveaux absents vides", () => {
+  const trajectories = [{ version: 1, traceId: "a", modelId: "arome", modelLabel: "AROME", providerModelId: "arome_seamless", altitudeKey: "300", altitudeAmslM: 300, altitudeLabel: "300 m", color: "#fff", dasharray: [], geometry: [], calculatedAtIso: "2026-08-13T10:00:00Z", forecastAtIso: "2026-08-13T12:00:00Z", predictedWind: { directionFromDeg: 110, speedMps: 2.57222 } }, { version: 1, traceId: "g", modelId: "gfs", modelLabel: "GFS", providerModelId: "gfs_seamless", altitudeKey: "300", altitudeAmslM: 300, altitudeLabel: "300 m", color: "#fff", dasharray: [], geometry: [], calculatedAtIso: "2026-08-13T10:00:00Z", forecastAtIso: "2026-08-13T12:00:00Z", predictedWind: { directionFromDeg: 220, speedMps: 4 } }];
+  const profile = predictedWindProfile(trajectories, "arome_seamless");
+  assert.equal(formatObservedWind(profile.get(300)), "110° / 5 kt");
+  assert.equal(profile.has(400), false);
+  assert.equal(predictedWindProfile(trajectories, null).size, 0);
+});
+
+test("le mode Vol privilégie toujours le modèle persisté du vol restauré", () => {
+  const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /activeFlight\?\.weatherModel \?\? recoverableFlight\?\.weatherModel/);
+  assert.match(page, /weatherModel: preparation\.weatherModel/);
 });

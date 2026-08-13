@@ -4,6 +4,7 @@ import type {
   AltitudeProjectionResult,
 } from "./integration.ts";
 import type { WeatherModelDefinition } from "../weather/models.ts";
+import { readScopedBusinessValue, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
 
 export type AnalysisLayerSettings = {
   trajectories: boolean;
@@ -47,6 +48,10 @@ export type ExportedPlannedTrajectory = {
   geometry: Array<[number, number]>;
   calculatedAtIso: string;
   forecastAtIso: string;
+  predictedWind?: {
+    directionFromDeg: number;
+    speedMps: number;
+  };
 };
 
 const ANALYSIS_KEY = "balloon_companion_weather_analysis_v1";
@@ -116,7 +121,7 @@ export function saveWeatherAnalysis(value: WeatherAnalysisState): boolean {
 }
 
 export function loadExportedPlannedTrajectories(): ExportedPlannedTrajectory[] {
-  const value = readJson(FLIGHT_EXPORT_KEY);
+  const value = typeof window === "undefined" ? null : JSON.parse(readScopedBusinessValue(window.localStorage, FLIGHT_EXPORT_KEY) ?? "null") as unknown;
   return Array.isArray(value)
     ? value.filter(
         (item): item is ExportedPlannedTrajectory =>
@@ -135,8 +140,7 @@ export function saveExportedPlannedTrajectories(
 ): boolean {
   if (typeof window === "undefined") return false;
   try {
-    localStorage.setItem(FLIGHT_EXPORT_KEY, JSON.stringify(trajectories));
-    return true;
+    return writeScopedBusinessValue(window.localStorage, FLIGHT_EXPORT_KEY, JSON.stringify(trajectories));
   } catch {
     return false;
   }

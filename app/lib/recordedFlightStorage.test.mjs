@@ -5,11 +5,12 @@ import { MemoryRecordedFlightStorage } from "./recordedFlightStorage.ts";
 
 test("persiste, reprend puis finalise un vol via l’abstraction de stockage", async () => {
   const storage = new MemoryRecordedFlightStorage();
-  const flight = createRecordedFlight({ id: "flight", startedAt: 1_000 });
+  const flight = createRecordedFlight({ id: "flight", startedAt: 1_000, weatherModel: "arome_seamless" });
   await storage.saveActiveFlight(flight);
 
   const restored = await storage.getActiveFlight();
   assert.equal(restored?.id, "flight");
+  assert.equal(restored?.weatherModel, "arome_seamless");
   assert.notEqual(restored, flight);
 
   const completed = finalizeRecordedFlight(restored, 2_000);
@@ -22,6 +23,13 @@ test("persiste, reprend puis finalise un vol via l’abstraction de stockage", a
   );
   assert.equal(await storage.getFlight("inconnu"), null);
   assert.equal((await storage.getFlight("flight"))?.id, "flight");
+});
+
+test("un nouveau vol sans préparation ne reprend pas le modèle précédent", () => {
+  const previous = createRecordedFlight({ id: "previous", weatherModel: "arome_seamless" });
+  const next = createRecordedFlight({ id: "next" });
+  assert.equal(previous.weatherModel, "arome_seamless");
+  assert.equal(next.weatherModel, undefined);
 });
 
 test("supprime définitivement une trace terminée du stockage", async () => {
