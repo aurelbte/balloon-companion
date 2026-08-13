@@ -52,8 +52,10 @@ import {
   TWO_DIMENSIONAL_MAP_OPTIONS,
 } from "../../lib/mapInteraction";
 import {
-  normalizePowerLineBounds,
+  getPowerLineQueryBounds,
+  powerLineBoundsContain,
   powerLineBoundsKey,
+  type PowerLineBounds,
 } from "../../lib/powerLines";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
@@ -72,6 +74,12 @@ const SATELLITE_LOAD_TIMEOUT_MS = 12_000;
 const MAX_SATELLITE_ERRORS = 3;
 const FOLLOW_CAMERA_DURATION_MS = 180;
 const powerLinesCache = new Map<string, Promise<GeoJSON.FeatureCollection>>();
+const loadedPowerLineBounds: PowerLineBounds[] = [];
+const loadedPowerLineFeatures = new Map<string | number, GeoJSON.Feature>();
+
+function loadedPowerLinesGeoJson(): GeoJSON.FeatureCollection {
+  return { type: "FeatureCollection", features: [...loadedPowerLineFeatures.values()] };
+}
 
 interface ProjectionTimeMarker {
   minutes: number;
@@ -416,13 +424,17 @@ export default function FlightMap({
   const fetchPowerLinesForViewport = async () => {
     if (!showPowerLinesRef.current || !map.current) return;
     const bounds = map.current.getBounds();
-    const normalized = normalizePowerLineBounds({
+    const normalized = getPowerLineQueryBounds({
       west: bounds.getWest(),
       south: bounds.getSouth(),
       east: bounds.getEast(),
       north: bounds.getNorth(),
     });
-    if (normalized.east - normalized.west > 2 || normalized.north - normalized.south > 2) return;
+    const source = map.current.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (loadedPowerLineBounds.some((coverage) => powerLineBoundsContain(coverage, normalized))) {
+      source?.setData(loadedPowerLinesGeoJson());
+      return;
+    }
     const key = powerLineBoundsKey(normalized);
     let request = powerLinesCache.get(key);
     if (!request) {
@@ -436,8 +448,12 @@ export default function FlightMap({
     }
     try {
       const data = await request;
+      for (const feature of data.features) {
+        if (feature.id !== undefined) loadedPowerLineFeatures.set(feature.id, feature);
+      }
+      if (!loadedPowerLineBounds.some((coverage) => powerLineBoundsKey(coverage) === key)) loadedPowerLineBounds.push(normalized);
       if (!showPowerLinesRef.current || !map.current) return;
-      (map.current.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(data);
+      (map.current.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(loadedPowerLinesGeoJson());
     } catch {
       // Le calque optionnel ne doit jamais interrompre le mode Vol.
     }
@@ -679,7 +695,7 @@ export default function FlightMap({
           },
           paint: {
             "line-color": "#dc2626",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.2, 14, 2.2],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.4, 14, 2.5],
             "line-opacity": 0.88,
           },
         });

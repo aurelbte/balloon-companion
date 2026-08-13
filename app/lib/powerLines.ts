@@ -25,6 +25,26 @@ export function normalizePowerLineBounds(bounds: PowerLineBounds): PowerLineBoun
   };
 }
 
+export function getPowerLineQueryBounds(bounds: PowerLineBounds): PowerLineBounds {
+  const centerLongitude = (bounds.west + bounds.east) / 2;
+  const centerLatitude = (bounds.south + bounds.north) / 2;
+  const width = Math.min((bounds.east - bounds.west) * 1.3, 1.8);
+  const height = Math.min((bounds.north - bounds.south) * 1.3, 1.8);
+  return normalizePowerLineBounds({
+    west: centerLongitude - width / 2,
+    east: centerLongitude + width / 2,
+    south: centerLatitude - height / 2,
+    north: centerLatitude + height / 2,
+  });
+}
+
+export function powerLineBoundsContain(
+  coverage: PowerLineBounds,
+  viewport: PowerLineBounds,
+): boolean {
+  return coverage.west <= viewport.west && coverage.south <= viewport.south && coverage.east >= viewport.east && coverage.north >= viewport.north;
+}
+
 export function powerLineBoundsKey(bounds: PowerLineBounds): string {
   return [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((value) => value.toFixed(2))

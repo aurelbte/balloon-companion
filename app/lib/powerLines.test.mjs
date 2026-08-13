@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { buildPowerLinesQuery, toPowerLineGeoJson } from "./powerLines.ts";
+import { buildPowerLinesQuery, getPowerLineQueryBounds, powerLineBoundsContain, powerLineBoundsKey, toPowerLineGeoJson } from "./powerLines.ts";
 
 test("la requête inclut les lignes principales et exclut les lignes mineures", () => {
   const query = buildPowerLinesQuery({ west: 2, south: 50, east: 3, north: 51 });
@@ -14,6 +14,21 @@ test("la requête inclut les lignes principales et exclut les lignes mineures", 
   assert.deepEqual(geojson.features.map(({ id }) => id), [1]);
 });
 
+test("une emprise déplacée charge une nouvelle zone tandis qu'une zone déjà couverte réutilise le cache", () => {
+  const initial = getPowerLineQueryBounds({ west: 3, south: 50.6, east: 3.2, north: 50.8 });
+  const nearby = getPowerLineQueryBounds({ west: 3.02, south: 50.62, east: 3.18, north: 50.78 });
+  const moved = getPowerLineQueryBounds({ west: 5, south: 48.7, east: 5.3, north: 49 });
+  assert.equal(powerLineBoundsContain(initial, nearby), true);
+  assert.equal(powerLineBoundsContain(initial, moved), false);
+  assert.notEqual(powerLineBoundsKey(initial), powerLineBoundsKey(moved));
+});
+
+test("un fort dézoom produit encore une emprise Overpass utile et valide", () => {
+  const queryBounds = getPowerLineQueryBounds({ west: -5, south: 42, east: 9, north: 51 });
+  assert.ok(queryBounds.east - queryBounds.west <= 2);
+  assert.ok(queryBounds.north - queryBounds.south <= 2);
+});
+
 test("le calque reste désactivé et ne charge rien par défaut", () => {
   const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
   const map = readFileSync(new URL("../components/flight/FlightMap.tsx", import.meta.url), "utf8");
@@ -22,6 +37,8 @@ test("le calque reste désactivé et ne charge rien par défaut", () => {
   assert.match(page, /showPowerLines=\{layerSettings\.powerLines\}/);
   assert.match(panel, /\["powerLines", "Lignes haute tension"\]/);
   assert.match(map, /if \(!showPowerLines\) return/);
+  assert.match(map, /map\.current\.on\("moveend"/);
+  assert.match(map, /powerLineBoundsContain/);
   assert.match(map, /visibility: showPowerLinesRef\.current \? "visible" : "none"/);
 });
 
