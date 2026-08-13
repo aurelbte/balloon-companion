@@ -59,3 +59,20 @@ test("un registre absent ou invalide n'injecte jamais le catalogue historique", 
   assert.deepEqual(loadBalloonRegistry(), { version: 5, balloons: [], activeBalloonId: null });
   delete globalThis.window;
 });
+
+test("un ancien namespace GUEST contaminé par LFQO et F-HLFM n'est jamais réutilisé", () => {
+  const localStorage = storage();
+  globalThis.window = { localStorage, dispatchEvent() {} };
+  localStorage.setItem("balloon-companion-guest-data-v1:balloon-companion-favorite-launch-sites-v1", JSON.stringify({ version: 1, favorites: [userFavorite] }));
+  localStorage.setItem("balloon-companion-guest-data-v1:balloon-companion-weather-preferences-v1", JSON.stringify({ favoriteWeatherLocationId: userFavorite.id, weatherModel: "arome_seamless" }));
+  localStorage.setItem("balloon-companion-guest-data-v1:balloon-companion-balloons", JSON.stringify({ version: 5, balloons: [REGISTERED_BALLOONS[0]], activeBalloonId: REGISTERED_BALLOONS[0].id }));
+
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  assert.deepEqual(loadFavoriteLaunchSites(), []);
+  assert.deepEqual(loadWeatherPreferences(), { favoriteWeatherLocationId: null, weatherModel: null });
+  assert.deepEqual(loadBalloonRegistry().balloons, []);
+  assert.deepEqual(loadFlightCompletionState().openingBalance, { confirmed: true, ascensions: 0, officialDurationMinutes: 0 });
+  assert.ok(localStorage.getItem("balloon-companion-guest-data-v1:balloon-companion-balloons"));
+  delete globalThis.window;
+});

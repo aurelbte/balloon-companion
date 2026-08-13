@@ -3,7 +3,9 @@ import type { AuthSnapshot } from "./types.ts";
 
 export const DATA_SCOPE_CHANGED_EVENT = "balloon-companion:data-scope-changed";
 const USER_STORAGE_PREFIX = "balloon-companion-user-data-v1";
-const GUEST_STORAGE_PREFIX = "balloon-companion-guest-data-v1";
+// Le namespace v1 a pu recevoir les anciens seeds métier avant l'isolation complète.
+// Il reste physiquement intact mais ne doit jamais être importé dans un nouveau GUEST.
+const GUEST_STORAGE_PREFIX = "balloon-companion-guest-data-v2";
 let activeSnapshot: AuthSnapshot = { state: "UNKNOWN", user: null };
 let guestModeActive = false;
 
