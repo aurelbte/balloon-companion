@@ -53,7 +53,7 @@ import {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
-import { aggregateObservedWind, predictedWindProfile } from "../lib/flightWindProfile";
+import { aggregateObservedWind, predictedWindProfile, resolvePredictedWindModel } from "../lib/flightWindProfile";
 import { weatherModelByProviderId } from "../lib/weather/models";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
@@ -514,7 +514,13 @@ export default function FlightPage() {
     () => aggregateObservedWind(flightSession.trajectory.points),
     [flightSession.trajectory.points],
   );
-  const preparationWeatherModel = activeFlight?.weatherModel ?? recoverableFlight?.weatherModel ?? flightWeatherModel ?? (tracking.status === "recording" ? null : loadPreparationDraft()?.weatherModel ?? null);
+  const preparationWeatherModel = resolvePredictedWindModel({
+    isRecording: tracking.status === "recording",
+    activeFlightModel: activeFlight?.weatherModel,
+    recoverableFlightModel: recoverableFlight?.weatherModel,
+    startingFlightModel: flightWeatherModel,
+    preparationModel: loadPreparationDraft()?.weatherModel,
+  });
   const predictedWinds = useMemo(
     () => predictedWindProfile(plannedTrajectories, preparationWeatherModel),
     [plannedTrajectories, preparationWeatherModel],

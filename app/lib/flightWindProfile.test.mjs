@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind, predictedWindProfile } from "./flightWindProfile.ts";
+import { aggregateObservedWind, closestFlightWindLevel, formatObservedWind, predictedWindProfile, resolvePredictedWindModel } from "./flightWindProfile.ts";
 import { extractPredictedWind } from "./trajectory/weatherAnalysisStorage.ts";
 import { orchestrateMultiAltitudeProjection } from "./trajectory/multiProjectionServer.ts";
 
@@ -73,22 +73,26 @@ test("exporte le premier windUsed disponible quand le point initial de projectio
 });
 
 test("le profil prévu complet reste indépendant des altitudes de trajectoire sélectionnées", () => {
-  const trajectory = {
-    version: 1, traceId: "arome-100", modelId: "arome", modelLabel: "AROME",
-    providerModelId: "arome_seamless", altitudeKey: "100", altitudeAmslM: 100,
-    altitudeLabel: "100 m", color: "#fff", dasharray: [], geometry: [],
-    calculatedAtIso: "2026-08-13T10:00:00Z", forecastAtIso: "2026-08-13T12:00:00Z",
-    predictedWindProfile: [
-      { levelM: 100, altitudeAmslM: 100, directionFromDeg: 100, speedMps: 2 },
-      { levelM: 200, altitudeAmslM: 200, directionFromDeg: 120, speedMps: 3 },
-      { levelM: 2500, altitudeAmslM: 2500, directionFromDeg: 140, speedMps: 4 },
-    ],
-  };
-  const profile = predictedWindProfile([trajectory], "arome_seamless");
+  for (const [modelId, providerModelId] of [["arome", "arome_seamless"], ["icon", "icon_seamless"]]) {
+    const trajectory = {
+      version: 1, traceId: `${modelId}-100`, modelId, modelLabel: modelId.toUpperCase(),
+      providerModelId, altitudeKey: "100", altitudeAmslM: 100,
+      altitudeLabel: "100 m", color: "#fff", dasharray: [], geometry: [],
+      calculatedAtIso: "2026-08-13T10:00:00Z", forecastAtIso: "2026-08-13T12:00:00Z",
+      predictedWindProfile: [
+        { levelM: 100, altitudeAmslM: 100, directionFromDeg: 100, speedMps: 2 },
+        { levelM: 200, altitudeAmslM: 200, directionFromDeg: 120, speedMps: 3 },
+        { levelM: 2500, altitudeAmslM: 2500, directionFromDeg: 140, speedMps: 4 },
+      ],
+    };
+    const profile = predictedWindProfile([trajectory], providerModelId);
 
-  assert.equal(profile.has(200), true);
-  assert.equal(profile.has(2500), true);
-  assert.equal(formatObservedWind(profile.get(200)), "120° / 6 kt");
+    assert.equal(profile.has(200), true);
+    assert.equal(profile.has(2500), true);
+    assert.equal(profile.has(3000), false);
+    assert.equal(formatObservedWind(profile.get(200)), "120° / 6 kt");
+    assert.equal(formatObservedWind(profile.get(3000)), "—");
+  }
 });
 
 test("la projection prépare tous les niveaux VENTS même si seules quelques altitudes sont cochées", async () => {
@@ -133,8 +137,12 @@ test("la projection prépare tous les niveaux VENTS même si seules quelques alt
   assert.equal(result.body.windProfile.find(({ levelM }) => levelM === 200)?.directionFromDeg, 20);
 });
 
-test("le mode Vol privilégie toujours le modèle persisté du vol restauré", () => {
+test("le modèle suit la Prépa hors vol et reste figé pendant un vol actif", () => {
+  assert.equal(resolvePredictedWindModel({ isRecording: false, preparationModel: "arome_seamless" }), "arome_seamless");
+  assert.equal(resolvePredictedWindModel({ isRecording: false, preparationModel: "icon_seamless" }), "icon_seamless");
+  assert.equal(resolvePredictedWindModel({ isRecording: true, activeFlightModel: "icon_seamless", startingFlightModel: "icon_seamless", preparationModel: "arome_seamless" }), "icon_seamless");
+  assert.equal(resolvePredictedWindModel({ isRecording: false, startingFlightModel: "icon_seamless", preparationModel: "arome_seamless" }), "arome_seamless");
+  assert.equal(resolvePredictedWindModel({ isRecording: false, recoverableFlightModel: "icon_seamless", preparationModel: "arome_seamless" }), "icon_seamless");
   const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /activeFlight\?\.weatherModel \?\? recoverableFlight\?\.weatherModel/);
   assert.match(page, /weatherModel: preparation\.weatherModel/);
 });

@@ -13,6 +13,19 @@ export interface ObservedWind {
   sampleCount: number;
 }
 
+export function resolvePredictedWindModel(input: {
+  isRecording: boolean;
+  activeFlightModel?: string | null;
+  recoverableFlightModel?: string | null;
+  startingFlightModel?: string | null;
+  preparationModel?: string | null;
+}): string | null {
+  if (input.isRecording) {
+    return input.activeFlightModel ?? input.startingFlightModel ?? null;
+  }
+  return input.recoverableFlightModel ?? input.preparationModel ?? null;
+}
+
 export function closestFlightWindLevel(altitudeM: number): FlightWindLevel {
   return FLIGHT_WIND_ALTITUDE_LEVELS.reduce((closest, level) =>
     Math.abs(level - altitudeM) < Math.abs(closest - altitudeM) ? level : closest,
