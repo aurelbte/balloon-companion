@@ -13,7 +13,7 @@ test("la carte météo ouvre la page dédiée", () => {
 
 test("Météo est sélectionné par défaut et Aviation reste indépendant", () => {
   assert.match(page, /useState<"weather" \| "aviation">\("weather"\)/);
-  assert.match(page, /weatherPlace: null, aviationStation: null/);
+  assert.match(page, /tab === "weather" \? <div className=\{styles\.content\}/);
 });
 
 test("le header aligne le retour et les onglets sans titre redondant", () => {

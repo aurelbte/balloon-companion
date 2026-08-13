@@ -19,9 +19,6 @@
 .settings { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; }
 .settings label { display: grid; gap: 7px; font-size: .7rem; font-weight: 700; text-transform: uppercase; }
 .settings select { min-height: 42px; padding-inline: 10px; border: 1px solid var(--bc-color-border); border-radius: 10px; background: var(--bc-color-canvas-elevated); color: var(--bc-color-text); }
-.sunBlock { display: grid; gap: 7px; color: var(--bc-color-text-secondary); font-size: .72rem; }
-.sunBlock span { display: flex; align-items: center; gap: 6px; }
-.sunBlock svg { color: var(--bc-color-action); }
 .preferenceGroup { display: grid; gap: 6px; padding-block: 10px; }
 .preferenceHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .preferenceHeading > button { width: 34px; height: 34px; border: 1px solid var(--bc-color-border); border-radius: 50%; background: transparent; color: var(--bc-color-action); font-size: 1.15rem; }
@@ -36,14 +33,14 @@
 .stepper strong { overflow: hidden; font-size: .72rem; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .weatherDetail { display: grid; gap: 10px; min-height: 270px; }
 .weatherDetail > .empty { align-self: center; text-align: center; }
-.weatherHero { display: grid; justify-items: center; gap: 3px; text-align: center; }
-.weatherHero svg { color: var(--bc-color-action); }
+.conditionFocus { display: grid; justify-items: center; gap: 5px; text-align: center; }
+.conditionFocus svg { color: var(--bc-color-action); }
+.conditionFocus strong { color: var(--bc-color-text-secondary); font-size: .76rem; }
+.weatherHero { display: grid; justify-items: center; text-align: center; }
 .weatherHero strong { font-size: clamp(1.45rem, 6vw, 2rem); letter-spacing: -.03em; line-height: 1; }
-.weatherHero span { color: var(--bc-color-text-secondary); font-size: .75rem; }
 .windFocus { display: grid; justify-items: center; gap: 5px; padding-block: 9px 11px; border-bottom: 1px solid var(--bc-color-border); }
-.windFocus > svg { color: var(--bc-color-action); }
 .windFocus > div { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.windFocus svg { color: var(--bc-color-action); transform: rotate(45deg); }
+.windFocus .windArrow { color: var(--bc-color-action); transform: rotate(45deg); }
 .windFocus > div strong { font-size: 1.55rem; }
 .windFocus > div span { font-size: 1.5rem; font-weight: 700; }
 .windFocus p { color: var(--bc-color-text-secondary); font-size: .72rem; }
