@@ -133,7 +133,6 @@ export default function FlightPage() {
     selectedAirspaces,
     selectedAirspace,
     selectedIndex: selectedAirspaceIndex,
-    verticalContext,
     selectAirspaces,
     selectPrevious,
     selectNext,
@@ -790,10 +789,9 @@ export default function FlightPage() {
         onClose={handleCloseMapOptions}
       />
 
-      {selectedAirspace && verticalContext && (
+      {selectedAirspace && (
         <AirspaceDetails
           airspace={selectedAirspace}
-          verticalContext={verticalContext}
           currentIndex={selectedAirspaceIndex}
           totalCount={selectedAirspaces.length}
           onPrevious={selectPrevious}

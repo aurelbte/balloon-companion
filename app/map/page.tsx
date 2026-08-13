@@ -116,7 +116,6 @@ export default function MapPage() {
     selectedAirspaces,
     selectedAirspace,
     selectedIndex,
-    verticalContext,
     selectAirspaces,
     selectPrevious,
     selectNext,
@@ -923,10 +922,9 @@ export default function MapPage() {
         </div>
       </section>
 
-      {selectedAirspace && verticalContext && (
+      {selectedAirspace && (
         <AirspaceDetails
           airspace={selectedAirspace}
-          verticalContext={verticalContext}
           currentIndex={selectedIndex}
           totalCount={selectedAirspaces.length}
           onPrevious={selectPrevious}

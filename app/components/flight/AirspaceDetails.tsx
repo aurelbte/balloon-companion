@@ -3,7 +3,6 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   normalizeOpenAipAltitudeLimit,
-  type AirspaceVerticalContext,
 } from "../../lib/airspaceAltitude";
 import type {
   AirspaceGeoJsonProperties,
@@ -13,7 +12,6 @@ import type { AirspaceFrequencyPresentation } from "../../lib/operationalFrequen
 
 interface AirspaceDetailsProps {
   airspace: AirspaceGeoJsonProperties;
-  verticalContext: AirspaceVerticalContext;
   currentIndex: number;
   totalCount: number;
   onPrevious: () => void;
@@ -27,30 +25,8 @@ function formatAltitudeLimit(limit: OpenAipAltitudeLimit | null): string {
   return normalizeOpenAipAltitudeLimit(limit).displayLabel;
 }
 
-function getUnavailableReason(
-  airspace: AirspaceGeoJsonProperties,
-  verticalContext: AirspaceVerticalContext
-): string {
-  if (verticalContext.currentAltitudeMeters === null) {
-    return "Altitude GPS indisponible";
-  }
-
-  const limits = [
-    normalizeOpenAipAltitudeLimit(airspace.lowerLimit),
-    normalizeOpenAipAltitudeLimit(airspace.upperLimit),
-  ];
-  if (limits.some((limit) => limit.reference === "FL")) {
-    return "Limite exprimée en niveau de vol";
-  }
-  if (limits.some((limit) => limit.reference === "AGL")) {
-    return "Limite exprimée par rapport au sol";
-  }
-  return "Limites verticales non comparables";
-}
-
 export default function AirspaceDetails({
   airspace,
-  verticalContext,
   currentIndex,
   totalCount,
   onPrevious,
@@ -231,62 +207,6 @@ export default function AirspaceDetails({
         )}
       </dl>
 
-      <div
-        style={{
-          marginTop: "12px",
-          padding: "10px",
-          borderRadius: "10px",
-          background: "rgba(196, 181, 253, 0.09)",
-          border: "1px solid rgba(196, 181, 253, 0.2)",
-        }}
-      >
-        {verticalContext.state === "INSIDE" &&
-        verticalContext.distanceToCeilingMeters !== null ? (
-          <>
-            <p style={verticalLabelStyle}>ÉCART JUSQU’AU PLAFOND</p>
-            <p style={verticalValueStyle}>
-              {Math.round(verticalContext.distanceToCeilingMeters)} m
-            </p>
-            <p style={verticalHintStyle}>Dans les limites verticales de la zone</p>
-          </>
-        ) : verticalContext.state === "BELOW" &&
-          verticalContext.distanceToFloorMeters !== null ? (
-          <>
-            <p style={verticalLabelStyle}>POSITION VERTICALE</p>
-            <p style={verticalValueStyle}>
-              Sous le plancher de {Math.round(verticalContext.distanceToFloorMeters)} m
-            </p>
-          </>
-        ) : verticalContext.state === "ABOVE" &&
-          verticalContext.distanceToCeilingMeters !== null ? (
-          <>
-            <p style={verticalLabelStyle}>POSITION VERTICALE</p>
-            <p style={verticalValueStyle}>
-              Au-dessus du plafond de{" "}
-              {Math.round(verticalContext.distanceToCeilingMeters)} m
-            </p>
-          </>
-        ) : (
-          <>
-            <p style={verticalLabelStyle}>MARGE VERTICALE</p>
-            <p style={verticalValueStyle}>Non calculable automatiquement</p>
-            <p style={verticalHintStyle}>
-              {getUnavailableReason(airspace, verticalContext)}
-            </p>
-          </>
-        )}
-
-        {verticalContext.currentAltitudeMeters !== null && (
-          <p style={{ ...verticalHintStyle, marginTop: "7px" }}>
-            Altitude GPS indicative :{" "}
-            {Math.round(verticalContext.currentAltitudeMeters)} m
-            {verticalContext.verticalAccuracyMeters !== null
-              ? ` ± ${Math.round(verticalContext.verticalAccuracyMeters)} m`
-              : ""}
-          </p>
-        )}
-      </div>
-
       {hasMultipleAirspaces && (
         <div
           style={{
@@ -344,25 +264,4 @@ const navigationButtonStyle = {
   background: "rgba(255, 255, 255, 0.08)",
   color: "inherit",
   cursor: "pointer",
-};
-
-const verticalLabelStyle = {
-  margin: 0,
-  color: "var(--bc-text-muted)",
-  fontSize: "10px",
-  fontWeight: 700,
-};
-
-const verticalValueStyle = {
-  margin: "3px 0 0",
-  fontSize: "14px",
-  lineHeight: 1.25,
-  fontWeight: 800,
-};
-
-const verticalHintStyle = {
-  margin: "3px 0 0",
-  color: "var(--bc-text-muted)",
-  fontSize: "10px",
-  lineHeight: 1.3,
 };
