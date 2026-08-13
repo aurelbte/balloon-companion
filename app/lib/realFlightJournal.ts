@@ -15,6 +15,10 @@ export function journalFlightsForMode(flights: readonly JournalFlight[], demoEna
   return flights.filter((flight) => demoEnabled || flight.origin === "REAL_GPS" || flight.origin === "MANUAL");
 }
 
+export function latestRealJournalFlight(flights: readonly CompletionJournalFlight[]): CompletionJournalFlight | null {
+  return journalFlightsForMode(flights, false).sort((left, right) => (right.startedAt ?? Date.parse(right.dateIso)) - (left.startedAt ?? Date.parse(left.dateIso)))[0] as CompletionJournalFlight | undefined ?? null;
+}
+
 export function legacyFlightSessionToRecordedFlight(session: PersistedFlightSession): RecordedFlight | null {
   if (session.points.length === 0) return null;
   const points = session.points.map(geoPointToRecordedFlightPoint);

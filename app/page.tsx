@@ -15,6 +15,7 @@ import PilotStatusCard from "./components/cockpit/PilotStatusCard";
 import { useBalloonAuth } from "./contexts/AuthContext";
 import { useFlightCompletionState } from "./hooks/useFlightCompletionState";
 import { usePilotProfile } from "./hooks/usePilotProfile";
+import { latestRealJournalFlight } from "./lib/realFlightJournal";
 import appIcon from "./icon.png";
 import styles from "./components/cockpit/Cockpit.module.css";
 
@@ -23,7 +24,7 @@ export default function CockpitPage() {
   const completion = useFlightCompletionState();
   const profile = usePilotProfile();
   const choicePending = auth.state === "SIGNED_OUT" && auth.authChoiceState === "AUTH_CHOICE_PENDING";
-  const lastFlight = useMemo(() => [...completion.journalFlights].sort((left, right) => (right.startedAt ?? Date.parse(right.dateIso)) - (left.startedAt ?? Date.parse(left.dateIso)))[0] ?? null, [completion.journalFlights]);
+  const lastFlight = useMemo(() => latestRealJournalFlight(completion.journalFlights), [completion.journalFlights]);
   const firstName = auth.state === "SIGNED_IN" || auth.state === "OFFLINE_SESSION" ? auth.user?.firstName : profile.firstName;
 
   if (choicePending) {
