@@ -13,6 +13,11 @@ function pngSize(path) {
   return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
 }
 
+function pngHasAlpha(path) {
+  const png = readFileSync(new URL(path, import.meta.url));
+  return [4, 6].includes(png[25]);
+}
+
 test("le logo account est réservé à l'accueil initial et à la création de compte", () => {
   assert.match(signUp, /src="\/branding\/balloon-companion-logo-account\.png"/);
   assert.match(cockpit, /if \(choicePending\)[\s\S]*src="\/branding\/balloon-companion-logo-account\.png"[\s\S]*<h1>Bienvenue<\/h1>/);
@@ -42,6 +47,9 @@ test("la PWA, Apple Touch Icon et le favicon utilisent la nouvelle identité", (
   assert.deepEqual(pngSize("../../public/branding/balloon-companion-icon-pwa-512.png"), { width: 512, height: 512 });
   assert.deepEqual(pngSize("../../app/apple-icon.png"), { width: 180, height: 180 });
   assert.deepEqual(pngSize("../../app/icon.png"), { width: 32, height: 32 });
+  assert.equal(pngHasAlpha("../../app/apple-icon.png"), false);
+  assert.equal(pngHasAlpha("../../public/branding/balloon-companion-icon-pwa-192.png"), false);
+  assert.equal(pngHasAlpha("../../public/branding/balloon-companion-icon-pwa-512.png"), false);
   assert.match(manifest, /balloon-companion-icon-pwa-192\.png[\s\S]*sizes: "192x192"[\s\S]*purpose: "any"/);
   assert.match(manifest, /balloon-companion-icon-pwa-512\.png[\s\S]*sizes: "512x512"[\s\S]*purpose: "any"/);
   assert.doesNotMatch(`${manifest}\n${layout}`, /balloon-companion-logo-(?:account|cockpit)\.png/);
