@@ -11,10 +11,11 @@ import JournalFlightTitle from "./JournalFlightTitle";
 import { buildFactualFlightLabel } from "../../lib/journalFlightTitle";
 import { exportBcFlight } from "../../lib/bcFlightExport";
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage";
-
-const measured = (value: number | null, unit: string) => value === null ? "—" : `${Math.round(value)} ${unit}`;
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
+import { formatFlightAltitude, formatFlightDistance, formatFlightSpeed } from "../../lib/unitPreferences";
 
 export default function JournalFlightDetail({ flightId, initialFlight }: { flightId: string; initialFlight: JournalFlight | null }) {
+  const units = useUnitPreferences();
   const state = useFlightCompletionState();
   const flight = state.journalFlights.find(({ id }) => id === flightId) ?? initialFlight;
   if (!flight) return <main className={styles.screen}><div className={styles.layout}><Link href="/journal" className={styles.backLink}>← Journal</Link><p>Vol introuvable sur cet appareil.</p></div><NavigationBar activeItem="Journal" /></main>;
@@ -38,12 +39,12 @@ export default function JournalFlightDetail({ flightId, initialFlight }: { fligh
   };
   return <main className={styles.screen}><div className={styles.layout}>
     <Link href="/journal" className={styles.backLink}>← Journal</Link>
-    <header className={styles.detailHeader}><JournalFlightTitle flightId={flight.id} automaticName={routeName} secondaryName={factualName} availableFlightIds={ids} className={styles.routeTitle} secondaryClassName={styles.automaticRouteTitle} /><p className={styles.dateLine}>{flight.date} · Décollage {flight.takeoffTime}</p><div className={styles.primaryMetrics}><p><span>Durée</span><strong>{flight.durationMinutes} min</strong></p><p><span>Distance</span><strong>{flight.distanceKm.toFixed(1)} km</strong></p></div></header>
+    <header className={styles.detailHeader}><JournalFlightTitle flightId={flight.id} automaticName={routeName} secondaryName={factualName} availableFlightIds={ids} className={styles.routeTitle} secondaryClassName={styles.automaticRouteTitle} /><p className={styles.dateLine}>{flight.date} · Décollage {flight.takeoffTime}</p><div className={styles.primaryMetrics}><p><span>Durée</span><strong>{flight.durationMinutes} min</strong></p><p><span>Distance</span><strong>{formatFlightDistance(flight.distanceKm, units.flightInstruments.distanceUnit)}</strong></p></div></header>
     <JournalFlightMap flight={flight} />
     {completionFlight && <section className={styles.logbookLinkCard}><div><span>Carnet d’ascensions</span><strong>{completionFlight.logbookStatus === "CARNET_VALIDATED" ? "Carnet validé" : completionFlight.logbookStatus === "JOURNAL_ONLY" ? "Journal uniquement" : "À valider"}</strong></div>{completionFlight.logbookStatus === "CARNET_VALIDATED" && linkedAscension ? <div><Link href={`/journal/ascension/${encodeURIComponent(linkedAscension.id)}`}>Voir l’ascension</Link><Link href={`/flight/complete/ascension?flightId=${encodeURIComponent(flight.id)}`}>Modifier l’ascension</Link></div> : <Link href={`/flight/complete/ascension?flightId=${encodeURIComponent(flight.id)}`}>Ajouter au carnet</Link>}</section>}
     <section className={styles.moduleGrid} aria-label="Informations du vol">
       <Link href={`/journal/${flight.id}/graphs`} className={`${styles.moduleCard} ${styles.moduleLink}`}><h2 className={styles.moduleTitle}><BarChart3 size={16} /> Graphiques</h2><p className={styles.moduleValue}>Altitude · Vitesse</p><p className={styles.moduleAction}><span>Voir les graphiques</span><ChevronRight size={15} /></p></Link>
-      <Link href={`/journal/${flight.id}/statistics`} className={`${styles.moduleCard} ${styles.moduleLink}`}><h2 className={styles.moduleTitle}><Gauge size={16} /> Statistiques</h2><div className={styles.statGrid}><p><span>Départ</span><strong>{flight.takeoffTime}</strong></p><p><span>Arrivée</span><strong>{flight.landingTime}</strong></p><p><span>Altitude max</span><strong>{measured(flight.maxAltitudeM, "m")}</strong></p><p><span>Vitesse max</span><strong>{measured(flight.maxSpeedKmh, "km/h")}</strong></p></div><p className={styles.moduleAction}><span>Voir toutes les statistiques</span><ChevronRight size={15} /></p></Link>
+      <Link href={`/journal/${flight.id}/statistics`} className={`${styles.moduleCard} ${styles.moduleLink}`}><h2 className={styles.moduleTitle}><Gauge size={16} /> Statistiques</h2><div className={styles.statGrid}><p><span>Départ</span><strong>{flight.takeoffTime}</strong></p><p><span>Arrivée</span><strong>{flight.landingTime}</strong></p><p><span>Altitude max</span><strong>{flight.maxAltitudeM === null ? "—" : formatFlightAltitude(flight.maxAltitudeM, units.flightInstruments.altitudeUnit)}</strong></p><p><span>Vitesse max</span><strong>{flight.maxSpeedKmh === null ? "—" : formatFlightSpeed(flight.maxSpeedKmh, units.flightInstruments.speedUnit)}</strong></p></div><p className={styles.moduleAction}><span>Voir toutes les statistiques</span><ChevronRight size={15} /></p></Link>
       <article className={styles.moduleCard}><h2 className={styles.moduleTitle}><NotebookPen size={16} /> Notes</h2><p className={styles.moduleValue}>{flight.notes ?? "Aucune note"}</p></article>
       <article className={`${styles.moduleCard} ${styles.moduleLink}`} role="button" tabIndex={0} onClick={() => void handleExportTileClick()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") void handleExportTileClick(); }}><h2 className={styles.moduleTitle}><FileDown size={16} /> Export</h2><p className={styles.moduleValue}>Balloon Companion</p><p className={styles.moduleHint}>.bcflight</p></article>
     </section>

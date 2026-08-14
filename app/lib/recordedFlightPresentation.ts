@@ -1,4 +1,5 @@
 import type { RecordedFlight } from "./recordedFlight.ts";
+import { DEFAULT_UNIT_PREFERENCES, formatFlightAltitude, formatFlightDistance, formatFlightSpeed, type UnitPreferences } from "./unitPreferences.ts";
 
 export interface RecordedFlightPresentation {
   date: string;
@@ -31,17 +32,18 @@ function formatDuration(seconds: number): string {
 export function getRecordedFlightPresentation(
   flight: RecordedFlight,
   locale = "fr-FR",
+  units: UnitPreferences["flightInstruments"] = DEFAULT_UNIT_PREFERENCES.flightInstruments,
 ): RecordedFlightPresentation {
   const start = new Date(flight.startedAt);
   const end = flight.endedAt === null ? null : new Date(flight.endedAt);
   const altitude = (value: number | null) =>
     value === null || !Number.isFinite(value)
       ? "—"
-      : `${Math.round(value)} m`;
+      : formatFlightAltitude(value, units.altitudeUnit);
   const speed = (value: number | null) =>
     value === null || !Number.isFinite(value)
       ? "—"
-      : `${(value * 3.6).toFixed(1)} km/h`;
+      : formatFlightSpeed(value * 3.6, units.speedUnit, 1);
 
   return {
     date: start.toLocaleDateString(locale),
@@ -55,7 +57,7 @@ export function getRecordedFlightPresentation(
         minute: "2-digit",
       }) ?? "—",
     duration: formatDuration(flight.summary.durationSeconds),
-    distance: `${(flight.summary.distanceMeters / 1000).toFixed(2)} km`,
+    distance: formatFlightDistance(flight.summary.distanceMeters / 1000, units.distanceUnit, 2),
     minAltitude: altitude(flight.summary.minAltitudeMeters),
     maxAltitude: altitude(flight.summary.maxAltitudeMeters),
     averageGroundSpeed: speed(

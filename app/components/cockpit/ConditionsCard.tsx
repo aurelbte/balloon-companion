@@ -4,6 +4,8 @@ import { Moon, Navigation, Star, Sunrise } from "lucide-react";
 import Link from "next/link";
 import { Card } from "../../design-system";
 import { useWeatherPreferences } from "../../contexts/WeatherPreferencesContext";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
+import { formatWeatherTemperature } from "../../lib/unitPreferences";
 import { WeatherIcon } from "../../weather/presentation";
 import { relativeUpdateLabel } from "../../lib/weather/weatherSelection";
 import { windArrowRotationDegrees } from "../../weather/windArrow";
@@ -12,6 +14,7 @@ import { cockpitWindDirection, cockpitWindSpeed } from "./weatherCardPresentatio
 
 export default function ConditionsCard({ href }: { href: string }) {
   const preferences = useWeatherPreferences();
+  const units = useUnitPreferences();
   const point = preferences.selectedPoint;
   return (
     <Link className={styles.cardLink} href={href} aria-label="Ouvrir la météo">
@@ -28,9 +31,9 @@ export default function ConditionsCard({ href }: { href: string }) {
           <div><span>Lieu favori <Star size={11} fill="currentColor" aria-hidden="true" /></span><strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}</strong><small>{preferences.modelName || "Aucun modèle"}</small></div>
         </div>
         <div className={styles.cockpitWeatherMetrics}>
-          <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" style={{ transform: `rotate(${windArrowRotationDegrees(point?.windDirectionDeg)}deg)` }} /><strong>{cockpitWindDirection(point?.windDirectionDeg)}</strong><b>{cockpitWindSpeed(point?.windSpeedKmh)}</b></div>
-          <div><span>Rafales</span><strong>{cockpitWindSpeed(point?.windGustKmh)}</strong></div>
-          <div><span>Température</span><strong>{point?.temperatureC === undefined ? "—" : `${point.temperatureC}°C`}</strong></div>
+          <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" style={{ transform: `rotate(${windArrowRotationDegrees(point?.windDirectionDeg)}deg)` }} /><strong>{cockpitWindDirection(point?.windDirectionDeg)}</strong><b>{cockpitWindSpeed(point?.windSpeedKmh, units.weather.windSpeedUnit)}</b></div>
+          <div><span>Rafales</span><strong>{cockpitWindSpeed(point?.windGustKmh, units.weather.windSpeedUnit)}</strong></div>
+          <div><span>Température</span><strong>{point?.temperatureC === undefined ? "—" : formatWeatherTemperature(point.temperatureC, units.weather.temperatureUnit)}</strong></div>
         </div>
         <div className={styles.weatherFooter}><span className={styles.cardAction}>Voir le détail météo →</span>{point && <small>{relativeUpdateLabel(point.sourceUpdatedAt)}</small>}</div>
       </Card>

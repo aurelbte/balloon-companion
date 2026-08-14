@@ -3,6 +3,8 @@
 import { formatDuration, normalizeHeading } from "../../lib/geo";
 import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
 import type { FlightSession } from "../../lib/flightCore";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
+import { kilometresToNauticalMiles, kmhToKnots, metresToFeet } from "../../lib/unitPreferences";
 
 interface FlightInstrumentsProps {
   session: FlightSession;
@@ -16,6 +18,7 @@ export default function FlightInstruments({
   highContrast = false,
   withNavigation = false,
 }: FlightInstrumentsProps) {
+  const units = useUnitPreferences();
   const metrics = session.statistics.metrics;
   const phase = session.phase;
   const formatAltitudeValue = (altitude: number | null) => {
@@ -23,7 +26,7 @@ export default function FlightInstruments({
       return "—";
     }
 
-    return Math.round(altitude).toString();
+    return Math.round(units.flightInstruments.altitudeUnit === "ft" ? metresToFeet(altitude) : altitude).toString();
   };
 
   const bottomOffset = withNavigation
@@ -72,15 +75,15 @@ export default function FlightInstruments({
     {
       label: "SOL",
       value: formatNumber(
-        metrics.groundSpeed === null ? null : metrics.groundSpeed * 3.6,
+        metrics.groundSpeed === null ? null : units.flightInstruments.speedUnit === "kt" ? kmhToKnots(metrics.groundSpeed * 3.6) : metrics.groundSpeed * 3.6,
       ),
-      unit: "km/h",
+      unit: units.flightInstruments.speedUnit,
       priority: "speed",
     },
     {
       label: "DIST.",
-      value: formatNumber(metrics.distanceKm, 1),
-      unit: "km",
+      value: formatNumber(metrics.distanceKm === null ? null : units.flightInstruments.distanceUnit === "NM" ? kilometresToNauticalMiles(metrics.distanceKm) : metrics.distanceKm, 1),
+      unit: units.flightInstruments.distanceUnit,
       priority: "distance",
     },
     {
@@ -272,12 +275,12 @@ export default function FlightInstruments({
           <span className="flight-altimeter__value">
             {formatAltitudeValue(metrics.altitude)}
           </span>
-          <span className="flight-altimeter__unit">m</span>
+          <span className="flight-altimeter__unit">{units.flightInstruments.altitudeUnit}</span>
         </div>
         <div className="flight-altimeter__context">
           <div>
             <div className="flight-altimeter__label">GND</div>
-            <div className="flight-altimeter__secondary">— m</div>
+            <div className="flight-altimeter__secondary">— {units.flightInstruments.altitudeUnit}</div>
           </div>
           <div>
             <div className="flight-altimeter__label">QNH</div>

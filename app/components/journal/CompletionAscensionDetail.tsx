@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { formatOfficialDuration } from "../../lib/ascensionMockData";
 import styles from "../../journal/Journal.module.css";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
+import { formatFlightAltitude } from "../../lib/unitPreferences";
 
 export default function CompletionAscensionDetail({ ascensionId }: { ascensionId: string }) {
+  const units = useUnitPreferences();
   const state = useFlightCompletionState();
   const ascension = state.officialAscensions.find(
     ({ id }) => id === ascensionId,
@@ -24,7 +27,7 @@ export default function CompletionAscensionDetail({ ascensionId }: { ascensionId
     ["Lieu d’atterrissage", ascension.arrival],
     ["Fonction", ascension.pilotFunction],
     ["Vol de nuit", ascension.nightFlight ? "Oui" : "Non"],
-    ["Altitude atteinte", ascension.maximumAltitudeM === null ? "—" : `${ascension.maximumAltitudeM.toLocaleString("fr-FR")} m`],
+    ["Altitude atteinte", ascension.maximumAltitudeM === null ? "—" : formatFlightAltitude(ascension.maximumAltitudeM, units.flightInstruments.altitudeUnit)],
     ["Temps officiel", formatOfficialDuration(ascension.officialDurationMinutes)],
     ["Origine", "GPS · Balloon Companion"],
   ] as const;

@@ -1,12 +1,14 @@
 import type { RecordedFlight } from "../../lib/recordedFlight";
 import { getRecordedFlightPresentation } from "../../lib/recordedFlightPresentation";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 
 export default function RecordedFlightSummaryCard({
   flight,
 }: {
   flight: RecordedFlight;
 }) {
-  const presentation = getRecordedFlightPresentation(flight);
+  const units = useUnitPreferences();
+  const presentation = getRecordedFlightPresentation(flight, "fr-FR", units.flightInstruments);
   const rows = [
     ["Date", presentation.date],
     ["Départ", presentation.startTime],

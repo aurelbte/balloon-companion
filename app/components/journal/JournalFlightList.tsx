@@ -23,6 +23,8 @@ import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal, 
 import { journalFlightsForMode } from "../../lib/realFlightJournal";
 import { buildFactualFlightLabel, getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
 import { useJournalCardSwipe } from "../../hooks/useJournalCardSwipe";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
+import { formatFlightDistance, kilometresToNauticalMiles } from "../../lib/unitPreferences";
 
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
 type DurationFilter = "all" | "under-45" | "45-to-60" | "over-60";
@@ -33,11 +35,6 @@ const EMPTY_STATE: JournalDemoState = {
   deletedFlightIds: [],
   customNames: {},
 };
-
-const DISTANCE_FORMATTER = new Intl.NumberFormat("fr-FR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
 
 function normalizeSearch(value: string): string {
   return value
@@ -158,6 +155,7 @@ function InteractiveFlightCard({
   onDelete,
 }: InteractiveFlightCardProps) {
   const router = useRouter();
+  const units = useUnitPreferences();
   const {
     contentRef,
     onPointerDown,
@@ -201,7 +199,7 @@ function InteractiveFlightCard({
           <p className={styles.flightTakeoffTime}>{customized ? buildFactualFlightLabel(flight) : `Décollage ${flight.takeoffTime}`}</p>
           <div className={styles.flightMetrics}>
             <span>{flight.durationMinutes} min</span>
-            <span>{DISTANCE_FORMATTER.format(flight.distanceKm)} km</span>
+            <span>{formatFlightDistance(flight.distanceKm, units.flightInstruments.distanceUnit)}</span>
             {"logbookStatus" in flight && <span className={styles.pendingLogbook}>{flight.logbookStatus === "CARNET_VALIDATED" ? "CARNET ✓" : flight.logbookStatus === "JOURNAL_ONLY" ? "JOURNAL" : "À VALIDER"}</span>}
           </div>
           </div>
@@ -226,6 +224,7 @@ function InteractiveFlightCard({
 }
 
 export default function JournalFlightList() {
+  const units = useUnitPreferences();
   const completionState = useFlightCompletionState();
   const [demoState, setDemoState] = useState<JournalDemoState>(EMPTY_STATE);
   const [storageReady, setStorageReady] = useState(false);
@@ -393,7 +392,7 @@ export default function JournalFlightList() {
       <div className={styles.journalSummary} aria-live="polite">
         <p><strong>{visibleFlights.length}</strong><span>vol{visibleFlights.length > 1 ? "s" : ""}</span></p>
         <p><strong>{Math.round(summary.minutes / 60)}</strong><span>h</span></p>
-        <p><strong>{Math.round(summary.distanceKm)}</strong><span>km</span></p>
+        <p><strong>{Math.round(units.flightInstruments.distanceUnit === "NM" ? kilometresToNauticalMiles(summary.distanceKm) : summary.distanceKm)}</strong><span>{units.flightInstruments.distanceUnit}</span></p>
       </div>
 
       {filtersOpen && (

@@ -70,12 +70,15 @@ import { WEATHER_MODEL_REGISTRY } from "../lib/weather/models";
 import type { BaseMap } from "../types/flight";
 import { createTrajectoryAnalysisKey, MAX_ANALYSIS_ALTITUDES, MAX_ANALYSIS_MODELS, toggleLimitedSelection } from "../lib/trajectory/analysisState";
 import { metersPerSecondToMetersPerMinute } from "../lib/preparationInputs";
+import { useUnitPreferences } from "../contexts/UnitPreferencesContext";
+import { formatWeatherTemperature } from "../lib/unitPreferences";
 
 const ANALYSIS_ALTITUDE_OPTIONS = ALTITUDE_OPTIONS;
 const REQUIRED_ANALYSIS_LAYERS: AnalysisLayerSettings = newAnalysisLayerSettings();
 
 export default function MapPage() {
   const router = useRouter();
+  const units = useUnitPreferences();
   const [ready, setReady] = useState(false);
   const [config, setConfig] = useState<StoredTrajectoryAnalysisRequest | null>(
     null,
@@ -729,7 +732,7 @@ export default function MapPage() {
                   selected={selected}
                   onClick={() => toggleAltitude(altitude)}
                   disabled={!selected && selectedAltitudes.length >= MAX_ANALYSIS_ALTITUDES}
-                  className="!min-h-[22px] w-[38px] !px-0.5 !py-0 text-[9px] font-bold"
+                  className="!min-h-[22px] w-[52px] !px-0.5 !py-0 text-[9px] font-bold"
                   style={{
                     borderColor: selected
                       ? color
@@ -737,7 +740,7 @@ export default function MapPage() {
                     color: selected ? color : "rgb(255 255 255 / 78%)",
                   }}
                 >
-                  {altitude === "ground" ? "Sol" : altitude}
+                  {altitude === "ground" ? "Sol" : `${altitude} m`}
                 </Chip>
               );
             })}
@@ -887,7 +890,7 @@ export default function MapPage() {
                   <div><dt className="inline">pilote + passagers : </dt><dd className="inline">{loadInput.occupantsWeightKg === undefined ? "—" : `${loadInput.occupantsWeightKg} kg`}</dd></div>
                   <div><dt className="inline">altitude terrain : </dt><dd className="inline">{loadInput.launchElevationMslM === undefined ? "—" : `${loadInput.launchElevationMslM} m AMSL`}</dd></div>
                   <div><dt className="inline">altitude maximale : </dt><dd className="inline">{loadInput.plannedMaximumAltitudeMslM === undefined ? "—" : `${loadInput.plannedMaximumAltitudeMslM} m AMSL`}</dd></div>
-                  <div><dt className="inline">température : </dt><dd className="inline">{loadInput.groundTemperature === undefined ? "—" : `${loadInput.groundTemperature.temperatureC} °C`}</dd></div>
+                  <div><dt className="inline">température : </dt><dd className="inline">{loadInput.groundTemperature === undefined ? "—" : formatWeatherTemperature(loadInput.groundTemperature.temperatureC, units.weather.temperatureUnit)}</dd></div>
                   <div><dt className="inline">mode DEMO : </dt><dd className="inline">{testLoadEnabled ? "ON" : "OFF"}</dd></div>
                 </dl>
               )}
@@ -982,7 +985,7 @@ export default function MapPage() {
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse réelle</dt><dd>{Math.floor(candidateLoadResult.actualTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude terrain</dt><dd>{Math.round(candidateLoadResult.launchElevationMslM)} m AMSL</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude maximale prévue</dt><dd>{Math.round(candidateLoadResult.maximumAltitudeMslM)} m AMSL</dd></div>
-                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température au sol</dt><dd>{candidateLoadResult.groundTemperatureC.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} °C</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température au sol</dt><dd>{formatWeatherTemperature(candidateLoadResult.groundTemperatureC, units.weather.temperatureUnit, 1)}</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Capacité maximale Pilote + passagers</dt><dd>{Math.floor(candidateLoadResult.availableOccupantsCapacityKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse totale autorisée</dt><dd>{Math.floor(candidateLoadResult.permittedTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">MTOM applicable</dt><dd>{loadInput.applicableMtowKg} kg</dd></div>
@@ -1008,7 +1011,7 @@ export default function MapPage() {
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse réelle</dt><dd>{Math.round(loadResult.actualTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude terrain</dt><dd>{Math.round(loadResult.launchElevationMslM)} m AMSL</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Altitude maximale prévue</dt><dd>{Math.round(loadInput.plannedMaximumAltitudeMslM!)} m AMSL</dd></div>
-                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température utilisée</dt><dd>{Math.round(loadResult.groundTemperatureC)} °C</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température utilisée</dt><dd>{formatWeatherTemperature(loadResult.groundTemperatureC, units.weather.temperatureUnit)}</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse autorisée de démonstration</dt><dd>{Math.floor(loadResult.permittedTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Marge de démonstration</dt><dd style={{ color: marginColor }}>{displayedMargin! >= 0 ? "+" : "−"}{Math.abs(displayedMargin!)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Prévision</dt><dd>{new Date(groundTemperature.validTime).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</dd></div>

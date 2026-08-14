@@ -5,6 +5,8 @@ import { Route } from "lucide-react";
 import { FloatingAction, FloatingPanel } from "../../design-system";
 import { MODEL_LINE_STYLES } from "../../lib/trajectory/analysisStyles";
 import type { ExportedPlannedTrajectory } from "../../lib/trajectory/weatherAnalysisStorage";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
+import { formatFlightAltitude } from "../../lib/unitPreferences";
 
 interface PlannedTrajectoriesInfoProps {
   trajectories: readonly ExportedPlannedTrajectory[];
@@ -13,6 +15,7 @@ interface PlannedTrajectoriesInfoProps {
 export default function PlannedTrajectoriesInfo({
   trajectories,
 }: PlannedTrajectoriesInfoProps) {
+  const units = useUnitPreferences();
   const [open, setOpen] = useState(false);
   const models = useMemo(
     () =>
@@ -83,7 +86,7 @@ export default function PlannedTrajectoriesInfo({
                 className="text-[10px] font-bold"
               >
                 <span style={{ color: altitude.color }}>●</span>{" "}
-                {altitude.altitudeLabel}
+                {altitude.altitudeKey === "ground" ? "Sol" : formatFlightAltitude(altitude.altitudeAmslM, units.flightInstruments.altitudeUnit)}
               </span>
             ))}
           </div>

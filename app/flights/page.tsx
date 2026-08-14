@@ -7,8 +7,10 @@ import { getRecordedFlightPresentation } from "../lib/recordedFlightPresentation
 import { IndexedDbRecordedFlightStorage } from "../lib/recordedFlightStorage";
 import NavigationBar from "../components/NavigationBar";
 import { getFlightReplayPath } from "../lib/recordedFlightPresentation";
+import { useUnitPreferences } from "../contexts/UnitPreferencesContext";
 
 export default function FlightsPage() {
+  const units = useUnitPreferences();
   const [flights, setFlights] = useState<RecordedFlight[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -60,7 +62,7 @@ export default function FlightsPage() {
         ) : (
           <div style={{ display: "grid", gap: "12px" }}>
             {flights.map((flight) => {
-              const presentation = getRecordedFlightPresentation(flight);
+              const presentation = getRecordedFlightPresentation(flight, "fr-FR", units.flightInstruments);
               return (
                 <Link
                   key={flight.id}

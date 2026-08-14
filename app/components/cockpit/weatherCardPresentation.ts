@@ -6,6 +6,7 @@ export function cockpitWindDirection(degrees: number | undefined): string {
   return `${WIND_DIRECTIONS[Math.round(normalized / 22.5) % 16]} · ${degrees}°`;
 }
 
-export function cockpitWindSpeed(speedKmh: number | undefined): string {
-  return speedKmh === undefined || !Number.isFinite(speedKmh) ? "—" : `${Math.round(speedKmh)} km/h`;
+export function cockpitWindSpeed(speedKmh: number | undefined, unit: WeatherWindSpeedUnit = "km/h"): string {
+  return speedKmh === undefined || !Number.isFinite(speedKmh) ? "—" : formatWeatherWind(speedKmh, unit);
 }
+import { formatWeatherWind, type WeatherWindSpeedUnit } from "../../lib/unitPreferences.ts";
