@@ -31,26 +31,25 @@
 .header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  height: clamp(56px, 15.1vw, 69px);
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .cockpitLogo {
   display: block;
-  width: clamp(125px, 34vw, 155px);
+  width: clamp(150px, 40vw, 180px);
   height: auto;
   object-fit: contain;
 }
 
 .welcome {
   min-width: 0;
-  overflow: hidden;
-  font-size: clamp(1rem, 4.5vw, 1.55rem);
+  font-size: clamp(1rem, 3.8vw, 1.35rem);
   font-weight: var(--bc-font-weight-bold);
   letter-spacing: -0.035em;
   line-height: 1.1;
   text-align: right;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

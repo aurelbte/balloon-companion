@@ -25,5 +25,7 @@ test("le logo Cockpit est réservé au header Cockpit", () => {
   assert.equal(cockpit.match(/balloon-companion-logo-cockpit\.png/g)?.length, 1);
   assert.doesNotMatch(signUp, /balloon-companion-logo-cockpit\.png/);
   assert.doesNotMatch(manifest, /balloon-companion-logo-cockpit\.png/);
-  assert.match(cockpitStyles, /\.cockpitLogo \{[^}]*width: clamp\(125px, 34vw, 155px\);[^}]*height: auto;[^}]*object-fit: contain;/s);
+  assert.match(cockpitStyles, /\.cockpitLogo \{[^}]*width: clamp\(150px, 40vw, 180px\);[^}]*height: auto;[^}]*object-fit: contain;/s);
+  assert.match(cockpitStyles, /\.header \{[^}]*height: clamp\(56px, 15\.1vw, 69px\);[^}]*align-items: center;/s);
+  assert.doesNotMatch(cockpitStyles.match(/\.welcome \{[^}]*\}/s)?.[0] ?? "", /text-overflow: ellipsis/);
 });
