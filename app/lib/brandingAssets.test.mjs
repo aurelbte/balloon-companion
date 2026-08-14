@@ -6,6 +6,7 @@ import test from "node:test";
 const digest = (path) => createHash("sha256").update(readFileSync(new URL(path, import.meta.url))).digest("hex");
 const cockpit = readFileSync(new URL("../page.tsx", import.meta.url), "utf8");
 const manifest = readFileSync(new URL("../manifest.ts", import.meta.url), "utf8");
+const cockpitStyles = readFileSync(new URL("../components/cockpit/Cockpit.module.css", import.meta.url), "utf8");
 
 test("le Cockpit et le premier lancement utilisent les logos officiels", () => {
   assert.match(cockpit, /balloon-companion-logo-marine-fond-bleu\.png/);
@@ -18,4 +19,10 @@ test("la PWA et les metadata utilisent les assets officiels sans altération", (
   assert.doesNotMatch(manifest, /purpose: "maskable"/);
   assert.equal(digest("../../app/apple-icon.png"), digest("../../public/branding/balloon-companion-icone-app.png"));
   assert.equal(digest("../../app/icon.png"), digest("../../public/branding/balloon-companion-symbole-bc-seul.png"));
+});
+
+test("les logos restent proportionnels, sans conteneur visuel ajouté", () => {
+  assert.match(cockpitStyles, /\.logo \{[^}]*height: auto;[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/s);
+  assert.match(cockpitStyles, /\.welcomeLogo \{[^}]*height: auto;[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/s);
+  assert.match(cockpitStyles, /env\(safe-area-inset-top\)/);
 });
