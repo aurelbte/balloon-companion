@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import sharp from "sharp";
 
 const cockpit = readFileSync(new URL("../page.tsx", import.meta.url), "utf8");
 const cockpitStyles = readFileSync(new URL("../components/cockpit/Cockpit.module.css", import.meta.url), "utf8");
@@ -41,7 +42,7 @@ test("le logo Cockpit est réservé au header Cockpit", () => {
   assert.doesNotMatch(cockpitStyles.match(/\.welcome \{[^}]*\}/s)?.[0] ?? "", /text-overflow: ellipsis/);
 });
 
-test("la PWA, Apple Touch Icon et le favicon utilisent la nouvelle identité", () => {
+test("la PWA, Apple Touch Icon et le favicon utilisent la nouvelle identité", async () => {
   assert.deepEqual(pngSize("../../public/branding/balloon-companion-icon-pwa.png"), { width: 1024, height: 1024 });
   assert.deepEqual(pngSize("../../public/branding/balloon-companion-icon-pwa-192.png"), { width: 192, height: 192 });
   assert.deepEqual(pngSize("../../public/branding/balloon-companion-icon-pwa-512.png"), { width: 512, height: 512 });
@@ -54,4 +55,12 @@ test("la PWA, Apple Touch Icon et le favicon utilisent la nouvelle identité", (
   assert.match(manifest, /balloon-companion-icon-pwa-512\.png[\s\S]*sizes: "512x512"[\s\S]*purpose: "any"/);
   assert.doesNotMatch(`${manifest}\n${layout}`, /balloon-companion-logo-(?:account|cockpit)\.png/);
   assert.doesNotMatch(manifest, /purpose: "maskable"/);
+  for (const path of ["app/apple-icon.png", "public/branding/balloon-companion-icon-pwa-192.png", "public/branding/balloon-companion-icon-pwa-512.png"]) {
+    const { data, info } = await sharp(readFileSync(new URL(`../../${path}`, import.meta.url))).raw().toBuffer({ resolveWithObject: true });
+    assert.equal(info.channels, 3);
+    const pixel = (x, y) => [...data.subarray((y * info.width + x) * info.channels, (y * info.width + x + 1) * info.channels)];
+    for (const edgePixel of [pixel(info.width >> 1, 0), pixel(info.width - 1, info.height >> 1), pixel(info.width >> 1, info.height - 1), pixel(0, info.height >> 1)]) {
+      assert.notDeepEqual(edgePixel, [7, 17, 31]);
+    }
+  }
 });
