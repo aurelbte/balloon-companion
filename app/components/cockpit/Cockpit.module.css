@@ -21,7 +21,6 @@
 
 .welcomeScreen { display: grid; min-height: 100dvh; padding: max(28px, env(safe-area-inset-top)) 22px max(28px, env(safe-area-inset-bottom)); background: var(--bc-color-canvas); color: var(--bc-color-text); place-items: center; }
 .welcomePanel { display: grid; width: min(100%, 430px); justify-items: center; text-align: center; }
-.welcomeLogo { display: block; width: min(88%, 316px); height: auto; margin-bottom: 18px; border: 0; background: transparent; box-shadow: none; }
 .welcomePanel h1 { font-size: clamp(2rem, 10vw, 3rem); font-weight: 600; letter-spacing: -.05em; line-height: 1.02; }
 .welcomeActions { display: grid; width: 100%; gap: 9px; margin-top: 26px; }
 .welcomeActions a, .welcomeActions button { display: flex; min-height: 52px; align-items: center; justify-content: center; padding: 0 16px; border: 1px solid var(--bc-color-border-strong); border-radius: var(--bc-radius-round); background: var(--bc-color-surface); color: var(--bc-color-text); font-size: .84rem; font-weight: 700; text-decoration: none; }
@@ -29,19 +28,7 @@
 .welcomeActions button { min-height: 44px; border: 0; background: transparent; color: var(--bc-color-text-secondary); font-size: .76rem; }
 
 .header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: end;
-  gap: 12px;
-}
-
-.logo {
   display: block;
-  width: clamp(132px, 36vw, 158px);
-  height: auto;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
 }
 
 .welcome {
@@ -50,11 +37,10 @@
   font-weight: var(--bc-font-weight-bold);
   letter-spacing: -0.035em;
   line-height: 1.1;
-  text-align: right;
+  text-align: left;
 }
 
 @media (max-width: 360px) {
-  .logo { width: 124px; }
   .welcome { font-size: 1.25rem; }
 }
 

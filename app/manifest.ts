@@ -9,13 +9,5 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#020817",
     theme_color: "#020817",
-    icons: [
-      {
-        src: "/branding/balloon-companion-icone-app.png",
-        sizes: "256x256",
-        type: "image/png",
-        purpose: "any",
-      },
-    ],
   };
 }

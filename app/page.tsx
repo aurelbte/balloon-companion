@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { ClipboardCheck } from "lucide-react";
 import { useMemo } from "react";
@@ -18,9 +17,6 @@ import { usePilotProfile } from "./hooks/usePilotProfile";
 import { latestRealJournalFlight } from "./lib/realFlightJournal";
 import styles from "./components/cockpit/Cockpit.module.css";
 
-const cockpitLogo = "/branding/balloon-companion-logo-marine-fond-bleu.png";
-const welcomeLogo = "/branding/balloon-companion-logo-principal-horizontal.png";
-
 export default function CockpitPage() {
   const auth = useBalloonAuth();
   const completion = useFlightCompletionState();
@@ -32,7 +28,6 @@ export default function CockpitPage() {
   if (choicePending) {
     return <main className={styles.welcomeScreen}>
       <section className={styles.welcomePanel}>
-        <Image className={styles.welcomeLogo} src={welcomeLogo} alt="Balloon Companion — Le copilote numérique des pilotes de montgolfière" width={720} height={335} priority sizes="(max-width: 430px) calc(100vw - 44px), 340px" />
         <h1>Bienvenue</h1>
         <div className={styles.welcomeActions}>
           <Link href="/auth/sign-in">Se connecter</Link>
@@ -46,7 +41,7 @@ export default function CockpitPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.layout}>
-        <header className={styles.header}><Image className={styles.logo} src={cockpitLogo} alt="Balloon Companion" width={409} height={202} priority sizes="96px" /><h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1></header>
+        <header className={styles.header}><h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1></header>
         <CockpitHeroRing />
         <CockpitExperiencePrompt />
         <div className={styles.pair}><PilotStatusCard /><ConditionsCard href="/weather" /></div>
