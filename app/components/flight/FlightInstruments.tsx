@@ -270,7 +270,7 @@ export default function FlightInstruments({
         data-flight-phase={visualPhase}
         aria-label="Altitude actuelle"
       >
-        <div className="flight-altimeter__label">AMSL</div>
+        <div className="flight-altimeter__label">ALT GPS</div>
         <div className="flight-altimeter__primary">
           <span className="flight-altimeter__value">
             {formatAltitudeValue(metrics.altitude)}
@@ -279,8 +279,10 @@ export default function FlightInstruments({
         </div>
         <div className="flight-altimeter__context">
           <div>
-            <div className="flight-altimeter__label">GND</div>
-            <div className="flight-altimeter__secondary">— {units.flightInstruments.altitudeUnit}</div>
+            <div className="flight-altimeter__label">GND estimé</div>
+            <div className="flight-altimeter__secondary">
+              {formatAltitudeValue(session.altitude.groundMeters)} {units.flightInstruments.altitudeUnit}
+            </div>
           </div>
           <div>
             <div className="flight-altimeter__label">QNH</div>

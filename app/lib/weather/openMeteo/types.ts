@@ -93,6 +93,7 @@ export interface OpenMeteoClient {
     weatherModel: OpenMeteoWeatherModel;
   }>): Promise<unknown>;
   fetchElevation(latitude: number, longitude: number): Promise<unknown>;
+  fetchElevationBatch(points: Array<{ latitude: number; longitude: number }>): Promise<unknown>;
 }
 
 export const OPEN_METEO_ATTRIBUTION = {

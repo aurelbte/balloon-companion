@@ -29,6 +29,7 @@ import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { classifyGpsTraceQuality } from "../lib/gpsPointQuality";
 import { assignFlightSegmentIds } from "../lib/flightSegments";
 import type { FlightWeatherSnapshot } from "../lib/trajectory/weatherAnalysisStorage";
+import type { GroundCalibration } from "../lib/groundElevation";
 
 interface UseFlightTrackingOptions {
   isEnabled?: boolean;
@@ -55,6 +56,7 @@ interface UseFlightTrackingResult {
   ignoreInterruptedFlight: () => void;
   dismissCompletedFlight: () => void;
   addPoint: (point: GeoPoint) => void;
+  setGroundCalibration: (calibration: GroundCalibration) => void;
 }
 
 const EMPTY_METRICS: FlightMetrics = {
@@ -378,6 +380,15 @@ export function useFlightTracking(
     setMetrics(nextMetrics);
   }, []);
 
+  const setGroundCalibration = useCallback((calibration: GroundCalibration) => {
+    const flight = activeFlightRef.current;
+    if (!flight || statusRef.current !== "recording" || flight.groundCalibration) return;
+    const next = { ...flight, groundCalibration: calibration, updatedAt: Date.now() };
+    activeFlightRef.current = next;
+    setActiveFlight(next);
+    void queueActiveFlightPersistence(next);
+  }, [queueActiveFlightPersistence]);
+
   useEffect(() => {
     if (status !== "recording" || !activeFlightRef.current) return;
     const updateDuration = () => {
@@ -435,5 +446,6 @@ export function useFlightTracking(
     ignoreInterruptedFlight,
     dismissCompletedFlight,
     addPoint,
+    setGroundCalibration,
   };
 }

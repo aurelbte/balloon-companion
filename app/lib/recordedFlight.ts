@@ -6,6 +6,7 @@ import type {
 } from "../types/flight.ts";
 import { calculateFilteredHorizontalDistance } from "./filteredHorizontalDistance.ts";
 import type { FlightWeatherSnapshot } from "./trajectory/weatherAnalysisStorage.ts";
+import type { GroundCalibration } from "./groundElevation.ts";
 
 export const RECORDED_FLIGHT_SCHEMA_VERSION = 1;
 
@@ -120,6 +121,7 @@ export interface RecordedFlight {
   balloonRegistration?: string;
   weatherModel?: string;
   weatherSnapshot?: FlightWeatherSnapshot;
+  groundCalibration?: GroundCalibration;
   startLocationLabel?: string;
   endLocationLabel?: string;
   generatedTitle?: string;

@@ -187,6 +187,15 @@ export function createOpenMeteoClient(
       addApiKey(url);
       return fetchJson(fetchImpl, url);
     },
+
+    async fetchElevationBatch(points: Array<{ latitude: number; longitude: number }>) {
+      if (points.length === 0 || points.length > 100) throw new Error("INVALID_ELEVATION_BATCH");
+      const url = new URL(elevationUrl);
+      url.searchParams.set("latitude", points.map(({ latitude }) => latitude).join(","));
+      url.searchParams.set("longitude", points.map(({ longitude }) => longitude).join(","));
+      addApiKey(url);
+      return fetchJson(fetchImpl, url);
+    },
   };
 }
 

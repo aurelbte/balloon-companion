@@ -90,3 +90,25 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export async function POST(request: Request) {
+  let body: unknown;
+  try { body = await request.json(); } catch { return Response.json({ error: { code: "INVALID_COORDINATES", message: "Corps JSON invalide." } }, { status: 400 }); }
+  const points = body && typeof body === "object" && Array.isArray((body as { points?: unknown }).points) ? (body as { points: unknown[] }).points : [];
+  const validPoints = points.flatMap((point) => {
+    if (!point || typeof point !== "object") return [];
+    const { latitude, longitude } = point as { latitude?: unknown; longitude?: unknown };
+    const candidate = { latitude: Number(latitude), longitude: Number(longitude) };
+    return isValidCoordinate(candidate) ? [candidate] : [];
+  });
+  if (validPoints.length === 0 || validPoints.length !== points.length || validPoints.length > 100) return Response.json({ error: { code: "INVALID_COORDINATES", message: "1 à 100 coordonnées valides sont requises." } }, { status: 400 });
+  try {
+    const client = createOpenMeteoClient(getOpenMeteoServerConfig());
+    const payload = await client.fetchElevationBatch(validPoints) as { elevation?: unknown };
+    const elevations = Array.isArray(payload?.elevation) ? payload.elevation : [];
+    if (elevations.length !== validPoints.length) throw new TrajectoryDomainError("INVALID_PROVIDER_RESPONSE", "Réponse d’élévation groupée invalide.");
+    const data = validPoints.map((point, index) => ({ ...point, elevationAmslM: Number(elevations[index]) }));
+    if (data.some(({ elevationAmslM }) => !Number.isFinite(elevationAmslM))) throw new TrajectoryDomainError("INVALID_PROVIDER_RESPONSE", "Élévation groupée invalide.");
+    return Response.json({ data, provider: "Open-Meteo", attribution: OPEN_METEO_ATTRIBUTION.elevation });
+  } catch { return Response.json({ error: { code: "UPSTREAM_UNAVAILABLE", message: "Le service d’élévation est indisponible." } }, { status: 502 }); }
+}

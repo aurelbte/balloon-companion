@@ -9,7 +9,7 @@ const airspace = readFileSync(new URL("../components/flight/AirspaceDetails.tsx"
 const map = readFileSync(new URL("../components/flight/FlightMap.tsx", import.meta.url), "utf8");
 
 test("les instruments et commandes essentielles restent présents", () => {
-  for (const label of ["AMSL", "QNH", "CAP", "VARIO", "SOL", "DIST.", "VOL"]) assert.match(instruments, new RegExp(label.replace(".", "\\.")));
+  for (const label of ["ALT GPS", "GND estimé", "QNH", "CAP", "VARIO", "SOL", "DIST.", "VOL"]) assert.match(instruments, new RegExp(label.replace(".", "\\.")));
   for (const label of ["Suivre ma position", "Vue élargie", "Options de carte", "DÉMARRER", "ARRÊTER"]) assert.match(controls, new RegExp(label));
 });
 
