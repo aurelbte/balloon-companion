@@ -88,6 +88,7 @@ export default function MapPage() {
   const [traces, setTraces] = useState<WeatherAnalysisTrace[]>([]);
   const [, setFailures] = useState<WeatherAnalysisState["failures"]>([]);
   const [visibleTraceIds, setVisibleTraceIds] = useState<string[]>([]);
+  const [arrivalDetailsOpen, setArrivalDetailsOpen] = useState(false);
   const [exportIds, setExportIds] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
@@ -351,7 +352,7 @@ export default function MapPage() {
     position: null,
     isPositionStale: true,
     viewport,
-    explorationEnabled: layers.airspaces,
+    explorationEnabled: layers.airspaces || arrivalDetailsOpen,
   });
   const displayedTraces = useMemo(
     () =>
@@ -653,6 +654,7 @@ export default function MapPage() {
             onAirspacesSelected={selectAirspaces}
             onMapPress={handleMapPress}
             onViewportChange={setViewport}
+            onArrivalSelectionChange={setArrivalDetailsOpen}
           />
         {displayedTraces.length === 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-16 text-center text-sm font-semibold text-white/80">{loading ? "Calcul des trajectoires…" : selectedModels.length === 0 || selectedAltitudes.length === 0 ? "Sélectionnez un modèle et une altitude." : "Aucune trajectoire disponible"}</div>}
         {profileDebugEnabled && (

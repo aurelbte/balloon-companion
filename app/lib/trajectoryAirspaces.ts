@@ -5,6 +5,7 @@ import type {
   AirspaceGeometry,
 } from "./openaip.ts";
 import type { WeatherAnalysisTrace } from "./trajectory/weatherAnalysisStorage.ts";
+import { calculateAirspaceVerticalContext, normalizeOpenAipAltitudeLimit } from "./airspaceAltitude.ts";
 
 type Ring = Position[];
 type PolygonCoordinates = Ring[];
@@ -146,4 +147,36 @@ export function selectIntersectedAirspaces(
     }
   }
   return [...selected.values()];
+}
+
+export function selectTrajectoryAirspaces(
+  trace: WeatherAnalysisTrace,
+  airspaces: AirspaceFeatureCollection,
+): AirspaceGeoJsonProperties[] {
+  const matches: Array<{ index: number; airspace: AirspaceGeoJsonProperties }> = [];
+  for (const feature of airspaces.features) {
+    let firstIndex = -1;
+    for (let index = 1; index < trace.projection.points.length; index += 1) {
+      const previous = trace.projection.points[index - 1];
+      const current = trace.projection.points[index];
+      if (!lineIntersectsGeometry([[previous.longitude, previous.latitude], [current.longitude, current.latitude]], feature.geometry)) continue;
+      const altitude = (previous.altitudeAmslM + current.altitudeAmslM) / 2;
+      const vertical = calculateAirspaceVerticalContext(
+        normalizeOpenAipAltitudeLimit(feature.properties.lowerLimit),
+        normalizeOpenAipAltitudeLimit(feature.properties.upperLimit),
+        altitude,
+      );
+      if (vertical.state === "BELOW" || vertical.state === "ABOVE") continue;
+      firstIndex = index;
+      break;
+    }
+    if (firstIndex >= 0) matches.push({ index: firstIndex, airspace: feature.properties });
+  }
+  const unique = new Map<string, { index: number; airspace: AirspaceGeoJsonProperties }>();
+  for (const match of matches) {
+    const key = stableAirspaceKey(match.airspace);
+    const existing = unique.get(key);
+    if (!existing || match.index < existing.index) unique.set(key, match);
+  }
+  return [...unique.values()].sort((left, right) => left.index - right.index).map(({ airspace }) => airspace);
 }

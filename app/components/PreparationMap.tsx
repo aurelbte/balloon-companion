@@ -38,6 +38,8 @@ import type {
 import type { BaseMap } from "../types/flight";
 import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, countValidTrajectoryPoints, createTrajectoryFitKey, trajectoryContentKey, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
+import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
+import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -48,6 +50,7 @@ const TRACE_SOURCE = "analysis-trajectories";
 const TIME_SOURCE = "analysis-time-markers";
 const ARRIVAL_SOURCE = "analysis-arrivals";
 const START_SOURCE = "analysis-start";
+const LANDING_ZONE_SOURCE = "analysis-landing-zone";
 
 interface PreparationMapProps {
   traces: WeatherAnalysisTrace[];
@@ -62,6 +65,7 @@ interface PreparationMapProps {
   onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
   onMapPress?: () => void;
   onViewportChange?: (viewport: AirspaceCoverageViewport) => void;
+  onArrivalSelectionChange?: (selected: boolean) => void;
 }
 
 function airspaceLayerId(category: string, kind: "fill" | "outline") {
@@ -189,6 +193,13 @@ function startCollection(
   };
 }
 
+function landingZoneCollection(trace: WeatherAnalysisTrace | null): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  const end = trace?.projection.points.at(-1);
+  if (!end) return { type: "FeatureCollection", features: [] };
+  const perimeter = landingWeatherSamplePoints(end.latitude, end.longitude).slice(1).map((point) => [point.longitude, point.latitude]);
+  return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[...perimeter, perimeter[0]]] } }] };
+}
+
 export default function PreparationMap({
   traces,
   visibleTraceIds,
@@ -202,14 +213,17 @@ export default function PreparationMap({
   onAirspacesSelected,
   onMapPress,
   onViewportChange,
+  onArrivalSelectionChange,
 }: PreparationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const lastCompletedTrajectoryFitKey = useRef("");
   const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
   const mapPressRef = useRef(onMapPress);
+  const arrivalSelectionRef = useRef(onArrivalSelectionChange);
   const airspacesRef = useRef(airspaces);
   const showAirspacesRef = useRef(layers.airspaces);
   const indexRef = useRef(createAirspaceSelectionIndex(airspaces));
@@ -233,12 +247,15 @@ export default function PreparationMap({
   const initialTimeData = useRef(timeData);
   const initialArrivalData = useRef(arrivalData);
   const initialStartData = useRef(startData);
+  const selectedTrace = traces.find((trace) => trace.traceId === selectedTraceId) ?? null;
+  const landingZoneData = useMemo(() => landingZoneCollection(selectedTrace), [selectedTrace]);
 
   useEffect(() => {
     viewportRef.current = onViewportChange;
     selectionRef.current = onAirspacesSelected;
     mapPressRef.current = onMapPress;
-  }, [onAirspacesSelected, onMapPress, onViewportChange]);
+    arrivalSelectionRef.current = onArrivalSelectionChange;
+  }, [onAirspacesSelected, onArrivalSelectionChange, onMapPress, onViewportChange]);
 
   useEffect(() => {
     airspacesRef.current = airspaces;
@@ -317,6 +334,16 @@ export default function PreparationMap({
     map.on("moveend", notify);
     map.on("click", (event) => {
       mapPressRef.current?.();
+      const arrival = map.queryRenderedFeatures(
+        [[event.point.x - 14, event.point.y - 14], [event.point.x + 14, event.point.y + 14]],
+        { layers: map.getLayer("analysis-arrivals") ? ["analysis-arrivals"] : [] },
+      )[0];
+      const traceId = arrival?.properties?.traceId;
+      if (typeof traceId === "string") {
+        setSelectedTraceId(traceId);
+        arrivalSelectionRef.current?.(true);
+        return;
+      }
       if (!showAirspacesRef.current) return;
       const layerIds = AIRSPACE_RENDER_ORDER.flatMap((category) => [
         airspaceLayerId(category, "fill"),
@@ -472,6 +499,9 @@ export default function PreparationMap({
         type: "geojson",
         data: initialStartData.current,
       });
+      map.addSource(LANDING_ZONE_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "analysis-landing-zone-fill", type: "fill", source: LANDING_ZONE_SOURCE, paint: { "fill-color": "#38bdf8", "fill-opacity": 0.08 } });
+      map.addLayer({ id: "analysis-landing-zone-outline", type: "line", source: LANDING_ZONE_SOURCE, paint: { "line-color": "#7dd3fc", "line-width": 1.5, "line-opacity": 0.72, "line-dasharray": [3, 2] } });
       map.addLayer({
         id: "analysis-start-halo",
         type: "circle",
@@ -554,6 +584,15 @@ export default function PreparationMap({
       map.off("load", sync);
     };
   }, [arrivalData, layers.arrivalMarkers, layers.timeMarkers, layers.trajectories, startData, timeData, traceData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const sync = () => (map.getSource(LANDING_ZONE_SOURCE) as GeoJSONSource | undefined)?.setData(landingZoneData);
+    if (map.loaded()) sync();
+    else map.once("load", sync);
+    return () => { map.off("load", sync); };
+  }, [landingZoneData]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -716,6 +755,7 @@ export default function PreparationMap({
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
+      {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>
   );

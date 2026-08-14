@@ -87,6 +87,11 @@ export interface OpenMeteoClient {
     longitude: number;
     weatherModel: OpenMeteoWeatherModel;
   }): Promise<unknown>;
+  fetchHourlyForecastBatch(requests: Array<{
+    latitude: number;
+    longitude: number;
+    weatherModel: OpenMeteoWeatherModel;
+  }>): Promise<unknown>;
   fetchElevation(latitude: number, longitude: number): Promise<unknown>;
 }
 
