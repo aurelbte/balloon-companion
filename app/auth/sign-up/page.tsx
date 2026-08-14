@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { AUTH_ENTRY_ROUTE, AUTH_SIGN_IN_ROUTE } from "../../lib/auth/entry.ts";
@@ -53,7 +54,14 @@ export default function SignUpPage() {
     <main className={styles.screen}>
       <section className={styles.panel} aria-labelledby="sign-up-title">
         <Link className={styles.backLink} href={AUTH_ENTRY_ROUTE}>← Retour</Link>
-        <p className={styles.eyebrow}>Balloon Companion</p>
+        <Image
+          className={styles.logo}
+          src="/branding/balloon-companion-logo-account.png"
+          alt="Balloon Companion"
+          width={1842}
+          height={854}
+          priority
+        />
         <h1 id="sign-up-title">Créer un compte</h1>
         <form
           className={styles.form}
