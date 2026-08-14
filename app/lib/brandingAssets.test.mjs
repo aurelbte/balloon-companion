@@ -13,4 +13,6 @@ test("le logo account est réservé à l'accueil initial et à la création de c
   assert.equal(cockpit.match(/balloon-companion-logo-account\.png/g)?.length, 1);
   assert.doesNotMatch(manifest, /\/branding\//);
   assert.match(cockpitStyles, /\.welcomeLogo \{[^}]*width: min\(86vw, 390px\);[^}]*height: auto;[^}]*object-fit: contain;/s);
+  assert.match(cockpitStyles, /grid-template-rows: minmax\(0, 1fr\) auto auto/);
+  assert.match(cockpitStyles, /font-size: clamp\(34px, 8\.5vw, 40px\)/);
 });
