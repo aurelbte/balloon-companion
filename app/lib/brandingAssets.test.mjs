@@ -15,4 +15,5 @@ test("le logo account est réservé à l'accueil initial et à la création de c
   assert.match(cockpitStyles, /\.welcomeLogo \{[^}]*width: min\(86vw, 390px\);[^}]*height: auto;[^}]*object-fit: contain;/s);
   assert.match(cockpitStyles, /grid-template-rows: minmax\(0, 1fr\) auto auto/);
   assert.match(cockpitStyles, /font-size: clamp\(34px, 8\.5vw, 40px\)/);
+  assert.equal(cockpitStyles.match(/translateY\(clamp\(-24px, -3dvh, -16px\)\)/g)?.length, 2);
 });
