@@ -17,3 +17,13 @@ test("le logo account est réservé à l'accueil initial et à la création de c
   assert.match(cockpitStyles, /font-size: clamp\(34px, 8\.5vw, 40px\)/);
   assert.equal(cockpitStyles.match(/translateY\(clamp\(-24px, -3dvh, -16px\)\)/g)?.length, 2);
 });
+
+test("le logo Cockpit est réservé au header Cockpit", () => {
+  const asset = readFileSync(new URL("../../public/branding/balloon-companion-logo-cockpit.png", import.meta.url));
+  assert.ok(asset.length > 0);
+  assert.match(cockpit, /<header className=\{styles\.header\}>[\s\S]*src="\/branding\/balloon-companion-logo-cockpit\.png"[\s\S]*Bonjour/);
+  assert.equal(cockpit.match(/balloon-companion-logo-cockpit\.png/g)?.length, 1);
+  assert.doesNotMatch(signUp, /balloon-companion-logo-cockpit\.png/);
+  assert.doesNotMatch(manifest, /balloon-companion-logo-cockpit\.png/);
+  assert.match(cockpitStyles, /\.cockpitLogo \{[^}]*width: clamp\(125px, 34vw, 155px\);[^}]*height: auto;[^}]*object-fit: contain;/s);
+});

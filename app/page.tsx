@@ -50,7 +50,17 @@ export default function CockpitPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.layout}>
-        <header className={styles.header}><h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1></header>
+        <header className={styles.header}>
+          <Image
+            className={styles.cockpitLogo}
+            src="/branding/balloon-companion-logo-cockpit.png"
+            alt="Balloon Companion"
+            width={1881}
+            height={836}
+            priority
+          />
+          <h1 className={styles.welcome}>{firstName ? `Bonjour ${firstName} 👋` : "Bonjour 👋"}</h1>
+        </header>
         <CockpitHeroRing />
         <CockpitExperiencePrompt />
         <div className={styles.pair}><PilotStatusCard /><ConditionsCard href="/weather" /></div>
