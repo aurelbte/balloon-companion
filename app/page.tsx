@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { ClipboardCheck } from "lucide-react";
 import { useMemo } from "react";
@@ -28,6 +29,14 @@ export default function CockpitPage() {
   if (choicePending) {
     return <main className={styles.welcomeScreen}>
       <section className={styles.welcomePanel}>
+        <Image
+          className={styles.welcomeLogo}
+          src="/branding/balloon-companion-logo-account.png"
+          alt="Balloon Companion"
+          width={1842}
+          height={854}
+          priority
+        />
         <h1>Bienvenue</h1>
         <div className={styles.welcomeActions}>
           <Link href="/auth/sign-in">Se connecter</Link>
