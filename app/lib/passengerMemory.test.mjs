@@ -33,16 +33,17 @@ test("le modèle souvenir contient les données publiques, unités et identité 
   const { recordedFlight, journalFlight } = fixtures();
   const selectedBalloon = { id: "balloon-stable-id", manufacturer: " Cameron ", model: " Z105 ", registration: " F-HLFM " };
   const model = buildPassengerMemoryModel({ recordedFlight, journalFlight, units: metricUnits, pilot: { firstName: " Aurélien ", lastName: " Boitte " }, selectedBalloon });
-  assert.deepEqual(model, { date: "16 août 2026", departure: "Boëschepe", arrival: "Le Doulieu", displayedDuration: "56 min", distance: "12.2 km", maximumAltitude: "960 m", maximumSpeed: "24 km/h", pilotName: "Aurélien Boitte", balloon: { id: "balloon-stable-id", label: "Cameron Z105 · F-HLFM" } });
+  assert.deepEqual(model, { date: "16 août 2026", departure: "Boëschepe", arrival: "Le Doulieu", displayedDuration: "56 min", distance: "12.2 km", maximumAltitude: "960 m · 3 150 ft", maximumSpeed: "24 km/h", pilotName: "Aurélien Boitte", balloon: { id: "balloon-stable-id", name: "Cameron Z105", registration: "F-HLFM", label: "Cameron Z105 · F-HLFM" } });
   assert.equal("takeoffTime" in model, false);
   assert.equal("landingTime" in model, false);
   assert.equal("notes" in model, false);
   const imperial = buildPassengerMemoryModel({ recordedFlight, journalFlight, units: { distanceUnit: "NM", altitudeUnit: "ft", speedUnit: "kt" }, pilot: null });
   assert.match(imperial.distance, /NM$/);
-  assert.match(imperial.maximumAltitude, /ft$/);
+  assert.equal(imperial.maximumAltitude, "960 m · 3 150 ft");
   assert.match(imperial.maximumSpeed, /kt$/);
   assert.equal(imperial.pilotName, null);
   assert.equal(imperial.balloon, null);
+  assert.equal(buildPassengerMemoryModel({ recordedFlight, journalFlight, units: metricUnits, pilot: { firstName: "Aurélien" } }).pilotName, null);
 });
 
 test("le choix du ballon utilise son identifiant stable et gère les données partielles", () => {
@@ -54,10 +55,11 @@ test("le choix du ballon utilise son identifiant stable et gère les données pa
   assert.equal(passengerMemoryBalloonLabel(balloons[0]), "Cameron Z105 · F-HLFM");
   assert.equal(passengerMemoryBalloonLabel(balloons[1]), "Kubicek BB30Z");
   assert.equal(passengerMemoryBalloonLabel({ id: "registration-only", manufacturer: "", model: "", registration: "F-TEST" }), "F-TEST");
-  assert.equal(defaultPassengerMemoryBalloonId([balloons[0]], null), "stable-a");
-  assert.equal(defaultPassengerMemoryBalloonId(balloons, "stable-b"), "stable-b");
-  assert.equal(defaultPassengerMemoryBalloonId(balloons, null), "");
-  assert.equal(defaultPassengerMemoryBalloonId([], null), "");
+  assert.equal(defaultPassengerMemoryBalloonId([balloons[0]], undefined, null), "stable-a");
+  assert.equal(defaultPassengerMemoryBalloonId(balloons, undefined, "stable-b"), "stable-b");
+  assert.equal(defaultPassengerMemoryBalloonId(balloons, "fhlfm", "stable-b"), "stable-a");
+  assert.equal(defaultPassengerMemoryBalloonId(balloons, undefined, null), "");
+  assert.equal(defaultPassengerMemoryBalloonId([], "F-HLFM", null), "");
   assert.deepEqual(balloons, snapshot);
 });
 
@@ -66,10 +68,11 @@ test("le dialogue utilise la liste Mes ballons et bloque les états sans sélect
   const detail = readFileSync(new URL("../components/journal/JournalFlightDetail.tsx", import.meta.url), "utf8");
   assert.match(source, /balloons\.map\(\(balloon\)/);
   assert.match(source, /<option key=\{balloon\.id\} value=\{balloon\.id\}/);
-  assert.match(source, /defaultPassengerMemoryBalloonId\(balloons, activeBalloonId\)/);
+  assert.match(source, /defaultPassengerMemoryBalloonId\(balloons, recordedFlightBalloonRegistration, activeBalloonId\)/);
   assert.match(source, /Aucun ballon n’est enregistré/);
   assert.match(source, /\/more\/profile\/balloons/);
   assert.match(detail, /useBalloonRegistryState\(\)/);
+  assert.match(detail, /recordedFlightBalloonRegistration=\{passengerMemoryFlight\.balloonRegistration\}/);
   assert.match(detail, /selectedBalloon/);
 });
 
@@ -95,8 +98,10 @@ test("le générateur produit exactement une page A4 portrait", async () => {
   assert.match(source, /compactRoute\(page, model\.departure, model\.arrival/);
   assert.match(source, /`Votre vol du \$\{model\.date\}`/);
   assert.doesNotMatch(source, /VOTRE VOL EN MONTGOLFIERE/);
-  assert.match(source, /Votre vol en chiffres/);
-  assert.match(source, /\["Votre ballon", model\.balloon\.label\]/);
+  assert.doesNotMatch(source, /Votre vol en chiffres/);
+  assert.match(source, /drawMemoryLabel\("VOTRE BALLON"/);
+  assert.match(source, /drawMemoryLabel\("VOTRE PILOTE"/);
+  assert.match(source, /model\.balloon\.registration/);
   assert.doesNotMatch(source, /index === 0 \? navy/);
   assert.doesNotMatch(source, /centered\(page, "Balloon Companion"/);
 });

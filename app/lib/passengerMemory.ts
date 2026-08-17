@@ -1,7 +1,7 @@
 import type { JournalFlight } from "./journalMockData.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
-import { formatFlightAltitude, formatFlightDistance, formatFlightSpeed, type UnitPreferences } from "./unitPreferences.ts";
-import type { Balloon } from "./balloons.ts";
+import { formatFlightDistance, formatFlightSpeed, getFlightAltitudeReadings, type UnitPreferences } from "./unitPreferences.ts";
+import { normalizeBalloonRegistration, type Balloon } from "./balloons.ts";
 
 export type PassengerMemoryBalloon = Readonly<Pick<Balloon, "id" | "manufacturer" | "model" | "registration">>;
 
@@ -14,7 +14,7 @@ export type PassengerMemoryModel = Readonly<{
   maximumAltitude: string;
   maximumSpeed: string;
   pilotName: string | null;
-  balloon: Readonly<{ id: string; label: string }> | null;
+  balloon: Readonly<{ id: string; name: string | null; registration: string | null; label: string }> | null;
 }>;
 
 export function passengerMemoryBalloonLabel(balloon: PassengerMemoryBalloon): string | null {
@@ -23,7 +23,12 @@ export function passengerMemoryBalloonLabel(balloon: PassengerMemoryBalloon): st
   return [name, registration].filter(Boolean).join(" · ") || null;
 }
 
-export function defaultPassengerMemoryBalloonId(balloons: readonly PassengerMemoryBalloon[], activeBalloonId: string | null): string {
+export function defaultPassengerMemoryBalloonId(balloons: readonly PassengerMemoryBalloon[], recordedFlightRegistration: string | undefined, activeBalloonId: string | null): string {
+  const normalizedFlightRegistration = recordedFlightRegistration ? normalizeBalloonRegistration(recordedFlightRegistration) : "";
+  const flightBalloon = normalizedFlightRegistration
+    ? balloons.find(({ registration }) => normalizeBalloonRegistration(registration) === normalizedFlightRegistration)
+    : undefined;
+  if (flightBalloon) return flightBalloon.id;
   if (balloons.length === 1) return balloons[0].id;
   return balloons.some(({ id }) => id === activeBalloonId) ? activeBalloonId ?? "" : "";
 }
@@ -37,7 +42,16 @@ export function formatPassengerMemoryDuration(durationSeconds: number): string {
 }
 
 function pilotName(firstName: string | undefined, lastName: string | undefined): string | null {
-  return [firstName?.trim(), lastName?.trim()].filter(Boolean).join(" ") || null;
+  const first = firstName?.trim();
+  const last = lastName?.trim();
+  return first && last ? `${first} ${last}` : null;
+}
+
+function dualPassengerMemoryAltitude(valueMetres: number | null): string {
+  const readings = getFlightAltitudeReadings(valueMetres, "m");
+  if (!readings) return "Non disponible";
+  const clean = (value: string) => value.replace(/\s/g, " ");
+  return `${clean(readings.primary.value)} ${readings.primary.unit} · ${clean(readings.secondary.value)} ${readings.secondary.unit}`;
 }
 
 export function buildPassengerMemoryModel(input: Readonly<{
@@ -55,12 +69,15 @@ export function buildPassengerMemoryModel(input: Readonly<{
     arrival: journalFlight.arrival.trim() || "Arrivée non renseignée",
     displayedDuration: input.displayedDuration?.trim() || formatPassengerMemoryDuration(recordedFlight.summary.durationSeconds),
     distance: formatFlightDistance(recordedFlight.summary.distanceMeters / 1000, units.distanceUnit),
-    maximumAltitude: recordedFlight.summary.maxAltitudeMeters === null ? "Non disponible" : formatFlightAltitude(recordedFlight.summary.maxAltitudeMeters, units.altitudeUnit),
+    maximumAltitude: dualPassengerMemoryAltitude(recordedFlight.summary.maxAltitudeMeters),
     maximumSpeed: recordedFlight.summary.maxGroundSpeedMetersPerSecond === null ? "Non disponible" : formatFlightSpeed(recordedFlight.summary.maxGroundSpeedMetersPerSecond * 3.6, units.speedUnit),
     pilotName: pilotName(input.pilot?.firstName, input.pilot?.lastName),
-    balloon: input.selectedBalloon && passengerMemoryBalloonLabel(input.selectedBalloon)
-      ? { id: input.selectedBalloon.id, label: passengerMemoryBalloonLabel(input.selectedBalloon)! }
-      : null,
+    balloon: input.selectedBalloon && passengerMemoryBalloonLabel(input.selectedBalloon) ? {
+      id: input.selectedBalloon.id,
+      name: [input.selectedBalloon.manufacturer.trim(), input.selectedBalloon.model.trim()].filter(Boolean).join(" ") || null,
+      registration: input.selectedBalloon.registration.trim() || null,
+      label: passengerMemoryBalloonLabel(input.selectedBalloon)!,
+    } : null,
   };
 }
 

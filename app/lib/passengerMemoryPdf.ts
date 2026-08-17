@@ -76,43 +76,47 @@ export async function createPassengerMemoryPdf(model: PassengerMemoryModel, asse
   page.drawImage(map, { x: (A4[0] - map.width * mapScale) / 2, y: 411 + (208 - map.height * mapScale) / 2, width: map.width * mapScale, height: map.height * mapScale });
 
   const metrics = [
-    ["Durée", model.displayedDuration],
-    ["Distance", model.distance],
-    ["Altitude max", model.maximumAltitude],
-    ["Vitesse max", model.maximumSpeed],
+    ["DURÉE", model.displayedDuration],
+    ["DISTANCE", model.distance],
+    ["ALTITUDE MAX", model.maximumAltitude],
+    ["VITESSE MAX", model.maximumSpeed],
   ] as const;
-  page.drawRectangle({ x: 36, y: 205, width: 523, height: 165, color: pale, borderColor: rgb(0.86, 0.9, 0.93), borderWidth: 1 });
-  page.drawRectangle({ x: 52, y: 340, width: 24, height: 3, color: blue });
-  page.drawText("Votre vol en chiffres", { x: 84, y: 334, font: bold, size: 13, color: navy });
-  page.drawLine({ start: { x: 297.5, y: 220 }, end: { x: 297.5, y: 315 }, thickness: 0.7, color: rgb(0.82, 0.87, 0.91) });
-  page.drawLine({ start: { x: 52, y: 267 }, end: { x: 543, y: 267 }, thickness: 0.7, color: rgb(0.82, 0.87, 0.91) });
-  const metricWidth = 245.5;
+  page.drawLine({ start: { x: 36, y: 370 }, end: { x: 559, y: 370 }, thickness: 1, color: rgb(0.82, 0.87, 0.91) });
+  page.drawLine({ start: { x: 297.5, y: 207 }, end: { x: 297.5, y: 355 }, thickness: 0.6, color: rgb(0.86, 0.89, 0.92) });
+  page.drawLine({ start: { x: 52, y: 281 }, end: { x: 543, y: 281 }, thickness: 0.6, color: rgb(0.86, 0.89, 0.92) });
+  const metricWidth = 261.5;
   metrics.forEach(([label, value], index) => {
     const column = index % 2;
     const row = Math.floor(index / 2);
-    const x = 52 + column * metricWidth;
-    const labelY = row === 0 ? 305 : 254;
-    const valueY = row === 0 ? 280 : 229;
-    page.drawText(label, { x: x + 12, y: labelY, font: regular, size: 9, color: muted });
+    const centerX = 36 + column * metricWidth + metricWidth / 2;
+    const labelY = row === 0 ? 337 : 263;
+    const valueY = row === 0 ? 309 : 235;
+    const safeLabel = pdfText(label);
+    page.drawText(safeLabel, { x: centerX - bold.widthOfTextAtSize(safeLabel, 8) / 2, y: labelY, font: bold, size: 8, color: blue });
     const fitted = fittedText(value, bold, 17, metricWidth - 32);
-    page.drawText(fitted.text, { x: x + 12, y: valueY, font: bold, size: fitted.size, color: navy });
+    page.drawText(fitted.text, { x: centerX - bold.widthOfTextAtSize(fitted.text, fitted.size) / 2, y: valueY, font: bold, size: fitted.size, color: navy });
   });
 
-  page.drawLine({ start: { x: 36, y: 177 }, end: { x: 559, y: 177 }, thickness: 1, color: rgb(0.86, 0.89, 0.92) });
-  const memories = [
-    ...(model.balloon ? [["Votre ballon", model.balloon.label] as const] : []),
-    ...(model.pilotName ? [["Votre pilote", model.pilotName] as const] : []),
-  ];
-  memories.forEach(([label, value], index) => {
-    const centerX = memories.length === 1 ? A4[0] / 2 : index === 0 ? A4[0] * 0.29 : A4[0] * 0.71;
-    const maximumWidth = memories.length === 1 ? 480 : 230;
+  page.drawLine({ start: { x: 36, y: 191 }, end: { x: 559, y: 191 }, thickness: 1, color: rgb(0.82, 0.87, 0.91) });
+  page.drawLine({ start: { x: A4[0] / 2, y: 82 }, end: { x: A4[0] / 2, y: 163 }, thickness: 0.6, color: rgb(0.86, 0.89, 0.92) });
+  const drawMemoryLabel = (label: string, centerX: number) => {
     const safeLabel = pdfText(label);
-    page.drawText(safeLabel, { x: centerX - regular.widthOfTextAtSize(safeLabel, 10) / 2, y: 129, font: regular, size: 10, color: muted });
-    const fitted = fittedText(value, bold, 16, maximumWidth);
-    page.drawText(fitted.text, { x: centerX - bold.widthOfTextAtSize(fitted.text, fitted.size) / 2, y: 103, font: bold, size: fitted.size, color: navy });
-  });
-  if (memories.length === 2) {
-    page.drawLine({ start: { x: A4[0] / 2, y: 94 }, end: { x: A4[0] / 2, y: 145 }, thickness: 0.7, color: rgb(0.86, 0.89, 0.92) });
+    page.drawText(safeLabel, { x: centerX - bold.widthOfTextAtSize(safeLabel, 9) / 2, y: 151, font: bold, size: 9, color: muted });
+  };
+  if (model.balloon) {
+    const centerX = A4[0] * 0.27;
+    drawMemoryLabel("VOTRE BALLON", centerX);
+    const balloonLines = [model.balloon.name, model.balloon.registration].filter((value): value is string => Boolean(value));
+    balloonLines.forEach((value, index) => {
+      const fitted = fittedText(value, bold, 15, 230);
+      page.drawText(fitted.text, { x: centerX - bold.widthOfTextAtSize(fitted.text, fitted.size) / 2, y: balloonLines.length === 1 ? 112 : 121 - index * 24, font: bold, size: fitted.size, color: navy });
+    });
+  }
+  if (model.pilotName) {
+    const centerX = A4[0] * 0.73;
+    drawMemoryLabel("VOTRE PILOTE", centerX);
+    const fitted = fittedText(model.pilotName, bold, 15, 230);
+    page.drawText(fitted.text, { x: centerX - bold.widthOfTextAtSize(fitted.text, fitted.size) / 2, y: 109, font: bold, size: fitted.size, color: navy });
   }
   return document.save({ useObjectStreams: false });
 }
