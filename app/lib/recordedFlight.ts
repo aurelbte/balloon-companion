@@ -125,6 +125,7 @@ export interface RecordedFlight {
   startLocationLabel?: string;
   endLocationLabel?: string;
   generatedTitle?: string;
+  notes?: string;
 }
 
 export type PointRejectionReason =

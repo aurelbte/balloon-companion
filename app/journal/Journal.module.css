@@ -767,6 +767,25 @@
   line-height: 1.25;
 }
 
+.flightNotePreview {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.moduleTextAction {
+  min-height: 36px;
+  margin-top: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--bc-accent);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-align: left;
+}
+
 .moduleHint {
   margin-top: 5px;
   color: var(--bc-text-muted);

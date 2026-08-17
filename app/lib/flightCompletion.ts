@@ -320,6 +320,17 @@ export function setJournalFlightCustomTitle(
   };
 }
 
+export function setJournalFlightNotes(
+  state: FlightCompletionState,
+  flightId: string,
+  notes: string | null,
+): FlightCompletionState {
+  return {
+    ...state,
+    journalFlights: state.journalFlights.map((flight) => flight.id === flightId ? { ...flight, notes } : flight),
+  };
+}
+
 export function removeJournalFlight(
   state: FlightCompletionState,
   flightId: string,

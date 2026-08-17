@@ -6,14 +6,14 @@ import { BcFlightImportError, parseBcFlight } from "./bcFlightImport.ts";
 import { createRecordedFlight, finalizeRecordedFlight, recalculateFlightStatistics } from "./recordedFlight.ts";
 import { classifyGpsTraceQuality } from "./gpsPointQuality.ts";
 
-function exportText({ legacy = false } = {}) {
+function exportText({ legacy = false, notes } = {}) {
   const point = {
     timestamp: 1_000, latitude: 50, longitude: 3, altitudeMeters: 100,
     speedMetersPerSecond: 5, headingDegrees: 90,
     horizontalAccuracyMeters: 5, verticalAccuracyMeters: 8,
     ...(legacy ? {} : { quality: "VALID", qualityReason: "NONE" }),
   };
-  const flight = finalizeRecordedFlight(createRecordedFlight({ id: "import", startedAt: 1_000, firstPoint: point }), 2_000);
+  const flight = { ...finalizeRecordedFlight(createRecordedFlight({ id: "import", startedAt: 1_000, firstPoint: point }), 2_000), ...(notes ? { notes } : {}) };
   return JSON.stringify(createBcFlightExport(flight, new Date("2026-08-10T10:00:00Z")));
 }
 
@@ -24,6 +24,11 @@ test("un fichier valide est accepté et recalculé", () => {
     imported.diagnostic.newStatistics,
     recalculateFlightStatistics(classifyGpsTraceQuality(imported.flight.points), imported.flight.startedAt, imported.flight.endedAt),
   );
+});
+
+test("la note optionnelle effectue un aller-retour BCFLIGHT v1", () => {
+  assert.equal(parseBcFlight(exportText()).flight.notes, undefined);
+  assert.equal(parseBcFlight(exportText({ notes: "Vol calme" })).flight.notes, "Vol calme");
 });
 
 test("un mauvais format est refusé clairement", () => {

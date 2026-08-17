@@ -25,6 +25,7 @@ export interface RecordedFlightStorage {
   completeFlight(flight: RecordedFlight): Promise<void>;
   getFlight(id: string): Promise<RecordedFlight | null>;
   listFlights(): Promise<RecordedFlight[]>;
+  updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null>;
   deleteFlight(id: string): Promise<void>;
 }
 
@@ -71,6 +72,15 @@ export class MemoryRecordedFlightStorage implements RecordedFlightStorage {
     return [...this.flights.values()].sort(
       (left, right) => right.startedAt - left.startedAt,
     );
+  }
+  async updateFlightNotes(id: string, notes: string | null) {
+    const flight = this.flights.get(id);
+    if (!flight) return null;
+    const updated = { ...flight, updatedAt: Date.now() };
+    if (notes) updated.notes = notes;
+    else delete updated.notes;
+    this.flights.set(id, structuredClone(updated));
+    return structuredClone(updated);
   }
   async deleteFlight(id: string) {
     this.flights.delete(id);
@@ -189,6 +199,26 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     return values
       .filter(isRecordedFlight)
       .sort((left, right) => right.startedAt - left.startedAt);
+  }
+
+  async updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null> {
+    const database = await this.database();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+      const store = transaction.objectStore(FLIGHTS_STORE);
+      let updated: RecordedFlight | null = null;
+      const request = store.get(id);
+      request.onsuccess = () => {
+        if (!isRecordedFlight(request.result)) return;
+        updated = { ...request.result, updatedAt: Date.now() };
+        if (notes) updated.notes = notes;
+        else delete updated.notes;
+        store.put(updated);
+      };
+      transaction.oncomplete = () => resolve(updated);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
   }
 
   async deleteFlight(id: string): Promise<void> {

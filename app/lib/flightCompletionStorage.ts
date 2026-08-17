@@ -12,6 +12,7 @@ import {
   removeJournalFlight,
   setJournalFlightLogbookStatus,
   setJournalFlightCustomTitle,
+  setJournalFlightNotes,
   updateOfficialAscension,
 } from "./flightCompletion.ts";
 import { buildGeneratedFlightTitle } from "./journalFlightTitle.ts";
@@ -226,6 +227,16 @@ export function persistJournalFlightCustomTitle(
   customTitle: string | null,
 ): FlightCompletionState {
   const state = setJournalFlightCustomTitle(loadFlightCompletionState(), flightId, customTitle);
+  saveFlightCompletionState(state);
+  return state;
+}
+
+export function persistJournalFlightNotes(
+  flightId: string,
+  notes: string | null,
+): FlightCompletionState {
+  const normalizedNotes = notes?.trim() || null;
+  const state = setJournalFlightNotes(loadFlightCompletionState(), flightId, normalizedNotes);
   saveFlightCompletionState(state);
   return state;
 }

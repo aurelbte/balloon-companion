@@ -76,6 +76,7 @@ export function parseBcFlight(text: string): ImportedBcFlight {
     ...(typeof flightValue.startLocationLabel === "string" ? { startLocationLabel: flightValue.startLocationLabel } : {}),
     ...(typeof flightValue.endLocationLabel === "string" ? { endLocationLabel: flightValue.endLocationLabel } : {}),
     ...(typeof flightValue.generatedTitle === "string" ? { generatedTitle: flightValue.generatedTitle } : {}),
+    ...(typeof flightValue.notes === "string" && flightValue.notes.trim() ? { notes: flightValue.notes.trim() } : {}),
   };
   return {
     container: parsed as BcFlightExport,

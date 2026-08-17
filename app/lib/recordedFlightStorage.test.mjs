@@ -62,3 +62,18 @@ test("abandonne uniquement le vol actif", async () => {
   assert.equal(await storage.getActiveFlight(), null);
   assert.equal((await storage.getFlight("saved"))?.id, "saved");
 });
+
+test("ajoute, modifie et supprime une note sans altérer la trace", async () => {
+  const storage = new MemoryRecordedFlightStorage();
+  const completed = finalizeRecordedFlight(createRecordedFlight({ id: "noted", startedAt: 1_000 }), 2_000);
+  await storage.completeFlight(completed);
+  const originalPoints = structuredClone(completed.points);
+
+  assert.equal((await storage.getFlight("noted"))?.notes, undefined);
+  assert.equal((await storage.updateFlightNotes("noted", "Premier récit"))?.notes, "Premier récit");
+  assert.equal((await storage.updateFlightNotes("noted", "Récit corrigé"))?.notes, "Récit corrigé");
+  assert.deepEqual((await storage.getFlight("noted"))?.points, originalPoints);
+  assert.equal((await storage.updateFlightNotes("noted", null))?.notes, undefined);
+  assert.equal((await storage.getFlight("noted"))?.notes, undefined);
+  assert.equal(await storage.updateFlightNotes("inconnu", "note"), null);
+});

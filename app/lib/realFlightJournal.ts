@@ -135,7 +135,7 @@ export function recordedFlightToJournalFlight(
     landingTime: timeLabel(endedAt),
     maxAltitudeM: summary.maxAltitudeMeters,
     maxSpeedKmh: summary.maxGroundSpeedMetersPerSecond === null ? null : summary.maxGroundSpeedMetersPerSecond * 3.6,
-    notes: options.recovered ? "Vol récupéré depuis une session GPS locale." : null,
+    notes: source.notes?.trim() || (options.recovered ? "Vol récupéré depuis une session GPS locale." : null),
     statistics: {
       takeoffAltitudeAmslM: first?.altitudeMeters ?? null,
       landingAltitudeAmslM: last?.altitudeMeters ?? null,

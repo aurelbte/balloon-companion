@@ -20,6 +20,7 @@ export interface BcFlightExport {
     startLocationLabel: string | null;
     endLocationLabel: string | null;
     generatedTitle: string | null;
+    notes?: string;
   }>;
   recordedTrace: Readonly<{
     schemaVersion: number;
@@ -78,6 +79,7 @@ export function createBcFlightExport(
       startLocationLabel: flight.startLocationLabel ?? null,
       endLocationLabel: flight.endLocationLabel ?? null,
       generatedTitle: flight.generatedTitle ?? null,
+      ...(flight.notes ? { notes: flight.notes } : {}),
     },
     recordedTrace: {
       schemaVersion: flight.schemaVersion,

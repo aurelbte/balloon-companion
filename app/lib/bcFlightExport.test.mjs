@@ -115,3 +115,12 @@ test("un ancien vol sans quality reste exportable sans inventer ces champs", asy
   assert.equal(parsed.recordedTrace.points[0].quality, undefined);
   assert.equal(parsed.metadata.parameters.legacyPointsWithoutQuality, "TREATED_AS_VALID");
 });
+
+test("BCFLIGHT v1 conserve une note optionnelle sans casser les anciens vols", async () => {
+  const legacyPayload = createBcFlightExport(existingFlight());
+  assert.equal(legacyPayload.flight.notes, undefined);
+  const noted = { ...existingFlight(), notes: "Souvenir du vol" };
+  const payload = JSON.parse(await createBcFlightBlob(noted).text());
+  assert.equal(payload.formatVersion, 1);
+  assert.equal(payload.flight.notes, "Souvenir du vol");
+});
