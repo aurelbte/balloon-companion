@@ -863,15 +863,17 @@
 }
 
 .chartTooltip {
-  --chart-tooltip-x: -50%;
-  --chart-tooltip-y: calc(-100% - 16px);
   position: absolute;
   z-index: 3;
+  top: 12px;
+  left: 50%;
   display: grid;
-  gap: 2px;
+  justify-items: center;
+  gap: 4px;
   width: max-content;
-  max-width: calc(100% - 16px);
-  padding: 8px 10px;
+  min-width: 132px;
+  max-width: calc(100% - 24px);
+  padding: 12px 16px;
   border: 1px solid var(--bc-border-strong);
   border-radius: 12px;
   background: rgb(7 17 31 / 94%);
@@ -879,46 +881,29 @@
   color: var(--bc-text-primary);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
-  transform: translate(var(--chart-tooltip-x), var(--chart-tooltip-y));
+  text-align: center;
+  transform: translateX(-50%);
 }
 
 .chartTooltip strong {
   color: var(--bc-text-muted);
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1.2;
 }
 
-.chartTooltip strong:nth-of-type(2) {
-  margin-top: 4px;
-}
-
 .chartTooltip span {
-  font-size: 0.72rem;
+  font-size: 1.05rem;
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
 }
 
-.chartTooltipStart {
-  --chart-tooltip-x: 8px;
-}
-
-.chartTooltipEnd {
-  --chart-tooltip-x: calc(-100% - 8px);
-}
-
-.chartTooltipCenter {
-  --chart-tooltip-x: -50%;
-}
-
-.chartTooltipAbove {
-  --chart-tooltip-y: calc(-100% - 16px);
-}
-
-.chartTooltipBelow {
-  --chart-tooltip-y: 16px;
+.chartTooltip .chartTooltipTime {
+  color: var(--bc-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .chartXAxis {

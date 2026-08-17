@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import styles from "../../journal/Journal.module.css";
-import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartSampleTolerance, selectJournalChartPoint, type JournalChartPoint, type JournalChartSelection } from "../../lib/journalChart";
+import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartSampleTolerance, journalChartTimeFromPointerX, selectJournalChartPoint, type JournalChartPoint, type JournalChartSelection } from "../../lib/journalChart";
 
 type JournalChartProps = {
   title: string;
@@ -49,8 +49,7 @@ export default function JournalChart({
   const pendingTarget = useRef<number | null>(null);
   const scheduleSelection = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
-    pendingTarget.current = ratio * maxX;
+    pendingTarget.current = journalChartTimeFromPointerX(event.clientX, bounds.left, bounds.width, maxX);
     if (frame.current !== null) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = null;
@@ -68,8 +67,6 @@ export default function JournalChart({
   const selectedValue = selection?.valuePoint?.y ?? null;
   const cursorLeft = selectedTime === null ? 0 : 1.5 + selectedTime / maxX * 97;
   const markerTop = selectedValue === null ? null : 4 + (1 - Math.min(yMaximum, Math.max(0, selectedValue)) / yMaximum) * 92;
-  const tooltipHorizontalClass = cursorLeft < 30 ? styles.chartTooltipStart : cursorLeft > 70 ? styles.chartTooltipEnd : styles.chartTooltipCenter;
-  const tooltipVerticalClass = markerTop === null || markerTop > 44 ? styles.chartTooltipAbove : styles.chartTooltipBelow;
 
   return (
     <section className="rounded-[24px] border border-[var(--bc-border)] bg-[var(--bc-surface)] p-4 shadow-[var(--bc-shadow-xs)]">
@@ -157,11 +154,10 @@ export default function JournalChart({
             {selection && <>
               <span className={styles.chartCursor} style={{ left: `${cursorLeft}%` }} aria-hidden="true" />
               {markerTop !== null && <span className={styles.chartMarker} style={{ left: `${cursorLeft}%`, top: `${markerTop}%` }} aria-hidden="true" />}
-              <output className={`${styles.chartTooltip} ${tooltipHorizontalClass} ${tooltipVerticalClass}`} style={{ left: `${cursorLeft}%`, top: markerTop === null ? "50%" : `${markerTop}%` }}>
+              <output className={styles.chartTooltip}>
                 <strong>{tooltipLabel}</strong>
                 <span>{selectedValue === null ? tooltipUnavailableLabel : formatJournalTooltipValue(selectedValue, axisUnit, tooltipFractionDigits)}</span>
-                <strong>TEMPS DE VOL</strong>
-                <span>{formatJournalTooltipTime(selection.timePoint.x)}</span>
+                <span className={styles.chartTooltipTime}>{formatJournalTooltipTime(selection.timePoint.x)}</span>
               </output>
             </>}
           </div>

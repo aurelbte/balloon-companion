@@ -10,6 +10,12 @@ export function journalChartDurationMinutes(points: readonly { elapsedMinutes: n
   return Math.max(1, ...elapsedMinutes);
 }
 
+export function journalChartTimeFromPointerX(clientX: number, plotLeft: number, plotWidth: number, maximumMinutes: number): number {
+  if (!Number.isFinite(plotWidth) || plotWidth <= 0) return 0;
+  const ratio = Math.min(1, Math.max(0, (clientX - plotLeft) / plotWidth));
+  return ratio * maximumMinutes;
+}
+
 export function buildJournalTimeAxis(rawDurationMinutes: number): { maximumMinutes: number; ticks: number[] } {
   const maximumMinutes = Math.max(1, Math.ceil(Number.isFinite(rawDurationMinutes) ? rawDurationMinutes : 0));
   const idealStep = maximumMinutes / 6;

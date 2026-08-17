@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartDurationMinutes, journalChartSampleTolerance, selectJournalChartPoint } from "./journalChart.ts";
+import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartDurationMinutes, journalChartSampleTolerance, journalChartTimeFromPointerX, selectJournalChartPoint } from "./journalChart.ts";
 import { journalSpeedKmh, recordedFlightPointsToJournalPoints } from "./realFlightJournal.ts";
 import { kmhToKnots, metresToFeet } from "./unitPreferences.ts";
 
@@ -69,6 +69,25 @@ test("l'exploration sélectionne le point temporel réel le plus proche, pas son
   assert.equal(selectJournalChartPoint(points, 1.8)?.timePoint.x, 2);
 });
 
+test("la sélection dépend uniquement de X sur toute la hauteur du tracé", () => {
+  const timeAtCenterFromTop = journalChartTimeFromPointerX(160, 20, 280, 60);
+  const timeAtCenterFromBottom = journalChartTimeFromPointerX(160, 20, 280, 60);
+  assert.equal(timeAtCenterFromTop, 30);
+  assert.equal(timeAtCenterFromBottom, 30);
+  assert.equal(journalChartTimeFromPointerX(230, 20, 280, 60), 45);
+});
+
+test("le tooltip reste fixe tandis que curseur et marqueur suivent le sample", () => {
+  const component = readFileSync(new URL("../components/journal/JournalChart.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../journal/Journal.module.css", import.meta.url), "utf8");
+  assert.match(component, /journalChartTimeFromPointerX\(event\.clientX/);
+  assert.doesNotMatch(component, /event\.clientY/);
+  assert.match(component, /chartMarker[^\n]*left: `\$\{cursorLeft\}%`[^\n]*top: `\$\{markerTop\}%`/);
+  assert.match(component, /<output className=\{styles\.chartTooltip\}>/);
+  assert.doesNotMatch(component, /<output[^>]*style=/);
+  assert.match(css, /\.chartTooltip\s*\{[\s\S]*?top:\s*12px;[\s\S]*?left:\s*50%;[\s\S]*?padding:\s*12px 16px;/);
+});
+
 test("le tooltip formate le temps écoulé et respecte les unités pilote", () => {
   assert.equal(formatJournalTooltipTime(32 / 60), "0 min 32 s");
   assert.equal(formatJournalTooltipTime(14 + 32 / 60), "14 min 32 s");
@@ -76,6 +95,11 @@ test("le tooltip formate le temps écoulé et respecte les unités pilote", () =
   assert.match(formatJournalTooltipValue(metresToFeet(1042), "ft", 0), /^3[\s\u202f]419 ft$/);
   assert.equal(formatJournalTooltipValue(22.4, "km/h", 1), "22,4 km/h");
   assert.equal(formatJournalTooltipValue(kmhToKnots(22.4), "kt", 1), "12,1 kt");
+  const graphs = readFileSync(new URL("../components/journal/JournalFlightGraphs.tsx", import.meta.url), "utf8");
+  assert.match(graphs, /tooltipLabel="ALTITUDE"/);
+  assert.match(graphs, /tooltipLabel="VITESSE SOL"/);
+  assert.match(graphs, /axisUnit=\{units\.flightInstruments\.altitudeUnit\}/);
+  assert.match(graphs, /axisUnit=\{units\.flightInstruments\.speedUnit\}/);
 });
 
 test("une vitesse absente reste indisponible tandis qu'un vrai zéro est sélectionnable", () => {
