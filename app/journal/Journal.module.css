@@ -810,6 +810,55 @@
   font-variant-numeric: tabular-nums;
 }
 
+.detailScreen {
+  height: 100dvh;
+  min-height: 0;
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-bottom: calc(60px + max(16px, env(safe-area-inset-bottom)));
+  overflow: hidden;
+}
+
+.detailLayout {
+  display: grid;
+  height: 100%;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  align-content: start;
+  gap: clamp(5px, 0.8dvh, 9px);
+}
+
+.detailLayout .backLink { min-height: 30px; }
+.detailLayout .detailHeader { margin: 0; }
+.detailLayout .routeTitle { font-size: clamp(1.35rem, 5.8vw, 2rem); line-height: 1.02; }
+.detailLayout .automaticRouteTitle { margin-top: 1px; font-size: .72rem; line-height: 1.15; }
+.detailLayout .dateLine { margin-top: 2px; font-size: .72rem; line-height: 1.2; }
+.detailLayout .primaryMetrics { gap: 18px; margin-top: 5px; }
+.detailLayout .primaryMetrics span { font-size: .58rem; }
+.detailLayout .primaryMetrics strong { font-size: .9rem; line-height: 1.1; }
+.detailLayout .logbookLinkCard { min-height: 46px; margin-top: 0; padding: 6px 10px; border-radius: 14px; }
+.detailLayout .logbookLinkCard strong { margin-top: 1px; }
+.detailLayout .logbookLinkCard > div:last-child { gap: 2px; }
+.detailLayout .moduleGrid { min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: clamp(6px, .8dvh, 9px); margin-top: 0; }
+.detailLayout .moduleCard { min-height: 0; padding: clamp(8px, 1.1dvh, 11px); border-radius: 16px; overflow: hidden; }
+.detailLayout .moduleTitle { gap: 5px; font-size: .68rem; }
+.detailLayout .moduleTitle svg { width: 14px; height: 14px; }
+.detailLayout .moduleValue { margin-top: clamp(7px, 1dvh, 11px); font-size: clamp(.82rem, 3.5vw, .98rem); line-height: 1.15; }
+.detailLayout .moduleAction { margin-top: clamp(5px, .7dvh, 8px); font-size: .64rem; line-height: 1.15; }
+.detailLayout .statGrid { gap: 5px; margin-top: 7px; }
+.detailLayout .statGrid span { font-size: .55rem; }
+.detailLayout .statGrid strong { margin-top: 1px; font-size: .76rem; }
+.detailLayout .flightNotePreview { -webkit-line-clamp: 2; }
+
+@media (max-height: 740px) {
+  .detailLayout { gap: 4px; }
+  .detailLayout .backLink { min-height: 26px; }
+  .detailLayout .automaticRouteTitle { display: none; }
+  .detailLayout .primaryMetrics { margin-top: 3px; }
+  .detailLayout .logbookLinkCard { min-height: 42px; padding-block: 4px; }
+  .detailLayout .moduleCard { padding: 7px 9px; }
+  .detailLayout .moduleValue { margin-top: 5px; }
+  .detailLayout .moduleAction { margin-top: 4px; }
+}
+
 .graphs {
   display: grid;
   gap: 14px;

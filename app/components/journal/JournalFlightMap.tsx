@@ -14,6 +14,10 @@ type JournalFlightMapProps = {
 
 const SOURCE_ID = "journal-flight-track";
 
+function compactMapPadding(container: HTMLDivElement): number {
+  return Math.max(18, Math.min(32, Math.round(container.clientHeight * 0.14)));
+}
+
 function flightBounds(flight: JournalFlight): maplibregl.LngLatBounds {
   const bounds = new maplibregl.LngLatBounds();
   flight.points.forEach((point) =>
@@ -142,7 +146,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
         },
       });
       map.fitBounds(flightBounds(hydratedFlight), {
-        padding: 38,
+        padding: compactMapPadding(containerRef.current!),
         maxZoom: 13,
         duration: 0,
       });
@@ -152,6 +156,18 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       mapRef.current = null;
     };
   }, [flight, points]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const map = mapRef.current;
+    if (!container || !map || expanded || points.length === 0 || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      map.resize();
+      map.fitBounds(flightBounds({ ...flight, points }), { padding: compactMapPadding(container), maxZoom: 13, duration: 0 });
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [expanded, flight, points]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -183,7 +199,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       className={
         expanded
           ? "fixed inset-0 z-[80] bg-[var(--bc-background)]"
-          : "relative h-[clamp(210px,30dvh,300px)] overflow-hidden rounded-[24px] border border-[var(--bc-border)] [&_.maplibregl-ctrl-top-left]:hidden"
+          : "relative h-[clamp(128px,23dvh,220px)] overflow-hidden rounded-[20px] border border-[var(--bc-border)] [&_.maplibregl-ctrl-top-left]:hidden"
       }
       role={expanded ? "dialog" : undefined}
       aria-modal={expanded || undefined}
