@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartSampleTolerance, selectJournalChartPoint } from "./journalChart.ts";
+import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartDurationMinutes, journalChartSampleTolerance, selectJournalChartPoint } from "./journalChart.ts";
 import { journalSpeedKmh, recordedFlightPointsToJournalPoints } from "./realFlightJournal.ts";
 import { kmhToKnots, metresToFeet } from "./unitPreferences.ts";
 
@@ -11,6 +11,36 @@ test("un vol de 55,603683 minutes reçoit un axe entier lisible", () => {
   assert.equal(formatJournalTimeTick(axis.ticks.at(-1), false, true), "56 min");
   assert.ok(axis.ticks.every(Number.isInteger));
   assert.ok(axis.ticks.length <= 7);
+});
+
+test("le domaine temporel vient des samples et ignore une durée de métadonnée incohérente", () => {
+  const points = [{ elapsedMinutes: 0 }, { elapsedMinutes: 55.603683333333336 }];
+  const durationMinutes = journalChartDurationMinutes(points);
+  const axis = buildJournalTimeAxis(durationMinutes);
+  assert.equal(durationMinutes, 55.603683333333336);
+  assert.equal(axis.maximumMinutes, 56);
+  assert.ok(axis.maximumMinutes < 62, "un vol proche d'une heure ne doit jamais être étendu vers cinq heures");
+});
+
+test("les durées réelles de 61, 90 et 300 minutes gardent une fin exacte et lisible", () => {
+  for (const [duration, expectedTicks, expectedLabel] of [
+    [61, [0, 15, 30, 45, 61], "1 h 01"],
+    [90, [0, 15, 30, 45, 60, 75, 90], "1 h 30"],
+    [300, [0, 60, 120, 180, 240, 300], "5 h"],
+  ]) {
+    const axis = buildJournalTimeAxis(duration);
+    assert.deepEqual(axis.ticks, expectedTicks);
+    assert.equal(formatJournalTimeTick(axis.ticks.at(-1), axis.maximumMinutes >= 60, true), expectedLabel);
+    assert.ok(axis.ticks.every(Number.isInteger));
+    assert.ok(axis.ticks.length <= 7);
+  }
+});
+
+test("altitude et vitesse partagent le domaine calculé une seule fois depuis la trace", () => {
+  const component = readFileSync(new URL("../components/journal/JournalFlightGraphs.tsx", import.meta.url), "utf8");
+  assert.equal((component.match(/journalChartDurationMinutes\(points\)/g) ?? []).length, 1);
+  assert.equal((component.match(/durationMinutes=\{durationMinutes\}/g) ?? []).length, 2);
+  assert.doesNotMatch(component, /Math\.max\([^\n]*flight\.durationMinutes/);
 });
 
 test("l'axe reste adaptatif aux vols courts et longs sans ticks voisins superposés", () => {
@@ -100,4 +130,17 @@ test("la conversion du RecordedFlight ne mute jamais les données sources", () =
   const snapshot = structuredClone(source);
   assert.deepEqual(recordedFlightPointsToJournalPoints(source).map(({ speedKmh }) => speedKmh), [0, null]);
   assert.deepEqual(source, snapshot);
+});
+
+test("le premier sample valide est l'origine temporelle de la présentation", () => {
+  const source = {
+    id: "delayed-flight", schemaVersion: 1, status: "COMPLETED", startedAt: 1_000, endedAt: 3_601_000,
+    points: [
+      { timestamp: 301_000, latitude: 50, longitude: 3, altitudeMeters: 100, speedMetersPerSecond: 1, headingDegrees: 90, horizontalAccuracyMeters: 5, verticalAccuracyMeters: 8, quality: "VALID", qualityReason: "NONE" },
+      { timestamp: 3_601_000, latitude: 50.1, longitude: 3.1, altitudeMeters: 200, speedMetersPerSecond: 1, headingDegrees: 90, horizontalAccuracyMeters: 5, verticalAccuracyMeters: 8, quality: "VALID", qualityReason: "NONE" },
+    ],
+    summary: { durationSeconds: 3600, distanceMeters: 10, minAltitudeMeters: 100, maxAltitudeMeters: 200, averageGroundSpeedMetersPerSecond: 1, maxGroundSpeedMetersPerSecond: 1 },
+    createdAt: 1_000, updatedAt: 3_601_000,
+  };
+  assert.deepEqual(recordedFlightPointsToJournalPoints(source).map(({ elapsedMinutes }) => elapsedMinutes), [0, 55]);
 });

@@ -60,10 +60,11 @@ function dateLabels(timestamp: number): { date: string; dateIso: string } {
 export function recordedFlightPointsToJournalPoints(
   source: RecordedFlight,
 ): JournalFlight["points"] {
+  const firstSampleTimestamp = source.points.find((point) => Number.isFinite(point.timestamp))?.timestamp ?? source.startedAt;
   return source.points.map((point) => ({
     longitude: point.longitude,
     latitude: point.latitude,
-    elapsedMinutes: Math.max(0, (point.timestamp - source.startedAt) / 60_000),
+    elapsedMinutes: Math.max(0, (point.timestamp - firstSampleTimestamp) / 60_000),
     altitudeM: point.altitudeMeters,
     speedKmh: journalSpeedKmh(point),
   }));

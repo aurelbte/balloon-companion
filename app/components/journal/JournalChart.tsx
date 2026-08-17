@@ -41,7 +41,7 @@ export default function JournalChart({
   const { maximumMinutes: maxX, ticks: xTicks } = useMemo(() => buildJournalTimeAxis(durationMinutes), [durationMinutes]);
   const yTicks = ticksUntil(yMaximum, yStep).reverse();
   const path = useMemo(() => buildJournalChartPath(points, maxX, yMaximum), [maxX, points, yMaximum]);
-  const useHours = maxX >= 120;
+  const useHours = maxX >= 60;
   const toleranceMinutes = useMemo(() => journalChartSampleTolerance(points), [points]);
   const [selection, setSelection] = useState<JournalChartSelection | null>(null);
   const activePointer = useRef<number | null>(null);

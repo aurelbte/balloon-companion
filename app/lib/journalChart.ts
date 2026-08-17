@@ -3,6 +3,13 @@ export type JournalChartSelection = { timePoint: JournalChartPoint; valuePoint: 
 
 const TIME_STEPS_MINUTES = [1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
 
+export function journalChartDurationMinutes(points: readonly { elapsedMinutes: number }[]): number {
+  const elapsedMinutes = points
+    .map((point) => point.elapsedMinutes)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  return Math.max(1, ...elapsedMinutes);
+}
+
 export function buildJournalTimeAxis(rawDurationMinutes: number): { maximumMinutes: number; ticks: number[] } {
   const maximumMinutes = Math.max(1, Math.ceil(Number.isFinite(rawDurationMinutes) ? rawDurationMinutes : 0));
   const idealStep = maximumMinutes / 6;
@@ -14,7 +21,7 @@ export function buildJournalTimeAxis(rawDurationMinutes: number): { maximumMinut
 }
 
 export function formatJournalTimeTick(minutes: number, useHours: boolean, isLast: boolean): string {
-  if (!useHours) return isLast ? `${Math.round(minutes)} min` : String(Math.round(minutes));
+  if (!useHours || minutes < 60) return isLast ? `${Math.round(minutes)} min` : String(Math.round(minutes));
   if (minutes === 0) return "0";
   const hours = Math.floor(minutes / 60);
   const remainder = Math.round(minutes % 60);
