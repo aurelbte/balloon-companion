@@ -821,7 +821,7 @@
 .detailLayout {
   display: grid;
   height: 100%;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: repeat(5, auto);
   align-content: start;
   gap: clamp(5px, 0.8dvh, 9px);
 }
@@ -837,7 +837,7 @@
 .detailLayout .logbookLinkCard { min-height: 46px; margin-top: 0; padding: 6px 10px; border-radius: 14px; }
 .detailLayout .logbookLinkCard strong { margin-top: 1px; }
 .detailLayout .logbookLinkCard > div:last-child { gap: 2px; }
-.detailLayout .moduleGrid { min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: clamp(6px, .8dvh, 9px); margin-top: 0; }
+.detailLayout .moduleGrid { align-self: start; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, clamp(102px, 12.5dvh, 124px)); gap: clamp(8px, .9dvh, 10px); margin-top: 0; }
 .detailLayout .moduleCard { min-height: 0; padding: clamp(8px, 1.1dvh, 11px); border-radius: 16px; overflow: hidden; }
 .detailLayout .moduleTitle { gap: 5px; font-size: .68rem; }
 .detailLayout .moduleTitle svg { width: 14px; height: 14px; }
@@ -847,6 +847,7 @@
 .detailLayout .statGrid span { font-size: .55rem; }
 .detailLayout .statGrid strong { margin-top: 1px; font-size: .76rem; }
 .detailLayout .flightNotePreview { -webkit-line-clamp: 2; }
+.detailLayout .exportFormats { font-size: clamp(.68rem, 2.8vw, .9rem); white-space: nowrap; }
 
 @media (max-height: 740px) {
   .detailLayout { gap: 4px; }
@@ -855,6 +856,7 @@
   .detailLayout .primaryMetrics { margin-top: 3px; }
   .detailLayout .logbookLinkCard { min-height: 42px; padding-block: 4px; }
   .detailLayout .moduleCard { padding: 7px 9px; }
+  .detailLayout .moduleGrid { grid-template-rows: repeat(2, 98px); gap: 6px; }
   .detailLayout .moduleValue { margin-top: 5px; }
   .detailLayout .moduleAction { margin-top: 4px; }
 }

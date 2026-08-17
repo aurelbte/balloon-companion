@@ -31,7 +31,10 @@ test("les quatre actions et le carnet restent accessibles", () => {
   assert.match(detail, /href=\{`\/journal\/\$\{flight\.id\}\/statistics`\}/);
   assert.match(detail, /onClick=\{\(\) => setNoteEditorOpen\(true\)\}/);
   assert.match(detail, /onClick=\{\(\) => setExportDialogOpen\(true\)\}/);
-  assert.match(styles, /grid-template-rows: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /grid-template-rows: repeat\(2, clamp\(102px, 12\.5dvh, 124px\)\)/);
+  assert.match(styles, /align-self: start/);
+  assert.doesNotMatch(styles, /\.detailLayout \.moduleGrid[^}]*grid-template-rows: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(detail, /styles\.exportFormats/);
 });
 
 test("la tuile synthétique évite les horaires redondants sans toucher à la vue complète", () => {
