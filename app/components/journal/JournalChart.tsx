@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import styles from "../../journal/Journal.module.css";
-import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartSampleTolerance, journalChartTimeFromPointerX, selectJournalChartPoint, type JournalChartPoint, type JournalChartSelection } from "../../lib/journalChart";
+import { buildJournalChartPath, buildJournalTimeAxis, formatJournalTimeTick, formatJournalTooltipTime, formatJournalTooltipValue, journalChartSampleTolerance, journalChartTimeFromPointer, selectJournalChartPoint, type JournalChartPoint, type JournalChartSelection } from "../../lib/journalChart";
 
 type JournalChartProps = {
   title: string;
@@ -16,6 +16,7 @@ type JournalChartProps = {
   tooltipLabel: string;
   tooltipUnavailableLabel: string;
   tooltipFractionDigits: number;
+  tooltipTimePrefix?: string;
 };
 
 function ticksUntil(maximum: number, step: number): number[] {
@@ -37,6 +38,7 @@ export default function JournalChart({
   tooltipLabel,
   tooltipUnavailableLabel,
   tooltipFractionDigits,
+  tooltipTimePrefix,
 }: JournalChartProps) {
   const { maximumMinutes: maxX, ticks: xTicks } = useMemo(() => buildJournalTimeAxis(durationMinutes), [durationMinutes]);
   const yTicks = ticksUntil(yMaximum, yStep).reverse();
@@ -49,7 +51,7 @@ export default function JournalChart({
   const pendingTarget = useRef<number | null>(null);
   const scheduleSelection = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    pendingTarget.current = journalChartTimeFromPointerX(event.clientX, bounds.left, bounds.width, maxX);
+    pendingTarget.current = journalChartTimeFromPointer(event, bounds.left, bounds.width, maxX);
     if (frame.current !== null) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = null;
@@ -157,7 +159,7 @@ export default function JournalChart({
               <output className={styles.chartTooltip}>
                 <strong>{tooltipLabel}</strong>
                 <span>{selectedValue === null ? tooltipUnavailableLabel : formatJournalTooltipValue(selectedValue, axisUnit, tooltipFractionDigits)}</span>
-                <span className={styles.chartTooltipTime}>{formatJournalTooltipTime(selection.timePoint.x)}</span>
+                <span className={styles.chartTooltipTime}>{tooltipTimePrefix}{formatJournalTooltipTime(selection.timePoint.x)}</span>
               </output>
             </>}
           </div>

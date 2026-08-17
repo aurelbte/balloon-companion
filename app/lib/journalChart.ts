@@ -16,6 +16,10 @@ export function journalChartTimeFromPointerX(clientX: number, plotLeft: number, 
   return ratio * maximumMinutes;
 }
 
+export function journalChartTimeFromPointer(pointer: Readonly<{ clientX: number }>, plotLeft: number, plotWidth: number, maximumMinutes: number): number {
+  return journalChartTimeFromPointerX(pointer.clientX, plotLeft, plotWidth, maximumMinutes);
+}
+
 export function buildJournalTimeAxis(rawDurationMinutes: number): { maximumMinutes: number; ticks: number[] } {
   const maximumMinutes = Math.max(1, Math.ceil(Number.isFinite(rawDurationMinutes) ? rawDurationMinutes : 0));
   const idealStep = maximumMinutes / 6;
