@@ -23,6 +23,28 @@ function centered(page: PDFPage, text: string, y: number, font: PDFFont, size: n
   page.drawText(safe, { x: (A4[0] - font.widthOfTextAtSize(safe, size)) / 2, y, font, size, color });
 }
 
+function compactRoute(page: PDFPage, departureValue: string, arrivalValue: string, y: number, font: PDFFont, color: ReturnType<typeof rgb>, accent: ReturnType<typeof rgb>): void {
+  const departure = pdfText(departureValue);
+  const arrival = pdfText(arrivalValue);
+  const arrowWidth = 20;
+  const gap = 10;
+  const maximumWidth = 511;
+  let size = 20;
+  while (size > 10 && font.widthOfTextAtSize(departure, size) + font.widthOfTextAtSize(arrival, size) + arrowWidth + gap * 2 > maximumWidth) size -= 0.5;
+  const departureWidth = font.widthOfTextAtSize(departure, size);
+  const arrivalWidth = font.widthOfTextAtSize(arrival, size);
+  const groupWidth = departureWidth + arrivalWidth + arrowWidth + gap * 2;
+  const startX = (A4[0] - groupWidth) / 2;
+  page.drawText(departure, { x: startX, y, font, size, color });
+  const arrowStart = startX + departureWidth + gap;
+  const arrowEnd = arrowStart + arrowWidth;
+  const arrowY = y + size * 0.38;
+  page.drawLine({ start: { x: arrowStart, y: arrowY }, end: { x: arrowEnd, y: arrowY }, thickness: 2, color: accent });
+  page.drawLine({ start: { x: arrowEnd - 6, y: arrowY + 4 }, end: { x: arrowEnd, y: arrowY }, thickness: 2, color: accent });
+  page.drawLine({ start: { x: arrowEnd - 6, y: arrowY - 4 }, end: { x: arrowEnd, y: arrowY }, thickness: 2, color: accent });
+  page.drawText(arrival, { x: arrowEnd + gap, y, font, size, color });
+}
+
 export async function createPassengerMemoryPdf(model: PassengerMemoryModel, assets: Readonly<{ logoPng: Uint8Array; mapPng: Uint8Array }>): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage(A4);
@@ -36,19 +58,13 @@ export async function createPassengerMemoryPdf(model: PassengerMemoryModel, asse
   page.drawRectangle({ x: 0, y: 704, width: A4[0], height: 138, color: navy });
 
   const logo = await document.embedPng(assets.logoPng);
-  const logoScale = Math.min(190 / logo.width, 72 / logo.height);
-  page.drawImage(logo, { x: 38, y: 755, width: logo.width * logoScale, height: logo.height * logoScale });
-  page.drawText("VOTRE VOL EN MONTGOLFIERE", { x: 38, y: 730, font: bold, size: 15, color: rgb(1, 1, 1) });
-  page.drawText(pdfText(model.date), { x: 38, y: 712, font: regular, size: 10, color: rgb(0.76, 0.84, 0.91) });
+  const logoScale = Math.min(220 / logo.width, 82 / logo.height);
+  const logoWidth = logo.width * logoScale;
+  page.drawImage(logo, { x: (A4[0] - logoWidth) / 2, y: 754, width: logoWidth, height: logo.height * logoScale });
+  centered(page, "VOTRE VOL EN MONTGOLFIERE", 728, bold, 15, rgb(1, 1, 1));
+  centered(page, model.date, 711, regular, 10, rgb(0.76, 0.84, 0.91));
 
-  const departure = fittedText(model.departure, bold, 20, 225);
-  const arrival = fittedText(model.arrival, bold, 20, 225);
-  page.drawText(departure.text, { x: 42, y: 666, font: bold, size: departure.size, color: navy });
-  const arrivalWidth = bold.widthOfTextAtSize(arrival.text, arrival.size);
-  page.drawText(arrival.text, { x: A4[0] - 42 - arrivalWidth, y: 666, font: bold, size: arrival.size, color: navy });
-  page.drawLine({ start: { x: 278, y: 675 }, end: { x: 317, y: 675 }, thickness: 2, color: blue });
-  page.drawLine({ start: { x: 310, y: 680 }, end: { x: 317, y: 675 }, thickness: 2, color: blue });
-  page.drawLine({ start: { x: 310, y: 670 }, end: { x: 317, y: 675 }, thickness: 2, color: blue });
+  compactRoute(page, model.departure, model.arrival, 666, bold, navy, blue);
 
   page.drawRectangle({ x: 36, y: 350, width: 523, height: 285, color: pale, borderColor: rgb(0.83, 0.88, 0.92), borderWidth: 1 });
   const map = await document.embedPng(assets.mapPng);
@@ -75,6 +91,5 @@ export async function createPassengerMemoryPdf(model: PassengerMemoryModel, asse
     centered(page, "Votre pilote", 128, regular, 10, muted);
     centered(page, model.pilotName, 103, bold, 17, navy);
   }
-  centered(page, "Balloon Companion", 40, bold, 8, muted);
   return document.save({ useObjectStreams: false });
 }

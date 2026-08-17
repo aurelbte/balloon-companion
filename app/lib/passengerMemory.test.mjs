@@ -61,6 +61,9 @@ test("le générateur produit exactement une page A4 portrait", async () => {
   assert.ok(height > width);
   const source = readFileSync(new URL("./passengerMemoryPdf.ts", import.meta.url), "utf8");
   assert.doesNotMatch(source, /COPILOTE NUMERIQUE|PILOTES DE MONTGOLFIERE/);
+  assert.match(source, /x: \(A4\[0\] - logoWidth\) \/ 2/);
+  assert.match(source, /compactRoute\(page, model\.departure, model\.arrival/);
+  assert.doesNotMatch(source, /centered\(page, "Balloon Companion"/);
 });
 
 test("le renderer prévoit un fallback neutre sans inventer de carte", () => {
