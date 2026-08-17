@@ -776,7 +776,9 @@
 }
 
 .moduleTextAction {
+  display: inline-block;
   min-height: 36px;
+  padding-top: 9px;
   margin-top: 7px;
   border: 0;
   background: transparent;

@@ -32,3 +32,14 @@ test("l'éditeur Notes est local, multiligne et utilisable avec le clavier mobil
   assert.match(detail, /Ajouter une note/);
   assert.match(detail, /Modifier/);
 });
+
+test("toute la carte Notes ouvre l'éditeur au toucher et au clavier sans bouton imbriqué", () => {
+  const detail = readFileSync(new URL("../components/journal/JournalFlightDetail.tsx", import.meta.url), "utf8");
+  const noteCard = detail.match(/<article className=\{`\$\{styles\.moduleCard\} \$\{styles\.moduleLink\}`\} role="button"[\s\S]*?<\/article>/)?.[0] ?? "";
+  assert.match(noteCard, /tabIndex=\{0\}/);
+  assert.match(noteCard, /aria-label=\{displayedNote \? "Modifier la note de vol" : "Ajouter une note de vol"\}/);
+  assert.match(noteCard, /onClick=\{\(\) => setNoteEditorOpen\(true\)\}/);
+  assert.match(noteCard, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.match(detail, /initialNote=\{displayedNote \?\? ""\}/);
+  assert.doesNotMatch(noteCard, /<button/);
+});

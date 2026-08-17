@@ -25,9 +25,17 @@ test("le tri est déterministe entre vols de même date et même heure", () => {
   assert.deepEqual(flights.sort(compareJournalFlightsMostRecentFirst).map(({ id }) => id), ["a", "z"]);
 });
 
-test("seule la fiche force le haut au changement de vol", () => {
+test("chaque navigation de la liste cible explicitement le haut de la fiche", () => {
   const detail = readFileSync(new URL("../components/journal/JournalFlightDetail.tsx", import.meta.url), "utf8");
   const list = readFileSync(new URL("../components/journal/JournalFlightList.tsx", import.meta.url), "utf8");
-  assert.match(detail, /useLayoutEffect\(\(\) => \{\s*window\.scrollTo\(0, 0\);\s*\}, \[flightId\]\)/);
+  assert.match(detail, /<main id="flight-detail-top"/);
+  assert.match(list, /router\.push\(`\/journal\/\$\{flight\.id\}#flight-detail-top`\)/);
+  assert.doesNotMatch(detail, /scrollTo\(/);
   assert.doesNotMatch(list, /scrollTo\(/);
+});
+
+test("le retour Journal ne contient aucun reset de scroll global", () => {
+  const detail = readFileSync(new URL("../components/journal/JournalFlightDetail.tsx", import.meta.url), "utf8");
+  assert.match(detail, /<Link href="\/journal"/);
+  assert.doesNotMatch(detail, /scrollRestoration|history\.replaceState/);
 });

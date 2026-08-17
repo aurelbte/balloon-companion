@@ -165,6 +165,7 @@ function InteractiveFlightCard({
     onTransitionEnd,
     onContentClick,
   } = useJournalCardSwipe({ open: swipeOpen, onSetOpen: onSetSwipeOpen });
+  const openFlight = () => router.push(`/journal/${flight.id}#flight-detail-top`);
 
   return (
     <article className={styles.flightCardShell} data-journal-flight-shell>
@@ -183,10 +184,10 @@ function InteractiveFlightCard({
           onTransitionEnd(event.propertyName, event.currentTarget);
         }}
         onClick={() => {
-          onContentClick(() => router.push(`/journal/${flight.id}`));
+          onContentClick(openFlight);
         }}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/journal/${flight.id}`); }
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openFlight(); }
         }}
       >
         <div className={styles.flightCardHeader}>
