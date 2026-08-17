@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nominatimItemToFlightPlace } from "../api/geocoding/reverse/route.ts";
+import { nominatimItemToFlightPlace } from "./reverseGeocoding.ts";
 import { selectFlightPlaceName } from "./journalFlightTitle.ts";
 
 test("un aérodrome contenant réellement le point expose son ICAO", () => {

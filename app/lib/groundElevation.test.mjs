@@ -12,6 +12,7 @@ import {
 } from "./groundElevation.ts";
 import { createRecordedFlight } from "./recordedFlight.ts";
 import { MemoryRecordedFlightStorage } from "./recordedFlightStorage.ts";
+import { getFlightAltitudeReadings } from "./unitPreferences.ts";
 
 const fix = (altitude, timestamp, latitude = 50.63, longitude = 3.06, verticalAccuracy = 8) => ({
   latitude, longitude, altitude, verticalAccuracy, accuracy: 5, speed: 0, heading: null, timestamp,
@@ -68,12 +69,18 @@ test("déduplique et plafonne le corridor terrain", () => {
   assert.equal(new Set(cells.map(({ id }) => id)).size, cells.length);
 });
 
-test("l'instrument conserve ALT GPS brut et convertit seulement l'affichage", () => {
+test("l'instrument affiche la même ALT GPS en mètres et pieds selon la préférence", () => {
   const instruments = readFileSync(new URL("../components/flight/FlightInstruments.tsx", import.meta.url), "utf8");
+  const flightPage = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
   const geolocation = readFileSync(new URL("../hooks/useGeolocation.ts", import.meta.url), "utf8");
-  assert.match(instruments, /formatAltitudeValue\(metrics\.altitude\)/);
-  assert.match(instruments, /formatAltitudeValue\(session\.altitude\.groundMeters\)/);
-  assert.match(instruments, /metresToFeet\(altitude\)/);
+  assert.deepEqual(getFlightAltitudeReadings(350, "m"), { primary: { value: "350", unit: "m" }, secondary: { value: "1 148", unit: "ft" } });
+  assert.deepEqual(getFlightAltitudeReadings(350, "ft"), { primary: { value: "1 148", unit: "ft" }, secondary: { value: "350", unit: "m" } });
+  assert.deepEqual(getFlightAltitudeReadings(-10, "m"), { primary: { value: "-10", unit: "m" }, secondary: { value: "-33", unit: "ft" } });
+  assert.equal(getFlightAltitudeReadings(null, "m"), null);
+  assert.match(instruments, /getFlightAltitudeReadings\(metrics\.altitude/);
+  assert.doesNotMatch(instruments, /GND estimé|groundMeters/);
+  assert.match(instruments, />QNH</);
+  assert.doesNotMatch(flightPage, /useGroundEstimate|groundMeters|setGroundCalibration/);
   assert.match(geolocation, /altitude: altitude !== null \? altitude : null/);
   assert.match(geolocation, /altitudeAccuracy !== null && Number\.isFinite\(altitudeAccuracy\)/);
 });

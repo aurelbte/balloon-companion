@@ -79,7 +79,6 @@ export interface FlightSession {
   };
   altitude: {
     amslMeters: number | null;
-    groundMeters: number | null;
     qnhHpa: number | null;
   };
   motion: {

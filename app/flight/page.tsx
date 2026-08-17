@@ -60,7 +60,6 @@ import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
 import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
 import { qnhHpaFromMetar } from "../weather/aviationPresentation";
-import { useGroundEstimate } from "../hooks/useGroundEstimate";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -178,17 +177,7 @@ export default function FlightPage() {
     dismissCompletedFlight,
     markAcquiring,
     markReady,
-    setGroundCalibration,
   } = tracking;
-
-  const groundEstimate = useGroundEstimate({
-    point: currentPosition,
-    isStale,
-    isTracking,
-    activeFlight,
-    trajectories: plannedTrajectories,
-    onCalibration: setGroundCalibration,
-  });
 
   // Une projection exige un point frais, un cap réel et une vitesse suffisante.
   // Un cap absent ne doit jamais être interprété comme un cap nord (0°).
@@ -510,7 +499,6 @@ export default function FlightPage() {
         plannedTrajectories,
         flightContext,
         qnhHpa,
-        groundMeters: groundEstimate.groundMeters,
       }),
     [
       activeFlight,
@@ -518,7 +506,6 @@ export default function FlightPage() {
       currentPosition,
       displayedMetrics,
       flightContext,
-      groundEstimate.groundMeters,
       qnhHpa,
       geoState,
       gpsProjection,

@@ -4,7 +4,7 @@ import { formatDuration, normalizeHeading } from "../../lib/geo";
 import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
 import type { FlightSession } from "../../lib/flightCore";
 import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
-import { kilometresToNauticalMiles, kmhToKnots, metresToFeet } from "../../lib/unitPreferences";
+import { getFlightAltitudeReadings, kilometresToNauticalMiles, kmhToKnots } from "../../lib/unitPreferences";
 
 interface FlightInstrumentsProps {
   session: FlightSession;
@@ -21,13 +21,7 @@ export default function FlightInstruments({
   const units = useUnitPreferences();
   const metrics = session.statistics.metrics;
   const phase = session.phase;
-  const formatAltitudeValue = (altitude: number | null) => {
-    if (altitude === null || !Number.isFinite(altitude)) {
-      return "—";
-    }
-
-    return Math.round(units.flightInstruments.altitudeUnit === "ft" ? metresToFeet(altitude) : altitude).toString();
-  };
+  const altitudeReadings = getFlightAltitudeReadings(metrics.altitude, units.flightInstruments.altitudeUnit);
 
   const bottomOffset = withNavigation
     ? `calc(max(var(--bc-space-4), env(safe-area-inset-bottom)) + ${FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset}px)`
@@ -132,11 +126,18 @@ export default function FlightInstruments({
         }
         .flight-altimeter__context {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: var(--bc-space-3);
+          grid-template-columns: 1fr;
           margin-top: var(--bc-space-3);
           padding-top: var(--bc-space-2);
           border-top: 1px solid var(--bc-color-border-glass);
+        }
+        .flight-altimeter__alternate {
+          margin-top: var(--bc-space-2);
+          color: var(--bc-color-text-secondary);
+          font-size: 16px;
+          font-weight: var(--bc-font-weight-semibold);
+          font-variant-numeric: tabular-nums;
+          line-height: 1;
         }
         .flight-altimeter__secondary {
           margin-top: var(--bc-space-1);
@@ -273,17 +274,14 @@ export default function FlightInstruments({
         <div className="flight-altimeter__label">ALT GPS</div>
         <div className="flight-altimeter__primary">
           <span className="flight-altimeter__value">
-            {formatAltitudeValue(metrics.altitude)}
+            {altitudeReadings?.primary.value ?? "—"}
           </span>
-          <span className="flight-altimeter__unit">{units.flightInstruments.altitudeUnit}</span>
+          {altitudeReadings && <span className="flight-altimeter__unit">{altitudeReadings.primary.unit}</span>}
         </div>
+        {altitudeReadings && <div className="flight-altimeter__alternate">
+          {altitudeReadings.secondary.value} {altitudeReadings.secondary.unit}
+        </div>}
         <div className="flight-altimeter__context">
-          <div>
-            <div className="flight-altimeter__label">GND estimé</div>
-            <div className="flight-altimeter__secondary">
-              {formatAltitudeValue(session.altitude.groundMeters)} {units.flightInstruments.altitudeUnit}
-            </div>
-          </div>
           <div>
             <div className="flight-altimeter__label">QNH</div>
             <div className="flight-altimeter__secondary">

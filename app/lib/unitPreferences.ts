@@ -27,6 +27,15 @@ export const nauticalMilesToKilometres = (value: number): number => value * KM_P
 export const celsiusToFahrenheit = (value: number): number => value * 9 / 5 + 32;
 export const fahrenheitToCelsius = (value: number): number => (value - 32) * 5 / 9;
 
+export type FlightAltitudeReading = { value: string; unit: AltitudeUnit };
+
+export function getFlightAltitudeReadings(valueMetres: number | null, primaryUnit: AltitudeUnit): { primary: FlightAltitudeReading; secondary: FlightAltitudeReading } | null {
+  if (valueMetres === null || !Number.isFinite(valueMetres)) return null;
+  const metres = { value: Math.round(valueMetres).toLocaleString("fr-FR"), unit: "m" as const };
+  const feet = { value: Math.round(metresToFeet(valueMetres)).toLocaleString("fr-FR"), unit: "ft" as const };
+  return primaryUnit === "m" ? { primary: metres, secondary: feet } : { primary: feet, secondary: metres };
+}
+
 function format(value: number, unit: string, precision: number): string {
   return `${value.toFixed(precision)} ${unit}`;
 }

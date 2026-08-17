@@ -65,8 +65,24 @@ export function recordedFlightPointsToJournalPoints(
     latitude: point.latitude,
     elapsedMinutes: Math.max(0, (point.timestamp - source.startedAt) / 60_000),
     altitudeM: point.altitudeMeters,
-    speedKmh: point.speedMetersPerSecond === null ? null : point.speedMetersPerSecond * 3.6,
+    speedKmh: journalSpeedKmh(point),
   }));
+}
+
+const UNRELIABLE_SPEED_REASONS = new Set([
+  "LOW_ACCURACY",
+  "BACKGROUND_RESUME",
+  "TIME_GAP",
+  "POSITION_JUMP",
+  "SPEED_OUTLIER",
+  "HEADING_OUTLIER",
+]);
+
+export function journalSpeedKmh(point: RecordedFlightPoint): number | null {
+  const speed = point.speedMetersPerSecond;
+  if (speed === null || !Number.isFinite(speed) || speed < 0 || point.quality === "INVALID") return null;
+  if (point.quality === "SUSPECT" && UNRELIABLE_SPEED_REASONS.has(point.qualityReason ?? "NONE")) return null;
+  return speed * 3.6;
 }
 
 export function recordedFlightToJournalFlight(

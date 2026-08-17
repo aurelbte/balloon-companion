@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { getRecordedFlightPresentation } from "./recordedFlightPresentation.ts";
+import { getFlightAltitudeReadings } from "./unitPreferences.ts";
 
 const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const flight = {
@@ -15,6 +16,12 @@ test("les instruments temps réel utilisent les trois préférences sans toucher
   assert.match(instruments, /units\.flightInstruments\.altitudeUnit/);
   assert.match(instruments, /units\.flightInstruments\.distanceUnit/);
   assert.match(instruments, /unit: "m\/s"/);
+});
+
+test("la préférence altitude choisit seulement la lecture principale de la même mesure GPS", () => {
+  assert.deepEqual(getFlightAltitudeReadings(350, "m"), { primary: { value: "350", unit: "m" }, secondary: { value: "1 148", unit: "ft" } });
+  assert.deepEqual(getFlightAltitudeReadings(350, "ft"), { primary: { value: "1 148", unit: "ft" }, secondary: { value: "350", unit: "m" } });
+  assert.equal(getFlightAltitudeReadings(Number.NaN, "ft"), null);
 });
 
 test("VENTS sépare Prévu météo et Observé instruments et convertit uniquement les libellés d'altitude", () => {
