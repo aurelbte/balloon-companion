@@ -20,7 +20,7 @@ import JournalTraceThumbnail from "./JournalTraceThumbnail";
 import RenameFlightDialog from "./RenameFlightDialog";
 import styles from "../../journal/Journal.module.css";
 import { deleteRecordedJournalFlight, migrateCompletedRecordedFlightsToJournal, persistJournalFlightCustomTitle } from "../../lib/flightCompletionStorage";
-import { journalFlightsForMode } from "../../lib/realFlightJournal";
+import { compareJournalFlightsMostRecentFirst, journalFlightsForMode } from "../../lib/realFlightJournal";
 import { buildFactualFlightLabel, getJournalFlightDisplayTitle } from "../../lib/journalFlightTitle";
 import { useJournalCardSwipe } from "../../hooks/useJournalCardSwipe";
 import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
@@ -337,10 +337,11 @@ export default function JournalFlightList() {
     .filter((flight) => balloon === "all" || flight.balloonRegistration === balloon)
     .filter((flight) => matchesDuration(flight.durationMinutes, duration))
     .sort((left, right) => {
-      if (sortOrder === "oldest") return left.dateIso.localeCompare(right.dateIso);
-      if (sortOrder === "duration") return right.durationMinutes - left.durationMinutes;
-      if (sortOrder === "distance") return right.distanceKm - left.distanceKm;
-      return right.dateIso.localeCompare(left.dateIso);
+      const chronologicalOrder = compareJournalFlightsMostRecentFirst(left, right);
+      if (sortOrder === "oldest") return -chronologicalOrder;
+      if (sortOrder === "duration") return right.durationMinutes - left.durationMinutes || chronologicalOrder;
+      if (sortOrder === "distance") return right.distanceKm - left.distanceKm || chronologicalOrder;
+      return chronologicalOrder;
     });
 
   const summary = visibleFlights.reduce(

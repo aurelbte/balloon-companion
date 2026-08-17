@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLayoutEffect } from "react";
 import { BarChart3, ChevronRight, FileDown, Gauge, NotebookPen } from "lucide-react";
 import NavigationBar from "../NavigationBar";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
@@ -15,6 +16,9 @@ import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 import { formatFlightAltitude, formatFlightDistance, formatFlightSpeed } from "../../lib/unitPreferences";
 
 export default function JournalFlightDetail({ flightId, initialFlight }: { flightId: string; initialFlight: JournalFlight | null }) {
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [flightId]);
   const units = useUnitPreferences();
   const state = useFlightCompletionState();
   const flight = state.journalFlights.find(({ id }) => id === flightId) ?? initialFlight;

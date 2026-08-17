@@ -15,8 +15,23 @@ export function journalFlightsForMode(flights: readonly JournalFlight[], demoEna
   return flights.filter((flight) => demoEnabled || flight.origin === "REAL_GPS" || flight.origin === "MANUAL");
 }
 
+export function journalFlightStartTimestamp(flight: Pick<JournalFlight, "startedAt" | "dateIso" | "takeoffTime">): number {
+  if (typeof flight.startedAt === "number" && Number.isFinite(flight.startedAt)) return flight.startedAt;
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(flight.dateIso);
+  const timeMatch = /^(\d{1,2}):(\d{2})/.exec(flight.takeoffTime);
+  if (dateMatch && timeMatch) {
+    return Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]), Number(timeMatch[1]), Number(timeMatch[2]));
+  }
+  const dateOnly = Date.parse(flight.dateIso);
+  return Number.isFinite(dateOnly) ? dateOnly : 0;
+}
+
+export function compareJournalFlightsMostRecentFirst(left: JournalFlight, right: JournalFlight): number {
+  return journalFlightStartTimestamp(right) - journalFlightStartTimestamp(left) || left.id.localeCompare(right.id);
+}
+
 export function latestRealJournalFlight(flights: readonly CompletionJournalFlight[]): CompletionJournalFlight | null {
-  return journalFlightsForMode(flights, false).sort((left, right) => (right.startedAt ?? Date.parse(right.dateIso)) - (left.startedAt ?? Date.parse(left.dateIso)))[0] as CompletionJournalFlight | undefined ?? null;
+  return journalFlightsForMode(flights, false).sort(compareJournalFlightsMostRecentFirst)[0] as CompletionJournalFlight | undefined ?? null;
 }
 
 export function legacyFlightSessionToRecordedFlight(session: PersistedFlightSession): RecordedFlight | null {
