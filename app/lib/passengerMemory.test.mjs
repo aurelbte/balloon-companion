@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
-import { buildPassengerMemoryModel, formatPassengerMemoryDuration, passengerMemoryFilename } from "./passengerMemory.ts";
+import { buildPassengerMemoryModel, defaultPassengerMemoryBalloonId, formatPassengerMemoryDuration, passengerMemoryBalloonLabel, passengerMemoryFilename } from "./passengerMemory.ts";
 import { createPassengerMemoryPdf } from "./passengerMemoryPdf.ts";
 import { exportPassengerMemory } from "./passengerMemoryExport.ts";
 
@@ -31,8 +31,9 @@ test("propose la durée GPS arrondie sans persister la personnalisation", () => 
 
 test("le modèle souvenir contient les données publiques, unités et identité attendues", () => {
   const { recordedFlight, journalFlight } = fixtures();
-  const model = buildPassengerMemoryModel({ recordedFlight, journalFlight, units: metricUnits, pilot: { firstName: " Aurélien ", lastName: " Boitte " } });
-  assert.deepEqual(model, { date: "16 août 2026", departure: "Boëschepe", arrival: "Le Doulieu", displayedDuration: "56 min", distance: "12.2 km", maximumAltitude: "960 m", maximumSpeed: "24 km/h", pilotName: "Aurélien Boitte" });
+  const selectedBalloon = { id: "balloon-stable-id", manufacturer: " Cameron ", model: " Z105 ", registration: " F-HLFM " };
+  const model = buildPassengerMemoryModel({ recordedFlight, journalFlight, units: metricUnits, pilot: { firstName: " Aurélien ", lastName: " Boitte " }, selectedBalloon });
+  assert.deepEqual(model, { date: "16 août 2026", departure: "Boëschepe", arrival: "Le Doulieu", displayedDuration: "56 min", distance: "12.2 km", maximumAltitude: "960 m", maximumSpeed: "24 km/h", pilotName: "Aurélien Boitte", balloon: { id: "balloon-stable-id", label: "Cameron Z105 · F-HLFM" } });
   assert.equal("takeoffTime" in model, false);
   assert.equal("landingTime" in model, false);
   assert.equal("notes" in model, false);
@@ -41,6 +42,35 @@ test("le modèle souvenir contient les données publiques, unités et identité 
   assert.match(imperial.maximumAltitude, /ft$/);
   assert.match(imperial.maximumSpeed, /kt$/);
   assert.equal(imperial.pilotName, null);
+  assert.equal(imperial.balloon, null);
+});
+
+test("le choix du ballon utilise son identifiant stable et gère les données partielles", () => {
+  const balloons = [
+    { id: "stable-a", manufacturer: "Cameron", model: "Z105", registration: "F-HLFM" },
+    { id: "stable-b", manufacturer: "Kubicek", model: "BB30Z", registration: "" },
+  ];
+  const snapshot = structuredClone(balloons);
+  assert.equal(passengerMemoryBalloonLabel(balloons[0]), "Cameron Z105 · F-HLFM");
+  assert.equal(passengerMemoryBalloonLabel(balloons[1]), "Kubicek BB30Z");
+  assert.equal(passengerMemoryBalloonLabel({ id: "registration-only", manufacturer: "", model: "", registration: "F-TEST" }), "F-TEST");
+  assert.equal(defaultPassengerMemoryBalloonId([balloons[0]], null), "stable-a");
+  assert.equal(defaultPassengerMemoryBalloonId(balloons, "stable-b"), "stable-b");
+  assert.equal(defaultPassengerMemoryBalloonId(balloons, null), "");
+  assert.equal(defaultPassengerMemoryBalloonId([], null), "");
+  assert.deepEqual(balloons, snapshot);
+});
+
+test("le dialogue utilise la liste Mes ballons et bloque les états sans sélection", () => {
+  const source = readFileSync(new URL("../components/journal/PassengerMemoryDialog.tsx", import.meta.url), "utf8");
+  const detail = readFileSync(new URL("../components/journal/JournalFlightDetail.tsx", import.meta.url), "utf8");
+  assert.match(source, /balloons\.map\(\(balloon\)/);
+  assert.match(source, /<option key=\{balloon\.id\} value=\{balloon\.id\}/);
+  assert.match(source, /defaultPassengerMemoryBalloonId\(balloons, activeBalloonId\)/);
+  assert.match(source, /Aucun ballon n’est enregistré/);
+  assert.match(source, /\/more\/profile\/balloons/);
+  assert.match(detail, /useBalloonRegistryState\(\)/);
+  assert.match(detail, /selectedBalloon/);
 });
 
 test("le nom PDF est sûr et stable", () => {
@@ -51,7 +81,7 @@ test("le nom PDF est sûr et stable", () => {
 test("le générateur produit exactement une page A4 portrait", async () => {
   const { recordedFlight, journalFlight } = fixtures();
   const model = buildPassengerMemoryModel({ recordedFlight, journalFlight, units: metricUnits, pilot: null });
-  const png = new Uint8Array(readFileSync(new URL("../../public/branding/balloon-companion-logo-cockpit.png", import.meta.url)));
+  const png = new Uint8Array(readFileSync(new URL("../../public/branding/balloon-companion-logo-passenger.png", import.meta.url)));
   const bytes = await createPassengerMemoryPdf(model, { logoPng: png, mapPng: png });
   const pdf = await PDFDocument.load(bytes);
   assert.equal(pdf.getPageCount(), 1);
@@ -63,6 +93,11 @@ test("le générateur produit exactement une page A4 portrait", async () => {
   assert.doesNotMatch(source, /COPILOTE NUMERIQUE|PILOTES DE MONTGOLFIERE/);
   assert.match(source, /x: \(A4\[0\] - logoWidth\) \/ 2/);
   assert.match(source, /compactRoute\(page, model\.departure, model\.arrival/);
+  assert.match(source, /`Votre vol du \$\{model\.date\}`/);
+  assert.doesNotMatch(source, /VOTRE VOL EN MONTGOLFIERE/);
+  assert.match(source, /Votre vol en chiffres/);
+  assert.match(source, /\["Votre ballon", model\.balloon\.label\]/);
+  assert.doesNotMatch(source, /index === 0 \? navy/);
   assert.doesNotMatch(source, /centered\(page, "Balloon Companion"/);
 });
 
@@ -81,11 +116,11 @@ test("le souvenir charge exclusivement le logo passagers", () => {
 
 test("le PDF utilise le partage de fichiers et le téléchargement local en fallback", async () => {
   const { recordedFlight, journalFlight } = fixtures();
-  const png = new Uint8Array(readFileSync(new URL("../../public/branding/balloon-companion-logo-cockpit.png", import.meta.url)));
+  const png = new Uint8Array(readFileSync(new URL("../../public/branding/balloon-companion-logo-passenger.png", import.meta.url)));
   const calls = { shared: 0, downloaded: 0 };
   const link = { href: "", download: "", click: () => { calls.downloaded += 1; }, remove: () => undefined };
   const base = { createObjectUrl: () => "blob:pdf", revokeObjectUrl: () => undefined, createDownloadLink: () => link, scheduleCleanup: (callback) => callback(), loadLogo: async () => png, renderMap: async () => ({ png, background: "NEUTRAL" }) };
-  const input = { recordedFlight, journalFlight, units: metricUnits, displayedDuration: "1 h", pilot: null };
+  const input = { recordedFlight, journalFlight, units: metricUnits, displayedDuration: "1 h", pilot: null, selectedBalloon: { id: "stable-id", manufacturer: "Cameron", model: "Z105", registration: "F-HLFM" } };
   assert.equal(await exportPassengerMemory(input, { ...base, canShare: () => true, share: async (data) => { calls.shared += 1; assert.equal(data.files[0].type, "application/pdf"); } }), "SHARED");
   assert.equal(calls.shared, 1);
   assert.equal(await exportPassengerMemory(input, { ...base, canShare: () => false }), "DOWNLOADED");

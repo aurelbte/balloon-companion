@@ -4,6 +4,7 @@ import type { UnitPreferences } from "./unitPreferences.ts";
 import { buildPassengerMemoryModel, passengerMemoryFilename } from "./passengerMemory.ts";
 import { renderPassengerMemoryMap } from "./passengerMemoryMap.ts";
 import { createPassengerMemoryPdf, PASSENGER_MEMORY_PDF_MIME } from "./passengerMemoryPdf.ts";
+import type { PassengerMemoryBalloon } from "./passengerMemory.ts";
 
 export interface PassengerMemoryExportEnvironment {
   share?: (data: ShareData) => Promise<void>;
@@ -35,6 +36,7 @@ export async function exportPassengerMemory(input: Readonly<{
   units: UnitPreferences["flightInstruments"];
   displayedDuration: string;
   pilot: Readonly<{ firstName?: string; lastName?: string }> | null;
+  selectedBalloon: PassengerMemoryBalloon;
 }>, environment: PassengerMemoryExportEnvironment = browserEnvironment()): Promise<"SHARED" | "DOWNLOADED" | "CANCELLED"> {
   const model = buildPassengerMemoryModel(input);
   const [logoPng, mapImage] = await Promise.all([environment.loadLogo(), environment.renderMap(input.recordedFlight.points)]);

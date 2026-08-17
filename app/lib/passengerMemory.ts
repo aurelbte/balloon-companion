@@ -1,6 +1,9 @@
 import type { JournalFlight } from "./journalMockData.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { formatFlightAltitude, formatFlightDistance, formatFlightSpeed, type UnitPreferences } from "./unitPreferences.ts";
+import type { Balloon } from "./balloons.ts";
+
+export type PassengerMemoryBalloon = Readonly<Pick<Balloon, "id" | "manufacturer" | "model" | "registration">>;
 
 export type PassengerMemoryModel = Readonly<{
   date: string;
@@ -11,7 +14,19 @@ export type PassengerMemoryModel = Readonly<{
   maximumAltitude: string;
   maximumSpeed: string;
   pilotName: string | null;
+  balloon: Readonly<{ id: string; label: string }> | null;
 }>;
+
+export function passengerMemoryBalloonLabel(balloon: PassengerMemoryBalloon): string | null {
+  const name = [balloon.manufacturer.trim(), balloon.model.trim()].filter(Boolean).join(" ");
+  const registration = balloon.registration.trim();
+  return [name, registration].filter(Boolean).join(" · ") || null;
+}
+
+export function defaultPassengerMemoryBalloonId(balloons: readonly PassengerMemoryBalloon[], activeBalloonId: string | null): string {
+  if (balloons.length === 1) return balloons[0].id;
+  return balloons.some(({ id }) => id === activeBalloonId) ? activeBalloonId ?? "" : "";
+}
 
 export function formatPassengerMemoryDuration(durationSeconds: number): string {
   const totalMinutes = Math.max(0, Math.round(Number.isFinite(durationSeconds) ? durationSeconds / 60 : 0));
@@ -31,6 +46,7 @@ export function buildPassengerMemoryModel(input: Readonly<{
   units: UnitPreferences["flightInstruments"];
   displayedDuration?: string;
   pilot?: Readonly<{ firstName?: string; lastName?: string }> | null;
+  selectedBalloon?: PassengerMemoryBalloon | null;
 }>): PassengerMemoryModel {
   const { recordedFlight, journalFlight, units } = input;
   return {
@@ -42,6 +58,9 @@ export function buildPassengerMemoryModel(input: Readonly<{
     maximumAltitude: recordedFlight.summary.maxAltitudeMeters === null ? "Non disponible" : formatFlightAltitude(recordedFlight.summary.maxAltitudeMeters, units.altitudeUnit),
     maximumSpeed: recordedFlight.summary.maxGroundSpeedMetersPerSecond === null ? "Non disponible" : formatFlightSpeed(recordedFlight.summary.maxGroundSpeedMetersPerSecond * 3.6, units.speedUnit),
     pilotName: pilotName(input.pilot?.firstName, input.pilot?.lastName),
+    balloon: input.selectedBalloon && passengerMemoryBalloonLabel(input.selectedBalloon)
+      ? { id: input.selectedBalloon.id, label: passengerMemoryBalloonLabel(input.selectedBalloon)! }
+      : null,
   };
 }
 

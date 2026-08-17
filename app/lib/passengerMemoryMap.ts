@@ -3,8 +3,8 @@ import type { RecordedFlightPoint } from "./recordedFlight.ts";
 export type PassengerMemoryMapImage = Readonly<{ png: Uint8Array; background: "OPENSTREETMAP" | "NEUTRAL" }>;
 
 const WIDTH = 1400;
-const HEIGHT = 620;
-const PADDING = 90;
+const HEIGHT = 570;
+const PADDING = 80;
 
 function validPoint(point: RecordedFlightPoint): boolean {
   return Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && point.latitude >= -85 && point.latitude <= 85 && point.longitude >= -180 && point.longitude <= 180;
