@@ -18,13 +18,20 @@ import { formatFlightAltitude, formatFlightDistance, formatFlightSpeed } from ".
 import FlightNoteDialog from "./FlightNoteDialog";
 import FlightExportDialog from "./FlightExportDialog";
 import { exportGpx } from "../../lib/gpxExport";
+import PassengerMemoryDialog from "./PassengerMemoryDialog";
+import { formatPassengerMemoryDuration } from "../../lib/passengerMemory";
+import { exportPassengerMemory } from "../../lib/passengerMemoryExport";
+import { useBalloonAuth } from "../../contexts/AuthContext";
+import type { RecordedFlight } from "../../lib/recordedFlight";
 
 export default function JournalFlightDetail({ flightId, initialFlight }: { flightId: string; initialFlight: JournalFlight | null }) {
   const units = useUnitPreferences();
+  const auth = useBalloonAuth();
   const state = useFlightCompletionState();
   const flight = state.journalFlights.find(({ id }) => id === flightId) ?? initialFlight;
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [passengerMemoryFlight, setPassengerMemoryFlight] = useState<RecordedFlight | null>(null);
   const [displayedNote, setDisplayedNote] = useState<string | null>(flight?.notes ?? null);
   useEffect(() => setDisplayedNote(flight?.notes ?? null), [flight?.notes]);
   if (!flight) return <main className={styles.screen}><div className={styles.layout}><Link href="/journal" className={styles.backLink}>← Journal</Link><p>Vol introuvable sur cet appareil.</p></div><NavigationBar activeItem="Journal" /></main>;
@@ -60,5 +67,5 @@ export default function JournalFlightDetail({ flightId, initialFlight }: { fligh
       <article className={`${styles.moduleCard} ${styles.moduleLink}`} role="button" tabIndex={0} aria-label={displayedNote ? "Modifier la note de vol" : "Ajouter une note de vol"} onClick={() => setNoteEditorOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setNoteEditorOpen(true); } }}><h2 className={styles.moduleTitle}><NotebookPen size={16} /> Notes</h2><p className={`${styles.moduleValue} ${styles.flightNotePreview}`}>{displayedNote ?? "Aucune note"}</p><span className={styles.moduleTextAction} aria-hidden="true">{displayedNote ? "Modifier" : "Ajouter une note"}</span></article>
       <article className={`${styles.moduleCard} ${styles.moduleLink}`} role="button" tabIndex={0} aria-label="Ouvrir les options d’export du vol" onClick={() => setExportDialogOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setExportDialogOpen(true); } }}><h2 className={styles.moduleTitle}><FileDown size={16} /> Export</h2><p className={styles.moduleValue}>Partager le vol</p><p className={styles.moduleHint}>PDF · GPX · .bcflight</p></article>
     </section>
-  </div>{noteEditorOpen && <FlightNoteDialog initialNote={displayedNote ?? ""} onCancel={() => setNoteEditorOpen(false)} onSave={saveNote} />}{exportDialogOpen && <FlightExportDialog onClose={() => setExportDialogOpen(false)} onExportGpx={async () => { const recordedFlight = await loadExportFlight(); await exportGpx(recordedFlight, { date: flight.date, departure: flight.departure, arrival: flight.arrival }); }} onExportBcFlight={async () => { await exportBcFlight(await loadExportFlight()); }} />}<NavigationBar activeItem="Journal" /></main>;
+  </div>{noteEditorOpen && <FlightNoteDialog initialNote={displayedNote ?? ""} onCancel={() => setNoteEditorOpen(false)} onSave={saveNote} />}{exportDialogOpen && <FlightExportDialog onClose={() => setExportDialogOpen(false)} onPreparePassengerMemory={async () => setPassengerMemoryFlight(await loadExportFlight())} onExportGpx={async () => { const recordedFlight = await loadExportFlight(); await exportGpx(recordedFlight, { date: flight.date, departure: flight.departure, arrival: flight.arrival }); }} onExportBcFlight={async () => { await exportBcFlight(await loadExportFlight()); }} />}{passengerMemoryFlight && <PassengerMemoryDialog defaultDuration={formatPassengerMemoryDuration(passengerMemoryFlight.summary.durationSeconds)} onCancel={() => setPassengerMemoryFlight(null)} onCreate={async (displayedDuration) => { await exportPassengerMemory({ recordedFlight: passengerMemoryFlight, journalFlight: flight, units: units.flightInstruments, displayedDuration, pilot: auth.user }); setPassengerMemoryFlight(null); }} />}<NavigationBar activeItem="Journal" /></main>;
 }

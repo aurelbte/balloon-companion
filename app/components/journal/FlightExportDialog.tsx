@@ -5,14 +5,15 @@ import { Database, MapPinned, X } from "lucide-react";
 
 type FlightExportDialogProps = {
   onClose: () => void;
+  onPreparePassengerMemory: () => Promise<void>;
   onExportGpx: () => Promise<void>;
   onExportBcFlight: () => Promise<void>;
 };
 
-export default function FlightExportDialog({ onClose, onExportGpx, onExportBcFlight }: FlightExportDialogProps) {
+export default function FlightExportDialog({ onClose, onPreparePassengerMemory, onExportGpx, onExportBcFlight }: FlightExportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [busy, setBusy] = useState<"gpx" | "bcflight" | null>(null);
+  const [busy, setBusy] = useState<"memory" | "gpx" | "bcflight" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export default function FlightExportDialog({ onClose, onExportGpx, onExportBcFli
     return () => { if (dialog.open) dialog.close(); };
   }, []);
 
-  const run = async (kind: "gpx" | "bcflight", action: () => Promise<void>) => {
+  const run = async (kind: "memory" | "gpx" | "bcflight", action: () => Promise<void>) => {
     if (busy) return;
     setBusy(kind);
     setError(null);
@@ -42,10 +43,9 @@ export default function FlightExportDialog({ onClose, onExportGpx, onExportBcFli
       <button ref={closeRef} type="button" disabled={Boolean(busy)} onClick={onClose} className="grid min-h-11 min-w-11 place-items-center rounded-full border border-[var(--bc-border)] bg-[var(--bc-surface)] disabled:opacity-45" aria-label="Fermer"><X size={18} /></button>
     </div>
     <div className="mt-4 grid gap-3">
-      <button type="button" disabled className="min-h-[92px] rounded-[20px] border border-[var(--bc-border)] bg-[var(--bc-surface)] p-4 text-left opacity-60" aria-describedby="passenger-memory-status">
+      <button type="button" disabled={Boolean(busy)} onClick={() => void run("memory", onPreparePassengerMemory)} className="min-h-[92px] rounded-[20px] border border-[var(--bc-border)] bg-[var(--bc-surface)] p-4 text-left disabled:opacity-45">
         <strong className="block text-sm font-semibold">🎈 Souvenir passagers</strong>
-        <span className="mt-1 block text-xs text-[var(--bc-text-secondary)]">PDF de votre vol à partager</span>
-        <span id="passenger-memory-status" className="mt-2 block text-xs font-semibold text-[var(--bc-accent)]">Bientôt disponible</span>
+        <span className="mt-1 block text-xs text-[var(--bc-text-secondary)]">{busy === "memory" ? "Préparation…" : "PDF de votre vol à partager"}</span>
       </button>
       <button type="button" disabled={Boolean(busy)} onClick={() => void run("gpx", onExportGpx)} className="flex min-h-[92px] items-center gap-4 rounded-[20px] border border-[var(--bc-border)] bg-[var(--bc-surface)] p-4 text-left disabled:opacity-45">
         <MapPinned size={24} aria-hidden="true" className="shrink-0 text-[var(--bc-accent)]" />
