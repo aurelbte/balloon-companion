@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { normalizeAirportIcao } from "./aviationWeather.ts";
 
 export type AviationAirportSearchResult = { icao: string; name: string; locality?: string };
@@ -13,14 +14,36 @@ export function normalizeStations(payload: unknown): AviationAirportSearchResult
 }
 
 function normalized(value: string): string { return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr-FR"); }
+function stationScore(station: AviationAirportSearchResult, needle: string): number {
+  const icao = normalized(station.icao);
+  const name = normalized(station.name);
+  const locality = normalized(station.locality ?? "");
+  if (icao === needle) return 0;
+  if (icao.startsWith(needle)) return 1;
+  if (name === needle) return 2;
+  if (name.startsWith(needle)) return 3;
+  if (name.includes(needle)) return 4;
+  if (locality === needle) return 5;
+  if (locality.startsWith(needle)) return 6;
+  return locality.includes(needle) ? 7 : 8;
+}
 export function searchStations(stations: readonly AviationAirportSearchResult[], query: string, limit = 8): AviationAirportSearchResult[] {
   const needle = normalized(query.trim());
   if (needle.length < 2) return [];
-  return stations.filter(({ icao, name, locality }) => normalized(`${icao} ${name} ${locality ?? ""}`).includes(needle)).sort((left, right) => { const leftIcao = normalized(left.icao).startsWith(needle) ? 0 : 1; const rightIcao = normalized(right.icao).startsWith(needle) ? 0 : 1; return leftIcao - rightIcao || left.name.localeCompare(right.name, "fr"); }).slice(0, limit);
+  return stations
+    .filter(({ icao, name, locality }) => [icao, name, locality ?? ""].some((value) => normalized(value).includes(needle)))
+    .sort((left, right) => stationScore(left, needle) - stationScore(right, needle) || left.name.localeCompare(right.name, "fr"))
+    .slice(0, limit);
+}
+
+async function stationPayload(response: Response): Promise<unknown> {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes).toString("utf8") : new TextDecoder().decode(bytes);
+  return JSON.parse(decoded);
 }
 
 export async function searchAviationAirports(query: string, fetchImpl: typeof fetch = fetch, now = Date.now()): Promise<AviationAirportSearchResult[]> {
-  if (!cache || cache.expiresAt <= now) { const response = await fetchImpl(STATIONS_URL, { headers: { accept: "application/json", "user-agent": "Balloon-Companion/1.0 (aviation station search)" }, cache: "force-cache" }); if (!response.ok) throw new Error("Station metadata unavailable"); cache = { expiresAt: now + CACHE_TTL_MS, stations: normalizeStations(await response.json()) }; }
+  if (!cache || cache.expiresAt <= now) { const response = await fetchImpl(STATIONS_URL, { headers: { accept: "application/json", "user-agent": "Balloon-Companion/1.0 (aviation station search)" }, cache: "force-cache" }); if (!response.ok) throw new Error("Station metadata unavailable"); cache = { expiresAt: now + CACHE_TTL_MS, stations: normalizeStations(await stationPayload(response)) }; }
   return searchStations(cache.stations, query);
 }
 export function clearAirportSearchCacheForTests(): void { cache = null; }

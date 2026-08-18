@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import test from "node:test";
 import { clearAirportSearchCacheForTests, normalizeStations, searchAviationAirports, searchStations } from "./aviation/airportSearch.ts";
 
@@ -18,6 +19,17 @@ test("recherche sans casse ni accents dans ICAO, nom et ville", () => {
   assert.deepEqual(searchStations(stations, "lfbo").map(({ icao }) => icao), ["LFBO"]);
   assert.deepEqual(searchStations(stations, "TOULOUSE").map(({ icao }) => icao), ["LFBO"]);
   assert.deepEqual(searchStations(stations, "lille").map(({ icao }) => icao), ["LFQQ", "LFQO"]);
+  assert.deepEqual(searchStations(stations, "Lille").map(({ icao }) => icao), ["LFQQ", "LFQO"]);
+  assert.deepEqual(searchStations(stations, "LF").map(({ icao }) => icao), ["LFQQ", "LFQO", "LFBO"]);
+  assert.deepEqual(searchStations(stations, "LFQ").map(({ icao }) => icao), ["LFQQ", "LFQO"]);
+  assert.equal(searchStations(stations, "LFQQ")[0]?.icao, "LFQQ");
+});
+
+test("décompresse le cache gzip officiel avant de rechercher Lille", async () => {
+  clearAirportSearchCacheForTests();
+  const compressed = gzipSync(JSON.stringify(payload));
+  const results = await searchAviationAirports("Lille", async () => new Response(compressed), 1_000);
+  assert.equal(results[0]?.icao, "LFQQ");
 });
 
 test("réutilise le cache officiel de stations entre recherches", async () => {
@@ -38,4 +50,11 @@ test("le panneau temporise la recherche puis ajoute et sélectionne sans doublon
   assert.match(page, /Rechercher par nom ou code ICAO/);
   assert.match(page, /Aucun aérodrome trouvé/);
   assert.match(page, /className=\{styles\.airportSearchResult\}/);
+  assert.match(page, /new AbortController\(\)/);
+  assert.match(page, /controller\.abort\(\)/);
+  assert.match(page, /if \(active\) setResults/);
+  assert.match(page, /role="alert"/);
+  assert.match(page, /result\.locality/);
+  assert.match(page, /value=\{query\}/);
+  assert.match(page, /loadAviationWeatherForAirport\(aviationAirport, controller\.signal\)/);
 });
