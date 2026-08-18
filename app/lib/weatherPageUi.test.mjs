@@ -14,6 +14,8 @@ test("la carte météo ouvre la page dédiée", () => {
 test("Météo est sélectionné par défaut et Aviation reste indépendant", () => {
   assert.match(page, /useState<"weather" \| "aviation">\("weather"\)/);
   assert.match(page, /tab === "weather" \? <div className=\{styles\.content\}/);
+  assert.match(page, />METAR TAF<\/button>/);
+  assert.doesNotMatch(page, />Aviation<\/button>/);
 });
 
 test("le header aligne le retour et les onglets sans titre redondant", () => {

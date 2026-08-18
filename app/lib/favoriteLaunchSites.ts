@@ -3,6 +3,7 @@ import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataSc
 
 export const FAVORITE_LAUNCH_SITES_STORAGE_KEY = "balloon-companion-favorite-launch-sites-v1";
 export const FAVORITE_LAUNCH_SITES_VERSION = 1 as const;
+export const FAVORITE_LAUNCH_SITES_EVENT = "balloon-companion:favorite-launch-sites-changed";
 
 export type FavoriteLaunchSite = GeocodingResult & {
   icaoCode?: string;
@@ -44,6 +45,17 @@ export function addFavoriteLaunchSite(
     createdAt: addedAt,
     updatedAt: addedAt,
   }];
+}
+
+export function addOrReuseFavoriteLaunchSite(
+  favorites: readonly FavoriteLaunchSite[],
+  site: GeocodingResult,
+  addedAt = new Date().toISOString(),
+): { favorites: FavoriteLaunchSite[]; selected: FavoriteLaunchSite } {
+  const existing = favorites.find((favorite) => sameLaunchSite(favorite, site));
+  if (existing) return { favorites: [...favorites], selected: existing };
+  const next = addFavoriteLaunchSite(favorites, site, addedAt);
+  return { favorites: next, selected: next.at(-1)! };
 }
 
 export function proposeFavoriteDisplayName(site: GeocodingResult): string {
@@ -105,6 +117,7 @@ export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]
   if (typeof window === "undefined") return false;
   try {
     writeScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
+    window.dispatchEvent(new Event(FAVORITE_LAUNCH_SITES_EVENT));
     return true;
   } catch {
     return false;
