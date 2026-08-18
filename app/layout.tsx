@@ -7,6 +7,7 @@ import GpsStatsDiagnosticRunner from "./components/dev/GpsStatsDiagnosticRunner"
 import LocalDataMigrationDialog from "./components/auth/LocalDataMigrationDialog";
 import { WeatherPreferencesProvider } from "./contexts/WeatherPreferencesContext";
 import { UnitPreferencesProvider } from "./contexts/UnitPreferencesContext";
+import CloudSyncRuntime from "./components/cloud/CloudSyncRuntime";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,7 +47,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <BalloonAuthProvider><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
+        <BalloonAuthProvider><CloudSyncRuntime /><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
       </body>
     </html>
   );

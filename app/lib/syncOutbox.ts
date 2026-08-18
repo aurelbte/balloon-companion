@@ -5,6 +5,7 @@ import { createInitialSyncMetadata, type SyncMetadata } from "./syncMetadata.ts"
 export const SYNC_OUTBOX_DB_NAME = "balloon-companion-sync-v1";
 export const SYNC_MUTATIONS_STORE = "mutations";
 export const SYNC_METADATA_STORE = "metadata";
+export const SYNC_MUTATION_ENQUEUED_EVENT = "balloon-companion:sync-mutation-enqueued";
 
 export type SyncOperation = "UPSERT" | "DELETE";
 export type SyncMutation = Readonly<{
@@ -28,7 +29,9 @@ export interface SyncOutboxStorage {
   enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation>;
   list(): Promise<SyncMutation[]>;
   getMetadata(entityType: string, entityId: string): Promise<StoredSyncMetadata | null>;
+  setMetadata(metadata: StoredSyncMetadata): Promise<void>;
   markAttempt(mutationId: string, input?: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
+  updateMutation(mutationId: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
   remove(mutationId: string): Promise<void>;
 }
 
@@ -109,10 +112,22 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
     return this.metadata.get(metadataKey(entityType, entityId)) ?? null;
   }
 
+  async setMetadata(metadata: StoredSyncMetadata): Promise<void> {
+    this.metadata.set(metadataKey(metadata.entityType, metadata.entityId), metadata);
+  }
+
   async markAttempt(mutationIdValue: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }> = {}): Promise<SyncMutation | null> {
     const current = this.mutations.get(mutationIdValue);
     if (!current) return null;
     const updated = { ...current, attempts: current.attempts + 1, ...input };
+    this.mutations.set(mutationIdValue, updated);
+    return updated;
+  }
+
+  async updateMutation(mutationIdValue: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null> {
+    const current = this.mutations.get(mutationIdValue);
+    if (!current) return null;
+    const updated = { ...current, ...input };
     this.mutations.set(mutationIdValue, updated);
     return updated;
   }
@@ -190,6 +205,17 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
     });
   }
 
+  async setMetadata(metadata: StoredSyncMetadata): Promise<void> {
+    const database = await this.database();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(SYNC_METADATA_STORE, "readwrite");
+      transaction.objectStore(SYNC_METADATA_STORE).put(metadata);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
   async markAttempt(mutationIdValue: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }> = {}): Promise<SyncMutation | null> {
     const database = await this.database();
     return new Promise((resolve, reject) => {
@@ -205,6 +231,25 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       };
       transaction.oncomplete = () => resolve(updated);
       transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  async updateMutation(mutationIdValue: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null> {
+    const database = await this.database();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
+      const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
+      let updated: SyncMutation | null = null;
+      const request = store.get(mutationIdValue);
+      request.onsuccess = () => {
+        const current = request.result as SyncMutation | undefined;
+        if (!current) return;
+        updated = { ...current, ...input };
+        store.put(updated);
+      };
+      transaction.oncomplete = () => resolve(updated);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -227,7 +272,10 @@ export function enqueueLocalSyncMutation(entityType: string, entityId: string, o
   if (typeof indexedDB === "undefined" || !scope) return;
   const storage = runtimeStorages.get(scope) ?? new IndexedDbSyncOutboxStorage(scope);
   runtimeStorages.set(scope, storage);
-  enqueueChain = enqueueChain.catch(() => undefined).then(() => storage.enqueue({ entityType, entityId, operation })).catch((error: unknown) => {
+  enqueueChain = enqueueChain.catch(() => undefined).then(async () => {
+    await storage.enqueue({ entityType, entityId, operation });
+    window.dispatchEvent(new Event(SYNC_MUTATION_ENQUEUED_EVENT));
+  }).catch((error: unknown) => {
     if (process.env.NODE_ENV === "development") console.error("[syncOutbox] Mutation locale non enregistrée", { entityType, entityId, operation, error });
   });
 }

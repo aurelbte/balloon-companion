@@ -125,9 +125,16 @@ export function removeFavoriteLaunchSite(
 export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]): boolean {
   if (typeof window === "undefined") return false;
   try {
+    const previous = loadFavoriteLaunchSites();
     const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
     if (!saved) return false;
-    enqueueLocalSyncMutation("favorite-launch-sites", "singleton");
+    for (const favorite of favorites) {
+      const prior = previous.find(({ id }) => id === favorite.id);
+      if (!prior || JSON.stringify(prior) !== JSON.stringify(favorite)) enqueueLocalSyncMutation("favorite-launch-site", favorite.id);
+    }
+    for (const removed of previous.filter(({ id }) => !favorites.some((favorite) => favorite.id === id))) {
+      enqueueLocalSyncMutation("favorite-launch-site", removed.id, "DELETE");
+    }
     window.dispatchEvent(new Event(FAVORITE_LAUNCH_SITES_EVENT));
     return true;
   } catch {

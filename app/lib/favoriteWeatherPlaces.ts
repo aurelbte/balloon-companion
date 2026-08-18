@@ -51,7 +51,17 @@ export function loadFavoriteWeatherPlaces(): FavoriteWeatherPlace[] {
 
 export function saveFavoriteWeatherPlaces(favorites: readonly FavoriteWeatherPlace[]): boolean {
   if (typeof window === "undefined") return false;
+  const previous = loadFavoriteWeatherPlaces();
   const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites }));
-  if (saved) { enqueueLocalSyncMutation("favorite-weather-places", "singleton"); window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT)); }
+  if (saved) {
+    for (const favorite of favorites) {
+      const prior = previous.find(({ id }) => id === favorite.id);
+      if (!prior || JSON.stringify(prior) !== JSON.stringify(favorite)) enqueueLocalSyncMutation("favorite-weather-place", favorite.id);
+    }
+    for (const removed of previous.filter(({ id }) => !favorites.some((favorite) => favorite.id === id))) {
+      enqueueLocalSyncMutation("favorite-weather-place", removed.id, "DELETE");
+    }
+    window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT));
+  }
   return saved;
 }

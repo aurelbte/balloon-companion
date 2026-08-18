@@ -29,3 +29,13 @@ Successful mutations store a 90-day idempotency receipt. Replays return the orig
 revision as `ALREADY_APPLIED`; stale revisions and attempts to revive tombstones
 return `CONFLICT`. Transaction-scoped advisory locks serialize both mutation IDs and
 entity revisions, including creation races where no row exists yet.
+
+Phase 3A extends the same RPC through the additive migration
+`20260818140000_cloud_sync_phase_3a_domains.sql` for `favorite_launch_site`,
+`user_preferences`, and `aviation_preferences`. The former Phase 2B function is
+renamed and made private; the public RPC remains the single authenticated entry
+point and delegates only to explicit branches.
+
+This migration must be validated locally before it is applied remotely. Client
+tests use injected transports and never upload existing application data. The
+initial inventory API is read-only and does not enqueue historical entities.
