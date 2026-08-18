@@ -1,11 +1,14 @@
 import type { GeocodingResult } from "./trajectory/integration.ts";
 import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const FAVORITE_LAUNCH_SITES_STORAGE_KEY = "balloon-companion-favorite-launch-sites-v1";
 export const FAVORITE_LAUNCH_SITES_VERSION = 1 as const;
 export const FAVORITE_LAUNCH_SITES_EVENT = "balloon-companion:favorite-launch-sites-changed";
 
 export type FavoriteLaunchSite = GeocodingResult & {
+  /** Identité interne future ; absente des données historiques et jamais régénérée à la lecture. */
+  syncId?: string;
   icaoCode?: string;
   altitudeAmslM?: number;
   /** Libellé technique d'origine, indépendant du nom personnalisé. */
@@ -23,6 +26,10 @@ function coordinateKey(site: Pick<GeocodingResult, "latitude" | "longitude">): s
   return `${site.latitude.toFixed(6)}:${site.longitude.toFixed(6)}`;
 }
 
+function createInternalFavoriteId(): string | undefined {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : undefined;
+}
+
 export function sameLaunchSite(
   left: Pick<GeocodingResult, "id" | "latitude" | "longitude"> | null,
   right: Pick<GeocodingResult, "id" | "latitude" | "longitude"> | null,
@@ -37,9 +44,11 @@ export function addFavoriteLaunchSite(
   displayName = proposeFavoriteDisplayName(site),
 ): FavoriteLaunchSite[] {
   if (favorites.some((favorite) => sameLaunchSite(favorite, site))) return [...favorites];
+  const syncId = createInternalFavoriteId();
   return [...favorites, {
     ...site,
     id: site.id.trim() || `launch-${coordinateKey(site)}`,
+    ...(syncId ? { syncId } : {}),
     name: displayName.trim() || "Nouveau terrain",
     sourceName: site.name,
     createdAt: addedAt,
@@ -116,7 +125,9 @@ export function removeFavoriteLaunchSite(
 export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]): boolean {
   if (typeof window === "undefined") return false;
   try {
-    writeScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
+    const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
+    if (!saved) return false;
+    enqueueLocalSyncMutation("favorite-launch-sites", "singleton");
     window.dispatchEvent(new Event(FAVORITE_LAUNCH_SITES_EVENT));
     return true;
   } catch {

@@ -4,6 +4,7 @@ import {
 } from "./recordedFlight.ts";
 import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
+import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const RECORDED_FLIGHT_DB_NAME = "balloon-companion-flights";
 const DATABASE_VERSION = 1;
@@ -171,6 +172,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
+    enqueueLocalSyncMutation("recorded-flight", flight.id);
   }
 
   async getFlight(id: string): Promise<RecordedFlight | null> {
@@ -203,7 +205,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
 
   async updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null> {
     const database = await this.database();
-    return new Promise((resolve, reject) => {
+    const updated = await new Promise<RecordedFlight | null>((resolve, reject) => {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
       const store = transaction.objectStore(FLIGHTS_STORE);
       let updated: RecordedFlight | null = null;
@@ -219,6 +221,8 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
+    if (updated) enqueueLocalSyncMutation("recorded-flight", id);
+    return updated;
   }
 
   async deleteFlight(id: string): Promise<void> {
@@ -229,5 +233,6 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
+    enqueueLocalSyncMutation("recorded-flight", id, "DELETE");
   }
 }

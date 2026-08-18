@@ -1,5 +1,6 @@
 import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import type { GeocodingResult } from "./trajectory/integration.ts";
+import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const FAVORITE_WEATHER_PLACES_STORAGE_KEY = "balloon-companion-favorite-weather-places-v1";
 export const FAVORITE_WEATHER_PLACES_EVENT = "balloon-companion:favorite-weather-places-changed";
@@ -7,6 +8,8 @@ const VERSION = 1 as const;
 
 export type FavoriteWeatherPlace = Readonly<{
   id: string;
+  /** Identité interne future ; optionnelle pour préserver les favoris historiques. */
+  syncId?: string;
   name: string;
   latitude: number;
   longitude: number;
@@ -29,7 +32,8 @@ function samePlace(left: Pick<FavoriteWeatherPlace, "id" | "latitude" | "longitu
 export function addOrReuseFavoriteWeatherPlace(favorites: readonly FavoriteWeatherPlace[], place: GeocodingResult, addedAt = new Date().toISOString()): { favorites: FavoriteWeatherPlace[]; selected: FavoriteWeatherPlace } {
   const existing = favorites.find((favorite) => samePlace(favorite, place));
   if (existing) return { favorites: [...favorites], selected: existing };
-  const favorite: FavoriteWeatherPlace = { id: place.id.trim() || `weather-${place.latitude.toFixed(6)}:${place.longitude.toFixed(6)}`, name: place.name.split(",")[0]?.trim() || place.name.trim(), latitude: place.latitude, longitude: place.longitude, createdAt: addedAt, updatedAt: addedAt };
+  const syncId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : undefined;
+  const favorite: FavoriteWeatherPlace = { id: place.id.trim() || `weather-${place.latitude.toFixed(6)}:${place.longitude.toFixed(6)}`, ...(syncId ? { syncId } : {}), name: place.name.split(",")[0]?.trim() || place.name.trim(), latitude: place.latitude, longitude: place.longitude, createdAt: addedAt, updatedAt: addedAt };
   return { favorites: [...favorites, favorite], selected: favorite };
 }
 
@@ -48,6 +52,6 @@ export function loadFavoriteWeatherPlaces(): FavoriteWeatherPlace[] {
 export function saveFavoriteWeatherPlaces(favorites: readonly FavoriteWeatherPlace[]): boolean {
   if (typeof window === "undefined") return false;
   const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites }));
-  if (saved) window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT));
+  if (saved) { enqueueLocalSyncMutation("favorite-weather-places", "singleton"); window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT)); }
   return saved;
 }

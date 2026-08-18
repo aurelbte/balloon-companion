@@ -1,4 +1,5 @@
 import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const WEATHER_PREFERENCES_STORAGE_KEY = "balloon-companion-weather-preferences-v1";
 export type WeatherPreferences = { favoriteWeatherLocationId: string | null; weatherModel: string | null };
@@ -15,5 +16,8 @@ export function loadWeatherPreferences(): WeatherPreferences {
 }
 
 export function saveWeatherPreferences(value: WeatherPreferences): boolean {
-  return typeof window !== "undefined" && writeScopedBusinessValue(window.localStorage, WEATHER_PREFERENCES_STORAGE_KEY, JSON.stringify(value));
+  if (typeof window === "undefined") return false;
+  const saved = writeScopedBusinessValue(window.localStorage, WEATHER_PREFERENCES_STORAGE_KEY, JSON.stringify(value));
+  if (saved) enqueueLocalSyncMutation("weather-preferences", "singleton");
+  return saved;
 }

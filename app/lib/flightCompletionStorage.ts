@@ -22,6 +22,7 @@ import { legacyFlightSessionToRecordedFlight } from "./realFlightJournal.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { loadFlightSession } from "./flightSessionStorage.ts";
 import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const FLIGHT_COMPLETION_STORAGE_KEY = "balloon-companion-flight-completion-v1";
 const STORAGE_KEY = FLIGHT_COMPLETION_STORAGE_KEY;
@@ -125,6 +126,7 @@ export function saveFlightCompletionState(state: FlightCompletionState): boolean
       })),
     };
     if (!writeScopedBusinessValue(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState))) return false;
+    enqueueLocalSyncMutation("flight-completion", "singleton");
     window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
     return true;
   } catch (error) {

@@ -1,5 +1,6 @@
 import { readScopedBusinessValue, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
 import { normalizeAirportIcao } from "./aviationWeather.ts";
+import { enqueueLocalSyncMutation } from "../syncOutbox.ts";
 
 export const AVIATION_PREFERENCES_STORAGE_KEY = "balloon-companion-aviation-preferences-v1";
 export type AviationAirportFavorite = { icao: string; name: string };
@@ -20,6 +21,6 @@ export function saveAviationPreferences(airportIcao: string | null, favorites: r
   const normalizedAirport = normalizeAirportIcao(airportIcao);
   const normalizedFavorites = favorites.flatMap(({ icao, name }) => { const code = normalizeAirportIcao(icao); return code && name.trim() ? [{ icao: code, name: name.trim() }] : []; }).filter((item, index, all) => all.findIndex(({ icao }) => icao === item.icao) === index);
   const value: AviationPreferences = { airportIcao: normalizedAirport, favorites: normalizedFavorites, initialized: true };
-  if (typeof window !== "undefined") writeScopedBusinessValue(window.localStorage, AVIATION_PREFERENCES_STORAGE_KEY, JSON.stringify(value));
+  if (typeof window !== "undefined" && writeScopedBusinessValue(window.localStorage, AVIATION_PREFERENCES_STORAGE_KEY, JSON.stringify(value))) enqueueLocalSyncMutation("aviation-preferences", "singleton");
   return value;
 }
