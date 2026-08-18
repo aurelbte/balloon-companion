@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { addOrReuseFavoriteLaunchSite, FAVORITE_LAUNCH_SITES_EVENT, loadFavoriteLaunchSites, saveFavoriteLaunchSites, type FavoriteLaunchSite } from "../lib/favoriteLaunchSites";
+import { addOrReuseFavoriteWeatherPlace, FAVORITE_WEATHER_PLACES_EVENT, loadFavoriteWeatherPlaces, saveFavoriteWeatherPlaces, type FavoriteWeatherPlace } from "../lib/favoriteWeatherPlaces";
 import type { GeocodingResult } from "../lib/trajectory/integration";
 import { loadHourlyWeatherForecast } from "../lib/weather/hourlyForecastService";
 import { SUPPORTED_WEATHER_MODELS } from "../lib/weather/models";
@@ -12,8 +12,8 @@ import { calculateSunTimes, type SunTimes } from "../lib/weather/sunTimes";
 import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 
 type WeatherPreferencesContextValue = WeatherPreferences & {
-  favorites: readonly FavoriteLaunchSite[];
-  activeFavorite: FavoriteLaunchSite | null;
+  favorites: readonly FavoriteWeatherPlace[];
+  activeFavorite: FavoriteWeatherPlace | null;
   modelName: string;
   selectedDay?: string;
   selectedTime?: string;
@@ -37,7 +37,7 @@ const WeatherPreferencesContext = createContext<WeatherPreferencesContextValue |
 
 export function WeatherPreferencesProvider({ children }: { children: React.ReactNode }) {
   const [preferences, setPreferences] = useState<WeatherPreferences>(EMPTY_WEATHER_PREFERENCES);
-  const [favorites, setFavorites] = useState<FavoriteLaunchSite[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteWeatherPlace[]>([]);
   const [points, setPoints] = useState<readonly WeatherHourlyPoint[]>([]);
   const [forecastTimeZone, setForecastTimeZone] = useState<string>();
   const [selectedDay, setSelectedDay] = useState<string>();
@@ -46,7 +46,7 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   const [error, setError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
-  useEffect(() => { const refresh = () => { setPreferences(loadWeatherPreferences()); setFavorites(loadFavoriteLaunchSites()); setPoints([]); setForecastTimeZone(undefined); setSelectedDay(undefined); setSelectedTime(undefined); }; refresh(); window.addEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); window.addEventListener(FAVORITE_LAUNCH_SITES_EVENT, refresh); return () => { window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); window.removeEventListener(FAVORITE_LAUNCH_SITES_EVENT, refresh); }; }, []);
+  useEffect(() => { const refresh = () => { setPreferences(loadWeatherPreferences()); setFavorites(loadFavoriteWeatherPlaces()); setPoints([]); setForecastTimeZone(undefined); setSelectedDay(undefined); setSelectedTime(undefined); }; refresh(); window.addEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); window.addEventListener(FAVORITE_WEATHER_PLACES_EVENT, refresh); return () => { window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); window.removeEventListener(FAVORITE_WEATHER_PLACES_EVENT, refresh); }; }, []);
   const update = useCallback((changes: Partial<WeatherPreferences>) => setPreferences((current) => { const next = { ...current, ...changes }; saveWeatherPreferences(next); return next; }), []);
   const activeFavorite = favorites.find(({ id }) => id === preferences.favoriteWeatherLocationId) ?? null;
   const coordinates = useMemo(() => activeFavorite ? { latitude: activeFavorite.latitude, longitude: activeFavorite.longitude } : null, [activeFavorite]);
@@ -81,10 +81,10 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   const resetToCurrent = useCallback(() => { const now = new Date(); const localDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; const localTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`; const day = closestAvailableDay(days, localDay); setSelectedDay(day); setSelectedTime(closestAvailableTime(day ? availableTimes(points, day) : [], localTime)); }, [days, points]);
   const modelName = SUPPORTED_WEATHER_MODELS.find(({ providerModelId }) => providerModelId === preferences.weatherModel)?.label ?? preferences.weatherModel ?? "";
   const addFavoriteWeatherLocation = useCallback((site: GeocodingResult) => {
-    const result = addOrReuseFavoriteLaunchSite(favorites, site);
+    const result = addOrReuseFavoriteWeatherPlace(favorites, site);
     const nextPreferences = { ...preferences, favoriteWeatherLocationId: result.selected.id };
     saveWeatherPreferences(nextPreferences);
-    saveFavoriteLaunchSites(result.favorites);
+    saveFavoriteWeatherPlaces(result.favorites);
     setPreferences(nextPreferences);
     setFavorites(result.favorites);
   }, [favorites, preferences]);

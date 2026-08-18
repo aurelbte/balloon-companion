@@ -56,7 +56,7 @@ test("la page consomme le service normalisé sans appeler Open-Meteo", () => {
 });
 
 test("le lieu, le chargement et l'erreur météo sont interactifs", () => {
-  assert.match(weatherContext, /loadFavoriteLaunchSites/);
+  assert.match(weatherContext, /loadFavoriteWeatherPlaces/);
   assert.match(page, /preferences\.setFavoriteWeatherLocationId/);
   assert.match(page, /aria-pressed=\{favorite\.id === preferences\.favoriteWeatherLocationId\}/);
   assert.match(page, /Chargement des prévisions/);

@@ -16,7 +16,6 @@ import { windArrowRotationDegrees } from "./windArrow";
 import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
 import type { AviationWeatherResult } from "../lib/aviation/types";
 import { loadAviationPreferences, saveAviationPreferences, type AviationAirportFavorite } from "../lib/aviation/aviationPreferencesStorage";
-import { normalizeAirportIcao } from "../lib/aviation/aviationWeather";
 import { aviationAnalysis, metarDisplay, tafPeriods, tafValidity } from "./aviationPresentation";
 import styles from "./weather.module.css";
 import FavoriteWeatherPlaceDialog from "../components/weather/FavoriteWeatherPlaceDialog";
@@ -77,7 +76,7 @@ export default function WeatherPage() {
   const [aviationPreferencesReady, setAviationPreferencesReady] = useState(false);
   const [weatherPlaceDialogOpen, setWeatherPlaceDialogOpen] = useState(false);
   useEffect(() => { preferences.resetToCurrent(); return preferences.resetToCurrent; }, [preferences.resetToCurrent]);
-  useEffect(() => { if (aviationPreferencesReady) return; const stored = loadAviationPreferences(); if (!stored && preferences.favorites.length === 0) return; const airport = stored?.airportIcao ?? normalizeAirportIcao(preferences.activeFavorite?.icaoCode); const initialFavorites = stored?.favorites ?? (airport ? [{ icao: airport, name: preferences.activeFavorite?.name ?? airport }] : []); const saved = stored ?? saveAviationPreferences(airport, initialFavorites); setAviationAirport(saved.airportIcao); setAviationFavorites(saved.favorites); setAviationPreferencesReady(true); }, [aviationPreferencesReady, preferences.activeFavorite, preferences.favorites.length]);
+  useEffect(() => { if (aviationPreferencesReady) return; const saved = loadAviationPreferences() ?? saveAviationPreferences(null, []); setAviationAirport(saved.airportIcao); setAviationFavorites(saved.favorites); setAviationPreferencesReady(true); }, [aviationPreferencesReady]);
   useEffect(() => { if (tab !== "aviation" || !aviationPreferencesReady) return; const controller = new AbortController(); setAviationLoading(true); loadAviationWeatherForAirport(aviationAirport, controller.signal).then(setAviation).catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setAviation({ data: null, error: { code: "SOURCE_UNAVAILABLE", message: "Données aviation indisponibles" } }); }).finally(() => { if (!controller.signal.aborted) setAviationLoading(false); }); return () => controller.abort(); }, [tab, aviationAirport, aviationPreferencesReady]);
   const model = preferences.weatherModel ?? "";
   const dayLabel = preferences.selectedDay ? new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${preferences.selectedDay}T12:00:00`)) : "Jour";

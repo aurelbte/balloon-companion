@@ -13,25 +13,27 @@ export default function FavoriteWeatherPlaceDialog({ onCancel, onSelect }: { onC
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { const dialog = dialogRef.current; if (!dialog) return; dialog.showModal(); inputRef.current?.focus(); return () => { if (dialog.open) dialog.close(); }; }, []);
-  const search = async () => {
+  useEffect(() => {
     const value = query.trim();
-    if (value.length < 2 || searching) return;
+    if (value.length < 2) { setResults([]); setSearching(false); setError(null); return; }
+    let active = true;
+    const controller = new AbortController();
     setSearching(true); setError(null); setResults([]);
-    try {
-      const response = await fetch(`/api/geocoding/search?q=${encodeURIComponent(value)}`);
-      const payload = await response.json() as { results?: GeocodingResult[] };
-      if (!response.ok || !Array.isArray(payload.results)) throw new Error("geocoding");
-      setResults(payload.results);
-      if (payload.results.length === 0) setError("Aucun lieu trouvé. Précisez la recherche.");
-    } catch { setError("La recherche de lieu est indisponible."); }
-    finally { setSearching(false); }
-  };
+    const timeout = window.setTimeout(() => {
+      fetch(`/api/geocoding/search?q=${encodeURIComponent(value)}`, { signal: controller.signal })
+        .then(async (response) => { const payload = await response.json() as { results?: GeocodingResult[] }; if (!response.ok || !Array.isArray(payload.results)) throw new Error("geocoding"); return payload.results; })
+        .then((places) => { if (active) { setResults(places); setError(places.length === 0 ? "Aucun lieu trouvé. Précisez la recherche." : null); } })
+        .catch((reason: unknown) => { if (active && !(reason instanceof DOMException && reason.name === "AbortError")) { setResults([]); setError("La recherche de lieu est indisponible."); } })
+        .finally(() => { if (active) setSearching(false); });
+    }, 350);
+    return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
+  }, [query]);
 
   return <dialog ref={dialogRef} className="m-auto max-h-[calc(100dvh-24px)] w-[min(92vw,430px)] overflow-y-auto rounded-[24px] border border-[var(--bc-border)] bg-[var(--bc-background-elevated)] p-4 text-[var(--bc-text-primary)] shadow-[var(--bc-shadow-high)] backdrop:bg-[rgb(3_10_19_/_78%)]" aria-labelledby="favorite-weather-place-title" onCancel={(event) => { event.preventDefault(); onCancel(); }}>
     <div className="flex items-center justify-between"><h2 id="favorite-weather-place-title" className="text-lg font-semibold">Ajouter un lieu météo</h2><button type="button" onClick={onCancel} className="grid min-h-11 min-w-11 place-items-center" aria-label="Fermer"><X size={20} /></button></div>
-    <div className="mt-3 flex gap-2"><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} className="min-h-12 min-w-0 flex-1 rounded-xl border border-[var(--bc-border)] bg-transparent px-3 text-base" placeholder="Boeschepe, Bailleul, Bondues…" aria-label="Rechercher un lieu météo" /><button type="button" onClick={() => void search()} disabled={query.trim().length < 2 || searching} className="grid min-h-12 min-w-12 place-items-center rounded-xl border border-[var(--bc-border)] disabled:opacity-40" aria-label="Rechercher"><Search size={18} /></button></div>
+    <label className="mt-3 flex min-h-12 items-center gap-2 rounded-xl border border-[var(--bc-border)] px-3"><Search size={18} aria-hidden="true" className="shrink-0 text-[var(--bc-text-muted)]" /><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base outline-none" placeholder="Boeschepe, Bailleul, Bondues…" aria-label="Rechercher un lieu météo" /></label>
     <p className="mt-2 text-xs text-[var(--bc-text-muted)]">{searching ? "Recherche…" : error ?? "Recherchez une ville, une commune ou un terrain."}</p>
-    <div className="mt-2 grid gap-1">{results.map((place) => <button key={place.id} type="button" onClick={() => onSelect(place)} className="min-h-12 rounded-xl px-3 text-left text-sm font-semibold">{place.name}</button>)}</div>
+    <div className="mt-2 grid gap-1">{results.map((place) => { const [name, ...context] = place.name.split(",").map((part) => part.trim()).filter(Boolean); return <button key={place.id} type="button" onClick={() => onSelect(place)} className="min-h-14 rounded-xl px-3 py-2 text-left"><strong className="block text-sm">{name ?? place.name}</strong>{context.length > 0 && <span className="mt-0.5 block truncate text-xs text-[var(--bc-text-muted)]">{context.join(", ")}</span>}</button>; })}</div>
     <div style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))" }} />
   </dialog>;
 }
