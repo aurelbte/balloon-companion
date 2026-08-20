@@ -4,6 +4,7 @@ import test from "node:test";
 import { mostRestrictiveQualificationResult, qualificationEventLabel, qualificationStatusLabel } from "./qualificationPresentation.ts";
 
 const page = readFileSync(new URL("../more/profile/qualifications/page.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../more/profile/qualifications/Qualifications.module.css", import.meta.url), "utf8");
 const profile = readFileSync(new URL("../more/profile/page.tsx", import.meta.url), "utf8");
 
 test("la page Qualifications est accessible depuis Profil pilote", () => {
@@ -74,4 +75,31 @@ test("l’édition reste limitée aux réglages supportés", () => {
   assert.match(page, /Qualification FI\(B\)/);
   assert.match(page, /Qualification FE\(B\)/);
   assert.doesNotMatch(page, /Créer un événement|Ajouter une qualification/);
+});
+
+test("le premier accès montre la configuration prioritaire et masque les calculs", () => {
+  assert.match(page, /!qualifications\.profile\.configured/);
+  assert.match(page, /Configurez votre profil pour calculer vos qualifications et validités\./);
+  assert.match(page, /<QualificationSettingsForm priority/);
+  assert.match(page, /if \(!view\) return null/);
+});
+
+test("l’enregistrement explicite le profil puis replace les réglages après les résultats", () => {
+  assert.match(page, /configuredSettings = \{ \.\.\.settings, configured: true \}/);
+  assert.match(page, /setSettings\(configuredSettings\)/);
+  assert.match(page, /setQualifications\(next\)/);
+  assert.ok(page.lastIndexOf("<QualificationSettingsForm settings=") > page.indexOf("Historique"));
+});
+
+test("les cases contrôlées associent toute leur zone tactile au contrôle natif", () => {
+  for (const id of ["qualification-commercial", "qualification-fi-b", "qualification-fe-b"]) {
+    assert.match(page, new RegExp(`htmlFor="${id}"`));
+    assert.match(page, new RegExp(`id="${id}"`));
+  }
+  assert.match(page, /checked=\{settings\.commercialOperationsEnabled\}/);
+  assert.match(page, /checked=\{settings\.fiBEnabled\}/);
+  assert.match(page, /checked=\{settings\.feBEnabled\}/);
+  assert.match(page, /event\.target\.checked/);
+  assert.match(styles, /touch-action: manipulation/);
+  assert.match(styles, /pointer-events: none/);
 });

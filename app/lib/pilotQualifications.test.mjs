@@ -7,6 +7,7 @@ import {
   createEmptyQualificationProfile,
   createQualificationEvent,
   legacyQualificationDeadlines,
+  normalizeQualificationProfile,
 } from "./pilotQualifications.ts";
 import {
   createEmptyPilotQualificationsState,
@@ -30,6 +31,7 @@ function signedIn(id) {
 
 test("les qualifications vides n’inventent aucun privilège", () => {
   assert.deepEqual(createEmptyQualificationProfile(), {
+    configured: false,
     licenceType: null,
     commercialOperationsEnabled: false,
     fiBEnabled: false,
@@ -57,9 +59,27 @@ test("la persistance conserve profil et événements dans le scope USER", () => 
     { type: "FIRST_AID", dateIso: "2026-08-01", expiryDateIso: "2028-08-01", source: "MANUAL" },
     { uuid: () => "123e4567-e89b-42d3-a456-426614174001", now: () => new Date("2026-08-20T10:00:00Z") },
   );
-  assert.equal(savePilotQualifications({ profile: { licenceType: "BPL", commercialOperationsEnabled: true, fiBEnabled: false, feBEnabled: false }, events: [event] }, storage), true);
+  assert.equal(savePilotQualifications({ profile: { configured: true, licenceType: "BPL", commercialOperationsEnabled: true, fiBEnabled: false, feBEnabled: false }, events: [event] }, storage), true);
   assert.equal(loadPilotQualifications(storage).profile.licenceType, "BPL");
+  assert.equal(loadPilotQualifications(storage).profile.configured, true);
   assert.deepEqual(loadPilotQualifications(storage).events, [event]);
+});
+
+test("le marqueur explicite distingue les valeurs par défaut d’une configuration volontaire", () => {
+  assert.equal(normalizeQualificationProfile({ licenceType: null, commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false }).configured, false);
+  assert.equal(normalizeQualificationProfile({ configured: true, licenceType: null, commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false }).configured, true);
+});
+
+test("une configuration volontaire avec les valeurs par défaut reste configurée au rechargement", () => {
+  const storage = memoryStorage();
+  signedIn("configured-defaults-user");
+  const profile = { ...createEmptyQualificationProfile(), configured: true };
+  assert.equal(savePilotQualifications({ profile, events: [] }, storage), true);
+  assert.deepEqual(loadPilotQualifications(storage).profile, profile);
+});
+
+test("un ancien profil Qualifications renseigné sans marqueur reste configuré", () => {
+  assert.equal(normalizeQualificationProfile({ licenceType: "BPL", commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false }).configured, true);
 });
 
 test("les scopes USER et GUEST restent isolés", () => {

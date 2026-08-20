@@ -43,6 +43,7 @@ export type QualificationBalloonClass = Readonly<{
 export type QualificationMedicalClass = "LAPL" | "CLASS_2" | (string & {});
 
 export type QualificationProfile = Readonly<{
+  configured: boolean;
   licenceType: string | null;
   commercialOperationsEnabled: boolean;
   fiBEnabled: boolean;
@@ -88,7 +89,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function createEmptyQualificationProfile(): QualificationProfile {
-  return { licenceType: null, commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false };
+  return { configured: false, licenceType: null, commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false };
 }
 
 export function emptyLegacyQualificationDeadlines(): LegacyQualificationDeadlines {
@@ -123,11 +124,18 @@ function balloonClass(value: unknown): QualificationBalloonClass | undefined {
 
 export function normalizeQualificationProfile(value: unknown): QualificationProfile {
   const candidate = value && typeof value === "object" ? value as Partial<QualificationProfile> : {};
+  const licenceType = optionalText(candidate.licenceType)?.toUpperCase() ?? null;
+  const commercialOperationsEnabled = candidate.commercialOperationsEnabled === true;
+  const fiBEnabled = candidate.fiBEnabled === true;
+  const feBEnabled = candidate.feBEnabled === true;
   return {
-    licenceType: optionalText(candidate.licenceType)?.toUpperCase() ?? null,
-    commercialOperationsEnabled: candidate.commercialOperationsEnabled === true,
-    fiBEnabled: candidate.fiBEnabled === true,
-    feBEnabled: candidate.feBEnabled === true,
+    configured: typeof candidate.configured === "boolean"
+      ? candidate.configured
+      : licenceType !== null || commercialOperationsEnabled || fiBEnabled || feBEnabled,
+    licenceType,
+    commercialOperationsEnabled,
+    fiBEnabled,
+    feBEnabled,
   };
 }
 

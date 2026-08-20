@@ -31,6 +31,25 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
   return <div className={styles.fact}><span>{label}</span><strong>{value}</strong></div>;
 }
 
+function QualificationSettingsForm({ priority = false, settings, onChange, onSave }: {
+  priority?: boolean;
+  settings: QualificationProfile;
+  onChange: (settings: QualificationProfile) => void;
+  onSave: () => void;
+}) {
+  return <form className={`${styles.settings} ${priority ? styles.prioritySettings : ""}`} onSubmit={(event) => { event.preventDefault(); onSave(); }}>
+    <h2>{priority ? "Configurer votre profil" : "Réglages"}</h2>
+    {priority && <p className={styles.priorityText}>Configurez votre profil pour calculer vos qualifications et validités.</p>}
+    <div className={styles.settingsGrid}>
+      <label htmlFor="qualification-licence-type"><span>Type de licence</span><select id="qualification-licence-type" value={settings.licenceType ?? ""} onChange={(event) => onChange({ ...settings, licenceType: event.target.value || null })}><option value="">Non renseigné</option><option value="BPL">BPL</option><option value="OTHER">Autre</option></select></label>
+      <label className={styles.toggle} htmlFor="qualification-commercial"><input id="qualification-commercial" type="checkbox" checked={settings.commercialOperationsEnabled} onChange={(event) => onChange({ ...settings, commercialOperationsEnabled: event.target.checked })} /><span>Activité commerciale</span></label>
+      <label className={styles.toggle} htmlFor="qualification-fi-b"><input id="qualification-fi-b" type="checkbox" checked={settings.fiBEnabled} onChange={(event) => onChange({ ...settings, fiBEnabled: event.target.checked })} /><span>Qualification FI(B)</span></label>
+      <label className={styles.toggle} htmlFor="qualification-fe-b"><input id="qualification-fe-b" type="checkbox" checked={settings.feBEnabled} onChange={(event) => onChange({ ...settings, feBEnabled: event.target.checked })} /><span>Qualification FE(B)</span></label>
+    </div>
+    <button className={styles.save} type="submit">{priority ? "Enregistrer" : "Enregistrer les réglages"}</button>
+  </form>;
+}
+
 function eventClassKeys(events: readonly QualificationEvent[], ascensions: PilotQualificationsPageState["completion"]["officialAscensions"]): QualificationBalloonClass[] {
   const values = [
     ...events.flatMap(({ balloonClass }) => balloonClass ? [balloonClass] : []),
@@ -60,7 +79,7 @@ export default function QualificationsPage() {
   }, []);
 
   const view = useMemo(() => {
-    if (!qualifications) return null;
+    if (!qualifications || !qualifications.profile.configured) return null;
     const bpl = calculateBplMaintenance({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, ascensionHistoryComplete: true, openingBalance: completion.openingBalance });
     const medical = calculateMedicalQualification({ events: qualifications.events, legacy: qualifications.legacy, referenceDateIso, requiredClass: "LAPL" });
     const commercialClasses = eventClassKeys(qualifications.events, completion.officialAscensions);
@@ -71,7 +90,24 @@ export default function QualificationsPage() {
     return { bpl, medical, commercialClasses, commercial, credits };
   }, [completion, qualifications, referenceDateIso]);
 
-  if (!qualifications || !settings || !view) return null;
+  if (!qualifications || !settings) return null;
+
+  const saveSettings = () => {
+    const configuredSettings = { ...settings, configured: true };
+    const next = { ...qualifications, profile: configuredSettings };
+    if (savePilotQualifications({ profile: configuredSettings, events: qualifications.events }, window.localStorage)) {
+      setSettings(configuredSettings);
+      setQualifications(next);
+    }
+  };
+
+  if (!qualifications.profile.configured) return <main className={moreStyles.screen}><div className={moreStyles.layout}>
+    <Link href="/more/profile" className={moreStyles.back}><ChevronLeft size={18} aria-hidden="true" /> Profil pilote</Link>
+    <header><p className={moreStyles.eyebrow}>Profil pilote</p><h1 className={moreStyles.title}>Qualifications &amp; validité</h1></header>
+    <QualificationSettingsForm priority settings={settings} onChange={setSettings} onSave={saveSettings} />
+  </div><NavigationBar activeItem="Plus" /></main>;
+
+  if (!view) return null;
   const experience = view.bpl.recentExperience.currentValue ?? { officialDurationMinutes: 0, ascensions: 0, takeoffs: 0, landings: 0 };
   const medicalEvent = [...qualifications.events].filter(({ type }) => type === "MEDICAL").sort((a, b) => b.dateIso.localeCompare(a.dateIso))[0];
   const firstAid = calculateProfessionalTrainingStatus({ profile: qualifications.profile, events: qualifications.events, type: "FIRST_AID", referenceDateIso });
@@ -122,6 +158,6 @@ export default function QualificationsPage() {
 
     <section className={styles.section} aria-labelledby="history-title"><h2 id="history-title">Historique</h2><div className={styles.history}>{history.length ? history.map((event) => <article className={styles.historyItem} key={event.id}><h3>{qualificationEventLabel(event.type)}</h3><div className={styles.historyMeta}><span>{formatQualificationDate(event.dateIso)}</span>{event.expiryDateIso && <span>Échéance : {formatQualificationDate(event.expiryDateIso)}</span>}{event.instructor && <span>FI(B) : {event.instructor.name}</span>}{event.examiner && <span>FE(B) : {event.examiner.name}</span>}</div>{event.officialAscensionId && (event.officialAscensionDeletedAt ? <p className={styles.deleted}>Ascension liée supprimée — preuve réglementaire conservée</p> : <Link className={styles.historyLink} href={`/journal/ascension/${encodeURIComponent(event.officialAscensionId)}`}>Voir l’ascension liée →</Link>)}</article>) : <p className={styles.empty}>Aucun événement de qualification enregistré.</p>}</div></section>
 
-    <form className={styles.settings} onSubmit={(event) => { event.preventDefault(); const next = { ...qualifications, profile: settings }; if (savePilotQualifications({ profile: settings, events: qualifications.events }, window.localStorage)) setQualifications(next); }}><h2>Réglages</h2><div className={styles.settingsGrid}><label><span>Type de licence</span><select value={settings.licenceType ?? ""} onChange={(event) => setSettings({ ...settings, licenceType: event.target.value || null })}><option value="">Non renseigné</option><option value="BPL">BPL</option><option value="OTHER">Autre</option></select></label><label className={styles.toggle}><input type="checkbox" checked={settings.commercialOperationsEnabled} onChange={(event) => setSettings({ ...settings, commercialOperationsEnabled: event.target.checked })} /><span>Activité commerciale</span></label><label className={styles.toggle}><input type="checkbox" checked={settings.fiBEnabled} onChange={(event) => setSettings({ ...settings, fiBEnabled: event.target.checked })} /><span>Qualification FI(B)</span></label><label className={styles.toggle}><input type="checkbox" checked={settings.feBEnabled} onChange={(event) => setSettings({ ...settings, feBEnabled: event.target.checked })} /><span>Qualification FE(B)</span></label></div><button className={styles.save} type="submit">Enregistrer les réglages</button></form>
+    <QualificationSettingsForm settings={settings} onChange={setSettings} onSave={saveSettings} />
   </div><NavigationBar activeItem="Plus" /></main>;
 }

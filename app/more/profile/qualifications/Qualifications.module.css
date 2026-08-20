@@ -28,8 +28,11 @@
 .settingsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
 .settings label > span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
 .settings select { width: 100%; min-height: 44px; padding: 0 9px; border: 1px solid var(--bc-border); border-radius: 12px; background: var(--bc-canvas); color: var(--bc-text-primary); }
-.toggle { display: flex; min-height: 44px; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--bc-border); border-radius: 12px; }
-.toggle input { width: 18px; height: 18px; accent-color: var(--bc-accent); }
-.toggle span { margin: 0 !important; color: var(--bc-text-secondary) !important; font-size: .68rem !important; text-transform: none !important; }
+.prioritySettings { margin-top: 10px; border-color: var(--bc-border-strong); }
+.priorityText { margin-top: 7px; color: var(--bc-text-secondary); font-size: .72rem; line-height: 1.4; }
+.toggle { display: flex; min-height: 44px; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--bc-border); border-radius: 12px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
+.toggle input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: var(--bc-accent); }
+.toggle span { margin: 0 !important; color: var(--bc-text-secondary) !important; font-size: .68rem !important; text-transform: none !important; pointer-events: none; }
+.toggle:has(input:checked) { border-color: var(--bc-accent); }
 .save { width: 100%; min-height: 46px; margin-top: 10px; border: 0; border-radius: 999px; background: var(--bc-accent); color: var(--bc-accent-foreground); font-weight: 700; }
 @media (max-width: 370px) { .summary, .settingsGrid, .facts { grid-template-columns: 1fr; } }
