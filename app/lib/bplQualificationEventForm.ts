@@ -16,6 +16,22 @@ export function emptyBplEventDraft(event?: QualificationEvent): BplEventDraft {
   };
 }
 
+export function upsertInitialBplIssuance(
+  events: readonly QualificationEvent[],
+  draft: Pick<BplEventDraft, "dateIso" | "notes">,
+  existingId?: string,
+  options: Readonly<{ uuid?: () => string; now?: () => Date }> = {},
+): BplEventUpsertResult {
+  if (!draft.dateIso) return { ok: false, error: "Renseignez la date de délivrance." };
+  const existing = existingId ? events.find(({ id, type }) => id === existingId && type === "INITIAL_BPL_ISSUANCE") : undefined;
+  const input = { type: "INITIAL_BPL_ISSUANCE" as const, dateIso: draft.dateIso, source: "MANUAL" as const, ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}) };
+  const event = existing
+    ? normalizeQualificationEvent({ ...input, id: existing.id, createdAt: existing.createdAt, updatedAt: (options.now ?? (() => new Date()))().toISOString() })
+    : createQualificationEvent(input, options);
+  if (!event) return { ok: false, error: "Délivrance BPL invalide." };
+  return { ok: true, event, events: existing ? events.map((item) => item.id === existing.id ? event : item) : [...events, event] };
+}
+
 function validate(type: EditableBplEventType, draft: BplEventDraft, linked: boolean): string | null {
   if (!linked && !draft.dateIso) return type === "TRAINING_FLIGHT_BPL" ? "Renseignez la date du vol." : "Renseignez la date du contrôle.";
   if (!draft.personName.trim()) return type === "TRAINING_FLIGHT_BPL" ? "Renseignez l’instructeur FI(B)." : "Renseignez l’examinateur FE(B).";

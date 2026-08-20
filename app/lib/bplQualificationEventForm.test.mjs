@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
-import { emptyBplEventDraft, linkBplEventToAscension, updateLinkedBplEventProof, upsertHistoricalBplEvent } from "./bplQualificationEventForm.ts";
+import { emptyBplEventDraft, linkBplEventToAscension, updateLinkedBplEventProof, upsertHistoricalBplEvent, upsertInitialBplIssuance } from "./bplQualificationEventForm.ts";
 import { defaultOfficialAscensionInput } from "./flightCompletion.ts";
 import { createEmptyQualificationProfile } from "./pilotQualifications.ts";
 import { loadPilotQualifications, savePilotQualifications } from "./pilotQualificationsStorage.ts";
@@ -85,4 +85,12 @@ test("USER conserve localement une preuve BPL", () => {
   const profile = { ...createEmptyQualificationProfile(), configured: true, licenceType: "BPL" };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
   assert.equal(loadPilotQualifications(local).events[0].instructor.name, "FI Local");
+});
+
+test("la délivrance initiale reste distincte d’un vol d’entraînement", () => {
+  const result = upsertInitialBplIssuance([], { dateIso: "2023-04-30", notes: "Délivrance" }, undefined, options);
+  assert.equal(result.ok, true);
+  assert.equal(result.event.type, "INITIAL_BPL_ISSUANCE");
+  assert.equal(result.event.instructor, undefined);
+  assert.equal(result.event.examiner, undefined);
 });

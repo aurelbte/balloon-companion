@@ -215,7 +215,7 @@ export function calculateBplMaintenance(input: Readonly<{
     input.referenceDateIso,
     "Aucun vol d’entraînement BPL avec FI(B) identifiable.",
   );
-  const proficiencyCheckFeB = eventRequirement(
+  const proficiencyCheckAlternative = eventRequirement(
     latestQualifiedCredit(credits, "PROFICIENCY_CHECK", input.referenceDateIso),
     BPL_REGULATORY_RULES.proficiencyCheckMonths,
     input.referenceDateIso,
@@ -223,7 +223,10 @@ export function calculateBplMaintenance(input: Readonly<{
   );
 
   const standardPath = recentExperience.status === "COMPLIANT" && satisfiesTimedRequirement(trainingFlightFiB);
-  const alternativePath = satisfiesTimedRequirement(proficiencyCheckFeB);
+  const alternativePath = !standardPath && satisfiesTimedRequirement(proficiencyCheckAlternative);
+  const proficiencyCheckFeB: QualificationRequirementResult = standardPath
+    ? { status: "NON_APPLICABLE", reason: "Voie alternative non nécessaire : la voie normale est satisfaite." }
+    : proficiencyCheckAlternative;
   const profileIsBpl = input.profile.licenceType === "BPL";
   let overall: QualificationRequirementResult;
   if (!profileIsBpl) {
@@ -231,7 +234,7 @@ export function calculateBplMaintenance(input: Readonly<{
   } else if (alternativePath || standardPath) {
     const sources = alternativePath ? proficiencyCheckFeB.sourceEventIds : trainingFlightFiB.sourceEventIds;
     overall = { status: "COMPLIANT", reason: alternativePath ? "Voie alternative par contrôle de compétences BPL avec FE(B)." : "Expérience récente et vol d’entraînement BPL avec FI(B) satisfaits.", ...(sources ? { sourceEventIds: sources } : {}) };
-  } else if (recentExperience.status === "UNKNOWN" || (trainingFlightFiB.status === "UNKNOWN" && proficiencyCheckFeB.status === "UNKNOWN")) {
+  } else if (recentExperience.status === "UNKNOWN") {
     overall = { status: "UNKNOWN", reason: "Données insuffisantes pour conclure au maintien BPL." };
   } else {
     overall = { status: "ACTION_REQUIRED", reason: "Aucune voie de maintien BPL calculée n’est satisfaite." };

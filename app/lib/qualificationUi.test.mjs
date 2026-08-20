@@ -33,8 +33,8 @@ test("le rendu BPL expose les seuils et les explications moteur", () => {
   assert.match(page, /\/ 6 h/);
   assert.match(page, /décollages/);
   assert.match(page, /atterrissages/);
-  assert.match(page, /Aucun vol d’entraînement enregistré/);
-  assert.match(page, /Aucun contrôle enregistré/);
+  assert.match(page, /Aucune référence de maintien périodique/);
+  assert.match(page, /Voie alternative par contrôle de compétences/);
 });
 
 test("le médical legacy reste clairement identifié avec classe inconnue", () => {
@@ -55,7 +55,7 @@ test("l’historique utilise les libellés aéronautiques français", () => {
   assert.equal(qualificationEventLabel("TRAINING_FLIGHT_BPL"), "Vol d’entraînement BPL");
   assert.equal(qualificationEventLabel("PROFICIENCY_CHECK_BPL"), "Contrôle de compétences BPL");
   assert.equal(qualificationEventLabel("SKILL_TEST_BPL"), "Examen pratique BPL");
-  assert.equal(qualificationEventLabel("COMMERCIAL_REFRESHER_COURSE"), "Cours de remise à niveau commercial");
+  assert.equal(qualificationEventLabel("COMMERCIAL_REFRESHER_COURSE"), "Formation / remise à niveau professionnelle");
   assert.doesNotMatch(page, />Training flight|>Proficiency check/i);
   assert.match(page, /FI\(B\) :/);
   assert.match(page, /FE\(B\) :/);
@@ -145,4 +145,26 @@ test("la phase 7B propose les deux origines BPL avec FI/FE et un submit natif", 
   assert.match(page, /upsertHistoricalBplEvent/);
   assert.match(page, /Lié au carnet/);
   assert.match(page, /Historique — non lié au carnet/);
+});
+
+test("la phase 7B.1 distingue délivrance, maintien normal et voie alternative", () => {
+  assert.match(page, /Délivrance initiale BPL/);
+  assert.match(page, /Maintien périodique \/ vol d’entraînement/);
+  assert.match(page, /Référence actuelle : délivrance BPL/);
+  assert.match(page, /proficiencyCheckFeB\.status !== "NON_APPLICABLE"/);
+  assert.match(page, /Supprimer cette donnée/);
+  assert.match(page, /window\.confirm/);
+  assert.match(page, /removeQualificationEvent/);
+});
+
+test("la phase 7C expose accès initial et voies professionnelles sans cumul artificiel", () => {
+  assert.match(page, /Délivrance initiale — activité professionnelle/);
+  assert.match(page, /Ajouter ma délivrance/);
+  assert.match(page, /Récence — 180 jours/);
+  assert.match(page, /Voie alternative — contrôle de compétences/);
+  assert.match(page, /Voie alternative — formation \/ remise à niveau/);
+  assert.match(page, /proficiencyCheckFeB\.status !== "NON_APPLICABLE"/);
+  assert.match(page, /refresherCourse\.status !== "NON_APPLICABLE"/);
+  assert.match(page, /function CommercialEventForm/);
+  assert.match(page, /upsertCommercialQualificationEvent/);
 });

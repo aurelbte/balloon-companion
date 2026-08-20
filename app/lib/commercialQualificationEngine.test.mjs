@@ -28,6 +28,20 @@ test("trois vols PIC satisfont la récence à la frontière des 180 jours", () =
   assert.deepEqual(result.recency.currentValue, { picFlights: 3, flightsInClass: 1, supervisedFlightsInClass: 0 });
 });
 
+test("l’accès initial est requis et reste distinct des voies de maintien", () => {
+  const missing = calculate({ ascensions: [ascension("one", "2026-04-01"), ascension("two", "2026-05-01"), ascension("three", "2026-06-01")] });
+  assert.equal(missing.initialAccess.status, "UNKNOWN");
+  assert.equal(missing.overall.status, "UNKNOWN");
+  assert.equal(missing.proficiencyCheckFeB.status, "NON_APPLICABLE");
+  assert.equal(missing.refresherCourse.status, "NON_APPLICABLE");
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2026-01-01", { balloonClass: hotAir });
+  const result = calculate({ events: [issuance], ascensions: [ascension("one", "2026-04-01"), ascension("two", "2026-05-01"), ascension("three", "2026-06-01")] });
+  assert.equal(result.initialAccess.status, "COMPLIANT");
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal(result.proficiencyCheckFeB.status, "NON_APPLICABLE");
+  assert.equal(result.refresherCourse.status, "NON_APPLICABLE");
+});
+
 test("un vol PIC supervisé par FI(B) dans la classe suffit", () => {
   const flight = ascension("supervised", "2026-07-01");
   const training = event("TRAINING_FLIGHT_BPL", "2026-07-01", { officialAscensionId: flight.id, balloonClass: hotAir, instructor: { name: "FI Test" } });
@@ -37,24 +51,45 @@ test("un vol PIC supervisé par FI(B) dans la classe suffit", () => {
 });
 
 test("un contrôle commercial FE(B) est valable jusqu’à la frontière des 24 mois", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2024-01-01", { balloonClass: hotAir });
   const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2024-08-20", { balloonClass: hotAir, examiner: { name: "FE Test" } });
-  assert.equal(calculate({ events: [check] }).proficiencyCheckFeB.status, "WARNING");
-  assert.equal(calculate({ events: [check], referenceDateIso: "2026-08-21" }).proficiencyCheckFeB.status, "ACTION_REQUIRED");
+  assert.equal(calculate({ events: [issuance, check] }).proficiencyCheckFeB.status, "WARNING");
+  assert.equal(calculate({ events: [issuance, check], referenceDateIso: "2026-08-21" }).proficiencyCheckFeB.status, "ACTION_REQUIRED");
+});
+
+test("récence insuffisante et contrôle valide utilisent la voie alternative", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2024-01-01", { balloonClass: hotAir });
+  const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: hotAir, examiner: { name: "FE Test" } });
+  const result = calculate({ events: [issuance, check] });
+  assert.equal(result.recency.status, "ACTION_REQUIRED");
+  assert.equal(result.maintenance.status, "COMPLIANT");
+  assert.equal(result.overall.status, "COMPLIANT");
 });
 
 test("le cours exige six heures de théorie et un vol lié avec FI(B)", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2024-01-01", { balloonClass: hotAir });
   const training = event("TRAINING_FLIGHT_BPL", "2026-01-11", { balloonClass: hotAir, instructor: { name: "FI Test" } });
   const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-01-10", { balloonClass: hotAir, theoryMinutes: 360, relatedEventIds: [training.id] });
-  const result = calculate({ events: [course, training] });
+  const result = calculate({ events: [issuance, course, training] });
   assert.equal(result.refresherCourse.status, "COMPLIANT");
   assert.deepEqual(result.refresherCourse.sourceEventIds, [course.id, training.id]);
   const shortCourse = event("COMMERCIAL_REFRESHER_COURSE", "2026-01-10", { balloonClass: hotAir, theoryMinutes: 359, relatedEventIds: [training.id] });
-  assert.equal(calculate({ events: [shortCourse, training] }).refresherCourse.status, "UNKNOWN");
+  assert.equal(calculate({ events: [issuance, shortCourse, training] }).refresherCourse.status, "UNKNOWN");
+});
+
+test("une remise à niveau complète satisfait la voie alternative lorsque pertinente", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2024-01-01", { balloonClass: hotAir });
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-11", { balloonClass: hotAir, instructor: { name: "FI Test" } });
+  const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-01-10", { balloonClass: hotAir, theoryMinutes: 360, relatedEventIds: [training.id] });
+  const result = calculate({ events: [issuance, course, training] });
+  assert.equal(result.maintenance.status, "COMPLIANT");
+  assert.equal(result.overall.status, "COMPLIANT");
 });
 
 test("une preuve d’une autre classe ne donne aucune conformité", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2024-01-01", { balloonClass: hotAir });
   const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: gas, examiner: { name: "FE Test" } });
-  assert.equal(calculate({ events: [check] }).proficiencyCheckFeB.status, "UNKNOWN");
+  assert.equal(calculate({ events: [issuance, check] }).proficiencyCheckFeB.status, "UNKNOWN");
 });
 
 test("un historique incomplet retourne UNKNOWN si les preuves sont insuffisantes", () => {

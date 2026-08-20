@@ -15,6 +15,9 @@ function sameKnownClass(left: QualificationEvent, right: QualificationEvent): bo
 export function bplEventCredits(events: readonly QualificationEvent[]): readonly BplEventCredit[] {
   const byId = new Map(events.map((event) => [event.id, event]));
   return events.flatMap((event): BplEventCredit[] => {
+    if (event.type === "INITIAL_BPL_ISSUANCE") {
+      return [{ requirement: "TRAINING_FLIGHT", dateIso: event.dateIso, sourceEventIds: [event.id], creditedFrom: event.type }];
+    }
     if (event.type === "TRAINING_FLIGHT_BPL" && event.instructor?.name.trim()) {
       return [{ requirement: "TRAINING_FLIGHT", dateIso: event.dateIso, sourceEventIds: [event.id], creditedFrom: event.type }];
     }

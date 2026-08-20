@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
 import { createEmptyQualificationProfile } from "./pilotQualifications.ts";
-import { emptyQualificationEventDraft, upsertQualificationEvent } from "./qualificationEventForm.ts";
+import { emptyQualificationEventDraft, removeQualificationEvent, upsertQualificationEvent } from "./qualificationEventForm.ts";
 import { loadPilotQualifications, savePilotQualifications } from "./pilotQualificationsStorage.ts";
 import { calculateMedicalQualification } from "./medicalTrainingQualificationEngine.ts";
 
@@ -79,4 +79,16 @@ test("la validation refuse les champs médicaux manquants et une échéance ant�
   const invalid = upsertQualificationEvent([], "FIRE_TRAINING", { ...emptyQualificationEventDraft(), dateIso: "2026-08-02", expiryDateIso: "2026-08-01" });
   assert.equal(invalid.ok, false);
   assert.match(invalid.error, /échéance/i);
+});
+
+test("la suppression retire uniquement la donnée médicale ou de formation ciblée", () => {
+  idIndex = 0;
+  const medical = upsertQualificationEvent([], "MEDICAL", { dateIso: "2026-01-01", expiryDateIso: "2027-01-01", medicalClass: "LAPL", organization: "", notes: "" }, undefined, options());
+  assert.equal(medical.ok, true);
+  const firstAid = upsertQualificationEvent(medical.events, "FIRST_AID", { dateIso: "2026-02-01", expiryDateIso: "", medicalClass: "", organization: "", notes: "" }, undefined, options());
+  assert.equal(firstAid.ok, true);
+  const fire = upsertQualificationEvent(firstAid.events, "FIRE_TRAINING", { dateIso: "2026-03-01", expiryDateIso: "", medicalClass: "", organization: "", notes: "" }, undefined, options());
+  assert.equal(fire.ok, true);
+  const retained = removeQualificationEvent(fire.events, firstAid.event.id);
+  assert.deepEqual(retained.map(({ type }) => type), ["MEDICAL", "FIRE_TRAINING"]);
 });

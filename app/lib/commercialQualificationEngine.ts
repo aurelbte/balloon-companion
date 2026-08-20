@@ -21,6 +21,7 @@ export type CommercialAscension = OfficialAscension & Readonly<{ balloonGroupId?
 
 export type CommercialQualificationResult = Readonly<{
   balloonClass: QualificationBalloonClass;
+  initialAccess: QualificationRequirementResult;
   recency: QualificationRequirementResult;
   proficiencyCheckFeB: QualificationRequirementResult;
   refresherCourse: QualificationRequirementResult;
@@ -80,12 +81,18 @@ export function calculateCommercialQualification(input: Readonly<{
 }>): CommercialQualificationResult {
   const notApplicable: QualificationRequirementResult = { status: "NON_APPLICABLE", reason: "Les opérations commerciales sont désactivées dans le profil." };
   if (!input.profile.commercialOperationsEnabled) {
-    return { balloonClass: input.balloonClass, recency: notApplicable, proficiencyCheckFeB: notApplicable, refresherCourse: notApplicable, operatorEquivalent: notApplicable, maintenance: notApplicable, overall: notApplicable };
+    return { balloonClass: input.balloonClass, initialAccess: notApplicable, recency: notApplicable, proficiencyCheckFeB: notApplicable, refresherCourse: notApplicable, operatorEquivalent: notApplicable, maintenance: notApplicable, overall: notApplicable };
   }
   if (!input.balloonClass.classId) {
     const unknown = { status: "UNKNOWN", reason: "Classe ballon concernée inconnue." } as const;
-    return { balloonClass: input.balloonClass, recency: unknown, proficiencyCheckFeB: unknown, refresherCourse: unknown, operatorEquivalent: unknown, maintenance: unknown, overall: unknown };
+    return { balloonClass: input.balloonClass, initialAccess: unknown, recency: unknown, proficiencyCheckFeB: unknown, refresherCourse: unknown, operatorEquivalent: unknown, maintenance: unknown, overall: unknown };
   }
+
+  const issuances = input.events.filter((event) => event.type === "INITIAL_COMMERCIAL_ISSUANCE" && event.dateIso <= input.referenceDateIso && sameClass(event.balloonClass, input.balloonClass));
+  const issuance = latest(issuances);
+  const initialAccess: QualificationRequirementResult = issuance
+    ? { status: "COMPLIANT", reason: "Délivrance initiale professionnelle renseignée pour cette classe.", currentValue: issuance.dateIso, sourceEventIds: [issuance.id] }
+    : { status: "UNKNOWN", reason: "Délivrance initiale professionnelle non renseignée pour cette classe." };
 
   const startIso = subtractDays(input.referenceDateIso, COMMERCIAL_REGULATORY_RULES.recencyDays);
   const recentPic = input.ascensions.filter((ascension) => ascension.dateIso >= startIso && ascension.dateIso <= input.referenceDateIso && ascension.pilotFunction === "Pilote" && ascensionClass(ascension));
@@ -104,7 +111,7 @@ export function calculateCommercialQualification(input: Readonly<{
       : { status: "ACTION_REQUIRED", reason: "Aucune voie de récence commerciale n’est satisfaite sur 180 jours.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 } };
 
   const checks = input.events.filter((event) => event.type === "COMMERCIAL_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && sameClass(event.balloonClass, input.balloonClass));
-  const proficiencyCheckFeB = eventResult(latest(checks), input.referenceDateIso, "Aucun contrôle de compétences commercial avec FE(B) identifiable dans cette classe.");
+  const proficiencyCheckAlternative = eventResult(latest(checks), input.referenceDateIso, "Aucun contrôle de compétences professionnel avec FE(B) identifiable dans cette classe.");
 
   const byId = new Map(input.events.map((event) => [event.id, event]));
   const courses = input.events.filter((course) => {
@@ -120,16 +127,30 @@ export function calculateCommercialQualification(input: Readonly<{
       const training = byId.get(id);
       return training?.type === "TRAINING_FLIGHT_BPL" && training.instructor?.name.trim() && sameClass(training.balloonClass, input.balloonClass);
   });
-  const refresherCourse = course && trainingId
+  const refresherCourseAlternative = course && trainingId
     ? { ...baseRefresherCourse, sourceEventIds: [course.id, trainingId] }
     : baseRefresherCourse;
 
+  const normalPath = initialAccess.status === "COMPLIANT" && recency.status === "COMPLIANT";
+  const alternativesRelevant = initialAccess.status === "COMPLIANT" && !normalPath;
+  const alternativeNotApplicable = { status: "NON_APPLICABLE", reason: initialAccess.status === "COMPLIANT" ? "Voie alternative non nécessaire : la récence est satisfaite." : "Renseignez d’abord l’accès initial professionnel." } as const;
+  const proficiencyCheckFeB = alternativesRelevant ? proficiencyCheckAlternative : alternativeNotApplicable;
+  const refresherCourse = alternativesRelevant ? refresherCourseAlternative : alternativeNotApplicable;
   const operatorEquivalent: QualificationRequirementResult = { status: "UNKNOWN", reason: "Crédit de contrôle opérateur réservé pour une évolution future ; aucun type d’événement n’existe actuellement." };
-  const maintenance: QualificationRequirementResult = active(proficiencyCheckFeB.status) ? proficiencyCheckFeB : active(refresherCourse.status) ? refresherCourse : proficiencyCheckFeB.status === "UNKNOWN" || refresherCourse.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Données insuffisantes pour conclure au maintien commercial sur 24 mois." } : { status: "ACTION_REQUIRED", reason: "Aucune voie de maintien commercial n’est satisfaite sur 24 mois." };
-  const overall: QualificationRequirementResult = recency.status === "COMPLIANT" && active(maintenance.status)
-    ? { status: "COMPLIANT", reason: "Récence 180 jours et maintien commercial 24 mois satisfaits.", sourceEventIds: maintenance.sourceEventIds }
-    : recency.status === "UNKNOWN" || maintenance.status === "UNKNOWN"
-      ? { status: "UNKNOWN", reason: "Données insuffisantes pour conclure à l’activité commerciale." }
-      : { status: "ACTION_REQUIRED", reason: "La récence ou le maintien commercial n’est pas satisfait." };
-  return { balloonClass: input.balloonClass, recency, proficiencyCheckFeB, refresherCourse, operatorEquivalent, maintenance, overall };
+  const maintenance: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
+    ? { status: "UNKNOWN", reason: "Accès initial professionnel à renseigner avant le maintien." }
+    : normalPath
+    ? { status: "COMPLIANT", reason: "Voie normale satisfaite par la récence professionnelle.", sourceEventIds: initialAccess.sourceEventIds }
+    : active(proficiencyCheckAlternative.status) ? proficiencyCheckAlternative
+      : active(refresherCourseAlternative.status) ? refresherCourseAlternative
+        : recency.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Historique insuffisant pour choisir une voie de maintien." }
+          : { status: "ACTION_REQUIRED", reason: "Aucune voie normale ou alternative n’est satisfaite." };
+  const alternativePath = active(maintenance.status) && !normalPath;
+  const overall: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
+    ? { status: "UNKNOWN", reason: "Accès initial à l’activité professionnelle non renseigné." }
+    : normalPath || alternativePath
+      ? { status: "COMPLIANT", reason: normalPath ? "Accès initial et récence 180 jours satisfaits." : "Accès initial et voie alternative de maintien satisfaits.", sourceEventIds: maintenance.sourceEventIds }
+      : recency.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Données insuffisantes pour conclure à l’activité professionnelle." }
+        : { status: "ACTION_REQUIRED", reason: "Aucune voie de maintien professionnel n’est satisfaite." };
+  return { balloonClass: input.balloonClass, initialAccess, recency, proficiencyCheckFeB, refresherCourse, operatorEquivalent, maintenance, overall };
 }

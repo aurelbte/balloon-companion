@@ -65,3 +65,7 @@ export function upsertQualificationEvent(
     events: existing ? events.map((item) => item.id === existing.id ? event : item) : [...events, event],
   };
 }
+
+export function removeQualificationEvent(events: readonly QualificationEvent[], eventId: string): readonly QualificationEvent[] {
+  return events.filter(({ id }) => id !== eventId);
+}

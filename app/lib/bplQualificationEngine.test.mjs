@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { addCalendarMonths, calculateBplMaintenance, calculateDatedExperience } from "./bplQualificationEngine.ts";
 import { createQualificationEvent } from "./pilotQualifications.ts";
+import { removeQualificationEvent } from "./qualificationEventForm.ts";
 
 const profile = { licenceType: "BPL", commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false };
 let sequence = 0;
@@ -48,12 +49,45 @@ test("la voie FI(B) suit exactement 48 mois", () => {
   assert.equal(calculateBplMaintenance({ profile, events: [training], ascensions: flights, referenceDateIso: "2026-08-21", ascensionHistoryComplete: true }).trainingFlightFiB.status, "ACTION_REQUIRED");
 });
 
+test("la voie normale satisfaite ne rend pas le contrôle FE(B) obligatoire", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { instructor: { name: "FI Test" } });
+  const flights = [ascension("recent", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 })];
+  const result = calculateBplMaintenance({ profile, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal(result.proficiencyCheckFeB.status, "NON_APPLICABLE");
+  assert.match(result.proficiencyCheckFeB.reason, /alternative non nécessaire/);
+});
+
+test("la délivrance est la référence initiale puis un entraînement ultérieur la remplace", () => {
+  const issuance = event("INITIAL_BPL_ISSUANCE", "2023-04-30");
+  const flights = [ascension("recent", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 })];
+  const initial = calculateBplMaintenance({ profile, events: [issuance], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(initial.trainingFlightFiB.currentValue, "2023-04-30");
+  assert.equal(initial.trainingFlightFiB.dueDate, "2027-04-30");
+  assert.deepEqual(initial.trainingFlightFiB.sourceEventIds, [issuance.id]);
+  const training = event("TRAINING_FLIGHT_BPL", "2025-06-01", { instructor: { name: "FI Test" } });
+  const updated = calculateBplMaintenance({ profile, events: [issuance, training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(updated.trainingFlightFiB.currentValue, "2025-06-01");
+  assert.deepEqual(updated.trainingFlightFiB.sourceEventIds, [training.id]);
+});
+
 test("la voie FE(B) alternative suit exactement 24 mois", () => {
   const check = event("PROFICIENCY_CHECK_BPL", "2024-08-20", { examiner: { name: "FE Test" } });
   const boundary = calculateBplMaintenance({ profile, events: [check], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
   assert.equal(boundary.proficiencyCheckFeB.status, "WARNING");
   assert.equal(boundary.overall.status, "COMPLIANT");
   assert.equal(calculateBplMaintenance({ profile, events: [check], ascensions: [], referenceDateIso: "2026-08-21", ascensionHistoryComplete: true }).overall.status, "ACTION_REQUIRED");
+});
+
+test("supprimer le contrôle alternatif recalcule le moteur sans toucher aux ascensions", () => {
+  const check = event("PROFICIENCY_CHECK_BPL", "2026-01-01", { examiner: { name: "FE Test" } });
+  const ascensions = [ascension("source", "2023-01-01", 60)];
+  const before = structuredClone(ascensions);
+  assert.equal(calculateBplMaintenance({ profile, events: [check], ascensions, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true }).overall.status, "COMPLIANT");
+  const events = removeQualificationEvent([check], check.id);
+  assert.equal(events.length, 0);
+  assert.equal(calculateBplMaintenance({ profile, events, ascensions, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true }).overall.status, "ACTION_REQUIRED");
+  assert.deepEqual(ascensions, before);
 });
 
 test("un événement sans FI/FE et les données incomplètes restent UNKNOWN", () => {

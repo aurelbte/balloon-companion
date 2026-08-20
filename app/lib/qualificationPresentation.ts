@@ -11,11 +11,13 @@ export const QUALIFICATION_STATUS_LABELS: Readonly<Record<QualificationRequireme
 });
 
 export const QUALIFICATION_EVENT_LABELS: Readonly<Record<QualificationEventType, string>> = Object.freeze({
+  INITIAL_BPL_ISSUANCE: "Délivrance initiale BPL",
   TRAINING_FLIGHT_BPL: "Vol d’entraînement BPL",
   PROFICIENCY_CHECK_BPL: "Contrôle de compétences BPL",
   SKILL_TEST_BPL: "Examen pratique BPL",
-  COMMERCIAL_PROFICIENCY_CHECK: "Contrôle de compétences commercial",
-  COMMERCIAL_REFRESHER_COURSE: "Cours de remise à niveau commercial",
+  INITIAL_COMMERCIAL_ISSUANCE: "Délivrance initiale — activité professionnelle",
+  COMMERCIAL_PROFICIENCY_CHECK: "Contrôle de compétences professionnel",
+  COMMERCIAL_REFRESHER_COURSE: "Formation / remise à niveau professionnelle",
   MEDICAL: "Certificat médical",
   FIRST_AID: "Premiers secours / PSC1",
   FIRE_TRAINING: "Formation incendie",
