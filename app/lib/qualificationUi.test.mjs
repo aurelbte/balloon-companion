@@ -120,3 +120,15 @@ test("la fiche est ordonnée synthèse, actions, BPL, professionnel puis histori
   assert.match(page, /Votre dossier est à jour\./);
   assert.match(page, /dans l’historique/);
 });
+
+test("la phase 7A utilise des formulaires natifs compacts et rafraîchit immédiatement les événements", () => {
+  assert.match(page, /function QualificationEventForm/);
+  assert.match(page, /<form className=\{styles\.eventForm\} onSubmit=\{onSubmit\}>/);
+  assert.match(page, /type="date"/);
+  assert.match(page, /required=\{medical\}/);
+  assert.match(page, /event\.preventDefault\(\)/);
+  assert.match(page, /upsertQualificationEvent/);
+  assert.match(page, /savePilotQualifications\(\{ profile: qualifications\.profile, events: result\.events \}/);
+  assert.match(page, /setQualifications\(next\)/);
+  assert.match(page, /Organisme : \{event\.organization\}/);
+});
