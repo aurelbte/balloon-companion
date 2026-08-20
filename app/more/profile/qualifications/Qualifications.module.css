@@ -1,9 +1,15 @@
 .summary, .section, .settings { margin-top: 14px; }
-.summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.edit { flex: none; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--bc-accent); font-size: .7rem; font-weight: 700; }
+.summary { display: grid; overflow: hidden; border: 1px solid var(--bc-border); border-radius: 18px; background: var(--bc-surface); }
 .summaryCard, .section, .settings { border: 1px solid var(--bc-border); border-radius: 20px; background: var(--bc-surface); box-shadow: var(--bc-shadow-xs); }
-.summaryCard { min-width: 0; padding: 12px; }
+.summaryCard { display: flex; min-width: 0; align-items: center; justify-content: space-between; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--bc-border); border-radius: 0; box-shadow: none; }
+.summaryCard:last-child { border-bottom: 0; }
 .summaryCard span, .fact span { color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-.summaryCard strong { display: block; margin-top: 5px; font-size: .8rem; }
+.summaryCard strong { font-size: .72rem; color: var(--bc-text-secondary); }
+.summaryCard strong[data-status="COMPLIANT"] { color: var(--bc-success); }
+.summaryCard strong[data-status="WARNING"], .summaryCard strong[data-status="UPCOMING"] { color: var(--bc-accent); }
+.summaryCard strong[data-status="ACTION_REQUIRED"] { color: var(--bc-danger); }
 .section, .settings { padding: 14px; }
 .sectionHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .section h2, .settings h2 { font-size: .88rem; font-weight: 680; }
@@ -25,6 +31,17 @@
 .historyLink { display: inline-flex; margin-top: 6px; color: var(--bc-accent); font-size: .68rem; font-weight: 650; text-decoration: none; }
 .deleted { margin-top: 6px; color: var(--bc-danger); font-size: .68rem; font-weight: 650; }
 .empty { margin-top: 9px; color: var(--bc-text-muted); font-size: .72rem; }
+.todo { border-color: color-mix(in srgb, var(--bc-accent) 45%, var(--bc-border)); }
+.todo ul { display: grid; gap: 7px; margin-top: 9px; padding-left: 18px; color: var(--bc-text-secondary); font-size: .72rem; line-height: 1.35; }
+.todo p, .compactText, .legacyHint { margin-top: 7px; color: var(--bc-text-secondary); font-size: .71rem; line-height: 1.4; }
+.compactRequirement { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; padding: 8px 0; border-top: 1px solid var(--bc-border); }
+.compactRequirement:first-of-type { margin-top: 8px; }
+.compactRequirement h3 { font-size: .73rem; font-weight: 650; }
+.compactRequirement p { margin-top: 3px; color: var(--bc-text-muted); font-size: .66rem; line-height: 1.35; }
+.compactRequirement details { margin-top: 4px; color: var(--bc-text-muted); font-size: .64rem; }
+.compactRequirement summary { min-height: 24px; cursor: pointer; line-height: 24px; }
+.legacyHint { color: var(--bc-text-muted); }
+.editBottom { width: 100%; min-height: 46px; margin-top: 12px; border: 1px solid var(--bc-border); border-radius: 999px; background: var(--bc-surface); color: var(--bc-accent); font-weight: 700; }
 .settingsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
 .settings label > span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
 .settings select { width: 100%; min-height: 44px; padding: 0 9px; border: 1px solid var(--bc-border); border-radius: 12px; background: var(--bc-canvas); color: var(--bc-text-primary); }
@@ -35,4 +52,4 @@
 .toggle span { margin: 0 !important; color: var(--bc-text-secondary) !important; font-size: .68rem !important; text-transform: none !important; pointer-events: none; }
 .toggle:has(input:checked) { border-color: var(--bc-accent); }
 .save { position: relative; z-index: 1; display: block; width: 100%; min-height: 46px; margin-top: 10px; border: 0; border-radius: 999px; appearance: none; -webkit-appearance: none; background: var(--bc-accent); color: var(--bc-accent-foreground); cursor: pointer; font-weight: 700; pointer-events: auto; touch-action: manipulation; }
-@media (max-width: 370px) { .summary, .settingsGrid, .facts { grid-template-columns: 1fr; } }
+@media (max-width: 370px) { .header { display: block; } .edit { margin-top: 5px; } .settingsGrid, .facts { grid-template-columns: 1fr; } }

@@ -20,7 +20,7 @@ test("les six statuts ont des libellés français non ambigus", () => {
   assert.equal(qualificationStatusLabel("ACTION_REQUIRED"), "Action requise");
   assert.equal(qualificationStatusLabel("UNKNOWN"), "Données insuffisantes");
   assert.equal(qualificationStatusLabel("NON_APPLICABLE"), "Non concerné");
-  assert.match(page, /<p className=\{styles\.reason\}>\{result\.reason\}<\/p>/);
+  assert.match(page, /if \(status === "UNKNOWN"\) return "À compléter"/);
 });
 
 test("le résumé multi-classe ne masque jamais un statut plus restrictif", () => {
@@ -31,24 +31,22 @@ test("le résumé multi-classe ne masque jamais un statut plus restrictif", () =
 test("le rendu BPL expose les seuils et les explications moteur", () => {
   assert.match(page, /Expérience récente — 24 mois/);
   assert.match(page, /\/ 6 h/);
-  assert.match(page, /Décollages/);
-  assert.match(page, /Atterrissages/);
-  assert.match(page, /Échéance 48 mois/);
-  assert.match(page, /Contrôle de compétences BPL/);
-  assert.match(page, /view\.bpl\.overall\.reason/);
+  assert.match(page, /décollages/);
+  assert.match(page, /atterrissages/);
+  assert.match(page, /Aucun vol d’entraînement enregistré/);
+  assert.match(page, /Aucun contrôle enregistré/);
 });
 
 test("le médical legacy reste clairement identifié avec classe inconnue", () => {
   assert.match(page, /medicalDueDateIso/);
-  assert.match(page, /Échéance issue de l’ancien profil/);
-  assert.match(page, /classe médicale n’est pas connue/);
+  assert.match(page, /Échéance antérieure conservée/);
+  assert.match(page, /Classe médicale à renseigner/);
 });
 
 test("le commercial et les formations sont masqués lorsque l’activité est désactivée", () => {
   const conditions = page.match(/qualifications\.profile\.commercialOperationsEnabled && <section/g) ?? [];
-  assert.equal(conditions.length, 2);
-  assert.match(page, /Activité commerciale/);
-  assert.match(page, /Formations professionnelles/);
+  assert.equal(conditions.length, 1);
+  assert.match(page, /Activité professionnelle/);
   assert.match(page, /Premiers secours \/ PSC1/);
   assert.match(page, /Formation incendie/);
 });
@@ -84,11 +82,13 @@ test("le premier accès montre la configuration prioritaire et masque les calcul
   assert.match(page, /if \(!view\) return null/);
 });
 
-test("l’enregistrement explicite le profil puis replace les réglages après les résultats", () => {
+test("l’enregistrement explicite le profil puis revient à la fiche", () => {
   assert.match(page, /configuredSettings = \{ \.\.\.settings, configured: true \}/);
   assert.match(page, /setSettings\(configuredSettings\)/);
   assert.match(page, /setQualifications\(next\)/);
-  assert.ok(page.lastIndexOf("<QualificationSettingsForm settings=") > page.indexOf("Historique"));
+  assert.match(page, /setEditing\(false\)/);
+  assert.match(page, /Modifier ma situation/);
+  assert.doesNotMatch(page, />Réglages</);
 });
 
 test("les cases contrôlées associent toute leur zone tactile au contrôle natif", () => {
@@ -109,7 +109,14 @@ test("le bouton Enregistrer passe exclusivement par un submit de formulaire prot
   assert.match(page, /type="submit"/);
   assert.match(page, /event\.preventDefault\(\)/);
   assert.match(page, /lastSubmittedProfile\.current === submissionKey/);
-  assert.doesNotMatch(page, /<button[^>]+onClick=/);
+  assert.match(page, /<button className=\{styles\.save\} type="submit">Enregistrer<\/button>/);
   assert.match(styles, /\.save \{[^}]*pointer-events: auto/);
   assert.match(styles, /\.save \{[^}]*touch-action: manipulation/);
+});
+
+test("la fiche est ordonnée synthèse, actions, BPL, professionnel puis historique", () => {
+  const markers = ["Résumé de la situation pilote", 'id="todo-title"', 'id="bpl-title"', 'id="commercial-title"', 'id="history-title"'];
+  for (let index = 1; index < markers.length; index += 1) assert.ok(page.indexOf(markers[index - 1]) < page.indexOf(markers[index]));
+  assert.match(page, /Votre dossier est à jour\./);
+  assert.match(page, /dans l’historique/);
 });

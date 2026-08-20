@@ -78,6 +78,18 @@ test("une configuration volontaire avec les valeurs par défaut reste configuré
   assert.deepEqual(loadPilotQualifications(storage).profile, profile);
 });
 
+test("un invité configure sa BPL sur stockage vide et la retrouve au rechargement", () => {
+  const storage = memoryStorage();
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  assert.equal(loadPilotQualifications(storage).profile.configured, false);
+  const profile = { ...createEmptyQualificationProfile(), configured: true, licenceType: "BPL" };
+  assert.equal(savePilotQualifications({ profile, events: [] }, storage), true);
+  const reloaded = loadPilotQualifications(storage).profile;
+  assert.equal(reloaded.configured, true);
+  assert.equal(reloaded.licenceType, "BPL");
+});
+
 test("un ancien profil Qualifications renseigné sans marqueur reste configuré", () => {
   assert.equal(normalizeQualificationProfile({ licenceType: "BPL", commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false }).configured, true);
 });
