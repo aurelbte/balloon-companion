@@ -32,12 +32,40 @@ function signedIn(id) {
 test("les qualifications vides n’inventent aucun privilège", () => {
   assert.deepEqual(createEmptyQualificationProfile(), {
     configured: false,
+    historyCoverageStartDate: null,
+    declaredBplInitialSituation: { referenceDateIso: null, recentExperienceSatisfied: null },
+    declaredCommercialInitialSituations: [],
     licenceType: null,
     commercialOperationsEnabled: false,
     fiBEnabled: false,
     feBEnabled: false,
   });
   assert.deepEqual(createEmptyPilotQualificationsState().events, []);
+});
+
+test("la couverture historique est conservée dans les scopes GUEST et USER", () => {
+  const storage = memoryStorage();
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
+  const profile = { ...createEmptyQualificationProfile(), configured: true, historyCoverageStartDate: "2024-08-20" };
+  assert.equal(savePilotQualifications({ profile, events: [] }, storage), true);
+  assert.equal(loadPilotQualifications(storage).profile.historyCoverageStartDate, "2024-08-20");
+  signedIn("coverage-user");
+  assert.equal(savePilotQualifications({ profile: { ...profile, historyCoverageStartDate: "2024-01-01" }, events: [] }, storage), true);
+  assert.equal(loadPilotQualifications(storage).profile.historyCoverageStartDate, "2024-01-01");
+});
+
+test("les situations initiales déclarées persistent en GUEST et USER et restent supprimables", () => {
+  const storage = memoryStorage();
+  const declared = { ...createEmptyQualificationProfile(), configured: true, declaredBplInitialSituation: { referenceDateIso: "2026-08-01", recentExperienceSatisfied: true }, declaredCommercialInitialSituations: [{ balloonClass: { classId: "HOT_AIR_BALLOON" }, referenceDateIso: "2026-08-01", recencySatisfied: false }] };
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
+  assert.equal(savePilotQualifications({ profile: declared, events: [] }, storage), true);
+  assert.deepEqual(loadPilotQualifications(storage).profile.declaredBplInitialSituation, declared.declaredBplInitialSituation);
+  signedIn("declared-user");
+  assert.equal(savePilotQualifications({ profile: declared, events: [] }, storage), true);
+  const removed = { ...loadPilotQualifications(storage).profile, declaredBplInitialSituation: { referenceDateIso: null, recentExperienceSatisfied: null }, declaredCommercialInitialSituations: [] };
+  assert.equal(savePilotQualifications({ profile: removed, events: [] }, storage), true);
+  assert.deepEqual(loadPilotQualifications(storage).profile.declaredCommercialInitialSituations, []);
+  assert.equal(loadPilotQualifications(storage).profile.declaredBplInitialSituation.recentExperienceSatisfied, null);
 });
 
 test("un événement reçoit un UUID stable et des timestamps sérialisables", () => {

@@ -41,7 +41,31 @@ function medicalClassLabel(value: string): string {
 }
 
 function CompactRequirement({ title, result, children }: { title: string; result: QualificationRequirementResult; children?: ReactNode }) {
-  return <article className={styles.compactRequirement}><div><h3>{title}</h3>{children}<details><summary>Détails</summary><p>{result.reason}</p></details></div><StatusBadge status={result.status} /></article>;
+  return <article className={styles.compactRequirement}><div><h3>{title}</h3>{result.provenance === "DECLARED_BY_PILOT" && <p className={styles.declared}>Déclaré par le pilote</p>}{children}<details><summary>Détails</summary><p>{result.reason}</p>{result.declarationReferenceDateIso && <p>Date de référence : {formatQualificationDate(result.declarationReferenceDateIso)}. Le calcul automatique prendra le relais dès que la fenêtre sera entièrement couverte.</p>}</details></div><StatusBadge status={result.status} /></article>;
+}
+
+function InitialSituationForm({ profile, onChange, onCancel, onSubmit, onDeleteBpl, onDeleteCommercial }: {
+  profile: QualificationProfile;
+  onChange: (profile: QualificationProfile) => void;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onDeleteBpl: () => void;
+  onDeleteCommercial: (classId: string) => void;
+}) {
+  const setCommercial = (classId: string, field: "referenceDateIso" | "recencySatisfied", value: string | boolean | null) => {
+    const existing = profile.declaredCommercialInitialSituations.find((item) => item.balloonClass.classId === classId);
+    const next = { balloonClass: { classId }, referenceDateIso: existing?.referenceDateIso ?? null, recencySatisfied: existing?.recencySatisfied ?? null, [field]: value };
+    onChange({ ...profile, declaredCommercialInitialSituations: [...profile.declaredCommercialInitialSituations.filter((item) => item.balloonClass.classId !== classId), next] });
+  };
+  const answer = (value: boolean | null) => value === null ? "" : String(value);
+  return <form className={styles.eventForm} onSubmit={onSubmit}><div className={styles.eventFormHeader}><h2>Renseigner ma situation initiale</h2><button type="button" onClick={onCancel}>Fermer</button></div>
+    <p className={`${styles.compactText} ${styles.eventFormWide}`}>Si votre historique Balloon Companion est incomplet, vous pouvez déclarer votre situation à une date de référence. Cette déclaration sera utilisée temporairement jusqu’à ce que la fenêtre réglementaire soit entièrement couverte.</p>
+    <label><span>Date de référence BPL</span><input type="date" value={profile.declaredBplInitialSituation.referenceDateIso ?? ""} onChange={(event) => onChange({ ...profile, declaredBplInitialSituation: { ...profile.declaredBplInitialSituation, referenceDateIso: event.target.value || null } })} /></label>
+    <label><span>À cette date, les conditions d’expérience récente BPL étaient-elles satisfaites ?</span><select value={answer(profile.declaredBplInitialSituation.recentExperienceSatisfied)} onChange={(event) => onChange({ ...profile, declaredBplInitialSituation: { ...profile.declaredBplInitialSituation, recentExperienceSatisfied: event.target.value === "" ? null : event.target.value === "true" } })}><option value="">Non renseigné</option><option value="true">Oui</option><option value="false">Non</option></select></label>
+    {(profile.declaredBplInitialSituation.referenceDateIso || profile.declaredBplInitialSituation.recentExperienceSatisfied !== null) && <button className={`${styles.deleteAction} ${styles.eventFormWide}`} type="button" onClick={onDeleteBpl}>Supprimer la déclaration BPL</button>}
+    {profile.commercialOperationsEnabled && ["HOT_AIR_BALLOON", "GAS_BALLOON"].map((classId) => { const item = profile.declaredCommercialInitialSituations.find((value) => value.balloonClass.classId === classId); return <div className={styles.declarationClass} key={classId}><h3>{qualificationClassLabel(classId)}</h3><label><span>Date de référence</span><input type="date" value={item?.referenceDateIso ?? ""} onChange={(event) => setCommercial(classId, "referenceDateIso", event.target.value || null)} /></label><label><span>Récence commerciale satisfaite ?</span><select value={answer(item?.recencySatisfied ?? null)} onChange={(event) => setCommercial(classId, "recencySatisfied", event.target.value === "" ? null : event.target.value === "true")}><option value="">Non renseigné</option><option value="true">Oui</option><option value="false">Non</option></select></label>{item && (item.referenceDateIso || item.recencySatisfied !== null) && <button className={styles.deleteAction} type="button" onClick={() => onDeleteCommercial(classId)}>Supprimer cette déclaration</button>}</div>; })}
+    <button className={`${styles.save} ${styles.eventFormWide}`} type="submit">Enregistrer</button>
+  </form>;
 }
 
 function QualificationSettingsForm({ priority = false, settings, onChange, onSubmit }: {
@@ -55,6 +79,7 @@ function QualificationSettingsForm({ priority = false, settings, onChange, onSub
     {priority && <p className={styles.priorityText}>Configurez votre profil pour calculer vos qualifications et validités.</p>}
     <div className={styles.settingsGrid}>
       <label htmlFor="qualification-licence-type"><span>Type de licence</span><select id="qualification-licence-type" value={settings.licenceType ?? ""} onChange={(event) => onChange({ ...settings, licenceType: event.target.value || null })}><option value="">Non renseigné</option><option value="BPL">BPL</option><option value="OTHER">Autre</option></select></label>
+      <label htmlFor="qualification-history-coverage"><span>Historique complet depuis</span><input id="qualification-history-coverage" type="date" value={settings.historyCoverageStartDate ?? ""} onChange={(event) => onChange({ ...settings, historyCoverageStartDate: event.target.value || null })} /></label>
       <label className={styles.toggle} htmlFor="qualification-commercial"><input id="qualification-commercial" type="checkbox" checked={settings.commercialOperationsEnabled} onChange={(event) => onChange({ ...settings, commercialOperationsEnabled: event.target.checked })} /><span>Activité commerciale</span></label>
       <label className={styles.toggle} htmlFor="qualification-fi-b"><input id="qualification-fi-b" type="checkbox" checked={settings.fiBEnabled} onChange={(event) => onChange({ ...settings, fiBEnabled: event.target.checked })} /><span>Qualification FI(B)</span></label>
       <label className={styles.toggle} htmlFor="qualification-fe-b"><input id="qualification-fe-b" type="checkbox" checked={settings.feBEnabled} onChange={(event) => onChange({ ...settings, feBEnabled: event.target.checked })} /><span>Qualification FE(B)</span></label>
@@ -132,10 +157,11 @@ function CommercialEventForm({ type, draft, editing, trainingEvents, error, onCh
   return <form className={styles.eventForm} onSubmit={onSubmit}><div className={styles.eventFormHeader}><h2>{editing ? "Modifier" : "Ajouter"} — {title}</h2><button type="button" onClick={onCancel}>Fermer</button></div><label><span>Date</span><input required type="date" value={draft.dateIso} onChange={(event) => onChange({ ...draft, dateIso: event.target.value })} /></label><label><span>Classe ballon</span><select required value={draft.classId} onChange={(event) => onChange({ ...draft, classId: event.target.value })}><option value="">Choisir</option><option value="HOT_AIR_BALLOON">Ballon libre à air chaud</option><option value="GAS_BALLOON">Ballon libre à gaz</option></select></label>{check && <label className={styles.eventFormWide}><span>Examinateur FE(B)</span><input required value={draft.personName} onChange={(event) => onChange({ ...draft, personName: event.target.value })} /></label>}{type === "COMMERCIAL_REFRESHER_COURSE" && <><label><span>Durée théorique (minutes)</span><input required inputMode="numeric" type="number" min="360" value={draft.theoryMinutes} onChange={(event) => onChange({ ...draft, theoryMinutes: event.target.value })} /></label><label><span>Vol associé avec FI(B)</span><select required value={draft.trainingEventId} onChange={(event) => onChange({ ...draft, trainingEventId: event.target.value })}><option value="">Choisir</option>{trainingEvents.filter((event) => event.balloonClass?.classId === draft.classId).map((event) => <option key={event.id} value={event.id}>{formatQualificationDate(event.dateIso)} · {event.instructor?.name}</option>)}</select></label></>}<label className={styles.eventFormWide}><span>Notes (facultatif)</span><textarea value={draft.notes} onChange={(event) => onChange({ ...draft, notes: event.target.value })} /></label>{error && <p className={styles.formError} role="alert">{error}</p>}<button className={`${styles.save} ${styles.eventFormWide}`} type="submit">Enregistrer</button>{editing && onDelete && <button className={`${styles.deleteAction} ${styles.eventFormWide}`} type="button" onClick={onDelete}>Supprimer cette donnée</button>}</form>;
 }
 
-function eventClassKeys(events: readonly QualificationEvent[], ascensions: PilotQualificationsPageState["completion"]["officialAscensions"]): QualificationBalloonClass[] {
+function eventClassKeys(events: readonly QualificationEvent[], ascensions: PilotQualificationsPageState["completion"]["officialAscensions"], profile: QualificationProfile): QualificationBalloonClass[] {
   const values = [
     ...events.flatMap(({ balloonClass }) => balloonClass ? [balloonClass] : []),
     ...ascensions.map((ascension): QualificationBalloonClass => ({ classId: OFFICIAL_ASCENSION_CLASS_IDS[ascension.category] })),
+    ...profile.declaredCommercialInitialSituations.map(({ balloonClass }) => balloonClass),
   ];
   return [...new Map(values.map((value) => [`${value.classId}:${value.groupId ?? ""}`, value])).values()];
 }
@@ -150,6 +176,8 @@ export default function QualificationsPage() {
   const [qualifications, setQualifications] = useState<PilotQualificationsState | null>(null);
   const [settings, setSettings] = useState<QualificationProfile | null>(null);
   const [editing, setEditing] = useState(false);
+  const [initialSituationEditor, setInitialSituationEditor] = useState(false);
+  const [initialSituationDraft, setInitialSituationDraft] = useState<QualificationProfile | null>(null);
   const [eventEditor, setEventEditor] = useState<EditableQualificationEventType | null>(null);
   const [eventDraft, setEventDraft] = useState<QualificationEventDraft>(() => emptyQualificationEventDraft());
   const [eventError, setEventError] = useState("");
@@ -163,6 +191,7 @@ export default function QualificationsPage() {
   const [issuanceEditorOpen, setIssuanceEditorOpen] = useState(false);
   const [issuanceDraft, setIssuanceDraft] = useState<BplEventDraft>(() => emptyBplEventDraft());
   const [issuanceError, setIssuanceError] = useState("");
+  const [issuanceEditedEventId, setIssuanceEditedEventId] = useState<string | undefined>();
   const [commercialEditor, setCommercialEditor] = useState<EditableCommercialEventType | null>(null);
   const [commercialDraft, setCommercialDraft] = useState<CommercialEventDraft>(() => emptyCommercialEventDraft());
   const [commercialEditedEventId, setCommercialEditedEventId] = useState<string | undefined>();
@@ -188,11 +217,11 @@ export default function QualificationsPage() {
 
   const view = useMemo(() => {
     if (!qualifications || !qualifications.profile.configured) return null;
-    const bpl = calculateBplMaintenance({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, ascensionHistoryComplete: true, openingBalance: completion.openingBalance });
+    const bpl = calculateBplMaintenance({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, ascensionHistoryComplete: true, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate, openingBalance: completion.openingBalance });
     const medical = calculateMedicalQualification({ events: qualifications.events, legacy: qualifications.legacy, referenceDateIso, requiredClass: "LAPL" });
-    const commercialClasses = eventClassKeys(qualifications.events, completion.officialAscensions);
+    const commercialClasses = eventClassKeys(qualifications.events, completion.officialAscensions, qualifications.profile);
     const commercial = qualifications.profile.commercialOperationsEnabled
-      ? commercialClasses.map((balloonClass) => calculateCommercialQualification({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, balloonClass, ascensionHistoryComplete: true }))
+      ? commercialClasses.map((balloonClass) => calculateCommercialQualification({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, balloonClass, ascensionHistoryComplete: true, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate }))
       : [];
     const credits = bplEventCredits(qualifications.events).filter(({ creditedFrom }) => creditedFrom === "COMMERCIAL_PROFICIENCY_CHECK" || creditedFrom === "COMMERCIAL_REFRESHER_COURSE");
     return { bpl, medical, commercialClasses, commercial, credits };
@@ -227,6 +256,7 @@ export default function QualificationsPage() {
 
   const openIssuanceEditor = (existing?: QualificationEvent) => {
     setIssuanceDraft(emptyBplEventDraft(existing));
+    setIssuanceEditedEventId(existing?.id);
     setIssuanceError("");
     setIssuanceEditorOpen(true);
     setEventEditor(null);
@@ -276,7 +306,7 @@ export default function QualificationsPage() {
   const issuanceEvent = [...qualifications.events].filter(({ type }) => type === "INITIAL_BPL_ISSUANCE").sort((left, right) => right.dateIso.localeCompare(left.dateIso))[0];
   const submitIssuance = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const result = upsertInitialBplIssuance(qualifications.events, issuanceDraft, issuanceEvent?.id);
+    const result = upsertInitialBplIssuance(qualifications.events, issuanceDraft, issuanceEditedEventId);
     if (!result.ok) { setIssuanceError(result.error); return; }
     if (!savePilotQualifications({ profile: qualifications.profile, events: result.events }, window.localStorage)) { setIssuanceError("Enregistrement local impossible."); return; }
     setQualifications({ ...qualifications, events: result.events });
@@ -320,6 +350,30 @@ export default function QualificationsPage() {
     }
   };
 
+  const saveInitialSituation = (profile: QualificationProfile) => {
+    const next = { ...qualifications, profile };
+    if (!savePilotQualifications({ profile, events: qualifications.events }, window.localStorage)) return false;
+    setQualifications(next);
+    setSettings(profile);
+    setInitialSituationDraft(profile);
+    return true;
+  };
+  const submitInitialSituation = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (initialSituationDraft && saveInitialSituation(initialSituationDraft)) setInitialSituationEditor(false);
+  };
+  const openInitialSituation = () => { setInitialSituationDraft(qualifications.profile); setInitialSituationEditor(true); };
+  const deleteBplDeclaration = () => {
+    if (!initialSituationDraft || !window.confirm("Supprimer la déclaration initiale BPL ?")) return;
+    const profile = { ...initialSituationDraft, declaredBplInitialSituation: { referenceDateIso: null, recentExperienceSatisfied: null } };
+    saveInitialSituation(profile);
+  };
+  const deleteCommercialDeclaration = (classId: string) => {
+    if (!initialSituationDraft || !window.confirm("Supprimer cette déclaration initiale professionnelle ?")) return;
+    const profile = { ...initialSituationDraft, declaredCommercialInitialSituations: initialSituationDraft.declaredCommercialInitialSituations.filter((item) => item.balloonClass.classId !== classId) };
+    saveInitialSituation(profile);
+  };
+
   if (!qualifications.profile.configured) return <main className={moreStyles.screen}><div className={moreStyles.layout}>
     <Link href="/more/profile" className={moreStyles.back}><ChevronLeft size={18} aria-hidden="true" /> Profil pilote</Link>
     <header><p className={moreStyles.eyebrow}>Profil pilote</p><h1 className={moreStyles.title}>Qualifications &amp; validité</h1></header>
@@ -343,15 +397,18 @@ export default function QualificationsPage() {
   const unknownCommercial: QualificationRequirementResult = { status: "UNKNOWN", reason: "Classe commerciale inconnue." };
   const commercialSummary = view.commercial.length ? mostRestrictiveQualificationResult(view.commercial.map(({ overall }) => overall)) : unknownCommercial;
   const missingCommercialAccess = view.commercial.filter(({ initialAccess }) => initialAccess.status === "UNKNOWN");
+  const historyIncomplete = view.bpl.recentExperience.status === "UNKNOWN" || view.bpl.recentExperience.provenance === "DECLARED_BY_PILOT" || view.commercial.some(({ recency }) => recency.status === "UNKNOWN" || recency.provenance === "DECLARED_BY_PILOT");
   const summary: Array<readonly [string, QualificationRequirementResult]> = [
     ["BPL", view.bpl.overall],
     ["Médical", view.medical.overall],
     ...(qualifications.profile.commercialOperationsEnabled ? [["Activité professionnelle", commercialSummary] as const] : []),
   ];
-  const actionItems: Array<Readonly<{ text: string; editor?: EditableQualificationEventType; bplType?: EditableBplEventType; commercialType?: EditableCommercialEventType; commercialClassId?: string; buttonLabel?: string }>> = [
+  const actionItems: Array<Readonly<{ text: string; href?: string; initialSituation?: boolean; editor?: EditableQualificationEventType; bplType?: EditableBplEventType; commercialType?: EditableCommercialEventType; commercialClassId?: string; buttonLabel?: string }>> = [
     ...(["UNKNOWN", "ACTION_REQUIRED"].includes(view.medical.overall.status) ? [{ text: medicalEvent ? "Mettre à jour votre médical" : "Renseigner votre classe médicale", editor: "MEDICAL" as const, buttonLabel: medicalEvent ? "Modifier" : "Renseigner" }] : []),
-    ...(["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.trainingFlightFiB.status) ? [{ text: issuanceEvent ? "Enregistrer un nouveau vol d’entraînement" : "Renseigner votre délivrance BPL ou un vol d’entraînement", bplType: "TRAINING_FLIGHT_BPL" as const, buttonLabel: "Ajouter" }] : []),
-    ...(["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.proficiencyCheckFeB.status) ? [{ text: "Utiliser la voie alternative par contrôle de compétences", bplType: "PROFICIENCY_CHECK_BPL" as const, buttonLabel: proficiencyEvent ? "Modifier" : "Ajouter" }] : []),
+    ...(historyIncomplete ? [{ text: "Compléter mon historique récent", href: "/journal/ascension/new", buttonLabel: "Ajouter une ascension" }] : []),
+    ...(historyIncomplete ? [{ text: "Renseigner ma situation initiale", initialSituation: true, buttonLabel: "Renseigner" }] : []),
+    ...(view.bpl.recentExperience.status !== "UNKNOWN" && ["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.trainingFlightFiB.status) ? [{ text: issuanceEvent ? "Enregistrer un nouveau vol d’entraînement" : "Renseigner votre délivrance BPL ou un vol d’entraînement", bplType: "TRAINING_FLIGHT_BPL" as const, buttonLabel: "Ajouter" }] : []),
+    ...(view.bpl.recentExperience.status !== "UNKNOWN" && ["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.proficiencyCheckFeB.status) ? [{ text: "Utiliser la voie alternative par contrôle de compétences", bplType: "PROFICIENCY_CHECK_BPL" as const, buttonLabel: proficiencyEvent ? "Modifier" : "Ajouter" }] : []),
     ...(qualifications.profile.commercialOperationsEnabled && view.commercial.length === 0 ? [{ text: "Renseigner votre accès initial à l’activité professionnelle", commercialType: "INITIAL_COMMERCIAL_ISSUANCE" as const, buttonLabel: "Ajouter" }] : []),
     ...missingCommercialAccess.map(({ balloonClass }) => ({ text: `Renseigner l’accès initial — ${qualificationClassLabel(balloonClass.classId)}`, commercialType: "INITIAL_COMMERCIAL_ISSUANCE" as const, commercialClassId: balloonClass.classId, buttonLabel: "Ajouter" })),
     ...(qualifications.profile.commercialOperationsEnabled && ["UNKNOWN", "ACTION_REQUIRED"].includes(firstAid.status) ? [{ text: firstAidEvent ? "Compléter ou renouveler votre PSC1" : "Renseigner votre formation PSC1", editor: "FIRST_AID" as const, buttonLabel: firstAidEvent ? "Modifier" : "Ajouter" }] : []),
@@ -365,16 +422,17 @@ export default function QualificationsPage() {
     {editing && <QualificationSettingsForm settings={settings} onChange={setSettings} onSubmit={submitSettings} />}
 
     <section className={styles.summary} aria-label="Résumé de la situation pilote">
-      {summary.map(([label, result]) => <article className={styles.summaryCard} key={label}><span>{label}</span><strong data-status={result.status}>{pilotStatusLabel(result.status, label === "Médical")}</strong></article>)}
+      {summary.map(([label, result]) => <article className={styles.summaryCard} key={label}><span>{label}{result.provenance === "DECLARED_BY_PILOT" && <small>Déclaré par le pilote</small>}</span><strong data-status={result.status}>{pilotStatusLabel(result.status, label === "Médical")}</strong></article>)}
     </section>
 
-    <section className={`${styles.section} ${styles.todo}`} aria-labelledby="todo-title"><h2 id="todo-title">À faire</h2>{actionItems.length ? <ul>{actionItems.map((item) => <li key={item.text}><span>{item.text}</span>{item.editor && <button type="button" onClick={() => openEventEditor(item.editor!)}>{item.buttonLabel}</button>}{item.bplType && <button type="button" onClick={() => openBplEditor(item.bplType!)}>{item.buttonLabel}</button>}{item.commercialType && <button type="button" onClick={() => openCommercialEditor(item.commercialType!, undefined, item.commercialClassId)}>{item.buttonLabel}</button>}</li>)}</ul> : <p>Votre dossier est à jour.</p>}</section>
+    <section className={`${styles.section} ${styles.todo}`} aria-labelledby="todo-title"><h2 id="todo-title">À faire</h2>{actionItems.length ? <ul>{actionItems.map((item) => <li key={item.text}><span>{item.text}</span>{item.href && <Link href={item.href}>{item.buttonLabel}</Link>}{item.initialSituation && <button type="button" onClick={openInitialSituation}>{item.buttonLabel}</button>}{item.editor && <button type="button" onClick={() => openEventEditor(item.editor!)}>{item.buttonLabel}</button>}{item.bplType && <button type="button" onClick={() => openBplEditor(item.bplType!)}>{item.buttonLabel}</button>}{item.commercialType && <button type="button" onClick={() => openCommercialEditor(item.commercialType!, undefined, item.commercialClassId)}>{item.buttonLabel}</button>}</li>)}</ul> : <p>Votre dossier est à jour.</p>}</section>
+    {initialSituationEditor && initialSituationDraft && <InitialSituationForm profile={initialSituationDraft} onChange={setInitialSituationDraft} onCancel={() => setInitialSituationEditor(false)} onSubmit={submitInitialSituation} onDeleteBpl={deleteBplDeclaration} onDeleteCommercial={deleteCommercialDeclaration} />}
 
     <section className={styles.section} aria-labelledby="bpl-title"><div className={styles.sectionHeader}><h2 id="bpl-title">Maintien BPL</h2><StatusBadge status={view.bpl.overall.status} /></div>
       <CompactRequirement title="Expérience récente — 24 mois" result={view.bpl.recentExperience}><p>{Math.floor(experience.officialDurationMinutes / 60)} h {experience.officialDurationMinutes % 60} / 6 h · {experience.takeoffs} / 10 décollages · {experience.landings} / 10 atterrissages</p></CompactRequirement>
       <CompactRequirement title="Maintien périodique / vol d’entraînement" result={view.bpl.trainingFlightFiB}><p>{trainingReferenceEvent?.type === "INITIAL_BPL_ISSUANCE" ? `Référence actuelle : délivrance BPL du ${formatQualificationDate(trainingReferenceEvent.dateIso)} · prochain vol d’entraînement ${formatQualificationDate(view.bpl.trainingFlightFiB.dueDate)}` : typeof view.bpl.trainingFlightFiB.currentValue === "string" ? `Dernier vol d’entraînement : ${formatQualificationDate(view.bpl.trainingFlightFiB.currentValue)} · échéance ${formatQualificationDate(view.bpl.trainingFlightFiB.dueDate)}` : "Aucune référence de maintien périodique"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor("TRAINING_FLIGHT_BPL", trainingEvent)}>{trainingEvent ? "Modifier" : "Ajouter un vol"}</button><button className={styles.inlineAction} type="button" onClick={() => openIssuanceEditor(issuanceEvent)}>{issuanceEvent ? "Modifier la délivrance" : "Renseigner la délivrance"}</button></CompactRequirement>
       {view.bpl.proficiencyCheckFeB.status !== "NON_APPLICABLE" && <CompactRequirement title="Voie alternative par contrôle de compétences" result={view.bpl.proficiencyCheckFeB}><p>{typeof view.bpl.proficiencyCheckFeB.currentValue === "string" ? `Dernier contrôle : ${formatQualificationDate(view.bpl.proficiencyCheckFeB.currentValue)} · échéance ${formatQualificationDate(view.bpl.proficiencyCheckFeB.dueDate)}` : "À utiliser si la voie normale n’est pas satisfaite"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor("PROFICIENCY_CHECK_BPL", proficiencyEvent)}>{proficiencyEvent ? "Modifier" : "Ajouter"}</button></CompactRequirement>}
-      {issuanceEditorOpen && <div ref={eventEditorAnchor}><InitialBplIssuanceForm draft={issuanceDraft} editing={Boolean(issuanceEvent)} error={issuanceError} onChange={setIssuanceDraft} onCancel={() => setIssuanceEditorOpen(false)} onDelete={issuanceEvent ? () => deleteEvent(issuanceEvent.id) : undefined} onSubmit={submitIssuance} /></div>}
+      {issuanceEditorOpen && <div ref={eventEditorAnchor}><InitialBplIssuanceForm draft={issuanceDraft} editing={Boolean(issuanceEditedEventId)} error={issuanceError} onChange={setIssuanceDraft} onCancel={() => setIssuanceEditorOpen(false)} onDelete={issuanceEditedEventId ? () => deleteEvent(issuanceEditedEventId) : undefined} onSubmit={submitIssuance} /></div>}
       {bplEditor && <div ref={eventEditorAnchor}><BplEventForm type={bplEditor} mode={bplMode} draft={bplDraft} ascensionId={bplAscensionId} ascensions={[...completion.officialAscensions].filter((ascension) => ascension.flightNature === (bplEditor === "TRAINING_FLIGHT_BPL" ? "TRAINING_BPL" : "PROFICIENCY_CHECK_BPL")).sort((left, right) => right.dateIso.localeCompare(left.dateIso))} linkedEditing={Boolean(bplEditedEventId && bplMode === "LINKED")} error={bplError} onModeChange={setBplMode} onDraftChange={setBplDraft} onAscensionChange={setBplAscensionId} onCancel={() => setBplEditor(null)} onDelete={bplEditedEventId ? () => deleteEvent(bplEditedEventId) : undefined} onSubmit={submitBplEvent} /></div>}
     </section>
 
@@ -399,7 +457,7 @@ export default function QualificationsPage() {
       {otherEvents.map((event) => <p className={styles.compactText} key={event.id}>{event.organization || "Autre formation"} · {formatQualificationDate(event.dateIso)}</p>)}
     </section>}
 
-    <section className={styles.section} aria-labelledby="history-title"><h2 id="history-title">Historique</h2><div className={styles.history}>{history.length ? history.map((event) => <article className={styles.historyItem} key={event.id}><h3>{qualificationEventLabel(event.type)}</h3><div className={styles.historyMeta}><span>{formatQualificationDate(event.dateIso)}</span>{event.expiryDateIso && <span>Échéance : {formatQualificationDate(event.expiryDateIso)}</span>}{event.balloonClass && <span>Classe : {qualificationClassLabel(event.balloonClass.classId)}</span>}{event.organization && <span>Organisme : {event.organization}</span>}{event.instructor && <span>FI(B) : {event.instructor.name}</span>}{event.examiner && <span>FE(B) : {event.examiner.name}</span>}</div>{(event.type === "TRAINING_FLIGHT_BPL" || event.type === "PROFICIENCY_CHECK_BPL") && <><p className={styles.linkKind}>{event.officialAscensionId ? "Lié au carnet" : "Historique — non lié au carnet"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor(event.type as EditableBplEventType, event)}>Modifier</button></>}{(event.type === "INITIAL_COMMERCIAL_ISSUANCE" || event.type === "COMMERCIAL_PROFICIENCY_CHECK" || event.type === "COMMERCIAL_REFRESHER_COURSE") && <button className={styles.inlineAction} type="button" onClick={() => openCommercialEditor(event.type as EditableCommercialEventType, event)}>Modifier</button>}{event.officialAscensionId && (event.officialAscensionDeletedAt ? <p className={styles.deleted}>Ascension liée supprimée — preuve réglementaire conservée</p> : <Link className={styles.historyLink} href={`/journal/ascension/${encodeURIComponent(event.officialAscensionId)}`}>Voir l’ascension liée →</Link>)}</article>) : <p className={styles.empty}>Aucun événement de qualification enregistré.</p>}</div></section>
+    <section className={styles.section} aria-labelledby="history-title"><h2 id="history-title">Historique</h2><div className={styles.history}>{history.length ? history.map((event) => <article className={styles.historyItem} key={event.id}><h3>{qualificationEventLabel(event.type)}</h3><div className={styles.historyMeta}><span>{formatQualificationDate(event.dateIso)}</span>{event.expiryDateIso && <span>Échéance : {formatQualificationDate(event.expiryDateIso)}</span>}{event.balloonClass && <span>Classe : {qualificationClassLabel(event.balloonClass.classId)}</span>}{event.organization && <span>Organisme : {event.organization}</span>}{event.instructor && <span>FI(B) : {event.instructor.name}</span>}{event.examiner && <span>FE(B) : {event.examiner.name}</span>}</div>{event.type === "INITIAL_BPL_ISSUANCE" && <button className={styles.inlineAction} type="button" onClick={() => openIssuanceEditor(event)}>Modifier</button>}{(event.type === "TRAINING_FLIGHT_BPL" || event.type === "PROFICIENCY_CHECK_BPL") && <><p className={styles.linkKind}>{event.officialAscensionId ? "Lié au carnet" : "Historique — non lié au carnet"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor(event.type as EditableBplEventType, event)}>Modifier</button></>}{(event.type === "INITIAL_COMMERCIAL_ISSUANCE" || event.type === "COMMERCIAL_PROFICIENCY_CHECK" || event.type === "COMMERCIAL_REFRESHER_COURSE") && <button className={styles.inlineAction} type="button" onClick={() => openCommercialEditor(event.type as EditableCommercialEventType, event)}>Modifier</button>}{event.officialAscensionId && (event.officialAscensionDeletedAt ? <p className={styles.deleted}>Ascension liée supprimée — preuve réglementaire conservée</p> : <Link className={styles.historyLink} href={`/journal/ascension/${encodeURIComponent(event.officialAscensionId)}`}>Voir l’ascension liée →</Link>)}</article>) : <p className={styles.empty}>Aucun événement de qualification enregistré.</p>}</div></section>
 
     <button className={styles.editBottom} type="button" onClick={() => { setSettings(qualifications.profile); setEditing(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Modifier ma situation</button>
   </div><NavigationBar activeItem="Plus" /></main>;

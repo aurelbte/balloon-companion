@@ -96,6 +96,38 @@ test("un historique incomplet retourne UNKNOWN si les preuves sont insuffisantes
   assert.equal(calculate({ ascensions: [ascension("one", "2026-01-01")], ascensionHistoryComplete: false }).recency.status, "UNKNOWN");
 });
 
+test("la couverture partielle sur 180 jours reste UNKNOWN malgré deux vols connus", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const result = calculate({ events: [issuance], ascensions: [ascension("one", "2026-05-01"), ascension("two", "2026-06-01")], historyCoverageStartDate: "2026-04-01" });
+  assert.equal(result.recency.status, "UNKNOWN");
+  assert.equal(result.overall.status, "UNKNOWN");
+  assert.equal(result.proficiencyCheckFeB.status, "NON_APPLICABLE");
+});
+
+test("la couverture complète sur 180 jours conserve la conclusion existante", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const result = calculate({ events: [issuance], ascensions: [ascension("one", "2026-05-01"), ascension("two", "2026-06-01")], historyCoverageStartDate: "2026-02-21" });
+  assert.equal(result.recency.status, "ACTION_REQUIRED");
+});
+
+test("la déclaration commerciale est propre à la classe et ne remplace pas la délivrance", () => {
+  const declaredProfile = { ...commercialProfile, declaredCommercialInitialSituations: [{ balloonClass: hotAir, referenceDateIso: "2026-08-01", recencySatisfied: true }] };
+  const withoutIssuance = calculate({ profile: declaredProfile, ascensionHistoryComplete: false });
+  assert.equal(withoutIssuance.recency.status, "COMPLIANT");
+  assert.equal(withoutIssuance.recency.provenance, "DECLARED_BY_PILOT");
+  assert.equal(withoutIssuance.overall.status, "UNKNOWN");
+  const gasResult = calculate({ profile: declaredProfile, balloonClass: gas, ascensionHistoryComplete: false });
+  assert.equal(gasResult.recency.status, "UNKNOWN");
+});
+
+test("l’historique commercial complet reprend automatiquement la main", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const declaredProfile = { ...commercialProfile, declaredCommercialInitialSituations: [{ balloonClass: hotAir, referenceDateIso: "2026-08-01", recencySatisfied: true }] };
+  const result = calculate({ profile: declaredProfile, events: [issuance], historyCoverageStartDate: "2026-02-21" });
+  assert.equal(result.recency.status, "ACTION_REQUIRED");
+  assert.equal(result.recency.provenance, undefined);
+});
+
 test("l’activité commerciale désactivée est NON_APPLICABLE", () => {
   const profile = { ...commercialProfile, commercialOperationsEnabled: false };
   const result = calculate({ profile });
@@ -105,14 +137,14 @@ test("l’activité commerciale désactivée est NON_APPLICABLE", () => {
 
 test("les événements commerciaux produisent des crédits BPL sans changer de type", () => {
   const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: hotAir, examiner: { name: "FE Test" } });
-  const bpl = calculateBplMaintenance({ profile: commercialProfile, events: [check], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false });
+  const bpl = calculateBplMaintenance({ profile: commercialProfile, events: [check], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
   assert.equal(check.type, "COMMERCIAL_PROFICIENCY_CHECK");
   assert.equal(bpl.proficiencyCheckFeB.status, "COMPLIANT");
   assert.deepEqual(bpl.proficiencyCheckFeB.sourceEventIds, [check.id]);
 
   const training = event("TRAINING_FLIGHT_BPL", "2026-02-01", { balloonClass: hotAir, instructor: { name: "FI Test" } });
   const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-02-02", { balloonClass: hotAir, theoryMinutes: 360, relatedEventIds: [training.id] });
-  const credited = calculateBplMaintenance({ profile: commercialProfile, events: [course, training], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false });
+  const credited = calculateBplMaintenance({ profile: commercialProfile, events: [course, training], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
   assert.equal(course.type, "COMMERCIAL_REFRESHER_COURSE");
   assert.deepEqual(credited.trainingFlightFiB.sourceEventIds, [course.id, training.id]);
 });

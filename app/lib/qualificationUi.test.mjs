@@ -168,3 +168,24 @@ test("la phase 7C expose accès initial et voies professionnelles sans cumul art
   assert.match(page, /function CommercialEventForm/);
   assert.match(page, /upsertCommercialQualificationEvent/);
 });
+
+test("la phase 7C.1 expose la couverture et l’action historique sans faux FE(B)", () => {
+  assert.match(page, /Historique complet depuis/);
+  assert.match(page, /historyCoverageStartDate/);
+  assert.match(page, /Compléter mon historique récent/);
+  assert.match(page, /href: "\/journal\/ascension\/new"/);
+  assert.match(page, /view\.bpl\.recentExperience\.status !== "UNKNOWN"/);
+  assert.match(page, /event\.type === "INITIAL_BPL_ISSUANCE"/);
+  assert.match(page, /openIssuanceEditor\(event\)/);
+});
+
+test("la phase 7C.2 permet de déclarer, modifier et supprimer la situation initiale", () => {
+  assert.match(page, /function InitialSituationForm/);
+  assert.match(page, /Renseigner ma situation initiale/);
+  assert.match(page, /conditions d’expérience récente BPL étaient-elles satisfaites/);
+  assert.match(page, /Récence commerciale satisfaite/);
+  assert.match(page, /Déclaré par le pilote/);
+  assert.match(page, /onSubmit=\{onSubmit\}/);
+  assert.match(page, /Supprimer la déclaration BPL/);
+  assert.match(page, /window\.confirm\("Supprimer cette déclaration initiale professionnelle/);
+});

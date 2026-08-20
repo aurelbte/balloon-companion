@@ -23,6 +23,40 @@ test("la fenêtre 24 mois inclut la frontière et exclut openingBalance", () => 
   assert.equal(result.excludedOpeningBalance.officialDurationMinutes, 10_000);
 });
 
+test("une fenêtre BPL partiellement couverte reste UNKNOWN sans proposer FE(B)", () => {
+  const result = calculateBplMaintenance({ profile, events: [], ascensions: [ascension("known", "2026-01-01", 60)], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true, historyCoverageStartDate: "2025-01-01" });
+  assert.equal(result.recentExperience.status, "UNKNOWN");
+  assert.equal(result.overall.status, "UNKNOWN");
+  assert.equal(result.proficiencyCheckFeB.status, "NON_APPLICABLE");
+  assert.match(result.recentExperience.reason, /Historique récent à compléter/);
+});
+
+test("une fenêtre BPL explicitement complète peut conclure ACTION_REQUIRED", () => {
+  const result = calculateBplMaintenance({ profile, events: [], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false, historyCoverageStartDate: "2024-08-20" });
+  assert.equal(result.recentExperience.status, "ACTION_REQUIRED");
+  assert.equal(result.overall.status, "ACTION_REQUIRED");
+});
+
+test("une déclaration BPL applicable sert de pont puis est ignorée avec un historique complet", () => {
+  const declaredProfile = { ...profile, declaredBplInitialSituation: { referenceDateIso: "2026-08-01", recentExperienceSatisfied: true } };
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { instructor: { name: "FI Test" } });
+  const partial = calculateBplMaintenance({ profile: declaredProfile, events: [training], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false, historyCoverageStartDate: "2025-01-01" });
+  assert.equal(partial.recentExperience.status, "COMPLIANT");
+  assert.equal(partial.recentExperience.provenance, "DECLARED_BY_PILOT");
+  assert.equal(partial.recentExperience.currentValue.officialDurationMinutes, 0);
+  assert.equal(partial.overall.provenance, "DECLARED_BY_PILOT");
+  const complete = calculateBplMaintenance({ profile: declaredProfile, events: [training], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false, historyCoverageStartDate: "2024-08-20" });
+  assert.equal(complete.recentExperience.status, "ACTION_REQUIRED");
+  assert.equal(complete.recentExperience.provenance, undefined);
+});
+
+test("une déclaration BPL périmée ne remplace pas un historique incomplet", () => {
+  const declaredProfile = { ...profile, declaredBplInitialSituation: { referenceDateIso: "2024-08-19", recentExperienceSatisfied: true } };
+  const result = calculateBplMaintenance({ profile: declaredProfile, events: [], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false });
+  assert.equal(result.recentExperience.status, "UNKNOWN");
+  assert.equal(result.proficiencyCheckFeB.status, "NON_APPLICABLE");
+});
+
 test("le fallback historique compte un mouvement de chaque sorte par ascension", () => {
   const flights = Array.from({ length: 10 }, (_, index) => ascension(`a-${index}`, "2026-01-01", 36));
   const result = calculateDatedExperience(flights, "2026-08-20");
@@ -99,10 +133,10 @@ test("un événement sans FI/FE et les données incomplètes restent UNKNOWN", (
 
 test("LEGACY_FLIGHT_TEST_DUE_DATE ne satisfait aucune voie BPL", () => {
   const legacy = event("LEGACY_FLIGHT_TEST_DUE_DATE", "2027-01-01");
-  const result = calculateBplMaintenance({ profile, events: [legacy], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: false });
+  const result = calculateBplMaintenance({ profile, events: [legacy], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
   assert.equal(result.trainingFlightFiB.status, "UNKNOWN");
   assert.equal(result.proficiencyCheckFeB.status, "UNKNOWN");
-  assert.equal(result.overall.status, "UNKNOWN");
+  assert.equal(result.overall.status, "ACTION_REQUIRED");
 });
 
 test("les mois calendaires conservent correctement les fins de mois", () => {

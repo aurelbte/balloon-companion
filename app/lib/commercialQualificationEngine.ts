@@ -78,6 +78,7 @@ export function calculateCommercialQualification(input: Readonly<{
   referenceDateIso: string;
   balloonClass: QualificationBalloonClass;
   ascensionHistoryComplete: boolean;
+  historyCoverageStartDate?: string | null;
 }>): CommercialQualificationResult {
   const notApplicable: QualificationRequirementResult = { status: "NON_APPLICABLE", reason: "Les opérations commerciales sont désactivées dans le profil." };
   if (!input.profile.commercialOperationsEnabled) {
@@ -95,6 +96,9 @@ export function calculateCommercialQualification(input: Readonly<{
     : { status: "UNKNOWN", reason: "Délivrance initiale professionnelle non renseignée pour cette classe." };
 
   const startIso = subtractDays(input.referenceDateIso, COMMERCIAL_REGULATORY_RULES.recencyDays);
+  const historyComplete = input.historyCoverageStartDate === undefined
+    ? input.ascensionHistoryComplete
+    : Boolean(/^\d{4}-\d{2}-\d{2}$/.test(input.historyCoverageStartDate ?? "") && input.historyCoverageStartDate! <= startIso);
   const recentPic = input.ascensions.filter((ascension) => ascension.dateIso >= startIso && ascension.dateIso <= input.referenceDateIso && ascension.pilotFunction === "Pilote" && ascensionClass(ascension));
   const recentInClass = recentPic.filter((ascension) => sameClass(ascensionClass(ascension), input.balloonClass));
   const supervisedEvidence = input.events.filter((event) =>
@@ -104,10 +108,16 @@ export function calculateCommercialQualification(input: Readonly<{
   );
   const threePicPath = recentPic.length >= COMMERCIAL_REGULATORY_RULES.picFlights && recentInClass.length >= 1;
   const supervisedPath = supervisedEvidence.length >= COMMERCIAL_REGULATORY_RULES.supervisedPicFlightsInClass;
+  const declaration = input.profile.declaredCommercialInitialSituations?.find(({ balloonClass }) => sameClass(balloonClass, input.balloonClass));
+  const applicableDeclaration = !historyComplete && typeof declaration?.recencySatisfied === "boolean" && Boolean(
+    /^\d{4}-\d{2}-\d{2}$/.test(declaration.referenceDateIso ?? "") && declaration.referenceDateIso! >= startIso && declaration.referenceDateIso! <= input.referenceDateIso
+  ) ? declaration : null;
   const recency: QualificationRequirementResult = threePicPath || supervisedPath
     ? { status: "COMPLIANT", reason: supervisedPath ? "Vol PIC dans la classe concernée sous supervision FI(B)." : "Trois vols PIC récents, dont au moins un dans la classe concernée.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length, supervisedFlightsInClass: supervisedEvidence.length }, requiredValue: { picFlights: 3, flightsInClass: 1, supervisedFlightsInClass: 1 }, ...(supervisedEvidence.length ? { sourceEventIds: supervisedEvidence.map(({ id }) => id) } : {}) }
-    : !input.ascensionHistoryComplete
-      ? { status: "UNKNOWN", reason: "Historique des ascensions incomplet pour conclure sur 180 jours.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 } }
+    : applicableDeclaration
+      ? { status: applicableDeclaration.recencySatisfied ? "COMPLIANT" : "ACTION_REQUIRED", reason: applicableDeclaration.recencySatisfied ? "Récence déclarée satisfaite pour cette classe. L’historique BC est incomplet ; cette déclaration est utilisée temporairement jusqu’à la couverture complète de la fenêtre." : "Récence déclarée non satisfaite par le pilote pour cette classe.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 }, provenance: "DECLARED_BY_PILOT", declarationReferenceDateIso: applicableDeclaration.referenceDateIso! }
+    : !historyComplete
+      ? { status: "UNKNOWN", reason: "Historique récent à compléter pour couvrir toute la fenêtre de 180 jours.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 } }
       : { status: "ACTION_REQUIRED", reason: "Aucune voie de récence commerciale n’est satisfaite sur 180 jours.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 } };
 
   const checks = input.events.filter((event) => event.type === "COMMERCIAL_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && sameClass(event.balloonClass, input.balloonClass));
@@ -132,7 +142,7 @@ export function calculateCommercialQualification(input: Readonly<{
     : baseRefresherCourse;
 
   const normalPath = initialAccess.status === "COMPLIANT" && recency.status === "COMPLIANT";
-  const alternativesRelevant = initialAccess.status === "COMPLIANT" && !normalPath;
+  const alternativesRelevant = initialAccess.status === "COMPLIANT" && recency.status === "ACTION_REQUIRED";
   const alternativeNotApplicable = { status: "NON_APPLICABLE", reason: initialAccess.status === "COMPLIANT" ? "Voie alternative non nécessaire : la récence est satisfaite." : "Renseignez d’abord l’accès initial professionnel." } as const;
   const proficiencyCheckFeB = alternativesRelevant ? proficiencyCheckAlternative : alternativeNotApplicable;
   const refresherCourse = alternativesRelevant ? refresherCourseAlternative : alternativeNotApplicable;
@@ -140,16 +150,16 @@ export function calculateCommercialQualification(input: Readonly<{
   const maintenance: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
     ? { status: "UNKNOWN", reason: "Accès initial professionnel à renseigner avant le maintien." }
     : normalPath
-    ? { status: "COMPLIANT", reason: "Voie normale satisfaite par la récence professionnelle.", sourceEventIds: initialAccess.sourceEventIds }
+    ? { status: "COMPLIANT", reason: "Voie normale satisfaite par la récence professionnelle.", sourceEventIds: initialAccess.sourceEventIds, ...(recency.provenance ? { provenance: recency.provenance, declarationReferenceDateIso: recency.declarationReferenceDateIso } : {}) }
+    : recency.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Historique récent à compléter avant d’évaluer une voie alternative." }
     : active(proficiencyCheckAlternative.status) ? proficiencyCheckAlternative
       : active(refresherCourseAlternative.status) ? refresherCourseAlternative
-        : recency.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Historique insuffisant pour choisir une voie de maintien." }
-          : { status: "ACTION_REQUIRED", reason: "Aucune voie normale ou alternative n’est satisfaite." };
+        : { status: "ACTION_REQUIRED", reason: "Aucune voie normale ou alternative n’est satisfaite." };
   const alternativePath = active(maintenance.status) && !normalPath;
   const overall: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
     ? { status: "UNKNOWN", reason: "Accès initial à l’activité professionnelle non renseigné." }
     : normalPath || alternativePath
-      ? { status: "COMPLIANT", reason: normalPath ? "Accès initial et récence 180 jours satisfaits." : "Accès initial et voie alternative de maintien satisfaits.", sourceEventIds: maintenance.sourceEventIds }
+      ? { status: "COMPLIANT", reason: normalPath ? "Accès initial et récence 180 jours satisfaits." : "Accès initial et voie alternative de maintien satisfaits.", sourceEventIds: maintenance.sourceEventIds, ...(normalPath && recency.provenance ? { provenance: recency.provenance, declarationReferenceDateIso: recency.declarationReferenceDateIso } : {}) }
       : recency.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Données insuffisantes pour conclure à l’activité professionnelle." }
         : { status: "ACTION_REQUIRED", reason: "Aucune voie de maintien professionnel n’est satisfaite." };
   return { balloonClass: input.balloonClass, initialAccess, recency, proficiencyCheckFeB, refresherCourse, operatorEquivalent, maintenance, overall };

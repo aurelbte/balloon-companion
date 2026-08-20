@@ -46,8 +46,22 @@ export type QualificationBalloonClass = Readonly<{
 
 export type QualificationMedicalClass = "LAPL" | "CLASS_2" | (string & {});
 
+export type DeclaredBplInitialSituation = Readonly<{
+  referenceDateIso: string | null;
+  recentExperienceSatisfied: boolean | null;
+}>;
+
+export type DeclaredCommercialInitialSituation = Readonly<{
+  balloonClass: QualificationBalloonClass;
+  referenceDateIso: string | null;
+  recencySatisfied: boolean | null;
+}>;
+
 export type QualificationProfile = Readonly<{
   configured: boolean;
+  historyCoverageStartDate: string | null;
+  declaredBplInitialSituation: DeclaredBplInitialSituation;
+  declaredCommercialInitialSituations: readonly DeclaredCommercialInitialSituation[];
   licenceType: string | null;
   commercialOperationsEnabled: boolean;
   fiBEnabled: boolean;
@@ -93,7 +107,16 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function createEmptyQualificationProfile(): QualificationProfile {
-  return { configured: false, licenceType: null, commercialOperationsEnabled: false, fiBEnabled: false, feBEnabled: false };
+  return {
+    configured: false,
+    historyCoverageStartDate: null,
+    declaredBplInitialSituation: { referenceDateIso: null, recentExperienceSatisfied: null },
+    declaredCommercialInitialSituations: [],
+    licenceType: null,
+    commercialOperationsEnabled: false,
+    fiBEnabled: false,
+    feBEnabled: false,
+  };
 }
 
 export function emptyLegacyQualificationDeadlines(): LegacyQualificationDeadlines {
@@ -132,10 +155,34 @@ export function normalizeQualificationProfile(value: unknown): QualificationProf
   const commercialOperationsEnabled = candidate.commercialOperationsEnabled === true;
   const fiBEnabled = candidate.fiBEnabled === true;
   const feBEnabled = candidate.feBEnabled === true;
+  const historyCoverageStartDate = optionalDate(candidate.historyCoverageStartDate) ?? null;
+  const rawBpl = candidate.declaredBplInitialSituation && typeof candidate.declaredBplInitialSituation === "object"
+    ? candidate.declaredBplInitialSituation as Partial<DeclaredBplInitialSituation>
+    : {};
+  const declaredBplInitialSituation: DeclaredBplInitialSituation = {
+    referenceDateIso: optionalDate(rawBpl.referenceDateIso) ?? null,
+    recentExperienceSatisfied: typeof rawBpl.recentExperienceSatisfied === "boolean" ? rawBpl.recentExperienceSatisfied : null,
+  };
+  const declaredCommercialInitialSituations = Array.isArray(candidate.declaredCommercialInitialSituations)
+    ? candidate.declaredCommercialInitialSituations.flatMap((value) => {
+      if (!value || typeof value !== "object") return [];
+      const raw = value as Partial<DeclaredCommercialInitialSituation>;
+      const normalizedClass = balloonClass(raw.balloonClass);
+      if (!normalizedClass) return [];
+      return [{
+        balloonClass: normalizedClass,
+        referenceDateIso: optionalDate(raw.referenceDateIso) ?? null,
+        recencySatisfied: typeof raw.recencySatisfied === "boolean" ? raw.recencySatisfied : null,
+      } satisfies DeclaredCommercialInitialSituation];
+    })
+    : [];
   return {
     configured: typeof candidate.configured === "boolean"
       ? candidate.configured
-      : licenceType !== null || commercialOperationsEnabled || fiBEnabled || feBEnabled,
+      : licenceType !== null || commercialOperationsEnabled || fiBEnabled || feBEnabled || historyCoverageStartDate !== null,
+    historyCoverageStartDate,
+    declaredBplInitialSituation,
+    declaredCommercialInitialSituations,
     licenceType,
     commercialOperationsEnabled,
     fiBEnabled,

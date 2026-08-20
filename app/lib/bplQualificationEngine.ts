@@ -23,6 +23,8 @@ export type QualificationRequirementResult<TCurrent = unknown, TRequired = unkno
   requiredValue?: TRequired;
   dueDate?: string;
   sourceEventIds?: readonly string[];
+  provenance?: "DECLARED_BY_PILOT";
+  declarationReferenceDateIso?: string;
 }>;
 
 /** Extension anticipée sans modifier le modèle carnet existant. */
@@ -181,6 +183,7 @@ export function calculateBplMaintenance(input: Readonly<{
   ascensions: readonly DatedBplAscension[];
   referenceDateIso: string;
   ascensionHistoryComplete: boolean;
+  historyCoverageStartDate?: string | null;
   openingBalance?: PilotExperienceBalance;
 }>): BplMaintenanceResult {
   const datedExperience = calculateDatedExperience(input.ascensions, input.referenceDateIso);
@@ -195,12 +198,30 @@ export function calculateBplMaintenance(input: Readonly<{
     takeoffs: datedExperience.takeoffs,
     landings: datedExperience.landings,
   };
+  const historyComplete = input.historyCoverageStartDate === undefined
+    ? input.ascensionHistoryComplete
+    : Boolean(dateParts(input.historyCoverageStartDate ?? "") && input.historyCoverageStartDate! <= datedExperience.windowStartIso);
   const experienceCompliant =
     currentExperience.officialDurationMinutes >= requiredExperience.officialDurationMinutes &&
     currentExperience.takeoffs >= requiredExperience.takeoffs &&
     currentExperience.landings >= requiredExperience.landings;
-  const recentExperience: BplMaintenanceResult["recentExperience"] = !input.ascensionHistoryComplete
-    ? { status: "UNKNOWN", reason: "Historique daté déclaré incomplet.", currentValue: currentExperience, requiredValue: requiredExperience }
+  const declaration = input.profile.declaredBplInitialSituation;
+  const applicableDeclaration = !historyComplete && declaration && typeof declaration.recentExperienceSatisfied === "boolean" && Boolean(
+    dateParts(declaration.referenceDateIso ?? "") && declaration.referenceDateIso! >= datedExperience.windowStartIso && declaration.referenceDateIso! <= input.referenceDateIso
+  ) ? declaration : null;
+  const recentExperience: BplMaintenanceResult["recentExperience"] = applicableDeclaration
+    ? {
+      status: applicableDeclaration.recentExperienceSatisfied ? "COMPLIANT" : "ACTION_REQUIRED",
+      reason: applicableDeclaration.recentExperienceSatisfied
+        ? "Condition d’expérience récente déclarée satisfaite. L’historique BC est incomplet ; cette déclaration est utilisée temporairement jusqu’à la couverture complète de la fenêtre."
+        : "Condition d’expérience récente déclarée non satisfaite par le pilote.",
+      currentValue: currentExperience,
+      requiredValue: requiredExperience,
+      provenance: "DECLARED_BY_PILOT",
+      declarationReferenceDateIso: applicableDeclaration.referenceDateIso!,
+    }
+    : !historyComplete
+    ? { status: "UNKNOWN", reason: "Historique récent à compléter pour couvrir toute la fenêtre de 24 mois.", currentValue: currentExperience, requiredValue: requiredExperience }
     : {
       status: experienceCompliant ? "COMPLIANT" : "ACTION_REQUIRED",
       reason: experienceCompliant ? "Seuils d’expérience datée atteints sur la fenêtre de 24 mois." : "Un ou plusieurs seuils d’expérience datée ne sont pas atteints sur 24 mois.",
@@ -223,19 +244,21 @@ export function calculateBplMaintenance(input: Readonly<{
   );
 
   const standardPath = recentExperience.status === "COMPLIANT" && satisfiesTimedRequirement(trainingFlightFiB);
-  const alternativePath = !standardPath && satisfiesTimedRequirement(proficiencyCheckAlternative);
-  const proficiencyCheckFeB: QualificationRequirementResult = standardPath
+  const alternativePath = recentExperience.status !== "UNKNOWN" && !standardPath && satisfiesTimedRequirement(proficiencyCheckAlternative);
+  const proficiencyCheckFeB: QualificationRequirementResult = recentExperience.status === "UNKNOWN"
+    ? { status: "NON_APPLICABLE", reason: "Voie alternative non évaluée tant que l’historique récent est incomplet." }
+    : standardPath
     ? { status: "NON_APPLICABLE", reason: "Voie alternative non nécessaire : la voie normale est satisfaite." }
     : proficiencyCheckAlternative;
   const profileIsBpl = input.profile.licenceType === "BPL";
   let overall: QualificationRequirementResult;
   if (!profileIsBpl) {
     overall = { status: "UNKNOWN", reason: "Le profil ne confirme pas une licence BPL." };
+  } else if (recentExperience.status === "UNKNOWN") {
+    overall = { status: "UNKNOWN", reason: "Historique récent à compléter avant de conclure au maintien BPL." };
   } else if (alternativePath || standardPath) {
     const sources = alternativePath ? proficiencyCheckFeB.sourceEventIds : trainingFlightFiB.sourceEventIds;
-    overall = { status: "COMPLIANT", reason: alternativePath ? "Voie alternative par contrôle de compétences BPL avec FE(B)." : "Expérience récente et vol d’entraînement BPL avec FI(B) satisfaits.", ...(sources ? { sourceEventIds: sources } : {}) };
-  } else if (recentExperience.status === "UNKNOWN") {
-    overall = { status: "UNKNOWN", reason: "Données insuffisantes pour conclure au maintien BPL." };
+    overall = { status: "COMPLIANT", reason: alternativePath ? "Voie alternative par contrôle de compétences BPL avec FE(B)." : "Expérience récente et vol d’entraînement BPL avec FI(B) satisfaits.", ...(sources ? { sourceEventIds: sources } : {}), ...(!alternativePath && recentExperience.provenance ? { provenance: recentExperience.provenance, declarationReferenceDateIso: recentExperience.declarationReferenceDateIso } : {}) };
   } else {
     overall = { status: "ACTION_REQUIRED", reason: "Aucune voie de maintien BPL calculée n’est satisfaite." };
   }
