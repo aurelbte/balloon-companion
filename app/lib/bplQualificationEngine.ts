@@ -1,5 +1,6 @@
 import type { OfficialAscension, PilotExperienceBalance } from "./flightCompletion.ts";
 import type { QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
+import { bplEventCredits, type BplEventCredit } from "./qualificationEventCredits.ts";
 
 export const BPL_REGULATORY_RULES = Object.freeze({
   recentExperienceMonths: 24,
@@ -13,7 +14,7 @@ export const BPL_REGULATORY_RULES = Object.freeze({
 /** Seuils de présentation uniquement, sans effet sur la conformité réglementaire. */
 export const BPL_UX_ALERT_THRESHOLDS = Object.freeze({ upcomingDays: 180, warningDays: 90 });
 
-export type QualificationRequirementStatus = "COMPLIANT" | "UPCOMING" | "WARNING" | "ACTION_REQUIRED" | "UNKNOWN";
+export type QualificationRequirementStatus = "COMPLIANT" | "UPCOMING" | "WARNING" | "ACTION_REQUIRED" | "UNKNOWN" | "NON_APPLICABLE";
 
 export type QualificationRequirementResult<TCurrent = unknown, TRequired = unknown> = Readonly<{
   status: QualificationRequirementStatus;
@@ -144,33 +145,32 @@ function timedStatus(dueDate: string, referenceDateIso: string): QualificationRe
   return "COMPLIANT";
 }
 
-function latestQualifiedEvent(
-  events: readonly QualificationEvent[],
-  type: QualificationEvent["type"],
+function latestQualifiedCredit(
+  credits: readonly BplEventCredit[],
+  requirement: BplEventCredit["requirement"],
   referenceDateIso: string,
-  person: "instructor" | "examiner",
-): QualificationEvent | null {
-  return [...events]
-    .filter((event) => event.type === type && event.dateIso <= referenceDateIso && event[person]?.name.trim())
-    .sort((left, right) => right.dateIso.localeCompare(left.dateIso) || right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+): BplEventCredit | null {
+  return [...credits]
+    .filter((credit) => credit.requirement === requirement && credit.dateIso <= referenceDateIso)
+    .sort((left, right) => right.dateIso.localeCompare(left.dateIso))[0] ?? null;
 }
 
 function eventRequirement(
-  event: QualificationEvent | null,
+  credit: BplEventCredit | null,
   months: number,
   referenceDateIso: string,
   missingReason: string,
 ): QualificationRequirementResult {
-  if (!event) return { status: "UNKNOWN", reason: missingReason };
-  const dueDate = addCalendarMonths(event.dateIso, months);
+  if (!credit) return { status: "UNKNOWN", reason: missingReason };
+  const dueDate = addCalendarMonths(credit.dateIso, months);
   const status = timedStatus(dueDate, referenceDateIso);
   return {
     status,
     reason: status === "ACTION_REQUIRED" ? "La période calculée depuis le dernier événement est dépassée." : "Échéance calculée depuis le dernier événement qualifié.",
-    currentValue: event.dateIso,
+    currentValue: credit.dateIso,
     requiredValue: `${months} mois`,
     dueDate,
-    sourceEventIds: [event.id],
+    sourceEventIds: credit.sourceEventIds,
   };
 }
 
@@ -211,14 +211,15 @@ export function calculateBplMaintenance(input: Readonly<{
       requiredValue: requiredExperience,
     };
 
+  const credits = bplEventCredits(input.events);
   const trainingFlightFiB = eventRequirement(
-    latestQualifiedEvent(input.events, "TRAINING_FLIGHT_BPL", input.referenceDateIso, "instructor"),
+    latestQualifiedCredit(credits, "TRAINING_FLIGHT", input.referenceDateIso),
     BPL_REGULATORY_RULES.trainingFlightMonths,
     input.referenceDateIso,
     "Aucun vol d’entraînement BPL avec FI(B) identifiable.",
   );
   const proficiencyCheckFeB = eventRequirement(
-    latestQualifiedEvent(input.events, "PROFICIENCY_CHECK_BPL", input.referenceDateIso, "examiner"),
+    latestQualifiedCredit(credits, "PROFICIENCY_CHECK", input.referenceDateIso),
     BPL_REGULATORY_RULES.proficiencyCheckMonths,
     input.referenceDateIso,
     "Aucun contrôle de compétences BPL avec FE(B) identifiable.",

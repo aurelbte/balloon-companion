@@ -34,6 +34,12 @@ export type QualificationPersonSnapshot = Readonly<{
   licenceNumber?: string;
 }>;
 
+export type QualificationBalloonClass = Readonly<{
+  classId: string;
+  /** Réservé à une future nomenclature de groupes, sans dépendance au modèle ballon. */
+  groupId?: string;
+}>;
+
 export type QualificationProfile = Readonly<{
   licenceType: string | null;
   commercialOperationsEnabled: boolean;
@@ -49,8 +55,11 @@ export type QualificationEvent = Readonly<{
   source: QualificationEventSource;
   officialAscensionId?: string;
   balloonId?: string;
+  balloonClass?: QualificationBalloonClass;
   instructor?: QualificationPersonSnapshot;
   examiner?: QualificationPersonSnapshot;
+  theoryMinutes?: number;
+  relatedEventIds?: readonly string[];
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -98,6 +107,15 @@ function person(value: unknown): QualificationPersonSnapshot | undefined {
   return { name, ...(licenceNumber ? { licenceNumber } : {}) };
 }
 
+function balloonClass(value: unknown): QualificationBalloonClass | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<QualificationBalloonClass>;
+  const classId = optionalText(candidate.classId);
+  if (!classId) return undefined;
+  const groupId = optionalText(candidate.groupId);
+  return { classId: classId.toUpperCase(), ...(groupId ? { groupId: groupId.toUpperCase() } : {}) };
+}
+
 export function normalizeQualificationProfile(value: unknown): QualificationProfile {
   const candidate = value && typeof value === "object" ? value as Partial<QualificationProfile> : {};
   return {
@@ -122,8 +140,15 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
   const expiryDateIso = optionalDate(candidate.expiryDateIso);
   const officialAscensionId = optionalText(candidate.officialAscensionId);
   const balloonId = optionalText(candidate.balloonId);
+  const eventBalloonClass = balloonClass(candidate.balloonClass);
   const instructor = person(candidate.instructor);
   const examiner = person(candidate.examiner);
+  const theoryMinutes = typeof candidate.theoryMinutes === "number" && Number.isInteger(candidate.theoryMinutes) && candidate.theoryMinutes >= 0
+    ? candidate.theoryMinutes
+    : undefined;
+  const relatedEventIds = Array.isArray(candidate.relatedEventIds)
+    ? [...new Set(candidate.relatedEventIds.filter((id): id is string => typeof id === "string" && UUID.test(id)))]
+    : [];
   const notes = optionalText(candidate.notes);
   return {
     id: candidate.id,
@@ -133,8 +158,11 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
     source: candidate.source as QualificationEventSource,
     ...(officialAscensionId ? { officialAscensionId } : {}),
     ...(balloonId ? { balloonId } : {}),
+    ...(eventBalloonClass ? { balloonClass: eventBalloonClass } : {}),
     ...(instructor ? { instructor } : {}),
     ...(examiner ? { examiner } : {}),
+    ...(theoryMinutes !== undefined ? { theoryMinutes } : {}),
+    ...(relatedEventIds.length ? { relatedEventIds } : {}),
     ...(notes ? { notes } : {}),
     createdAt: candidate.createdAt,
     updatedAt: candidate.updatedAt,
