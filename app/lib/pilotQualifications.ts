@@ -56,6 +56,7 @@ export type QualificationEvent = Readonly<{
   expiryDateIso?: string;
   source: QualificationEventSource;
   officialAscensionId?: string;
+  officialAscensionDeletedAt?: string;
   balloonId?: string;
   balloonClass?: QualificationBalloonClass;
   instructor?: QualificationPersonSnapshot;
@@ -143,6 +144,9 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
   ) return null;
   const expiryDateIso = optionalDate(candidate.expiryDateIso);
   const officialAscensionId = optionalText(candidate.officialAscensionId);
+  const officialAscensionDeletedAt = typeof candidate.officialAscensionDeletedAt === "string" && Number.isFinite(Date.parse(candidate.officialAscensionDeletedAt))
+    ? candidate.officialAscensionDeletedAt
+    : undefined;
   const balloonId = optionalText(candidate.balloonId);
   const eventBalloonClass = balloonClass(candidate.balloonClass);
   const instructor = person(candidate.instructor);
@@ -163,6 +167,7 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
     ...(expiryDateIso ? { expiryDateIso } : {}),
     source: candidate.source as QualificationEventSource,
     ...(officialAscensionId ? { officialAscensionId } : {}),
+    ...(officialAscensionDeletedAt ? { officialAscensionDeletedAt } : {}),
     ...(balloonId ? { balloonId } : {}),
     ...(eventBalloonClass ? { balloonClass: eventBalloonClass } : {}),
     ...(instructor ? { instructor } : {}),

@@ -6,8 +6,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useBalloons } from "../../hooks/useBalloons";
 import { balloonDisplayName, officialFieldsForBalloon } from "../../lib/balloons";
 import { NEW_BALLOON_RETURN_KEY, NEW_BALLOON_SELECTION_KEY } from "../../lib/balloonStorage";
-import type { OfficialAscensionInput } from "../../lib/flightCompletion";
+import type { OfficialAscensionInput, OfficialFlightNature } from "../../lib/flightCompletion";
 import { createScopedOfficialAscensionDraft, parseScopedOfficialAscensionDraft } from "../../lib/officialAscensionDraft";
+import { flightNatureRequiresExaminer, flightNatureRequiresInstructor } from "../../lib/officialAscensionQualifications";
 import styles from "../../flight/complete/FlightComplete.module.css";
 
 const ADD_BALLOON_VALUE = "__add_balloon__";
@@ -26,6 +27,13 @@ export type OfficialAscensionFormValues = {
   nightFlight: boolean | null;
   maximumAltitudeM: string;
   officialDurationMinutes: number | null;
+  flightNature: OfficialFlightNature;
+  takeoffCount: string;
+  landingCount: string;
+  instructorName: string;
+  instructorLicenceNumber: string;
+  examinerName: string;
+  examinerLicenceNumber: string;
   observations: string;
 };
 
@@ -84,8 +92,12 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
 
   const duration = durationMinutes === "" ? Number.NaN : Number(durationMinutes);
   const altitude = values.maximumAltitudeM === "" ? null : Number(values.maximumAltitudeM);
+  const takeoffCount = values.takeoffCount === "" ? undefined : Number(values.takeoffCount);
+  const landingCount = values.landingCount === "" ? undefined : Number(values.landingCount);
   const validAltitude = altitude === null || Number.isFinite(altitude) && altitude >= 0;
-  const valid = Boolean(values.dateIso && values.balloonModel.trim() && values.registration.trim() && values.departure.trim() && values.arrival.trim() && values.category && values.pilotFunction && Number.isInteger(duration) && duration > 0 && validAltitude);
+  const validMovements = (takeoffCount === undefined || Number.isInteger(takeoffCount) && takeoffCount >= 0) && (landingCount === undefined || Number.isInteger(landingCount) && landingCount >= 0);
+  const validPeople = (!flightNatureRequiresInstructor(values.flightNature) || Boolean(values.instructorName.trim())) && (!flightNatureRequiresExaminer(values.flightNature) || Boolean(values.examinerName.trim()));
+  const valid = Boolean(values.dateIso && values.balloonModel.trim() && values.registration.trim() && values.departure.trim() && values.arrival.trim() && values.category && values.pilotFunction && Number.isInteger(duration) && duration > 0 && validAltitude && validMovements && validPeople);
 
   const update = <K extends keyof OfficialAscensionFormValues>(key: K, value: OfficialAscensionFormValues[K]) => { setValues((current) => ({ ...current, [key]: value })); setDirty(true); };
   const chooseBalloon = (id: string) => {
@@ -106,7 +118,7 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
     if (!valid || !values.category || !values.pilotFunction || isSubmitting) return;
     if (mode === "EDIT" && (!hydrated || !dirty || !ascensionId)) return;
     setIsSubmitting(true);
-    const input: OfficialAscensionInput = { dateIso: values.dateIso, date: new Date(`${values.dateIso}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }), balloonModel: values.balloonModel.trim(), ...(values.balloonManufacturer.trim() ? { balloonManufacturer: values.balloonManufacturer.trim() } : {}), registration: values.registration.trim().toUpperCase(), departure: values.departure.trim(), arrival: values.arrival.trim(), category: values.category, pilotFunction: values.pilotFunction, nightFlight: values.nightFlight ?? false, maximumAltitudeM: altitude, officialDurationMinutes: duration, observations: values.observations.trim() };
+    const input: OfficialAscensionInput = { dateIso: values.dateIso, date: new Date(`${values.dateIso}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }), balloonModel: values.balloonModel.trim(), ...(values.balloonManufacturer.trim() ? { balloonManufacturer: values.balloonManufacturer.trim() } : {}), registration: values.registration.trim().toUpperCase(), departure: values.departure.trim(), arrival: values.arrival.trim(), category: values.category, pilotFunction: values.pilotFunction, nightFlight: values.nightFlight ?? false, maximumAltitudeM: altitude, officialDurationMinutes: duration, flightNature: values.flightNature, ...(takeoffCount === undefined ? {} : { takeoffCount }), ...(landingCount === undefined ? {} : { landingCount }), ...(flightNatureRequiresInstructor(values.flightNature) ? { instructor: { name: values.instructorName.trim(), ...(values.instructorLicenceNumber.trim() ? { licenceNumber: values.instructorLicenceNumber.trim() } : {}) } } : {}), ...(flightNatureRequiresExaminer(values.flightNature) ? { examiner: { name: values.examinerName.trim(), ...(values.examinerLicenceNumber.trim() ? { licenceNumber: values.examinerLicenceNumber.trim() } : {}) } } : {}), observations: values.observations.trim() };
     if (process.env.NODE_ENV === "development") console.debug("[OfficialAscensionForm] submit", { ascensionId, mode, isDirty: dirty, isValid: valid, isSubmitting: false });
     try {
       const succeeded = await onSubmit(input);
@@ -134,6 +146,10 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
       <label><span>Lieu d’atterrissage</span><input value={values.arrival} onChange={(e) => update("arrival", e.target.value)} /></label>
       <label><span>Catégorie</span><select value={values.category} onChange={(e) => update("category", e.target.value as typeof values.category)}><option value="">Sélectionner</option><option>Libre à air chaud</option><option>Libre à gaz</option></select></label>
       <label><span>Fonction</span><select value={values.pilotFunction} onChange={(e) => update("pilotFunction", e.target.value as typeof values.pilotFunction)}><option value="">Sélectionner</option><option>Pilote</option><option>Élève</option></select></label>
+      <label className={styles.wide}><span>Nature du vol</span><select value={values.flightNature} onChange={(e) => update("flightNature", e.target.value as OfficialFlightNature)}><option value="STANDARD">Vol standard</option><option value="TRAINING_BPL">Vol d’entraînement BPL</option><option value="PROFICIENCY_CHECK_BPL">Contrôle de compétences BPL</option><option value="SKILL_TEST">Examen pratique</option><option value="COMMERCIAL_TRAINING">Formation commerciale</option><option value="COMMERCIAL_PROFICIENCY_CHECK">Contrôle de compétences commercial</option><option value="INSTRUCTION">Instruction</option></select></label>
+      {flightNatureRequiresInstructor(values.flightNature) && <><label><span>FI(B) — Nom</span><input required value={values.instructorName} onChange={(e) => update("instructorName", e.target.value)} /></label><label><span>FI(B) — N° de licence <small>(facultatif)</small></span><input value={values.instructorLicenceNumber} onChange={(e) => update("instructorLicenceNumber", e.target.value)} /></label></>}
+      {flightNatureRequiresExaminer(values.flightNature) && <><label><span>FE(B) — Nom</span><input required value={values.examinerName} onChange={(e) => update("examinerName", e.target.value)} /></label><label><span>FE(B) — N° de licence <small>(facultatif)</small></span><input value={values.examinerLicenceNumber} onChange={(e) => update("examinerLicenceNumber", e.target.value)} /></label></>}
+      {values.flightNature !== "STANDARD" && <><label><span>Décollages <small>(facultatif)</small></span><input inputMode="numeric" pattern="[0-9]*" value={values.takeoffCount} onChange={(e) => update("takeoffCount", e.target.value.replace(/\D/g, ""))} /></label><label><span>Atterrissages <small>(facultatif)</small></span><input inputMode="numeric" pattern="[0-9]*" value={values.landingCount} onChange={(e) => update("landingCount", e.target.value.replace(/\D/g, ""))} /></label></>}
       <label><span>Temps officiel</span><span className={styles.suffixedInput}><input inputMode="numeric" pattern="[0-9]*" value={durationMinutes} onChange={(e) => { setDurationMinutes(e.target.value.replace(/\D/g, "")); setDirty(true); }} /><span>min</span></span></label>
       <label><span>Altitude atteinte <small>(facultatif)</small></span><span className={styles.suffixedInput}><input inputMode="numeric" pattern="[0-9]*" value={values.maximumAltitudeM} onChange={(e) => update("maximumAltitudeM", e.target.value.replace(/\D/g, ""))} /><span>m</span></span></label>
       <label><span>Vol de nuit <small>(facultatif)</small></span><select value={values.nightFlight === true ? "yes" : values.nightFlight === false ? "no" : ""} onChange={(e) => update("nightFlight", e.target.value === "" ? null : e.target.value === "yes")}><option value="">Non renseigné</option><option value="no">Non</option><option value="yes">Oui</option></select></label>

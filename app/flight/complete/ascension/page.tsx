@@ -41,6 +41,13 @@ function toFormValues(flightId: string): OfficialAscensionFormValues {
     nightFlight: value.nightFlight,
     maximumAltitudeM: value.maximumAltitudeM === null ? "" : String(value.maximumAltitudeM),
     officialDurationMinutes: value.officialDurationMinutes,
+    flightNature: value.flightNature ?? "STANDARD",
+    takeoffCount: value.takeoffCount === undefined ? "1" : String(value.takeoffCount),
+    landingCount: value.landingCount === undefined ? "1" : String(value.landingCount),
+    instructorName: value.instructor?.name ?? "",
+    instructorLicenceNumber: value.instructor?.licenceNumber ?? "",
+    examinerName: value.examiner?.name ?? "",
+    examinerLicenceNumber: value.examiner?.licenceNumber ?? "",
     observations: value.observations,
   };
 }

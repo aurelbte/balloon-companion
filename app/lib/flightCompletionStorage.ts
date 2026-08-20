@@ -23,6 +23,8 @@ import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { loadFlightSession } from "./flightSessionStorage.ts";
 import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
+import { qualificationEventsAfterAscensionRemoval, reconcileQualificationEventForAscension } from "./officialAscensionQualifications.ts";
+import { loadPilotQualifications, savePilotQualifications } from "./pilotQualificationsStorage.ts";
 
 export const FLIGHT_COMPLETION_STORAGE_KEY = "balloon-companion-flight-completion-v1";
 const STORAGE_KEY = FLIGHT_COMPLETION_STORAGE_KEY;
@@ -102,21 +104,35 @@ function createManualAscensionId(): string {
   return `manual-ascension-${Date.now()}`;
 }
 
+function persistQualificationLink(ascension: OfficialAscension | undefined): void {
+  if (!ascension || typeof window === "undefined") return;
+  const qualifications = loadPilotQualifications(window.localStorage);
+  const link = reconcileQualificationEventForAscension(ascension, qualifications.events);
+  if (link.status === "CREATED" || link.status === "UPDATED") {
+    savePilotQualifications({ profile: qualifications.profile, events: link.events }, window.localStorage);
+  }
+}
+
 export function persistManualOfficialAscension(
   input: OfficialAscensionInput,
 ): FlightCompletionState {
+  const id = createManualAscensionId();
   const state = addManualOfficialAscension(
     loadFlightCompletionState(),
-    createManualAscensionId(),
+    id,
     input,
   );
   saveFlightCompletionState(state);
+  persistQualificationLink(state.officialAscensions.find((ascension) => ascension.id === id));
   return state;
 }
 
 export function saveFlightCompletionState(state: FlightCompletionState): boolean {
   if (typeof window === "undefined") return false;
   try {
+    const previousAscensionIds = new Set(loadFlightCompletionState().officialAscensions.map(({ id }) => id));
+    const nextAscensionIds = new Set(state.officialAscensions.map(({ id }) => id));
+    const removedAscensionIds = [...previousAscensionIds].filter((id) => !nextAscensionIds.has(id));
     const lightweightState: FlightCompletionState = {
       ...state,
       journalFlights: state.journalFlights.map((flight) => ({
@@ -127,6 +143,14 @@ export function saveFlightCompletionState(state: FlightCompletionState): boolean
     };
     if (!writeScopedBusinessValue(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState))) return false;
     enqueueLocalSyncMutation("flight-completion", "singleton");
+    if (removedAscensionIds.length) {
+      const qualifications = loadPilotQualifications(window.localStorage);
+      const retained = removedAscensionIds.reduce(
+        (events, ascensionId) => qualificationEventsAfterAscensionRemoval(ascensionId, events).events,
+        qualifications.events,
+      );
+      if (retained !== qualifications.events) savePilotQualifications({ profile: qualifications.profile, events: retained }, window.localStorage);
+    }
     window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
     return true;
   } catch (error) {
@@ -193,6 +217,7 @@ export function persistOfficialAscension(
     input,
   );
   saveFlightCompletionState(state);
+  persistQualificationLink(state.officialAscensions.find(({ sourceFlightId: linkedFlightId }) => linkedFlightId === sourceFlightId));
   return state;
 }
 
@@ -211,6 +236,7 @@ export function persistOfficialAscensionUpdate(
     return null;
   }
   saveFlightCompletionState(state);
+  persistQualificationLink(updated);
   if (process.env.NODE_ENV === "development") console.debug("[flightCompletionStorage] updateOfficialAscension", { ascensionId, result: updated });
   return updated;
 }

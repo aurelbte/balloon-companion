@@ -3,6 +3,7 @@ import {
   type JournalFlight,
   type JournalFlightPoint,
 } from "./journalMockData.ts";
+import type { QualificationPersonSnapshot } from "./pilotQualifications.ts";
 
 export const FLIGHT_COMPLETION_SCHEMA_VERSION = 4;
 export const DEMO_COMPLETION_FLIGHT_ID = "demo-flight-lfqo-merignies-2026-08-01";
@@ -21,6 +22,25 @@ export type CompletionJournalFlight = JournalFlight & {
   recovered?: boolean;
 };
 
+export type OfficialFlightNature =
+  | "STANDARD"
+  | "TRAINING_BPL"
+  | "PROFICIENCY_CHECK_BPL"
+  | "SKILL_TEST"
+  | "COMMERCIAL_TRAINING"
+  | "COMMERCIAL_PROFICIENCY_CHECK"
+  | "INSTRUCTION";
+
+export const OFFICIAL_FLIGHT_NATURES = Object.freeze([
+  "STANDARD",
+  "TRAINING_BPL",
+  "PROFICIENCY_CHECK_BPL",
+  "SKILL_TEST",
+  "COMMERCIAL_TRAINING",
+  "COMMERCIAL_PROFICIENCY_CHECK",
+  "INSTRUCTION",
+] as const satisfies readonly OfficialFlightNature[]);
+
 export type OfficialAscension = {
   id: string;
   sourceFlightId: string | null;
@@ -38,6 +58,11 @@ export type OfficialAscension = {
   maximumAltitudeM: number | null;
   gpsDurationMinutes: number | null;
   officialDurationMinutes: number;
+  flightNature?: OfficialFlightNature;
+  takeoffCount?: number;
+  landingCount?: number;
+  instructor?: QualificationPersonSnapshot;
+  examiner?: QualificationPersonSnapshot;
   observations: string;
 };
 
@@ -45,6 +70,16 @@ export type OfficialAscensionInput = Omit<
   OfficialAscension,
   "id" | "source" | "sourceFlightId" | "gpsDurationMinutes"
 >;
+
+export function officialAscensionFlightNature(ascension: Pick<OfficialAscension, "flightNature">): OfficialFlightNature {
+  return ascension.flightNature && OFFICIAL_FLIGHT_NATURES.includes(ascension.flightNature) ? ascension.flightNature : "STANDARD";
+}
+
+export function officialAscensionMovementCounts(ascension: Pick<OfficialAscension, "takeoffCount" | "landingCount">): Readonly<{ takeoffs: number; landings: number; legacyFallback: boolean }> {
+  const takeoffs = Number.isInteger(ascension.takeoffCount) && ascension.takeoffCount! >= 0 ? ascension.takeoffCount! : 1;
+  const landings = Number.isInteger(ascension.landingCount) && ascension.landingCount! >= 0 ? ascension.landingCount! : 1;
+  return { takeoffs, landings, legacyFallback: ascension.takeoffCount === undefined || ascension.landingCount === undefined };
+}
 
 export type FlightCompletionState = {
   version: typeof FLIGHT_COMPLETION_SCHEMA_VERSION;

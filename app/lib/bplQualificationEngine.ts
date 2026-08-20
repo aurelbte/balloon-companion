@@ -1,4 +1,4 @@
-import type { OfficialAscension, PilotExperienceBalance } from "./flightCompletion.ts";
+import { officialAscensionMovementCounts, type OfficialAscension, type PilotExperienceBalance } from "./flightCompletion.ts";
 import type { QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
 import { bplEventCredits, type BplEventCredit } from "./qualificationEventCredits.ts";
 
@@ -88,10 +88,6 @@ export function addCalendarMonths(dateIso: string, months: number): string {
   return isoFromUtc(target);
 }
 
-function movementCount(value: number | undefined): number {
-  return Number.isInteger(value) && value! >= 0 ? value! : 1;
-}
-
 export function calculateDatedExperience(
   ascensions: readonly DatedBplAscension[],
   referenceDateIso: string,
@@ -106,9 +102,10 @@ export function calculateDatedExperience(
   let landings = 0;
   const fallbackIds: string[] = [];
   for (const ascension of included) {
-    const ascensionTakeoffs = movementCount(ascension.takeoffCount);
-    const ascensionLandings = movementCount(ascension.landingCount);
-    if (ascension.takeoffCount === undefined || ascension.landingCount === undefined) fallbackIds.push(ascension.id);
+    const movements = officialAscensionMovementCounts(ascension);
+    const ascensionTakeoffs = movements.takeoffs;
+    const ascensionLandings = movements.landings;
+    if (movements.legacyFallback) fallbackIds.push(ascension.id);
     officialDurationMinutes += ascension.officialDurationMinutes;
     takeoffs += ascensionTakeoffs;
     landings += ascensionLandings;

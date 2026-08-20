@@ -18,6 +18,13 @@ const EMPTY_VALUES: OfficialAscensionFormValues = {
   nightFlight: null,
   maximumAltitudeM: "",
   officialDurationMinutes: null,
+  flightNature: "STANDARD",
+  takeoffCount: "1",
+  landingCount: "1",
+  instructorName: "",
+  instructorLicenceNumber: "",
+  examinerName: "",
+  examinerLicenceNumber: "",
   observations: "",
 };
 

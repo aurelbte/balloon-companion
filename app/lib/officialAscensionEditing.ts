@@ -1,4 +1,4 @@
-import type { OfficialAscension } from "./flightCompletion";
+import { officialAscensionFlightNature, type OfficialAscension } from "./flightCompletion.ts";
 
 export type OfficialAscensionEditValues = {
   dateIso: string;
@@ -12,6 +12,13 @@ export type OfficialAscensionEditValues = {
   nightFlight: boolean;
   maximumAltitudeM: string;
   officialDurationMinutes: number;
+  flightNature: ReturnType<typeof officialAscensionFlightNature>;
+  takeoffCount: string;
+  landingCount: string;
+  instructorName: string;
+  instructorLicenceNumber: string;
+  examinerName: string;
+  examinerLicenceNumber: string;
   observations: string;
 };
 
@@ -34,6 +41,13 @@ export function officialAscensionToEditValues(
         ? ""
         : String(ascension.maximumAltitudeM),
     officialDurationMinutes: ascension.officialDurationMinutes,
+    flightNature: officialAscensionFlightNature(ascension),
+    takeoffCount: ascension.takeoffCount === undefined ? "" : String(ascension.takeoffCount),
+    landingCount: ascension.landingCount === undefined ? "" : String(ascension.landingCount),
+    instructorName: ascension.instructor?.name ?? "",
+    instructorLicenceNumber: ascension.instructor?.licenceNumber ?? "",
+    examinerName: ascension.examiner?.name ?? "",
+    examinerLicenceNumber: ascension.examiner?.licenceNumber ?? "",
     observations: ascension.observations,
   };
 }

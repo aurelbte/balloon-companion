@@ -236,6 +236,13 @@ test("le formulaire de modification reçoit tous les champs officiels prérempli
     nightFlight: true,
     maximumAltitudeM: "982",
     officialDurationMinutes: 69,
+    flightNature: "STANDARD",
+    takeoffCount: "",
+    landingCount: "",
+    instructorName: "",
+    instructorLicenceNumber: "",
+    examinerName: "",
+    examinerLicenceNumber: "",
     observations: "Observation conservée",
   });
 });
