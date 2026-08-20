@@ -48,12 +48,13 @@
 .legacyHint { color: var(--bc-text-muted); }
 .editBottom { width: 100%; min-height: 46px; margin-top: 12px; border: 1px solid var(--bc-border); border-radius: 999px; background: var(--bc-surface); color: var(--bc-accent); font-weight: 700; }
 .eventForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; padding: 14px; border: 1px solid var(--bc-border-strong); border-radius: 20px; background: var(--bc-surface); }
+.eventForm > *, .declarationClass > * { min-width: 0; }
 .eventFormHeader, .eventFormWide { grid-column: 1 / -1; }
 .eventFormHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .eventFormHeader h2 { font-size: .82rem; }
 .eventFormHeader button { min-height: 44px; border: 0; background: transparent; color: var(--bc-text-secondary); font-size: .68rem; }
 .eventForm label > span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
-.eventForm input, .eventForm select, .eventForm textarea { width: 100%; min-height: 44px; padding: 8px 9px; border: 1px solid var(--bc-border); border-radius: 12px; background: var(--bc-canvas); color: var(--bc-text-primary); }
+.eventForm input, .eventForm select, .eventForm textarea { display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 44px; padding: 8px 9px; border: 1px solid var(--bc-border); border-radius: 12px; background: var(--bc-canvas); color: var(--bc-text-primary); }
 .eventForm textarea { min-height: 68px; resize: vertical; }
 .declarationClass { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-top: 10px; border-top: 1px solid var(--bc-border); }
 .declarationClass h3, .declarationClass button { grid-column: 1 / -1; }
@@ -74,3 +75,4 @@
 .toggle:has(input:checked) { border-color: var(--bc-accent); }
 .save { position: relative; z-index: 1; display: block; width: 100%; min-height: 46px; margin-top: 10px; border: 0; border-radius: 999px; appearance: none; -webkit-appearance: none; background: var(--bc-accent); color: var(--bc-accent-foreground); cursor: pointer; font-weight: 700; pointer-events: auto; touch-action: manipulation; }
 @media (max-width: 370px) { .header { display: block; } .edit { margin-top: 5px; } .settingsGrid, .facts, .eventForm, .declarationClass { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .eventForm, .declarationClass { grid-template-columns: minmax(0, 1fr); } }

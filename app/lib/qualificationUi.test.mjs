@@ -117,7 +117,7 @@ test("le bouton Enregistrer passe exclusivement par un submit de formulaire prot
 test("la fiche est ordonnée synthèse, actions, BPL, professionnel puis historique", () => {
   const markers = ["Résumé de la situation pilote", 'id="todo-title"', 'id="bpl-title"', 'id="commercial-title"', 'id="history-title"'];
   for (let index = 1; index < markers.length; index += 1) assert.ok(page.indexOf(markers[index - 1]) < page.indexOf(markers[index]));
-  assert.match(page, /Votre dossier est à jour\./);
+  assert.match(page, /actionItems\.length > 0/);
   assert.match(page, /dans l’historique/);
 });
 
@@ -173,7 +173,7 @@ test("la phase 7C.1 expose la couverture et l’action historique sans faux FE(B
   assert.match(page, /Historique complet depuis/);
   assert.match(page, /historyCoverageStartDate/);
   assert.match(page, /Compléter mon historique récent/);
-  assert.match(page, /href: "\/journal\/ascension\/new"/);
+  assert.match(page, /href="\/journal\/ascension\/new"/);
   assert.match(page, /view\.bpl\.recentExperience\.status !== "UNKNOWN"/);
   assert.match(page, /event\.type === "INITIAL_BPL_ISSUANCE"/);
   assert.match(page, /openIssuanceEditor\(event\)/);
@@ -182,10 +182,25 @@ test("la phase 7C.1 expose la couverture et l’action historique sans faux FE(B
 test("la phase 7C.2 permet de déclarer, modifier et supprimer la situation initiale", () => {
   assert.match(page, /function InitialSituationForm/);
   assert.match(page, /Renseigner ma situation initiale/);
-  assert.match(page, /conditions d’expérience récente BPL étaient-elles satisfaites/);
+  assert.match(page, /conditions d’expérience récente BPL étaient-elles satisfaites/i);
   assert.match(page, /Récence commerciale satisfaite/);
   assert.match(page, /Déclaré par le pilote/);
   assert.match(page, /onSubmit=\{onSubmit\}/);
   assert.match(page, /Supprimer la déclaration BPL/);
   assert.match(page, /window\.confirm\("Supprimer cette déclaration initiale professionnelle/);
+});
+
+test("la phase 7C.3 masque À faire sans obligation et ignore une déclaration valide comme alerte", () => {
+  assert.match(page, /const needsInitialSituation = view\.bpl\.recentExperience\.status === "UNKNOWN" \|\| view\.commercial\.some\(\(\{ recency \}\) => recency\.status === "UNKNOWN"\)/);
+  assert.doesNotMatch(page, /historyIncomplete/);
+  assert.match(page, /\{actionItems\.length > 0 && <section className=\{`\$\{styles\.section\} \$\{styles\.todo\}`\}/);
+  assert.doesNotMatch(page, /text: "Compléter mon historique récent"/);
+  assert.match(page, /view\.bpl\.recentExperience\.status === "UNKNOWN" && <Link/);
+  assert.match(page, /commercial\.recency\.status === "UNKNOWN" && <Link/);
+});
+
+test("la phase 7C.3 empile les champs de situation initiale sur iPhone", () => {
+  assert.match(styles, /\.eventForm > \*, \.declarationClass > \* \{ min-width: 0; \}/);
+  assert.match(styles, /max-width: 100%; min-width: 0; min-height: 44px/);
+  assert.match(styles, /@media \(max-width: 640px\) \{ \.eventForm, \.declarationClass \{ grid-template-columns: minmax\(0, 1fr\); \} \}/);
 });
