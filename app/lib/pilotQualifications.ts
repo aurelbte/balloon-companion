@@ -40,6 +40,8 @@ export type QualificationBalloonClass = Readonly<{
   groupId?: string;
 }>;
 
+export type QualificationMedicalClass = "LAPL" | "CLASS_2" | (string & {});
+
 export type QualificationProfile = Readonly<{
   licenceType: string | null;
   commercialOperationsEnabled: boolean;
@@ -60,6 +62,8 @@ export type QualificationEvent = Readonly<{
   examiner?: QualificationPersonSnapshot;
   theoryMinutes?: number;
   relatedEventIds?: readonly string[];
+  medicalClass?: QualificationMedicalClass;
+  organization?: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -149,6 +153,8 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
   const relatedEventIds = Array.isArray(candidate.relatedEventIds)
     ? [...new Set(candidate.relatedEventIds.filter((id): id is string => typeof id === "string" && UUID.test(id)))]
     : [];
+  const medicalClass = optionalText(candidate.medicalClass)?.toUpperCase();
+  const organization = optionalText(candidate.organization);
   const notes = optionalText(candidate.notes);
   return {
     id: candidate.id,
@@ -163,6 +169,8 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
     ...(examiner ? { examiner } : {}),
     ...(theoryMinutes !== undefined ? { theoryMinutes } : {}),
     ...(relatedEventIds.length ? { relatedEventIds } : {}),
+    ...(medicalClass ? { medicalClass } : {}),
+    ...(organization ? { organization } : {}),
     ...(notes ? { notes } : {}),
     createdAt: candidate.createdAt,
     updatedAt: candidate.updatedAt,
