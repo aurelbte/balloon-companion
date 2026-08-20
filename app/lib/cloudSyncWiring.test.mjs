@@ -34,6 +34,13 @@ test("les favoris Prépa et Météo produisent des mutations par ligne distincte
   assert.doesNotMatch(`${launch}\n${weather}`, /enqueueLocalSyncMutation\("favorite-(launch|weather)-places"/);
 });
 
+test("modifier et supprimer un favori Météo réutilisent les UPSERT et DELETE existants", () => {
+  assert.match(weather, /renameFavoriteWeatherPlace/);
+  assert.match(weather, /removeFavoriteWeatherPlace/);
+  assert.match(weather, /JSON\.stringify\(prior\) !== JSON\.stringify\(favorite\).*enqueueLocalSyncMutation\("favorite-weather-place", favorite\.id\)/s);
+  assert.match(weather, /enqueueLocalSyncMutation\("favorite-weather-place", removed\.id, "DELETE"\)/);
+});
+
 test("le scan initial reste une API explicite sans déclenchement automatique", () => {
   assert.match(browser, /export async function scanInitialCloudSyncInventory/);
   assert.match(browser, /Read-only and idempotent/);

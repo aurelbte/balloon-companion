@@ -29,12 +29,22 @@ function samePlace(left: Pick<FavoriteWeatherPlace, "id" | "latitude" | "longitu
   return left.id === right.id || (Math.abs(left.latitude - right.latitude) < 0.000001 && Math.abs(left.longitude - right.longitude) < 0.000001);
 }
 
-export function addOrReuseFavoriteWeatherPlace(favorites: readonly FavoriteWeatherPlace[], place: GeocodingResult, addedAt = new Date().toISOString()): { favorites: FavoriteWeatherPlace[]; selected: FavoriteWeatherPlace } {
+export function addOrReuseFavoriteWeatherPlace(favorites: readonly FavoriteWeatherPlace[], place: GeocodingResult, addedAt = new Date().toISOString(), displayName?: string): { favorites: FavoriteWeatherPlace[]; selected: FavoriteWeatherPlace } {
   const existing = favorites.find((favorite) => samePlace(favorite, place));
   if (existing) return { favorites: [...favorites], selected: existing };
   const syncId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : undefined;
-  const favorite: FavoriteWeatherPlace = { id: place.id.trim() || `weather-${place.latitude.toFixed(6)}:${place.longitude.toFixed(6)}`, ...(syncId ? { syncId } : {}), name: place.name.split(",")[0]?.trim() || place.name.trim(), latitude: place.latitude, longitude: place.longitude, createdAt: addedAt, updatedAt: addedAt };
+  const favorite: FavoriteWeatherPlace = { id: place.id.trim() || `weather-${place.latitude.toFixed(6)}:${place.longitude.toFixed(6)}`, ...(syncId ? { syncId } : {}), name: displayName?.trim() || place.name.split(",")[0]?.trim() || place.name.trim(), latitude: place.latitude, longitude: place.longitude, createdAt: addedAt, updatedAt: addedAt };
   return { favorites: [...favorites, favorite], selected: favorite };
+}
+
+export function renameFavoriteWeatherPlace(favorites: readonly FavoriteWeatherPlace[], favoriteId: string, name: string, updatedAt = new Date().toISOString()): FavoriteWeatherPlace[] {
+  const normalizedName = name.trim();
+  if (!normalizedName) return [...favorites];
+  return favorites.map((favorite) => favorite.id === favoriteId ? { ...favorite, name: normalizedName, updatedAt } : favorite);
+}
+
+export function removeFavoriteWeatherPlace(favorites: readonly FavoriteWeatherPlace[], favoriteId: string): FavoriteWeatherPlace[] {
+  return favorites.filter(({ id }) => id !== favoriteId);
 }
 
 export function loadFavoriteWeatherPlaces(): FavoriteWeatherPlace[] {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addOrReuseFavoriteWeatherPlace, loadFavoriteWeatherPlaces, saveFavoriteWeatherPlaces } from "./favoriteWeatherPlaces.ts";
+import { addOrReuseFavoriteWeatherPlace, loadFavoriteWeatherPlaces, removeFavoriteWeatherPlace, renameFavoriteWeatherPlace, saveFavoriteWeatherPlaces } from "./favoriteWeatherPlaces.ts";
 import { loadFavoriteLaunchSites, saveFavoriteLaunchSites } from "./favoriteLaunchSites.ts";
 import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
 
@@ -17,6 +17,37 @@ test("le registre Météo évite les doublons sans écrire dans Prépa", () => {
   const second = addOrReuseFavoriteWeatherPlace(first.favorites, { ...bailleul, id: "autre-id" }, "2026-08-18T09:00:00.000Z");
   assert.equal(second.favorites.length, 1);
   assert.equal(second.selected.id, bailleul.id);
+});
+
+test("la création accepte un nom personnalisé puis le renommage conserve l’ID sans duplication", () => {
+  const created = addOrReuseFavoriteWeatherPlace([], bailleul, "2026-08-18T08:00:00.000Z", "BC CLOUD TEST");
+  assert.equal(created.selected.name, "BC CLOUD TEST");
+  const renamed = renameFavoriteWeatherPlace(created.favorites, created.selected.id, "BC CLOUD TEST renommé", "2026-08-18T09:00:00.000Z");
+  assert.equal(renamed.length, 1);
+  assert.equal(renamed[0].id, created.selected.id);
+  assert.equal(renamed[0].name, "BC CLOUD TEST renommé");
+  assert.equal(renamed[0].createdAt, created.selected.createdAt);
+  assert.equal(renamed[0].updatedAt, "2026-08-18T09:00:00.000Z");
+});
+
+test("la suppression retire uniquement le favori ciblé", () => {
+  const first = addOrReuseFavoriteWeatherPlace([], bailleul, "2026-08-18T08:00:00.000Z").selected;
+  const second = addOrReuseFavoriteWeatherPlace([first], { id: "osm-lille", name: "Lille", latitude: 50.63, longitude: 3.06 }, "2026-08-18T08:01:00.000Z").selected;
+  assert.deepEqual(removeFavoriteWeatherPlace([first, second], first.id).map(({ id }) => id), [second.id]);
+});
+
+test("le rechargement USER conserve un renommage puis une suppression", () => {
+  const localStorage = storage();
+  globalThis.window = { localStorage, dispatchEvent() {} };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("weather-edit") });
+  const created = addOrReuseFavoriteWeatherPlace([], bailleul, "2026-08-18T08:00:00.000Z", "Maison").selected;
+  saveFavoriteWeatherPlaces([created]);
+  saveFavoriteWeatherPlaces(renameFavoriteWeatherPlace([created], created.id, "Terrain maison", "2026-08-18T09:00:00.000Z"));
+  assert.deepEqual(loadFavoriteWeatherPlaces().map(({ id, name }) => ({ id, name })), [{ id: created.id, name: "Terrain maison" }]);
+  saveFavoriteWeatherPlaces(removeFavoriteWeatherPlace(loadFavoriteWeatherPlaces(), created.id));
+  assert.deepEqual(loadFavoriteWeatherPlaces(), []);
+  delete globalThis.window;
 });
 
 test("favoris Météo, favoris Prépa et scopes USER/GUEST restent indépendants", () => {
@@ -48,11 +79,23 @@ test("le bouton Météo crée et sélectionne dans le registre dédié", () => {
   const context = readFileSync(new URL("../contexts/WeatherPreferencesContext.tsx", import.meta.url), "utf8");
   assert.match(page, /setWeatherPlaceDialogOpen\(true\)/);
   assert.match(page, /preferences\.addFavoriteWeatherLocation\(place\)/);
-  assert.match(context, /addOrReuseFavoriteWeatherPlace\(favorites, site\)/);
+  assert.match(context, /addOrReuseFavoriteWeatherPlace\(favorites, site, new Date\(\)\.toISOString\(\), displayName\)/);
   assert.match(context, /favoriteWeatherLocationId: result\.selected\.id/);
   assert.match(context, /saveFavoriteWeatherPlaces\(result\.favorites\)/);
   assert.doesNotMatch(context, /FavoriteLaunchSite|loadFavoriteLaunchSites|saveFavoriteLaunchSites/);
   assert.match(context, /loadHourlyWeatherForecast\(\{ \.\.\.coordinates/);
+});
+
+test("l’UI gère renommer et supprimer avec confirmation via le pipeline existant", () => {
+  const page = readFileSync(new URL("../weather/page.tsx", import.meta.url), "utf8");
+  const context = readFileSync(new URL("../contexts/WeatherPreferencesContext.tsx", import.meta.url), "utf8");
+  assert.match(page, /Gérer \$\{favorite\.name\}/);
+  assert.match(page, /preferences\.renameFavoriteWeatherLocation\(managedWeatherFavorite\.id, weatherFavoriteName\)/);
+  assert.match(page, /window\.confirm\(`Supprimer le favori/);
+  assert.match(page, /preferences\.removeFavoriteWeatherLocation\(managedWeatherFavorite\.id\)/);
+  assert.match(context, /renameFavoriteWeatherPlace\(favorites, id, name\)/);
+  assert.match(context, /removeFavoriteWeatherPlace\(favorites, id\)/);
+  assert.match(context, /saveFavoriteWeatherPlaces\(next\)/);
 });
 
 test("l’autocomplétion est temporisée, concurrent-safe et sans clic loupe", () => {
@@ -67,5 +110,6 @@ test("l’autocomplétion est temporisée, concurrent-safe et sans clic loupe", 
   assert.match(dialog, /La recherche de lieu est indisponible/);
   assert.match(dialog, /value=\{query\}/);
   assert.doesNotMatch(dialog, /onClick=\{\(\) => void search\(\)\}/);
-  assert.match(dialog, /onClick=\{\(\) => onSelect\(place\)\}/);
+  assert.match(dialog, /setSelectedPlace\(place\)/);
+  assert.match(dialog, /onSelect\(\{ \.\.\.selectedPlace, name: displayName\.trim\(\) \}\)/);
 });
