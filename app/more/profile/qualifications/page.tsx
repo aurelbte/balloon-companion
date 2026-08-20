@@ -2,7 +2,7 @@
 
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import NavigationBar from "../../../components/NavigationBar";
 import { useFlightCompletionState } from "../../../hooks/useFlightCompletionState";
 import { calculateBplMaintenance, type QualificationRequirementResult, type QualificationRequirementStatus } from "../../../lib/bplQualificationEngine";
@@ -31,13 +31,13 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
   return <div className={styles.fact}><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function QualificationSettingsForm({ priority = false, settings, onChange, onSave }: {
+function QualificationSettingsForm({ priority = false, settings, onChange, onSubmit }: {
   priority?: boolean;
   settings: QualificationProfile;
   onChange: (settings: QualificationProfile) => void;
-  onSave: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  return <form className={`${styles.settings} ${priority ? styles.prioritySettings : ""}`} onSubmit={(event) => { event.preventDefault(); onSave(); }}>
+  return <form className={`${styles.settings} ${priority ? styles.prioritySettings : ""}`} onSubmit={onSubmit}>
     <h2>{priority ? "Configurer votre profil" : "Réglages"}</h2>
     {priority && <p className={styles.priorityText}>Configurez votre profil pour calculer vos qualifications et validités.</p>}
     <div className={styles.settingsGrid}>
@@ -67,6 +67,7 @@ export default function QualificationsPage() {
   const completion = useFlightCompletionState();
   const [qualifications, setQualifications] = useState<PilotQualificationsState | null>(null);
   const [settings, setSettings] = useState<QualificationProfile | null>(null);
+  const lastSubmittedProfile = useRef<string | null>(null);
   const referenceDateIso = localIsoDate();
 
   useEffect(() => {
@@ -92,19 +93,25 @@ export default function QualificationsPage() {
 
   if (!qualifications || !settings) return null;
 
-  const saveSettings = () => {
+  const submitSettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     const configuredSettings = { ...settings, configured: true };
+    const submissionKey = JSON.stringify(configuredSettings);
+    if (lastSubmittedProfile.current === submissionKey) return;
+    lastSubmittedProfile.current = submissionKey;
     const next = { ...qualifications, profile: configuredSettings };
     if (savePilotQualifications({ profile: configuredSettings, events: qualifications.events }, window.localStorage)) {
       setSettings(configuredSettings);
       setQualifications(next);
+    } else {
+      lastSubmittedProfile.current = null;
     }
   };
 
   if (!qualifications.profile.configured) return <main className={moreStyles.screen}><div className={moreStyles.layout}>
     <Link href="/more/profile" className={moreStyles.back}><ChevronLeft size={18} aria-hidden="true" /> Profil pilote</Link>
     <header><p className={moreStyles.eyebrow}>Profil pilote</p><h1 className={moreStyles.title}>Qualifications &amp; validité</h1></header>
-    <QualificationSettingsForm priority settings={settings} onChange={setSettings} onSave={saveSettings} />
+    <QualificationSettingsForm priority settings={settings} onChange={setSettings} onSubmit={submitSettings} />
   </div><NavigationBar activeItem="Plus" /></main>;
 
   if (!view) return null;
@@ -158,6 +165,6 @@ export default function QualificationsPage() {
 
     <section className={styles.section} aria-labelledby="history-title"><h2 id="history-title">Historique</h2><div className={styles.history}>{history.length ? history.map((event) => <article className={styles.historyItem} key={event.id}><h3>{qualificationEventLabel(event.type)}</h3><div className={styles.historyMeta}><span>{formatQualificationDate(event.dateIso)}</span>{event.expiryDateIso && <span>Échéance : {formatQualificationDate(event.expiryDateIso)}</span>}{event.instructor && <span>FI(B) : {event.instructor.name}</span>}{event.examiner && <span>FE(B) : {event.examiner.name}</span>}</div>{event.officialAscensionId && (event.officialAscensionDeletedAt ? <p className={styles.deleted}>Ascension liée supprimée — preuve réglementaire conservée</p> : <Link className={styles.historyLink} href={`/journal/ascension/${encodeURIComponent(event.officialAscensionId)}`}>Voir l’ascension liée →</Link>)}</article>) : <p className={styles.empty}>Aucun événement de qualification enregistré.</p>}</div></section>
 
-    <QualificationSettingsForm settings={settings} onChange={setSettings} onSave={saveSettings} />
+    <QualificationSettingsForm settings={settings} onChange={setSettings} onSubmit={submitSettings} />
   </div><NavigationBar activeItem="Plus" /></main>;
 }

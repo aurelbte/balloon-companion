@@ -103,3 +103,13 @@ test("les cases contrôlées associent toute leur zone tactile au contrôle nati
   assert.match(styles, /touch-action: manipulation/);
   assert.match(styles, /pointer-events: none/);
 });
+
+test("le bouton Enregistrer passe exclusivement par un submit de formulaire protégé", () => {
+  assert.match(page, /<form[^>]+onSubmit=\{onSubmit\}/);
+  assert.match(page, /type="submit"/);
+  assert.match(page, /event\.preventDefault\(\)/);
+  assert.match(page, /lastSubmittedProfile\.current === submissionKey/);
+  assert.doesNotMatch(page, /<button[^>]+onClick=/);
+  assert.match(styles, /\.save \{[^}]*pointer-events: auto/);
+  assert.match(styles, /\.save \{[^}]*touch-action: manipulation/);
+});
