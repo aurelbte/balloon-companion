@@ -29,6 +29,7 @@
 .history { display: grid; gap: 0; }
 .historyMeta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; color: var(--bc-text-secondary); font-size: .67rem; }
 .historyLink { display: inline-flex; margin-top: 6px; color: var(--bc-accent); font-size: .68rem; font-weight: 650; text-decoration: none; }
+.linkKind { margin-top: 5px; color: var(--bc-text-muted); font-size: .66rem; }
 .deleted { margin-top: 6px; color: var(--bc-danger); font-size: .68rem; font-weight: 650; }
 .empty { margin-top: 9px; color: var(--bc-text-muted); font-size: .72rem; }
 .todo { border-color: color-mix(in srgb, var(--bc-accent) 45%, var(--bc-border)); }
@@ -52,6 +53,10 @@
 .eventForm label > span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
 .eventForm input, .eventForm select, .eventForm textarea { width: 100%; min-height: 44px; padding: 8px 9px; border: 1px solid var(--bc-border); border-radius: 12px; background: var(--bc-canvas); color: var(--bc-text-primary); }
 .eventForm textarea { min-height: 68px; resize: vertical; }
+.originChoice { display: grid; gap: 6px; padding: 0; border: 0; }
+.originChoice legend { margin-bottom: 5px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }
+.originChoice label { display: flex; min-height: 44px; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--bc-border); border-radius: 12px; color: var(--bc-text-secondary); font-size: .7rem; }
+.originChoice input { width: 18px; min-height: 18px; margin: 0; }
 .formError { grid-column: 1 / -1; color: var(--bc-danger); font-size: .68rem; }
 .settingsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
 .settings label > span { display: block; margin: 0 0 5px 2px; color: var(--bc-text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; }

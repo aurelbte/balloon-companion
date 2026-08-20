@@ -132,3 +132,17 @@ test("la phase 7A utilise des formulaires natifs compacts et rafraîchit immédi
   assert.match(page, /setQualifications\(next\)/);
   assert.match(page, /Organisme : \{event\.organization\}/);
 });
+
+test("la phase 7B propose les deux origines BPL avec FI/FE et un submit natif", () => {
+  assert.match(page, /function BplEventForm/);
+  assert.match(page, /Associer un vol du carnet/);
+  assert.match(page, /Ajouter un vol historique/);
+  assert.match(page, /Ajouter un contrôle historique/);
+  assert.match(page, /Instructeur FI\(B\)/);
+  assert.match(page, /Examinateur FE\(B\)/);
+  assert.match(page, /<form className=\{styles\.eventForm\} onSubmit=\{onSubmit\}>/);
+  assert.match(page, /linkBplEventToAscension/);
+  assert.match(page, /upsertHistoricalBplEvent/);
+  assert.match(page, /Lié au carnet/);
+  assert.match(page, /Historique — non lié au carnet/);
+});
