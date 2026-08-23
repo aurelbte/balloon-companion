@@ -106,7 +106,8 @@ export function recordedFlightToJournalFlight(
   options: Readonly<{ recovered?: boolean; balloonRegistration?: string }> = {},
 ): CompletionJournalFlight {
   const endedAt = source.endedAt ?? source.points.at(-1)?.timestamp ?? source.updatedAt;
-  const summary = recalculateFlightStatistics(source.points, source.startedAt, endedAt);
+  const metadataOnly = source.points.length === 0;
+  const summary = metadataOnly ? source.summary : recalculateFlightStatistics(source.points, source.startedAt, endedAt);
   const date = dateLabels(source.startedAt);
   const statisticPoints = source.points.filter(({ quality }) => quality === undefined || quality === "VALID");
   const altitudes = finiteValues(statisticPoints.map(({ altitudeMeters }) => altitudeMeters));
@@ -140,7 +141,9 @@ export function recordedFlightToJournalFlight(
       takeoffAltitudeAmslM: first?.altitudeMeters ?? null,
       landingAltitudeAmslM: last?.altitudeMeters ?? null,
       averageAltitudeAmslM: average(altitudes),
-      averageSpeedKmh: average(speeds) === null ? null : average(speeds)! * 3.6,
+      averageSpeedKmh: metadataOnly
+        ? summary.averageGroundSpeedMetersPerSecond === null ? null : summary.averageGroundSpeedMetersPerSecond * 3.6
+        : average(speeds) === null ? null : average(speeds)! * 3.6,
       minimumInFlightSpeedKmh: speeds.length ? Math.min(...speeds) * 3.6 : null,
       maximumClimbRateMps: summary.maximumClimbRateMetersPerSecond ?? null,
       maximumDescentRateMps: summary.maximumDescentRateMetersPerSecond ?? null,

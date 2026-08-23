@@ -35,7 +35,7 @@ import {
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import type { CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
-import { createBrowserBalloonPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { createBrowserBalloonPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
 import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
@@ -80,6 +80,8 @@ declare global {
       inspectPreferencePullState(): Promise<unknown>;
       pullBalloonsTargeted(): Promise<unknown>;
       inspectBalloonPullState(): Promise<unknown>;
+      pullFlightsTargeted(): Promise<unknown>;
+      inspectFlightPullState(): Promise<unknown>;
     }>;
   }
 }
@@ -932,6 +934,22 @@ async function inspectBalloonPullState(scope: `USER:${string}`) {
   } as const;
 }
 
+async function inspectFlightPullState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  const flights = await new IndexedDbRecordedFlightStorage().listFlights();
+  const journal = loadFlightCompletionState();
+  return {
+    scope,
+    localFlightCount: flights.length,
+    localFlights: flights.map(({ id, generatedTitle, points }) => ({ id, title: generatedTitle ?? null, hasLocalTrace: points.length > 0 })),
+    journalFlights: journal.journalFlights.map(({ id, sourceFlightId, generatedTitle, customTitle }) => ({ id, sourceFlightId: sourceFlightId ?? id, title: customTitle ?? generatedTitle ?? null })),
+    sidecars: (await outbox.listMetadata()).filter(({ entityType }) => entityType === "flight"),
+    cursor: await new BrowserCloudPullCursorRepository(window.localStorage).get(scope, "flight"),
+    pendingMutations: mutations.filter(({ entityType }) => entityType === "flight"),
+  } as const;
+}
+
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
   const searchParams = useSearchParams();
@@ -999,6 +1017,8 @@ export default function CloudSyncRuntime(): null {
       inspectPreferencePullState: () => inspectPreferencePullState(scope),
       pullBalloonsTargeted: () => createBrowserBalloonPullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullBalloons(),
       inspectBalloonPullState: () => inspectBalloonPullState(scope),
+      pullFlightsTargeted: () => createBrowserFlightPullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullFlights(),
+      inspectFlightPullState: () => inspectFlightPullState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     let debounceTimer: number | undefined;

@@ -71,6 +71,10 @@ function isRecordedFlight(value: unknown): value is RecordedFlight {
   );
 }
 
+export function mergeRecordedFlightFromCloud(existing: RecordedFlight | null, cloud: RecordedFlight): RecordedFlight {
+  return { ...cloud, points: existing?.points ?? [] };
+}
+
 export class MemoryRecordedFlightStorage implements RecordedFlightStorage {
   private activeFlight: RecordedFlight | null = null;
   private readonly flights = new Map<string, RecordedFlight>();
@@ -232,6 +236,23 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     return values
       .filter(isRecordedFlight)
       .sort((left, right) => right.startedAt - left.startedAt);
+  }
+
+  /** Pull-only persistence. It preserves a device trace and never enqueues. */
+  async applyFromCloudWithoutEnqueue(scope: `USER:${string}`, id: string, flight: RecordedFlight | null): Promise<boolean> {
+    if (getRuntimeDataScope() !== scope) return false;
+    const database = await this.database();
+    const existing = flight ? await this.getFlight(id) : null;
+    const value = flight ? mergeRecordedFlightFromCloud(existing, flight) : null;
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+      if (value) transaction.objectStore(FLIGHTS_STORE).put(value);
+      else transaction.objectStore(FLIGHTS_STORE).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    return true;
   }
 
   async updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null> {

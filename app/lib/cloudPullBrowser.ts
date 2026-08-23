@@ -6,6 +6,7 @@ import {
   type BalloonCloudRow,
   type FavoriteWeatherPlaceCloudRow,
   type FavoriteWeatherPlacePullConflict,
+  type FlightCloudRow,
   type PreferenceCloudRow,
   type PreferencePullDomain,
 } from "./cloudPullService.ts";
@@ -18,6 +19,9 @@ import { IndexedDbSyncOutboxStorage, type SyncMutation } from "./syncOutbox.ts";
 import { applyUnitPreferencesFromCloudWithoutEnqueue } from "./unitPreferencesStorage.ts";
 import { applyWeatherPreferencesFromCloudWithoutEnqueue } from "./weatherPreferencesStorage.ts";
 import { applyAviationPreferencesFromCloudWithoutEnqueue } from "./aviation/aviationPreferencesStorage.ts";
+import type { RecordedFlight, RecordedFlightSummary } from "./recordedFlight.ts";
+import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
+import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
 
 function quotedPostgrestValue(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -99,6 +103,76 @@ function balloonRow(value: unknown): BalloonCloudRow {
       fullCylinders: cylinders,
     },
     deletedAt: row.deleted_at,
+  };
+  return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: local };
+}
+
+type CloudFlightLocalValue = Readonly<{
+  flight: RecordedFlight;
+  journal: CloudFlightJournalMetadata;
+  balloonId: string | null;
+}>;
+
+function nullableFiniteNumber(value: unknown): number | null | undefined {
+  return value === null ? null : typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function flightSummary(value: unknown): RecordedFlightSummary {
+  if (!value || typeof value !== "object") throw new Error("Invalid flight cloud summary");
+  const summary = value as Record<string, unknown>;
+  const required = ["durationSeconds", "distanceMeters", "minAltitudeMeters", "maxAltitudeMeters", "averageGroundSpeedMetersPerSecond", "maxGroundSpeedMetersPerSecond"] as const;
+  if (required.some((key) => key.endsWith("Meters") || key.endsWith("Seconds")
+    ? typeof summary[key] !== "number" || !Number.isFinite(summary[key])
+    : nullableFiniteNumber(summary[key]) === undefined)) throw new Error("Invalid flight cloud summary");
+  return value as RecordedFlightSummary;
+}
+
+function flightRow(value: unknown): FlightCloudRow {
+  if (!value || typeof value !== "object") throw new Error("Invalid flight cloud row");
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.revision !== "number"
+    || typeof row.schema_version !== "number" || !["RECORDING", "COMPLETED", "INTERRUPTED"].includes(String(row.status))
+    || typeof row.started_at !== "string" || (row.ended_at !== null && typeof row.ended_at !== "string")
+    || typeof row.created_at !== "string" || typeof row.updated_at !== "string"
+    || (row.deleted_at !== null && typeof row.deleted_at !== "string")
+    || (row.balloon_id !== null && typeof row.balloon_id !== "string")
+    || ![null, "REAL_GPS", "MANUAL", "DEMO"].includes(row.origin as null | string)
+    || ![null, "CARNET_PENDING", "CARNET_VALIDATED", "JOURNAL_ONLY"].includes(row.logbook_status as null | string)
+    || typeof row.recovered !== "boolean") throw new Error("Invalid flight cloud row");
+  const startedAt = Date.parse(row.started_at);
+  const endedAt = row.ended_at === null ? null : Date.parse(row.ended_at as string);
+  const createdAt = Date.parse(row.created_at);
+  const updatedAt = Date.parse(row.updated_at);
+  if (![startedAt, createdAt, updatedAt, ...(endedAt === null ? [] : [endedAt])].every(Number.isFinite)) throw new Error("Invalid flight cloud dates");
+  const optionalText = (field: string) => typeof row[field] === "string" && row[field] ? row[field] as string : undefined;
+  const flight: RecordedFlight = {
+    id: row.id,
+    schemaVersion: row.schema_version,
+    status: row.status as RecordedFlight["status"],
+    startedAt,
+    endedAt,
+    points: [],
+    summary: flightSummary(row.summary),
+    createdAt,
+    updatedAt,
+    ...(optionalText("balloon_registration") ? { balloonRegistration: optionalText("balloon_registration") } : {}),
+    ...(optionalText("start_location_label") ? { startLocationLabel: optionalText("start_location_label") } : {}),
+    ...(optionalText("end_location_label") ? { endLocationLabel: optionalText("end_location_label") } : {}),
+    ...(optionalText("generated_title") ? { generatedTitle: optionalText("generated_title") } : {}),
+    ...(optionalText("notes") ? { notes: optionalText("notes") } : {}),
+    ...(optionalText("weather_model") ? { weatherModel: optionalText("weather_model") } : {}),
+    ...(row.weather_snapshot && typeof row.weather_snapshot === "object" ? { weatherSnapshot: row.weather_snapshot as RecordedFlight["weatherSnapshot"] } : {}),
+    ...(row.ground_calibration && typeof row.ground_calibration === "object" ? { groundCalibration: row.ground_calibration as RecordedFlight["groundCalibration"] } : {}),
+  };
+  const local: CloudFlightLocalValue = {
+    flight,
+    journal: {
+      customTitle: optionalText("custom_title") ?? null,
+      origin: (row.origin ?? "REAL_GPS") as CloudFlightJournalMetadata["origin"],
+      logbookStatus: (row.logbook_status ?? "CARNET_PENDING") as CloudFlightJournalMetadata["logbookStatus"],
+      recovered: row.recovered,
+    },
+    balloonId: row.balloon_id as string | null,
   };
   return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: local };
 }
@@ -251,6 +325,49 @@ export function createBrowserBalloonPullService(input: Readonly<{
         if (await balloonDocumentStorage.countByBalloonId(row.entityId) > 0) return true;
         if ((loadBalloonRegistry().balloons.find(({ id }) => id === row.entityId)?.documents.length ?? 0) > 0) return true;
         return loadPilotQualifications(input.storage).events.some(({ balloonId }) => balloonId === row.entityId);
+      },
+    },
+    recordConflict: async (_conflict, mutation, row) => {
+      await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
+    },
+  });
+}
+
+export function createBrowserFlightPullService(input: Readonly<{
+  client: SupabaseClient;
+  storage: Storage;
+  scope: `USER:${string}`;
+}>): CloudPullService {
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
+  const flights = new IndexedDbRecordedFlightStorage();
+  return new CloudPullService({
+    scope: input.scope,
+    getScope: getRuntimeDataScope,
+    getOnlineUserId: async () => {
+      const { data, error } = await input.client.auth.getUser();
+      if (error) throw new Error("Cloud pull auth unavailable");
+      return data.user?.id ?? null;
+    },
+    outbox,
+    cursors: new BrowserCloudPullCursorRepository(input.storage),
+    readPage: async () => [],
+    applyLocally: () => false,
+    flightDomain: {
+      readPage: async (cursor, limit) => {
+        let query = input.client.from("flights")
+          .select("id,user_id,revision,created_at,updated_at,deleted_at,schema_version,status,started_at,ended_at,balloon_id,balloon_registration,start_location_label,end_location_label,generated_title,custom_title,notes,origin,logbook_status,recovered,summary,weather_model,weather_snapshot,ground_calibration")
+          .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
+        if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+        const { data, error } = await query;
+        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
+        return (data ?? []).map(flightRow);
+      },
+      applyLocally: async (row) => {
+        const local = row.value as CloudFlightLocalValue;
+        const flight = row.deletedAt ? null : local.flight;
+        if (!await flights.applyFromCloudWithoutEnqueue(input.scope, row.entityId, flight)) return false;
+        return applyRecordedFlightToJournalFromCloudWithoutEnqueue(input.scope, row.entityId, flight, row.deletedAt ? null : local.journal, input.storage);
       },
     },
     recordConflict: async (_conflict, mutation, row) => {

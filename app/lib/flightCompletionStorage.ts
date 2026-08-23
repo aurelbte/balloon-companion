@@ -137,6 +137,41 @@ export function loadFlightCompletionState(): FlightCompletionState {
   }
 }
 
+export type CloudFlightJournalMetadata = Readonly<{
+  customTitle: string | null;
+  origin: CompletionJournalFlight["origin"];
+  logbookStatus: CompletionJournalFlight["logbookStatus"];
+  recovered: boolean;
+}>;
+
+/** Pull-only Journal projection; it preserves official ascensions and never enqueues. */
+export function applyRecordedFlightToJournalFromCloudWithoutEnqueue(
+  scope: `USER:${string}`,
+  id: string,
+  flight: RecordedFlight | null,
+  metadata: CloudFlightJournalMetadata | null,
+  storage: Storage = window.localStorage,
+): boolean {
+  if (typeof window === "undefined" || getRuntimeDataScope() !== scope) return false;
+  const current = loadFlightCompletionState();
+  const retained = current.journalFlights.filter(({ sourceFlightId, id: localId }) => (sourceFlightId ?? localId) !== id);
+  let journalFlights = retained;
+  if (flight && metadata) {
+    const projected = recordedFlightToJournalFlight(flight);
+    journalFlights = [...retained, {
+      ...projected,
+      ...(metadata.customTitle ? { customTitle: metadata.customTitle } : {}),
+      origin: metadata.origin,
+      logbookStatus: metadata.logbookStatus,
+      ...(metadata.recovered ? { recovered: true } : {}),
+    }];
+  }
+  const next: FlightCompletionState = { ...current, journalFlights };
+  if (!writeScopedBusinessValue(storage, STORAGE_KEY, JSON.stringify(next))) return false;
+  window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
+  return true;
+}
+
 export function persistPilotExperience(balance: {
   hours: number;
   minutes: number;

@@ -5,12 +5,13 @@ import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./sync
 export const FAVORITE_WEATHER_PLACE_PULL_DOMAIN = "favorite-weather-place";
 export const PREFERENCE_PULL_DOMAINS = ["unit-preferences", "weather-preferences", "aviation-preferences"] as const;
 export type PreferencePullDomain = typeof PREFERENCE_PULL_DOMAINS[number];
-type PullDomain = typeof FAVORITE_WEATHER_PLACE_PULL_DOMAIN | PreferencePullDomain | "balloon";
+type PullDomain = typeof FAVORITE_WEATHER_PLACE_PULL_DOMAIN | PreferencePullDomain | "balloon" | "flight";
 
 type CloudPullRow = Readonly<{ id: string; entityId: string; userId: string; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type FavoriteWeatherPlaceCloudRow = Readonly<{ id: string; userId: string; syncId: string | null; name: string; latitude: number; longitude: number; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type PreferenceCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type BalloonCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
+export type FlightCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type FavoriteWeatherPlacePullConflict = Readonly<{ entityId: string; reason: "REMOTE_ADVANCED" | "REMOTE_TOMBSTONE" | "LOCAL_CREATION_COLLISION"; cloudRevision: number; mutationId: string }>;
 export type FavoriteWeatherPlacePullAnomaly = Readonly<{ entityId: string; reason: "REMOTE_REVISION_BEHIND_LOCAL" | "LOCAL_BASE_REVISION_AHEAD" | "LOCAL_DEPENDENCY"; cloudRevision: number; localRevision: number }>;
 export type FavoriteWeatherPlacePullReport = Readonly<{ state: "COMPLETED" | "REFUSED_GUEST" | "REFUSED_NO_SESSION" | "STOPPED_USER_SWITCH" | "STOPPED_ERROR" | "BLOCKED_ANOMALY"; fetched: number; applied: number; tombstonesApplied: number; preservedLocalPending: number; conflicts: readonly FavoriteWeatherPlacePullConflict[]; anomalies: readonly FavoriteWeatherPlacePullAnomaly[]; pages: number; cursor: CloudPullCursor | null }>;
@@ -26,6 +27,7 @@ export type FavoriteWeatherPlacePullDependencies = Readonly<{
   applyLocally(row: FavoriteWeatherPlaceCloudRow): Promise<boolean> | boolean;
   preferenceDomains?: Partial<Record<PreferencePullDomain, PullDomainAdapter<PreferenceCloudRow>>>;
   balloonDomain?: PullDomainAdapter<BalloonCloudRow>;
+  flightDomain?: PullDomainAdapter<FlightCloudRow>;
   recordConflict(conflict: FavoriteWeatherPlacePullConflict, mutation: SyncMutation, row: CloudPullRow): Promise<void>;
 }>;
 
@@ -46,6 +48,7 @@ export class CloudPullService {
   pullWeatherPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("weather-preferences", pageSize); }
   pullAviationPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("aviation-preferences", pageSize); }
   pullBalloons(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.balloonDomain ? this.pullDomain("balloon", this.dependencies.balloonDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
+  pullFlights(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.flightDomain ? this.pullDomain("flight", this.dependencies.flightDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
 
   private pullPreferenceDomain(domain: PreferencePullDomain, pageSize: number): Promise<FavoriteWeatherPlacePullReport> {
     const adapter = this.dependencies.preferenceDomains?.[domain];
