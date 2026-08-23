@@ -79,5 +79,5 @@ test("la feuille de fin ne s’ouvre qu’après stockage du vol et du Journal",
   const flightPage = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
   assert.ok(tracking.indexOf("await storageRef.current.completeFlight(completed)") < tracking.indexOf("persistRecordedFlightInJournal(completed)"));
   assert.ok(tracking.indexOf("persistRecordedFlightInJournal(completed)") < tracking.indexOf("return completed"));
-  assert.match(flightPage, /if \(completed\)[\s\S]*router\.push\("\/flight\/complete"\)/);
+  assert.match(flightPage, /if \(completed\)[\s\S]*router\.push\(completionPath\(\)\)/);
 });

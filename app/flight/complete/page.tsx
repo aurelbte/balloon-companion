@@ -21,6 +21,7 @@ function formatDuration(minutes: number): string {
 
 export default function FlightCompletePage() {
   const router = useRouter();
+  const journalPath = () => `/journal${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const state = useFlightCompletionState();
   const [role, setRole] = useState<FlightRole | null>(null);
   const activeFlight = state.journalFlights.at(-1) ?? null;
@@ -30,7 +31,7 @@ export default function FlightCompletePage() {
     const timer = window.setTimeout(() => {
       const demoEnabled = process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1";
       if (demoEnabled) ensureDemoCompletionPersisted();
-      else if (!demoEnabled && state.journalFlights.length === 0) router.replace("/journal");
+      else if (!demoEnabled && state.journalFlights.length === 0) router.replace(journalPath());
     }, 100);
     return () => window.clearTimeout(timer);
   }, [router, state.journalFlights.length]);
@@ -39,7 +40,7 @@ export default function FlightCompletePage() {
     if (activeFlight) persistJournalFlightDecision(activeFlight.id, "CARNET_PENDING");
     window.sessionStorage.setItem("balloon-companion-journal-view", "flights");
     window.sessionStorage.setItem("balloon-companion-completion-deferred", activeFlight?.id ?? "");
-    router.push("/journal");
+    router.push(journalPath());
   };
 
   const officialInput = useMemo(() => {
@@ -67,7 +68,7 @@ export default function FlightCompletePage() {
     else if (officialInput) persistOfficialAscension(activeFlight.id, officialInput);
     else return;
     window.sessionStorage.setItem("balloon-companion-journal-view", "flights");
-    router.push("/journal");
+    router.push(journalPath());
   };
 
   return (

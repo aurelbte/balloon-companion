@@ -11,6 +11,7 @@ import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import { FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
+import { BALLOON_REGISTRY_STORAGE_KEY } from "./balloonStorage.ts";
 import { isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestControl.ts";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -146,6 +147,42 @@ test("les domaines interdits sont ignorés sans suppression", async () => {
   assert.equal((await value.outbox.list()).length, 4);
 });
 
+test("balloon reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
+  const value = fixture();
+  const balloon = await value.outbox.enqueue({ entityType: "balloon", entityId: "balloon-test", operation: "UPSERT" });
+  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
+  assert.equal(value.calls(), 0);
+  assert.equal((await value.service.syncMutationById(balloon.mutationId)).applied, 1);
+  assert.equal(value.calls(), 1);
+});
+
+test("flight reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
+  const value = fixture();
+  const flight = await value.outbox.enqueue({ entityType: "flight", entityId: "flight-test", operation: "UPSERT" });
+  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
+  assert.equal(value.calls(), 0);
+  assert.equal((await value.service.syncMutationById(flight.mutationId)).applied, 1);
+  assert.equal(value.calls(), 1);
+});
+
+test("logbook-entry reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
+  const value = fixture();
+  const entry = await value.outbox.enqueue({ entityType: "logbook-entry", entityId: "ascension-test", operation: "UPSERT" });
+  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
+  assert.equal(value.calls(), 0);
+  assert.equal((await value.service.syncMutationById(entry.mutationId)).applied, 1);
+  assert.equal(value.calls(), 1);
+});
+
+test("balloon-document reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
+  const value = fixture();
+  const document = await value.outbox.enqueue({ entityType: "balloon-document", entityId: "document-test", operation: "UPSERT" });
+  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
+  assert.equal(value.calls(), 0);
+  assert.equal((await value.service.syncMutationById(document.mutationId)).applied, 1);
+  assert.equal(value.calls(), 1);
+});
+
 test("le payload profil et favori exclut trace, document et Blob", async () => {
   const storage = new MemoryStorage();
   const scope = `USER:${USER_A}`;
@@ -156,6 +193,42 @@ test("le payload profil et favori exclut trace, document et Blob", async () => {
   const favorite = await provider.build({ mutationId: "y", entityType: "favorite-weather-place", entityId: "wx", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
   const serialized = JSON.stringify([profile, favorite]);
   for (const forbidden of ["points", "trace", "blob", "object_key", "storage_provider", "document"]) assert.doesNotMatch(serialized, new RegExp(forbidden, "i"));
+});
+
+test("le payload balloon reste structuré et exclut documents, traces et Blob", async () => {
+  const storage = new MemoryStorage();
+  const scope = `USER:${USER_A}`;
+  storage.setItem(scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY), JSON.stringify({ version: 5, activeBalloonId: "balloon-test", balloons: [{ id: "balloon-test", registration: "F-TEST", manufacturer: "Cameron", model: "Z105", category: "Libre à air chaud", volumeM3: 2973, applicableMtowKg: 952, configurationLimitsConfirmed: true, color: "Bleu", isFavorite: true, lastUsedAt: NOW.toISOString(), documents: [{ id: "forbidden" }], weights: { envelopeKg: 280, fullCylinders: [] } }] }));
+  const payload = await new BrowserCloudSyncPayloadProvider(storage, scope).build({ mutationId: "balloon-mutation", entityType: "balloon", entityId: "balloon-test", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
+  assert.equal(payload.serverEntityType, "balloon");
+  assert.equal(payload.serverEntityId, "balloon-test");
+  assert.equal(payload.payload.registration, "F-TEST");
+  assert.equal(payload.payload.volume_m3, 2973);
+  const serialized = JSON.stringify(payload);
+  for (const forbidden of ["document", "trace", "blob", "points", "object_key"]) assert.doesNotMatch(serialized, new RegExp(forbidden, "i"));
+});
+
+test("le payload flight reste structuré sans points, trace, document ni Blob", async () => {
+  const storage = new MemoryStorage();
+  const scope = `USER:${USER_A}`;
+  const flight = {
+    id: "flight-test", schemaVersion: 1, status: "COMPLETED",
+    startedAt: Date.parse("2026-08-21T08:00:00Z"), endedAt: Date.parse("2026-08-21T09:00:00Z"),
+    points: [{ latitude: 50.7, longitude: 3.1 }],
+    summary: { durationSeconds: 3600, distanceMeters: 12000, minAltitudeMeters: 20, maxAltitudeMeters: 800, averageGroundSpeedMetersPerSecond: 3.3, maxGroundSpeedMetersPerSecond: 7 },
+    createdAt: NOW.getTime(), updatedAt: NOW.getTime(), balloonRegistration: "F-TEST", notes: "BC CLOUD TEST",
+  };
+  storage.setItem(scopedBusinessStorageKey(scope, "balloon-companion-flight-completion-v1"), JSON.stringify({ journalFlights: [{ id: "flight-test", sourceFlightId: "flight-test", generatedTitle: "BC CLOUD TEST", origin: "REAL_GPS", logbookStatus: "CARNET_PENDING" }] }));
+  const provider = new BrowserCloudSyncPayloadProvider(storage, scope, async (id) => id === flight.id ? flight : null);
+  const payload = await provider.build({ mutationId: "flight-mutation", entityType: "flight", entityId: flight.id, operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
+  assert.equal(payload.serverEntityType, "flight");
+  assert.equal(payload.payload.started_at, "2026-08-21T08:00:00.000Z");
+  assert.equal(payload.payload.generated_title, "BC CLOUD TEST");
+  assert.equal(payload.payload.notes, "BC CLOUD TEST");
+  const serialized = JSON.stringify(payload);
+  for (const forbidden of ["points", "trace", "document", "blob", "object_key", "storage_provider", "checksum"]) assert.doesNotMatch(serialized, new RegExp(forbidden, "i"));
+  assert.equal(Object.hasOwn(payload.payload, "points"), false);
+  assert.equal(Object.hasOwn(payload.payload, "trace"), false);
 });
 
 test("un échec sidecar après confirmation garde la mutation pour replay", async () => {

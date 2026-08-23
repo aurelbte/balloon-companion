@@ -28,8 +28,11 @@ export default function BalloonDetailPage() {
       const documentCount = await balloonDocumentStorage.countByBalloonId(balloon.id);
       if (documentCount > 0 && !window.confirm(`Ce ballon contient ${documentCount} document${documentCount > 1 ? "s" : ""} enregistré${documentCount > 1 ? "s" : ""} hors ligne.\n\nSupprimer le ballon et ses documents ?`)) return;
       if (documentCount > 0) await balloonDocumentStorage.deleteByBalloonId(balloon.id);
-      deleteBalloon(balloon.id);
-      router.push("/more/profile/balloons");
+      if (await deleteBalloon(balloon.id)) {
+        const targeted = new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted";
+        router.push(`/more/profile/balloons${targeted ? "?cloudSyncTest=targeted" : ""}`);
+      }
+      else window.alert("La suppression n’a pas pu être enregistrée dans la file de synchronisation locale.");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "La suppression n’a pas pu être terminée.");
     }

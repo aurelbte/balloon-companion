@@ -30,6 +30,56 @@ export const FLIGHT_COMPLETION_STORAGE_KEY = "balloon-companion-flight-completio
 const STORAGE_KEY = FLIGHT_COMPLETION_STORAGE_KEY;
 export const FLIGHT_COMPLETION_EVENT = "balloon-companion-flight-completion-changed";
 
+type JournalFlightCloudMutation = Readonly<{
+  entityId: string;
+  operation: "UPSERT" | "DELETE";
+}>;
+
+type OfficialAscensionCloudMutation = Readonly<{
+  entityId: string;
+  operation: "UPSERT" | "DELETE";
+}>;
+
+function lightweightJournalFlight(flight: CompletionJournalFlight): CompletionJournalFlight {
+  return { ...flight, sourceFlightId: flight.sourceFlightId ?? flight.id, points: [] };
+}
+
+export function journalFlightCloudMutations(
+  previous: readonly CompletionJournalFlight[],
+  next: readonly CompletionJournalFlight[],
+): JournalFlightCloudMutation[] {
+  const previousById = new Map(previous.map((flight) => {
+    const lightweight = lightweightJournalFlight(flight);
+    return [lightweight.sourceFlightId!, lightweight] as const;
+  }));
+  const nextById = new Map(next.map((flight) => {
+    const lightweight = lightweightJournalFlight(flight);
+    return [lightweight.sourceFlightId!, lightweight] as const;
+  }));
+  const removed = [...previousById.keys()]
+    .filter((entityId) => !nextById.has(entityId))
+    .map((entityId) => ({ entityId, operation: "DELETE" as const }));
+  const upserted = [...nextById.entries()]
+    .filter(([entityId, flight]) => JSON.stringify(previousById.get(entityId)) !== JSON.stringify(flight))
+    .map(([entityId]) => ({ entityId, operation: "UPSERT" as const }));
+  return [...removed, ...upserted];
+}
+
+export function officialAscensionCloudMutations(
+  previous: readonly OfficialAscension[],
+  next: readonly OfficialAscension[],
+): OfficialAscensionCloudMutation[] {
+  const previousById = new Map(previous.map((ascension) => [ascension.id, ascension] as const));
+  const nextById = new Map(next.map((ascension) => [ascension.id, ascension] as const));
+  const removed = [...previousById.keys()]
+    .filter((entityId) => !nextById.has(entityId))
+    .map((entityId) => ({ entityId, operation: "DELETE" as const }));
+  const upserted = [...nextById.entries()]
+    .filter(([entityId, ascension]) => JSON.stringify(previousById.get(entityId)) !== JSON.stringify(ascension))
+    .map(([entityId]) => ({ entityId, operation: "UPSERT" as const }));
+  return [...removed, ...upserted];
+}
+
 function normalizeState(value: unknown): FlightCompletionState | null {
   if (!value || typeof value !== "object") return null;
   const state = value as Partial<FlightCompletionState>;
@@ -130,19 +180,22 @@ export function persistManualOfficialAscension(
 export function saveFlightCompletionState(state: FlightCompletionState): boolean {
   if (typeof window === "undefined") return false;
   try {
-    const previousAscensionIds = new Set(loadFlightCompletionState().officialAscensions.map(({ id }) => id));
+    const previousState = loadFlightCompletionState();
+    const previousAscensionIds = new Set(previousState.officialAscensions.map(({ id }) => id));
     const nextAscensionIds = new Set(state.officialAscensions.map(({ id }) => id));
     const removedAscensionIds = [...previousAscensionIds].filter((id) => !nextAscensionIds.has(id));
     const lightweightState: FlightCompletionState = {
       ...state,
-      journalFlights: state.journalFlights.map((flight) => ({
-        ...flight,
-        sourceFlightId: flight.sourceFlightId ?? flight.id,
-        points: [],
-      })),
+      journalFlights: state.journalFlights.map(lightweightJournalFlight),
     };
     if (!writeScopedBusinessValue(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState))) return false;
     enqueueLocalSyncMutation("flight-completion", "singleton");
+    for (const mutation of journalFlightCloudMutations(previousState.journalFlights, lightweightState.journalFlights)) {
+      enqueueLocalSyncMutation("flight", mutation.entityId, mutation.operation);
+    }
+    for (const mutation of officialAscensionCloudMutations(previousState.officialAscensions, lightweightState.officialAscensions)) {
+      enqueueLocalSyncMutation("logbook-entry", mutation.entityId, mutation.operation);
+    }
     if (removedAscensionIds.length) {
       const qualifications = loadPilotQualifications(window.localStorage);
       const retained = removedAscensionIds.reduce(

@@ -12,7 +12,14 @@ import {
 } from "./cloudSyncService.ts";
 import { FAVORITE_LAUNCH_SITES_STORAGE_KEY, type FavoriteLaunchSite } from "./favoriteLaunchSites.ts";
 import { FAVORITE_WEATHER_PLACES_STORAGE_KEY, type FavoriteWeatherPlace } from "./favoriteWeatherPlaces.ts";
+import { BALLOON_REGISTRY_STORAGE_KEY, type BalloonRegistry } from "./balloonStorage.ts";
+import { balloonDisplayName } from "./balloons.ts";
+import type { BalloonDocument } from "./balloonDocuments.ts";
+import { IndexedDbBalloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+import { officialAscensionFlightNature, officialAscensionMovementCounts, type FlightCompletionState } from "./flightCompletion.ts";
+import type { RecordedFlight } from "./recordedFlight.ts";
+import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { normalizePilotProfile } from "./pilotProfile.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import { IndexedDbSyncOutboxStorage, type SyncMutation, type SyncOutboxStorage } from "./syncOutbox.ts";
@@ -55,7 +62,14 @@ export class BrowserCloudSyncIssueRepository implements CloudSyncIssueRepository
 export class BrowserCloudSyncPayloadProvider {
   private readonly storage: Storage;
   private readonly scope: `USER:${string}`;
-  constructor(storage: Storage, scope: `USER:${string}`) { this.storage = storage; this.scope = scope; }
+  private readonly loadRecordedFlight: (id: string) => Promise<RecordedFlight | null>;
+  private readonly loadBalloonDocument: (id: string) => Promise<BalloonDocument | null>;
+  constructor(
+    storage: Storage,
+    scope: `USER:${string}`,
+    loadRecordedFlight: (id: string) => Promise<RecordedFlight | null> = (id) => new IndexedDbRecordedFlightStorage().getFlight(id),
+    loadBalloonDocument: (id: string) => Promise<BalloonDocument | null> = (id) => new IndexedDbBalloonDocumentStorage().getDocument(id),
+  ) { this.storage = storage; this.scope = scope; this.loadRecordedFlight = loadRecordedFlight; this.loadBalloonDocument = loadBalloonDocument; }
 
   async build(mutation: SyncMutation): Promise<CloudSyncPayload | null> {
     if (mutation.entityType === "pilot-profile") {
@@ -120,6 +134,96 @@ export class BrowserCloudSyncPayloadProvider {
         latitude: favorite.latitude,
         longitude: favorite.longitude,
       } : {} };
+    }
+    if (mutation.entityType === "balloon") {
+      const value = readJson(this.storage, this.scope, BALLOON_REGISTRY_STORAGE_KEY) as Partial<BalloonRegistry> | null;
+      const balloon = Array.isArray(value?.balloons) ? value.balloons.find(({ id }) => id === mutation.entityId) : undefined;
+      return { serverEntityType: "balloon", serverEntityId: mutation.entityId, payload: balloon ? {
+        registration: balloon.registration,
+        display_name: balloonDisplayName(balloon),
+        manufacturer: balloon.manufacturer,
+        model: balloon.model,
+        category: balloon.category,
+        volume_m3: balloon.volumeM3,
+        applicable_mtom_kg: balloon.applicableMtowKg ?? null,
+        configuration_limits_confirmed: balloon.configurationLimitsConfirmed,
+        color: balloon.color ?? null,
+        weights: balloon.weights,
+        is_favorite: balloon.isFavorite === true,
+        last_used_at: balloon.lastUsedAt ?? null,
+      } : {} };
+    }
+    if (mutation.entityType === "flight") {
+      const flight = mutation.operation === "DELETE" ? null : await this.loadRecordedFlight(mutation.entityId);
+      const completion = readJson(this.storage, this.scope, FLIGHT_COMPLETION_STORAGE_KEY) as Partial<FlightCompletionState> | null;
+      const journal = completion?.journalFlights?.find(({ sourceFlightId, id }) => (sourceFlightId ?? id) === mutation.entityId);
+      return { serverEntityType: "flight", serverEntityId: mutation.entityId, payload: flight ? {
+        schema_version: flight.schemaVersion,
+        status: flight.status,
+        started_at: new Date(flight.startedAt).toISOString(),
+        ended_at: flight.endedAt === null ? null : new Date(flight.endedAt).toISOString(),
+        balloon_id: null,
+        balloon_registration: flight.balloonRegistration ?? journal?.balloonRegistration ?? null,
+        start_location_label: flight.startLocationLabel ?? journal?.startLocationLabel ?? null,
+        end_location_label: flight.endLocationLabel ?? journal?.endLocationLabel ?? null,
+        generated_title: flight.generatedTitle ?? journal?.generatedTitle ?? null,
+        custom_title: journal?.customTitle ?? null,
+        notes: flight.notes ?? journal?.notes ?? null,
+        origin: journal?.origin ?? "REAL_GPS",
+        logbook_status: journal?.logbookStatus ?? "CARNET_PENDING",
+        recovered: journal?.recovered === true,
+        summary: flight.summary,
+        weather_model: flight.weatherModel ?? null,
+        weather_snapshot: flight.weatherSnapshot ?? null,
+        ground_calibration: flight.groundCalibration ?? null,
+      } : {} };
+    }
+    if (mutation.entityType === "logbook-entry") {
+      const completion = readJson(this.storage, this.scope, FLIGHT_COMPLETION_STORAGE_KEY) as Partial<FlightCompletionState> | null;
+      const ascension = completion?.officialAscensions?.find(({ id }) => id === mutation.entityId);
+      if (!ascension) return mutation.operation === "DELETE"
+        ? { serverEntityType: "logbook_entry", serverEntityId: mutation.entityId, payload: {} }
+        : null;
+      const movements = officialAscensionMovementCounts(ascension);
+      return { serverEntityType: "logbook_entry", serverEntityId: mutation.entityId, payload: {
+        flight_id: ascension.sourceFlightId,
+        source: ascension.source,
+        date_iso: ascension.dateIso,
+        balloon_model: ascension.balloonModel,
+        balloon_manufacturer: ascension.balloonManufacturer ?? null,
+        registration: ascension.registration,
+        departure: ascension.departure,
+        arrival: ascension.arrival,
+        category: ascension.category,
+        pilot_function: ascension.pilotFunction,
+        night_flight: ascension.nightFlight,
+        maximum_altitude_m: ascension.maximumAltitudeM,
+        gps_duration_minutes: ascension.gpsDurationMinutes,
+        official_duration_minutes: ascension.officialDurationMinutes,
+        observations: ascension.observations,
+        flight_nature: officialAscensionFlightNature(ascension),
+        takeoff_count: movements.takeoffs,
+        landing_count: movements.landings,
+        instructor: ascension.instructor ?? null,
+        examiner: ascension.examiner ?? null,
+      } };
+    }
+    if (mutation.entityType === "balloon-document") {
+      const document = mutation.operation === "DELETE" ? null : await this.loadBalloonDocument(mutation.entityId);
+      if (!document) return mutation.operation === "DELETE"
+        ? { serverEntityType: "document", serverEntityId: mutation.entityId, payload: {} }
+        : null;
+      return { serverEntityType: "document", serverEntityId: mutation.entityId, payload: {
+        balloon_id: document.balloonId,
+        category: document.category,
+        title: document.title,
+        original_filename: document.originalFileName,
+        mime_type: document.mimeType,
+        size_bytes: document.sizeBytes,
+        notes: document.notes ?? null,
+        issue_date: document.issueDate ?? null,
+        expiry_date: document.expiryDate ?? null,
+      } };
     }
     return null;
   }

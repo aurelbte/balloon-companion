@@ -2,7 +2,7 @@ import { createBalloon, REGISTERED_BALLOONS, updateBalloon, type Balloon, type B
 import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 export const BALLOON_REGISTRY_VERSION = 5;
-const STORAGE_KEY = "balloon-companion-balloons";
+export const BALLOON_REGISTRY_STORAGE_KEY = "balloon-companion-balloons";
 export const BALLOON_REGISTRY_EVENT = "balloon-companion:balloons-changed";
 export const NEW_BALLOON_SELECTION_KEY = "balloon-companion-new-balloon-selection";
 export const NEW_BALLOON_RETURN_KEY = "balloon-companion-balloon-return";
@@ -57,10 +57,23 @@ export function addBalloonToRegistry(registry: BalloonRegistry, input: BalloonIn
 export function updateBalloonInRegistry(registry: BalloonRegistry, id: string, input: BalloonInput): BalloonRegistry { const current = registry.balloons.find((item) => item.id === id); if (!current) return registry; return { ...registry, balloons: registry.balloons.map((item) => item.id === id ? updateBalloon(current, input) : item) }; }
 export function removeBalloonFromRegistry(registry: BalloonRegistry, id: string): BalloonRegistry { if (!registry.balloons.some((item) => item.id === id)) return registry; return { ...registry, balloons: registry.balloons.filter((item) => item.id !== id), activeBalloonId: registry.activeBalloonId === id ? null : registry.activeBalloonId }; }
 export function setActiveBalloonInRegistry(registry: BalloonRegistry, id: string): BalloonRegistry { return registry.balloons.some((item) => item.id === id) ? { ...registry, activeBalloonId: id } : registry; }
-export function loadBalloonRegistry(): BalloonRegistry { const empty = createEmptyBalloonRegistry(); if (typeof window === "undefined" || !getRuntimeDataScope()) return empty; try { const raw = readScopedBusinessValue(window.localStorage, STORAGE_KEY); if (!raw) return empty; return migrateBalloonRegistry(JSON.parse(raw)); } catch { return empty; } }
-export function saveBalloonRegistry(registry: BalloonRegistry): void { if (typeof window === "undefined") return; if (writeScopedBusinessValue(window.localStorage, STORAGE_KEY, JSON.stringify(registry))) { enqueueLocalSyncMutation("balloon-registry", "singleton"); window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT)); } }
+export function loadBalloonRegistry(): BalloonRegistry { const empty = createEmptyBalloonRegistry(); if (typeof window === "undefined" || !getRuntimeDataScope()) return empty; try { const raw = readScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY); if (!raw) return empty; return migrateBalloonRegistry(JSON.parse(raw)); } catch { return empty; } }
+export function saveBalloonRegistry(registry: BalloonRegistry): void { if (typeof window === "undefined") return; if (writeScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(registry))) window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT)); }
 export function loadBalloons(): Balloon[] { return [...loadBalloonRegistry().balloons]; }
-export function addBalloon(input: BalloonInput): Balloon { const result = addBalloonToRegistry(loadBalloonRegistry(), input); saveBalloonRegistry(result.registry); enqueueLocalSyncMutation("balloon", result.balloon.id); return result.balloon; }
-export function editBalloon(id: string, input: BalloonInput): void { saveBalloonRegistry(updateBalloonInRegistry(loadBalloonRegistry(), id, input)); enqueueLocalSyncMutation("balloon", id); }
-export function deleteBalloon(id: string): void { saveBalloonRegistry(removeBalloonFromRegistry(loadBalloonRegistry(), id)); enqueueLocalSyncMutation("balloon", id, "DELETE"); }
+async function saveBalloonMutationDurably(registry: BalloonRegistry, entityId: string, operation: "UPSERT" | "DELETE", enqueue: typeof enqueueLocalSyncMutation): Promise<boolean> {
+  const scope = getRuntimeDataScope();
+  if (!scope || typeof window === "undefined") return false;
+  if (scope === "GUEST") { saveBalloonRegistry(registry); void enqueue("balloon", entityId, operation); return true; }
+  const previous = loadBalloonRegistry();
+  if (!writeScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(registry))) return false;
+  if (!await enqueue("balloon", entityId, operation)) {
+    writeScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(previous));
+    return false;
+  }
+  window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT));
+  return true;
+}
+export async function addBalloon(input: BalloonInput, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<Balloon | null> { const result = addBalloonToRegistry(loadBalloonRegistry(), input); return await saveBalloonMutationDurably(result.registry, result.balloon.id, "UPSERT", enqueue) ? result.balloon : null; }
+export async function editBalloon(id: string, input: BalloonInput, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<boolean> { return saveBalloonMutationDurably(updateBalloonInRegistry(loadBalloonRegistry(), id, input), id, "UPSERT", enqueue); }
+export async function deleteBalloon(id: string, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<boolean> { return saveBalloonMutationDurably(removeBalloonFromRegistry(loadBalloonRegistry(), id), id, "DELETE", enqueue); }
 export function setActiveBalloon(id: string): void { saveBalloonRegistry(setActiveBalloonInRegistry(loadBalloonRegistry(), id)); }

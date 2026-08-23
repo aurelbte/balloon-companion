@@ -82,6 +82,44 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
     const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite");
     try { transaction.objectStore(FILES_STORE).add({ documentId: id, storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).add(document); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", id); this.notify(); return document; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); }
   }
+  /** Metadata-only creation used by the controlled DEV Cloud test; no file-store entry is created. */
+  async addMetadataOnlyDocumentForCloudTest(
+    metadata: NewBalloonDocumentMetadata,
+    fileMetadata: Readonly<{ originalFileName: string; mimeType: string; sizeBytes: number }>,
+  ): Promise<BalloonDocument> {
+    if (!metadata.title.trim() || !fileMetadata.originalFileName.trim() || fileMetadata.mimeType !== "application/pdf" || fileMetadata.sizeBytes <= 0) {
+      throw new BalloonDocumentStorageError("WRITE_FAILED", "Métadonnées du document de test invalides.");
+    }
+    const database = await this.database();
+    const id = identifier();
+    const now = new Date().toISOString();
+    const document: BalloonDocument = {
+      id,
+      balloonId: metadata.balloonId,
+      category: metadata.category,
+      title: metadata.title.trim(),
+      originalFileName: fileMetadata.originalFileName.trim(),
+      mimeType: fileMetadata.mimeType,
+      sizeBytes: fileMetadata.sizeBytes,
+      createdAt: now,
+      updatedAt: now,
+      storageKey: `metadata-only/${metadata.balloonId}/${id}`,
+      ...(metadata.notes?.trim() ? { notes: metadata.notes.trim() } : {}),
+      ...(metadata.issueDate ? { issueDate: metadata.issueDate } : {}),
+      ...(metadata.expiryDate ? { expiryDate: metadata.expiryDate } : {}),
+    };
+    const transaction = database.transaction(DOCUMENTS_STORE, "readwrite");
+    transaction.objectStore(DOCUMENTS_STORE).add(document);
+    await transactionDone(transaction);
+    if (!await enqueueLocalSyncMutation("balloon-document", id)) {
+      const rollback = database.transaction(DOCUMENTS_STORE, "readwrite");
+      rollback.objectStore(DOCUMENTS_STORE).delete(id);
+      await transactionDone(rollback);
+      throw new BalloonDocumentStorageError("WRITE_FAILED", "Mutation Cloud locale du document non persistée.");
+    }
+    this.notify();
+    return document;
+  }
   async updateDocument(documentId: string, changes: BalloonDocumentChanges): Promise<BalloonDocument> { const current = await this.getDocument(documentId); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const updated = { ...current, ...changes, title: changes.title?.trim() || current.title, updatedAt: new Date().toISOString() }; const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readwrite"); transaction.objectStore(DOCUMENTS_STORE).put(updated); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId); this.notify(); return updated; }
   async replaceDocumentFile(documentId: string, file: File): Promise<BalloonDocument> { const validation = validateBalloonDocumentFile(file); if (validation) throw new BalloonDocumentStorageError("WRITE_FAILED", validation); const current = await this.getDocument(documentId); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const updated = { ...current, originalFileName: file.name, mimeType: supportedBalloonDocumentMimeType(file)!, sizeBytes: file.size, updatedAt: new Date().toISOString() }; const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).put({ documentId, storageKey: current.storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).put(updated); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId); this.notify(); return updated; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); } }
   async deleteDocument(documentId: string): Promise<void> { const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).delete(documentId); transaction.objectStore(DOCUMENTS_STORE).delete(documentId); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId, "DELETE"); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }

@@ -11,6 +11,7 @@ export const PHASE_3A_SYNC_ENTITY_TYPES = Object.freeze([
 ] as const);
 
 export type Phase3ASyncEntityType = typeof PHASE_3A_SYNC_ENTITY_TYPES[number];
+export const PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = Object.freeze([...PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "flight", "logbook-entry", "balloon-document"] as const);
 export type CloudMutationStatus = "APPLIED" | "ALREADY_APPLIED" | "CONFLICT" | "NOT_FOUND";
 
 export type CloudMutationRequest = Readonly<{
@@ -87,7 +88,8 @@ export type CloudSyncPassResult = Readonly<{
   ignored: number;
 }>;
 
-const ALLOWED_TYPES = new Set<string>(PHASE_3A_SYNC_ENTITY_TYPES);
+const AUTOMATIC_ALLOWED_TYPES = new Set<string>(PHASE_3A_SYNC_ENTITY_TYPES);
+const TARGETED_ALLOWED_TYPES = new Set<string>(PHASE_3B_TARGETED_SYNC_ENTITY_TYPES);
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
 const BASE_BACKOFF_MS = 5 * 1000;
 
@@ -111,7 +113,7 @@ export class CloudSyncService {
   async syncPendingMutations(): Promise<CloudSyncPassResult> {
     const authorization = await this.authorizePass();
     if ("state" in authorization) return authorization;
-    return this.processMutations(await this.dependencies.outbox.list(), authorization);
+    return this.processMutations(await this.dependencies.outbox.list(), authorization, AUTOMATIC_ALLOWED_TYPES);
   }
 
   async syncMutationById(mutationId: string): Promise<CloudSyncPassResult> {
@@ -119,7 +121,7 @@ export class CloudSyncService {
     if ("state" in authorization) return authorization;
     const mutation = (await this.dependencies.outbox.list()).find((candidate) => candidate.mutationId === mutationId);
     if (!mutation) return this.result("COMPLETED");
-    return this.processMutations([mutation], authorization);
+    return this.processMutations([mutation], authorization, TARGETED_ALLOWED_TYPES);
   }
 
   private async authorizePass(): Promise<Readonly<{ scope: `USER:${string}`; userId: string }> | CloudSyncPassResult> {
@@ -137,12 +139,13 @@ export class CloudSyncService {
   private async processMutations(
     mutations: readonly SyncMutation[],
     authorization: Readonly<{ scope: `USER:${string}`; userId: string }>,
+    allowedTypes: ReadonlySet<string>,
   ): Promise<CloudSyncPassResult> {
     const counters = { applied: 0, conflicts: 0, notFound: 0, ignored: 0 };
     const now = (this.dependencies.now ?? (() => new Date()))();
 
     for (const candidate of mutations) {
-      if (!ALLOWED_TYPES.has(candidate.entityType)) { counters.ignored += 1; continue; }
+      if (!allowedTypes.has(candidate.entityType)) { counters.ignored += 1; continue; }
       if (!isEligible(candidate, now)) continue;
       if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
 

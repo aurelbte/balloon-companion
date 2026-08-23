@@ -13,6 +13,7 @@ import {
 } from "./balloons.ts";
 import { balloonMassFormDraft, canSubmitHydratedBalloonForm } from "./balloonFormHydration.ts";
 import {
+  addBalloon,
   addBalloonToRegistry,
   BALLOON_REGISTRY_VERSION,
   createDefaultBalloonRegistry,
@@ -21,7 +22,13 @@ import {
   removeBalloonFromRegistry,
   setActiveBalloonInRegistry,
   updateBalloonInRegistry,
+  editBalloon,
+  deleteBalloon,
+  loadBalloonRegistry,
+  saveBalloonRegistry,
 } from "./balloonStorage.ts";
+import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
+import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
 const weights = {
   envelopeKg: 285,
@@ -236,4 +243,42 @@ test("la migration récupère uniquement les anciennes masses dont la correspond
   assert.deepEqual(migrated.balloons[0].weights, { envelopeKg: 118, burnerKg: 45, basketKg: 124, fullCylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }] });
   assert.deepEqual(migrated.balloons[0].legacyWeightRecovery, { envelopeWeightKg: 118, burnerWeightKg: 45, basketWeightKg: 124, cylinders: [{ id: "legacy-1", label: "Cylindre historique", fullWeightKg: 128 }] });
   assert.equal(calculateBalloonWeight(migrated.balloons[0].weights), 415);
+});
+
+function memoryStorage() { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)), removeItem: (key) => values.delete(key) }; }
+
+test("3B.1 persiste UPSERT puis DELETE balloon durablement sans duplication", async () => {
+  const localStorage = memoryStorage();
+  globalThis.window = { localStorage, dispatchEvent() {} };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "balloon-user", email: "balloon@example.com", firstName: "", lastName: "" } });
+  const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => "balloon-mutation", now: () => "2026-08-21T10:00:00.000Z" } });
+  const enqueue = async (entityType, entityId, operation = "UPSERT") => { await outbox.enqueue({ entityType, entityId, operation }); return true; };
+  const created = await addBalloon({ ...input, registration: "F-TEST" }, enqueue);
+  assert.ok(created);
+  assert.deepEqual((await outbox.list()).map(({ entityType, entityId, operation }) => ({ entityType, entityId, operation })), [{ entityType: "balloon", entityId: created.id, operation: "UPSERT" }]);
+  assert.equal(await editBalloon(created.id, { ...input, registration: "F-TES2" }, enqueue), true);
+  assert.equal(loadBalloonRegistry().balloons[0].id, created.id);
+  assert.equal((await outbox.list()).length, 1);
+  assert.equal(await deleteBalloon(created.id, enqueue), true);
+  assert.deepEqual((await outbox.list()).map(({ entityType, entityId, operation }) => ({ entityType, entityId, operation })), [{ entityType: "balloon", entityId: created.id, operation: "DELETE" }]);
+  assert.deepEqual(loadBalloonRegistry().balloons, []);
+  delete globalThis.window;
+});
+
+test("3B.1 restaure le registre USER si l’outbox échoue et conserve GUEST local", async () => {
+  const localStorage = memoryStorage();
+  globalThis.window = { localStorage, dispatchEvent() {} };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "balloon-failure", email: "failure@example.com", firstName: "", lastName: "" } });
+  const existing = createBalloon({ ...input, registration: "F-TEST" }, "balloon-test");
+  saveBalloonRegistry({ version: BALLOON_REGISTRY_VERSION, balloons: [existing], activeBalloonId: existing.id });
+  assert.equal(await deleteBalloon(existing.id, async () => false), false);
+  assert.equal(loadBalloonRegistry().balloons[0].id, existing.id);
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  saveBalloonRegistry({ version: BALLOON_REGISTRY_VERSION, balloons: [existing], activeBalloonId: existing.id });
+  assert.equal(await deleteBalloon(existing.id, async () => false), true);
+  assert.deepEqual(loadBalloonRegistry().balloons, []);
+  delete globalThis.window;
 });

@@ -57,6 +57,20 @@ test("DELETE remplace un UPSERT non tenté et crée un tombstone", async () => {
   assert.equal((await storage.getMetadata("document", "d1"))?.deletedAt, "2026-08-18T10:00:00.000Z");
 });
 
+test("un DELETE A ne bloque pas la fusion immédiate de l’UPSERT B en DELETE B", async () => {
+  const storage = deterministicStorage();
+  await storage.enqueue({ entityType: "flight", entityId: "A", operation: "DELETE" });
+  const upsertB = await storage.enqueue({ entityType: "flight", entityId: "B", operation: "UPSERT" });
+  const deleteB = await storage.enqueue({ entityType: "flight", entityId: "B", operation: "DELETE" });
+  const mutations = await storage.list();
+
+  assert.equal(deleteB.mutationId, upsertB.mutationId);
+  assert.deepEqual(mutations.map(({ entityId, operation }) => ({ entityId, operation })), [
+    { entityId: "A", operation: "DELETE" },
+    { entityId: "B", operation: "DELETE" },
+  ]);
+});
+
 test("un retry conserve mutationId, incrémente attempts puis peut être supprimé", async () => {
   const storage = deterministicStorage();
   const mutation = await storage.enqueue({ entityType: "balloon", entityId: "b1", operation: "UPSERT" });
@@ -81,4 +95,27 @@ test("les métadonnées legacy commencent à revision zéro en UTC", () => {
     revision: 0,
     updatedAt: "2026-08-18T10:00:00.000Z",
   });
+});
+
+test("removeMany retire atomiquement la sélection logique sans toucher aux autres", async () => {
+  const storage = deterministicStorage();
+  const first = await storage.enqueue({ entityType: "weather-preferences", entityId: "singleton", operation: "UPSERT" });
+  await storage.markAttempt(first.mutationId);
+  const second = await storage.enqueue({ entityType: "weather-preferences", entityId: "singleton", operation: "UPSERT" });
+  const other = await storage.enqueue({ entityType: "flight", entityId: "flight-a", operation: "UPSERT" });
+  await storage.removeMany([first.mutationId, second.mutationId]);
+  assert.deepEqual((await storage.list()).map(({ mutationId }) => mutationId), [other.mutationId]);
+});
+
+test("listMetadata inventorie les sidecars sans les modifier", async () => {
+  const storage = deterministicStorage();
+  await storage.enqueue({ entityType: "weather-preferences", entityId: "singleton", operation: "UPSERT" });
+  await storage.enqueue({ entityType: "flight", entityId: "flight-a", operation: "DELETE" });
+  const before = await storage.listMetadata();
+  const after = await storage.listMetadata();
+  assert.deepEqual(after, before);
+  assert.deepEqual(before.map(({ entityType, entityId, revision }) => ({ entityType, entityId, revision })), [
+    { entityType: "flight", entityId: "flight-a", revision: 0 },
+    { entityType: "weather-preferences", entityId: "singleton", revision: 0 },
+  ]);
 });

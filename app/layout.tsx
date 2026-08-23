@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { FlightRuntimeProvider } from "./contexts/FlightRuntimeContext";
@@ -47,7 +48,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <BalloonAuthProvider><CloudSyncRuntime /><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
+        <BalloonAuthProvider><Suspense fallback={null}><CloudSyncRuntime /></Suspense><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
       </body>
     </html>
   );

@@ -30,6 +30,28 @@ export interface RecordedFlightStorage {
   deleteFlight(id: string): Promise<void>;
 }
 
+type RecordedFlightDeletionDependencies = Readonly<{
+  id: string;
+  previous: RecordedFlight | null;
+  scope: LocalDataScope | null;
+  deleteLocal: () => Promise<void>;
+  restoreLocal: (flight: RecordedFlight) => Promise<void>;
+  enqueueDelete: () => Promise<boolean>;
+}>;
+
+export async function deleteRecordedFlightWithCloudMutation({
+  previous,
+  scope,
+  deleteLocal,
+  restoreLocal,
+  enqueueDelete,
+}: RecordedFlightDeletionDependencies): Promise<void> {
+  await deleteLocal();
+  if (await enqueueDelete() || !scope?.startsWith("USER:")) return;
+  if (previous) await restoreLocal(previous);
+  throw new Error("Mutation flight DELETE non persistée");
+}
+
 function isRecordedFlight(value: unknown): value is RecordedFlight {
   if (!value || typeof value !== "object") return false;
   const flight = value as Partial<RecordedFlight>;
@@ -172,7 +194,16 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
-    enqueueLocalSyncMutation("recorded-flight", flight.id);
+    if (!await enqueueLocalSyncMutation("flight", flight.id) && getRuntimeDataScope()?.startsWith("USER:")) {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction([FLIGHTS_STORE, ACTIVE_FLIGHT_STORE], "readwrite");
+        transaction.objectStore(FLIGHTS_STORE).delete(flight.id);
+        transaction.objectStore(ACTIVE_FLIGHT_STORE).put({ key: ACTIVE_FLIGHT_KEY, flight } satisfies ActiveFlightRecord);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+      throw new Error("Mutation flight UPSERT non persistée");
+    }
   }
 
   async getFlight(id: string): Promise<RecordedFlight | null> {
@@ -205,6 +236,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
 
   async updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null> {
     const database = await this.database();
+    let previous: RecordedFlight | null = null;
     const updated = await new Promise<RecordedFlight | null>((resolve, reject) => {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
       const store = transaction.objectStore(FLIGHTS_STORE);
@@ -212,6 +244,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       const request = store.get(id);
       request.onsuccess = () => {
         if (!isRecordedFlight(request.result)) return;
+        previous = structuredClone(request.result);
         updated = { ...request.result, updatedAt: Date.now() };
         if (notes) updated.notes = notes;
         else delete updated.notes;
@@ -221,18 +254,41 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
-    if (updated) enqueueLocalSyncMutation("recorded-flight", id);
+    if (updated && !await enqueueLocalSyncMutation("flight", id) && getRuntimeDataScope()?.startsWith("USER:")) {
+      if (previous) await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+        transaction.objectStore(FLIGHTS_STORE).put(previous);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+      throw new Error("Mutation flight UPSERT non persistée");
+    }
     return updated;
   }
 
   async deleteFlight(id: string): Promise<void> {
     const database = await this.database();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
-      transaction.objectStore(FLIGHTS_STORE).delete(id);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
+    const previous = await this.getFlight(id);
+    const scope = getRuntimeDataScope();
+    await deleteRecordedFlightWithCloudMutation({
+      id,
+      previous,
+      scope,
+      deleteLocal: () => new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+        transaction.objectStore(FLIGHTS_STORE).delete(id);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      }),
+      restoreLocal: (flight) => new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+        transaction.objectStore(FLIGHTS_STORE).put(flight);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      }),
+      enqueueDelete: () => enqueueLocalSyncMutation("flight", id, "DELETE"),
     });
-    enqueueLocalSyncMutation("recorded-flight", id, "DELETE");
   }
 }

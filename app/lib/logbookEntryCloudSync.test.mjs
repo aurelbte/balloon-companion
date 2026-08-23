@@ -1,0 +1,68 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { BrowserCloudSyncPayloadProvider } from "./cloudSyncBrowser.ts";
+import { officialAscensionCloudMutations } from "./flightCompletionStorage.ts";
+import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
+import { FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+
+const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const scope = `USER:${USER_ID}`;
+
+class MemoryStorage {
+  values = new Map();
+  get length() { return this.values.size; }
+  clear() { this.values.clear(); }
+  getItem(key) { return this.values.get(key) ?? null; }
+  key(index) { return [...this.values.keys()][index] ?? null; }
+  removeItem(key) { this.values.delete(key); }
+  setItem(key, value) { this.values.set(key, String(value)); }
+}
+
+const ascension = {
+  id: "ascension-a", sourceFlightId: "flight-a", source: "GPS_BALLOON_COMPANION",
+  dateIso: "2026-08-23", date: "23 août 2026", balloonModel: "Z105", balloonManufacturer: "Cameron",
+  registration: "F-TEST", departure: "Boeschepe", arrival: "Lille", category: "Libre à air chaud",
+  pilotFunction: "Pilote", nightFlight: false, maximumAltitudeM: 850, gpsDurationMinutes: 60,
+  officialDurationMinutes: 55, flightNature: "TRAINING_BPL", takeoffCount: 2, landingCount: 2,
+  instructor: { name: "Alice", licenceNumber: "FI-1" }, observations: "RAS",
+};
+
+test("OfficialAscension produit un payload logbook_entry complet sans date localisée", async () => {
+  const storage = new MemoryStorage();
+  storage.setItem(scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY), JSON.stringify({ officialAscensions: [ascension] }));
+  const payload = await new BrowserCloudSyncPayloadProvider(storage, scope).build({
+    mutationId: "mutation-a", entityType: "logbook-entry", entityId: ascension.id,
+    operation: "UPSERT", baseRevision: 0, createdAt: "2026-08-23T10:00:00.000Z", attempts: 0,
+  });
+  assert.equal(payload.serverEntityType, "logbook_entry");
+  assert.equal(payload.payload.flight_id, "flight-a");
+  assert.equal(payload.payload.flight_nature, "TRAINING_BPL");
+  assert.equal(payload.payload.takeoff_count, 2);
+  assert.deepEqual(payload.payload.instructor, ascension.instructor);
+  assert.equal("date" in payload.payload, false);
+  assert.equal(payload.payload.date_iso, "2026-08-23");
+});
+
+test("le diff OfficialAscension produit UPSERT et DELETE par identifiant", () => {
+  assert.deepEqual(officialAscensionCloudMutations([], [ascension]), [{ entityId: "ascension-a", operation: "UPSERT" }]);
+  assert.deepEqual(officialAscensionCloudMutations([ascension], [{ ...ascension, observations: "Vent faible" }]), [{ entityId: "ascension-a", operation: "UPSERT" }]);
+  assert.deepEqual(officialAscensionCloudMutations([ascension], []), [{ entityId: "ascension-a", operation: "DELETE" }]);
+});
+
+test("logbook-entry reste exclu du drain global et autorisé en ciblé", () => {
+  const service = readFileSync(new URL("./cloudSyncService.ts", import.meta.url), "utf8");
+  const automatic = service.match(/PHASE_3A_SYNC_ENTITY_TYPES = Object\.freeze\(\[([\s\S]*?)\]/)?.[1] ?? "";
+  const targeted = service.match(/PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = Object\.freeze\(([^\n]+)/)?.[1] ?? "";
+  assert.doesNotMatch(automatic, /logbook-entry/);
+  assert.match(targeted, /logbook-entry/);
+});
+
+test("la migration ajoute le schéma et le protocole logbook_entry sans être appliquée", () => {
+  const migration = readFileSync(new URL("../../supabase/migrations/20260823120000_cloud_sync_logbook_entries.sql", import.meta.url), "utf8");
+  for (const field of ["flight_nature", "takeoff_count", "landing_count", "instructor", "examiner"]) assert.match(migration, new RegExp(field));
+  assert.match(migration, /logbook_entries_user_date_idx/);
+  assert.match(migration, /where flight_id is not null and deleted_at is null/);
+  for (const status of ["ALREADY_APPLIED", "CONFLICT", "NOT_FOUND", "APPLIED"]) assert.match(migration, new RegExp(status));
+  assert.match(migration, /set deleted_at = statement_timestamp\(\)/);
+});

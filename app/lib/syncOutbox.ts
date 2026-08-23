@@ -29,10 +29,12 @@ export interface SyncOutboxStorage {
   enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation>;
   list(): Promise<SyncMutation[]>;
   getMetadata(entityType: string, entityId: string): Promise<StoredSyncMetadata | null>;
+  listMetadata(): Promise<StoredSyncMetadata[]>;
   setMetadata(metadata: StoredSyncMetadata): Promise<void>;
   markAttempt(mutationId: string, input?: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
   updateMutation(mutationId: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
   remove(mutationId: string): Promise<void>;
+  removeMany(mutationIds: readonly string[]): Promise<void>;
 }
 
 type SyncOutboxDependencies = Readonly<{
@@ -111,6 +113,9 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
   async getMetadata(entityType: string, entityId: string): Promise<StoredSyncMetadata | null> {
     return this.metadata.get(metadataKey(entityType, entityId)) ?? null;
   }
+  async listMetadata(): Promise<StoredSyncMetadata[]> {
+    return [...this.metadata.values()].sort((left, right) => left.entityType.localeCompare(right.entityType) || left.entityId.localeCompare(right.entityId));
+  }
 
   async setMetadata(metadata: StoredSyncMetadata): Promise<void> {
     this.metadata.set(metadataKey(metadata.entityType, metadata.entityId), metadata);
@@ -134,6 +139,9 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
 
   async remove(mutationIdValue: string): Promise<void> {
     this.mutations.delete(mutationIdValue);
+  }
+  async removeMany(mutationIds: readonly string[]): Promise<void> {
+    for (const mutationIdValue of mutationIds) this.mutations.delete(mutationIdValue);
   }
 }
 
@@ -204,6 +212,15 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       request.onerror = () => reject(request.error);
     });
   }
+  async listMetadata(): Promise<StoredSyncMetadata[]> {
+    const database = await this.database();
+    return new Promise((resolve, reject) => {
+      const request = database.transaction(SYNC_METADATA_STORE).objectStore(SYNC_METADATA_STORE).getAll();
+      request.onsuccess = () => resolve((request.result as StoredSyncMetadata[])
+        .sort((left, right) => left.entityType.localeCompare(right.entityType) || left.entityId.localeCompare(right.entityId)));
+      request.onerror = () => reject(request.error);
+    });
+  }
 
   async setMetadata(metadata: StoredSyncMetadata): Promise<void> {
     const database = await this.database();
@@ -262,20 +279,36 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       transaction.onerror = () => reject(transaction.error);
     });
   }
+  async removeMany(mutationIds: readonly string[]): Promise<void> {
+    if (mutationIds.length === 0) return;
+    const database = await this.database();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
+      const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
+      for (const mutationIdValue of mutationIds) store.delete(mutationIdValue);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
 }
 
 const runtimeStorages = new Map<LocalDataScope, IndexedDbSyncOutboxStorage>();
 let enqueueChain: Promise<unknown> = Promise.resolve();
 
-export function enqueueLocalSyncMutation(entityType: string, entityId: string, operation: SyncOperation = "UPSERT"): void {
+export function enqueueLocalSyncMutation(entityType: string, entityId: string, operation: SyncOperation = "UPSERT"): Promise<boolean> {
   const scope = getRuntimeDataScope();
-  if (typeof indexedDB === "undefined" || !scope) return;
+  if (typeof indexedDB === "undefined" || !scope) return Promise.resolve(false);
   const storage = runtimeStorages.get(scope) ?? new IndexedDbSyncOutboxStorage(scope);
   runtimeStorages.set(scope, storage);
-  enqueueChain = enqueueChain.catch(() => undefined).then(async () => {
+  const queued = enqueueChain.catch(() => undefined).then(async () => {
     await storage.enqueue({ entityType, entityId, operation });
     window.dispatchEvent(new Event(SYNC_MUTATION_ENQUEUED_EVENT));
+    return true;
   }).catch((error: unknown) => {
     if (process.env.NODE_ENV === "development") console.error("[syncOutbox] Mutation locale non enregistrée", { entityType, entityId, operation, error });
+    return false;
   });
+  enqueueChain = queued;
+  return queued;
 }

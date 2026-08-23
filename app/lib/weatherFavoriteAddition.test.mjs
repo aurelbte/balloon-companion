@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addOrReuseFavoriteWeatherPlace, loadFavoriteWeatherPlaces, removeFavoriteWeatherPlace, renameFavoriteWeatherPlace, saveFavoriteWeatherPlaces } from "./favoriteWeatherPlaces.ts";
+import { addOrReuseFavoriteWeatherPlace, loadFavoriteWeatherPlaces, removeFavoriteWeatherPlace, renameFavoriteWeatherPlace, saveFavoriteWeatherPlaces, saveFavoriteWeatherPlacesWithDurableOutbox } from "./favoriteWeatherPlaces.ts";
 import { loadFavoriteLaunchSites, saveFavoriteLaunchSites } from "./favoriteLaunchSites.ts";
 import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
+import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
 const user = (id) => ({ id, email: `${id}@example.com`, firstName: "", lastName: "" });
 const bailleul = { id: "osm-bailleul", name: "Bailleul, Nord, France", latitude: 50.7359, longitude: 2.7359 };
@@ -46,6 +47,40 @@ test("le rechargement USER conserve un renommage puis une suppression", () => {
   saveFavoriteWeatherPlaces(renameFavoriteWeatherPlace([created], created.id, "Terrain maison", "2026-08-18T09:00:00.000Z"));
   assert.deepEqual(loadFavoriteWeatherPlaces().map(({ id, name }) => ({ id, name })), [{ id: created.id, name: "Terrain maison" }]);
   saveFavoriteWeatherPlaces(removeFavoriteWeatherPlace(loadFavoriteWeatherPlaces(), created.id));
+  assert.deepEqual(loadFavoriteWeatherPlaces(), []);
+  delete globalThis.window;
+});
+
+test("le DELETE USER 103178767 est durable avant de finaliser la suppression", async () => {
+  const localStorage = storage();
+  globalThis.window = { localStorage, dispatchEvent() {} };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("cloud-delete") });
+  const favorite = addOrReuseFavoriteWeatherPlace([], { ...bailleul, id: "103178767" }, "2026-08-21T08:00:00.000Z", "BC CLOUD TEST").selected;
+  saveFavoriteWeatherPlaces([favorite]);
+  const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => "delete-mutation", now: () => "2026-08-21T09:00:00.000Z" } });
+  const saved = await saveFavoriteWeatherPlacesWithDurableOutbox([], async (entityType, entityId, operation) => { await outbox.enqueue({ entityType, entityId, operation }); return true; });
+  assert.equal(saved, true);
+  assert.deepEqual(await outbox.list(), [{ mutationId: "delete-mutation", entityType: "favorite-weather-place", entityId: "103178767", operation: "DELETE", baseRevision: 0, createdAt: "2026-08-21T09:00:00.000Z", attempts: 0 }]);
+  assert.deepEqual(loadFavoriteWeatherPlaces(), []);
+  delete globalThis.window;
+});
+
+test("un échec d’enqueue USER restaure le favori et GUEST reste local", async () => {
+  const localStorage = storage();
+  globalThis.window = { localStorage, dispatchEvent() {} };
+  const favorite = addOrReuseFavoriteWeatherPlace([], { ...bailleul, id: "103178767" }, "2026-08-21T08:00:00.000Z", "BC CLOUD TEST").selected;
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("cloud-failure") });
+  saveFavoriteWeatherPlaces([favorite]);
+  assert.equal(await saveFavoriteWeatherPlacesWithDurableOutbox([], async () => false), false);
+  assert.deepEqual(loadFavoriteWeatherPlaces().map(({ id }) => id), ["103178767"]);
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  saveFavoriteWeatherPlaces([favorite]);
+  let guestEnqueueCalled = false;
+  assert.equal(await saveFavoriteWeatherPlacesWithDurableOutbox([], async () => { guestEnqueueCalled = true; return false; }), true);
+  assert.equal(guestEnqueueCalled, false);
   assert.deepEqual(loadFavoriteWeatherPlaces(), []);
   delete globalThis.window;
 });
@@ -95,7 +130,8 @@ test("l’UI gère renommer et supprimer avec confirmation via le pipeline exist
   assert.match(page, /preferences\.removeFavoriteWeatherLocation\(managedWeatherFavorite\.id\)/);
   assert.match(context, /renameFavoriteWeatherPlace\(favorites, id, name\)/);
   assert.match(context, /removeFavoriteWeatherPlace\(favorites, id\)/);
-  assert.match(context, /saveFavoriteWeatherPlaces\(next\)/);
+  assert.match(context, /await saveFavoriteWeatherPlacesWithDurableOutbox\(next\)/);
+  assert.match(page, /Suppression non enregistrée\. Réessayez\./);
 });
 
 test("l’autocomplétion est temporisée, concurrent-safe et sans clic loupe", () => {

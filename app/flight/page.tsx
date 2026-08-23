@@ -63,6 +63,7 @@ import { qnhHpaFromMetar } from "../weather/aviationPresentation";
 
 export default function FlightPage() {
   const router = useRouter();
+  const completionPath = () => `/flight/complete${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
     gpsProjection: true,
@@ -109,7 +110,7 @@ export default function FlightPage() {
 
   useEffect(() => {
     if (!demoFlightEnding) return;
-    const timer = window.setTimeout(() => router.push("/flight/complete"), 850);
+    const timer = window.setTimeout(() => router.push(completionPath()), 850);
     return () => window.clearTimeout(timer);
   }, [demoFlightEnding, router]);
 
@@ -279,7 +280,7 @@ export default function FlightPage() {
 
   const handleDemoFlightEnd = useCallback(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      router.push("/flight/complete");
+      router.push(completionPath());
       return;
     }
     setDemoFlightEnding(true);
@@ -292,7 +293,7 @@ export default function FlightPage() {
     if (completed) {
       setStopConfirmationOpen(false);
       stopGeolocation();
-      router.push("/flight/complete");
+      router.push(completionPath());
     }
   }, [router, stopGeolocation, stopTracking]);
 

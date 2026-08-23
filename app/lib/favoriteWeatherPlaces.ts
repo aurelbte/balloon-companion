@@ -1,4 +1,4 @@
-import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import type { GeocodingResult } from "./trajectory/integration.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
@@ -74,4 +74,29 @@ export function saveFavoriteWeatherPlaces(favorites: readonly FavoriteWeatherPla
     window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT));
   }
   return saved;
+}
+
+export async function saveFavoriteWeatherPlacesWithDurableOutbox(
+  favorites: readonly FavoriteWeatherPlace[],
+  enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation,
+): Promise<boolean> {
+  if (getRuntimeDataScope() === "GUEST") return saveFavoriteWeatherPlaces(favorites);
+  if (typeof window === "undefined") return false;
+  const previous = loadFavoriteWeatherPlaces();
+  const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites }));
+  if (!saved) return false;
+  const mutations = [
+    ...favorites.flatMap((favorite) => {
+      const prior = previous.find(({ id }) => id === favorite.id);
+      return !prior || JSON.stringify(prior) !== JSON.stringify(favorite) ? [{ entityId: favorite.id, operation: "UPSERT" as const }] : [];
+    }),
+    ...previous.filter(({ id }) => !favorites.some((favorite) => favorite.id === id)).map(({ id }) => ({ entityId: id, operation: "DELETE" as const })),
+  ];
+  const durable = (await Promise.all(mutations.map(({ entityId, operation }) => enqueue("favorite-weather-place", entityId, operation)))).every(Boolean);
+  if (!durable) {
+    writeScopedBusinessValue(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites: previous }));
+    return false;
+  }
+  window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT));
+  return true;
 }
