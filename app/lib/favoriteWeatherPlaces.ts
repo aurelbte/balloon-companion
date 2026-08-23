@@ -1,4 +1,4 @@
-import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import type { GeocodingResult } from "./trajectory/integration.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
@@ -57,6 +57,47 @@ export function loadFavoriteWeatherPlaces(): FavoriteWeatherPlace[] {
     return value.favorites.filter((place): place is FavoriteWeatherPlace => Boolean(place && typeof place === "object" && valid(place as Partial<FavoriteWeatherPlace>)))
       .filter((place, index, all) => all.findIndex((candidate) => samePlace(candidate, place)) === index);
   } catch { return []; }
+}
+
+export type CloudFavoriteWeatherPlace = Readonly<{
+  id: string;
+  syncId?: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}>;
+
+/** Pull-only hydration primitive. It never calls the outbox or emits its enqueue event. */
+export function applyFavoriteWeatherPlaceFromCloudWithoutEnqueue(
+  scope: `USER:${string}`,
+  cloud: CloudFavoriteWeatherPlace,
+  storage: Storage = window.localStorage,
+): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY);
+  let current: FavoriteWeatherPlace[] = [];
+  try {
+    const value = JSON.parse(storage.getItem(key) ?? "null") as { version?: unknown; favorites?: unknown } | null;
+    if (value?.version === VERSION && Array.isArray(value.favorites)) {
+      current = value.favorites.filter((place): place is FavoriteWeatherPlace => Boolean(place && typeof place === "object" && valid(place as Partial<FavoriteWeatherPlace>)));
+    }
+  } catch {}
+  const retained = current.filter(({ id }) => id !== cloud.id);
+  const next = cloud.deletedAt ? retained : [...retained, {
+    id: cloud.id,
+    ...(cloud.syncId ? { syncId: cloud.syncId } : {}),
+    name: cloud.name,
+    latitude: cloud.latitude,
+    longitude: cloud.longitude,
+    createdAt: cloud.createdAt,
+    updatedAt: cloud.updatedAt,
+  }];
+  storage.setItem(key, JSON.stringify({ version: VERSION, favorites: next }));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(FAVORITE_WEATHER_PLACES_EVENT));
+  return true;
 }
 
 export function saveFavoriteWeatherPlaces(favorites: readonly FavoriteWeatherPlace[]): boolean {

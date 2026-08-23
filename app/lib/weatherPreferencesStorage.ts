@@ -1,4 +1,4 @@
-import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const WEATHER_PREFERENCES_STORAGE_KEY = "balloon-companion-weather-preferences-v1";
@@ -20,4 +20,19 @@ export function saveWeatherPreferences(value: WeatherPreferences): boolean {
   const saved = writeScopedBusinessValue(window.localStorage, WEATHER_PREFERENCES_STORAGE_KEY, JSON.stringify(value));
   if (saved) enqueueLocalSyncMutation("weather-preferences", "singleton");
   return saved;
+}
+
+/** Pull-only hydration primitive; deliberately bypasses the mutation outbox. */
+export function applyWeatherPreferencesFromCloudWithoutEnqueue(scope: `USER:${string}`, value: unknown, deleted: boolean, storage: Storage = window.localStorage): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, WEATHER_PREFERENCES_STORAGE_KEY);
+  if (deleted) storage.removeItem(key);
+  else {
+    const candidate = value && typeof value === "object" ? value as Partial<WeatherPreferences> : EMPTY_WEATHER_PREFERENCES;
+    storage.setItem(key, JSON.stringify({
+      favoriteWeatherLocationId: typeof candidate.favoriteWeatherLocationId === "string" ? candidate.favoriteWeatherLocationId : null,
+      weatherModel: typeof candidate.weatherModel === "string" ? candidate.weatherModel : null,
+    } satisfies WeatherPreferences));
+  }
+  return true;
 }

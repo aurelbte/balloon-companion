@@ -1,4 +1,4 @@
-import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { DEFAULT_UNIT_PREFERENCES, type UnitPreferences } from "./unitPreferences.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
@@ -35,4 +35,13 @@ export function saveUnitPreferences(value: UnitPreferences): boolean {
   const saved = writeScopedBusinessValue(localStorage, UNIT_PREFERENCES_STORAGE_KEY, JSON.stringify(normalizeUnitPreferences(value)));
   if (saved) enqueueLocalSyncMutation("unit-preferences", "singleton");
   return saved;
+}
+
+/** Pull-only hydration primitive; deliberately bypasses the mutation outbox. */
+export function applyUnitPreferencesFromCloudWithoutEnqueue(scope: `USER:${string}`, value: unknown, deleted: boolean, storage: Storage = window.localStorage): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, UNIT_PREFERENCES_STORAGE_KEY);
+  if (deleted) storage.removeItem(key);
+  else storage.setItem(key, JSON.stringify(normalizeUnitPreferences(value)));
+  return true;
 }

@@ -1,4 +1,4 @@
-import { readScopedBusinessValue, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
 import { normalizeAirportIcao } from "./aviationWeather.ts";
 import { enqueueLocalSyncMutation } from "../syncOutbox.ts";
 
@@ -23,4 +23,21 @@ export function saveAviationPreferences(airportIcao: string | null, favorites: r
   const value: AviationPreferences = { airportIcao: normalizedAirport, favorites: normalizedFavorites, initialized: true };
   if (typeof window !== "undefined" && writeScopedBusinessValue(window.localStorage, AVIATION_PREFERENCES_STORAGE_KEY, JSON.stringify(value))) enqueueLocalSyncMutation("aviation-preferences", "singleton");
   return value;
+}
+
+/** Pull-only hydration primitive; deliberately bypasses the mutation outbox. */
+export function applyAviationPreferencesFromCloudWithoutEnqueue(scope: `USER:${string}`, value: unknown, deleted: boolean, storage: Storage = window.localStorage): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, AVIATION_PREFERENCES_STORAGE_KEY);
+  if (deleted) { storage.removeItem(key); return true; }
+  const candidate = value && typeof value === "object" ? value as { airportIcao?: unknown; favorites?: unknown } : {};
+  const airportIcao = normalizeAirportIcao(typeof candidate.airportIcao === "string" ? candidate.airportIcao : null) ?? null;
+  const favorites = Array.isArray(candidate.favorites) ? candidate.favorites.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const icao = normalizeAirportIcao((item as { icao?: string }).icao);
+    const name = (item as { name?: unknown }).name;
+    return icao && typeof name === "string" && name.trim() ? [{ icao, name: name.trim() }] : [];
+  }).filter((item, index, all) => all.findIndex(({ icao }) => icao === item.icao) === index) : [];
+  storage.setItem(key, JSON.stringify({ airportIcao, favorites, initialized: true } satisfies AviationPreferences));
+  return true;
 }

@@ -35,6 +35,9 @@ import {
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import type { CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
+import { createBrowserFavoriteWeatherPlacePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
+import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
 import { loadWeatherPreferences, saveWeatherPreferences } from "../../lib/weatherPreferencesStorage.ts";
 import { loadAviationPreferences, saveAviationPreferences } from "../../lib/aviation/aviationPreferencesStorage.ts";
@@ -69,6 +72,12 @@ declare global {
       inspectProtectedPreferenceConflictState(): Promise<unknown>;
       resolveProtectedPreferenceConflictLocalWins(entityType: string): Promise<unknown>;
       auditCloudSyncFinalState(): Promise<unknown>;
+      pullFavoriteWeatherPlacesTargeted(): Promise<unknown>;
+      inspectFavoriteWeatherPullTestState(): Promise<unknown>;
+      pullUnitPreferencesTargeted(): Promise<unknown>;
+      pullWeatherPreferencesTargeted(): Promise<unknown>;
+      pullAviationPreferencesTargeted(): Promise<unknown>;
+      inspectPreferencePullState(): Promise<unknown>;
     }>;
   }
 }
@@ -838,6 +847,75 @@ async function auditCloudSyncFinalState(scope: `USER:${string}`) {
   } as const;
 }
 
+const FAVORITE_WEATHER_PULL_TEST_ID = "bc-pull-targeted-test-20260823-v1";
+
+async function inspectFavoriteWeatherPullTestState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  const favorite = loadFavoriteWeatherPlaces().find(({ id }) => id === FAVORITE_WEATHER_PULL_TEST_ID) ?? null;
+  return {
+    scope,
+    testId: FAVORITE_WEATHER_PULL_TEST_ID,
+    localFavoriteCount: loadFavoriteWeatherPlaces().length,
+    localFavorite: favorite,
+    targetMutations: mutations.filter(({ entityType, entityId }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN && entityId === FAVORITE_WEATHER_PULL_TEST_ID),
+    outboxTotal: mutations.length,
+    sidecar: await outbox.getMetadata(FAVORITE_WEATHER_PLACE_PULL_DOMAIN, FAVORITE_WEATHER_PULL_TEST_ID),
+    cursor: await new BrowserCloudPullCursorRepository(window.localStorage).get(scope, FAVORITE_WEATHER_PLACE_PULL_DOMAIN),
+  } as const;
+}
+
+async function pullFavoriteWeatherPlacesTargetedWithVerification(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const before = await outbox.list();
+  let enqueueEvents = 0;
+  const countEnqueue = () => { enqueueEvents += 1; };
+  window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, countEnqueue);
+  try {
+    const report = await createBrowserFavoriteWeatherPlacePullService({
+      client: createBrowserSupabaseClient(),
+      storage: window.localStorage,
+      scope,
+    }).pullFavoriteWeatherPlaces();
+    const after = await outbox.list();
+    return {
+      ...report,
+      controlledVerification: {
+        enqueueEvents,
+        outboxBefore: before.length,
+        outboxAfter: after.length,
+        targetMutationsAfter: after.filter(({ entityType, entityId }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN && entityId === FAVORITE_WEATHER_PULL_TEST_ID).length,
+      },
+    } as const;
+  } finally {
+    window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, countEnqueue);
+  }
+}
+
+async function inspectPreferencePullState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  const cursors = new BrowserCloudPullCursorRepository(window.localStorage);
+  const definitions = [
+    { domain: "unit-preferences" as const, local: loadUnitPreferences() },
+    { domain: "weather-preferences" as const, local: loadWeatherPreferences() },
+    { domain: "aviation-preferences" as const, local: loadAviationPreferences() },
+  ];
+  return {
+    scope,
+    domains: Object.fromEntries(await Promise.all(definitions.map(async ({ domain, local }) => {
+      const pending = mutations.filter(({ entityType, entityId }) => entityType === domain && entityId === "singleton");
+      return [domain, {
+        local,
+        sidecar: await outbox.getMetadata(domain, "singleton"),
+        cursor: await cursors.get(scope, domain),
+        mutations: pending,
+        hasPending: pending.length > 0,
+      }] as const;
+    }))),
+  } as const;
+}
+
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
   const searchParams = useSearchParams();
@@ -897,6 +975,12 @@ export default function CloudSyncRuntime(): null {
       inspectProtectedPreferenceConflictState: () => inspectProtectedPreferenceConflictState(scope),
       resolveProtectedPreferenceConflictLocalWins: resolveProtectedConflict,
       auditCloudSyncFinalState: () => auditCloudSyncFinalState(scope),
+      pullFavoriteWeatherPlacesTargeted: () => pullFavoriteWeatherPlacesTargetedWithVerification(scope),
+      inspectFavoriteWeatherPullTestState: () => inspectFavoriteWeatherPullTestState(scope),
+      pullUnitPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullUnitPreferences(),
+      pullWeatherPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullWeatherPreferences(),
+      pullAviationPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullAviationPreferences(),
+      inspectPreferencePullState: () => inspectPreferencePullState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     let debounceTimer: number | undefined;
