@@ -1,5 +1,5 @@
 import { createBalloon, REGISTERED_BALLOONS, updateBalloon, type Balloon, type BalloonInput } from "./balloons.ts";
-import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 export const BALLOON_REGISTRY_VERSION = 5;
 export const BALLOON_REGISTRY_STORAGE_KEY = "balloon-companion-balloons";
@@ -42,6 +42,7 @@ function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Ballo
     configurationLimitsConfirmed: allowStoredConfirmation && item.configurationLimitsConfirmed === true,
     ...(typeof item.color === "string" && item.color ? { color: item.color } : {}),
     ...(item.isFavorite ? { isFavorite: true } : {}),
+    ...(typeof item.lastUsedAt === "string" && Number.isFinite(Date.parse(item.lastUsedAt)) ? { lastUsedAt: item.lastUsedAt } : {}),
     documents: Array.isArray(item.documents) ? item.documents : [],
     ...(Object.keys(legacyWeightRecovery).length > 0 ? { legacyWeightRecovery } : {}),
     weights: {
@@ -60,6 +61,42 @@ export function setActiveBalloonInRegistry(registry: BalloonRegistry, id: string
 export function loadBalloonRegistry(): BalloonRegistry { const empty = createEmptyBalloonRegistry(); if (typeof window === "undefined" || !getRuntimeDataScope()) return empty; try { const raw = readScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY); if (!raw) return empty; return migrateBalloonRegistry(JSON.parse(raw)); } catch { return empty; } }
 export function saveBalloonRegistry(registry: BalloonRegistry): void { if (typeof window === "undefined") return; if (writeScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(registry))) window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT)); }
 export function loadBalloons(): Balloon[] { return [...loadBalloonRegistry().balloons]; }
+export type CloudBalloon = Omit<Balloon, "documents" | "legacyWeightRecovery"> & Readonly<{ deletedAt: string | null }>;
+/** Pull-only hydration primitive; never invokes the business mutation pipeline. */
+export function applyBalloonFromCloudWithoutEnqueue(scope: `USER:${string}`, cloud: CloudBalloon, storage: Storage = window.localStorage): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY);
+  let registry = createEmptyBalloonRegistry();
+  try { registry = migrateBalloonRegistry(JSON.parse(storage.getItem(key) ?? "null")); } catch {}
+  const current = registry.balloons.find(({ id }) => id === cloud.id);
+  const cloudBalloon = {
+    id: cloud.id,
+    registration: cloud.registration,
+    manufacturer: cloud.manufacturer,
+    model: cloud.model,
+    category: cloud.category,
+    volumeM3: cloud.volumeM3,
+    ...(cloud.applicableMtowKg === undefined ? {} : { applicableMtowKg: cloud.applicableMtowKg }),
+    configurationLimitsConfirmed: cloud.configurationLimitsConfirmed,
+    ...(cloud.color ? { color: cloud.color } : {}),
+    ...(cloud.isFavorite ? { isFavorite: true } : {}),
+    ...(cloud.lastUsedAt ? { lastUsedAt: cloud.lastUsedAt } : {}),
+    documents: current?.documents ?? [],
+    ...(current?.legacyWeightRecovery ? { legacyWeightRecovery: current.legacyWeightRecovery } : {}),
+    weights: cloud.weights,
+  } satisfies Balloon;
+  const balloons = cloud.deletedAt
+    ? registry.balloons.filter(({ id }) => id !== cloud.id)
+    : current
+      ? registry.balloons.map((balloon) => balloon.id === cloud.id ? cloudBalloon : balloon)
+      : [...registry.balloons, cloudBalloon];
+  const activeBalloonId = cloud.deletedAt
+    ? registry.activeBalloonId === cloud.id ? null : registry.activeBalloonId
+    : registry.activeBalloonId ?? cloud.id;
+  storage.setItem(key, JSON.stringify({ version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId } satisfies BalloonRegistry));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT));
+  return true;
+}
 async function saveBalloonMutationDurably(registry: BalloonRegistry, entityId: string, operation: "UPSERT" | "DELETE", enqueue: typeof enqueueLocalSyncMutation): Promise<boolean> {
   const scope = getRuntimeDataScope();
   if (!scope || typeof window === "undefined") return false;

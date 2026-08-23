@@ -3,11 +3,15 @@ import { getRuntimeDataScope } from "./auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository } from "./cloudSyncBrowser.ts";
 import {
   CloudPullService,
+  type BalloonCloudRow,
   type FavoriteWeatherPlaceCloudRow,
   type FavoriteWeatherPlacePullConflict,
   type PreferenceCloudRow,
   type PreferencePullDomain,
 } from "./cloudPullService.ts";
+import { applyBalloonFromCloudWithoutEnqueue, loadBalloonRegistry, type CloudBalloon } from "./balloonStorage.ts";
+import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
+import { loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import { BrowserCloudPullCursorRepository, type CloudPullCursor } from "./cloudPullState.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { IndexedDbSyncOutboxStorage, type SyncMutation } from "./syncOutbox.ts";
@@ -53,6 +57,50 @@ function preferenceRow(value: unknown, domain: PreferencePullDomain): Preference
     ? { airportIcao: typeof row.airport_icao === "string" ? row.airport_icao : null, favorites: Array.isArray(row.favorites) ? row.favorites : [] }
     : row.preferences;
   return { id: row.id, entityId: "singleton", userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: valueForLocal };
+}
+
+function finiteOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function balloonRow(value: unknown): BalloonCloudRow {
+  if (!value || typeof value !== "object") throw new Error("Invalid balloon cloud row");
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.registration !== "string"
+    || typeof row.manufacturer !== "string" || typeof row.model !== "string" || typeof row.revision !== "number"
+    || typeof row.volume_m3 !== "number" || typeof row.configuration_limits_confirmed !== "boolean"
+    || typeof row.is_favorite !== "boolean" || typeof row.created_at !== "string" || typeof row.updated_at !== "string"
+    || (row.deleted_at !== null && typeof row.deleted_at !== "string")
+    || !["Libre à air chaud", "Libre à gaz"].includes(String(row.category))
+    || !row.weights || typeof row.weights !== "object") throw new Error("Invalid balloon cloud row");
+  const weights = row.weights as Record<string, unknown>;
+  const cylinders = Array.isArray(weights.fullCylinders) ? weights.fullCylinders.filter((item): item is { id: string; label?: string; fullWeightKg: number } => {
+    if (!item || typeof item !== "object") return false;
+    const cylinder = item as Record<string, unknown>;
+    return typeof cylinder.id === "string" && typeof cylinder.fullWeightKg === "number" && Number.isFinite(cylinder.fullWeightKg)
+      && (cylinder.label === undefined || typeof cylinder.label === "string");
+  }) : [];
+  const local: CloudBalloon = {
+    id: row.id,
+    registration: row.registration,
+    manufacturer: row.manufacturer,
+    model: row.model,
+    category: row.category as CloudBalloon["category"],
+    volumeM3: row.volume_m3,
+    ...(finiteOptionalNumber(row.applicable_mtom_kg) === undefined ? {} : { applicableMtowKg: finiteOptionalNumber(row.applicable_mtom_kg) }),
+    configurationLimitsConfirmed: row.configuration_limits_confirmed,
+    ...(typeof row.color === "string" && row.color ? { color: row.color } : {}),
+    ...(row.is_favorite ? { isFavorite: true } : {}),
+    ...(typeof row.last_used_at === "string" ? { lastUsedAt: row.last_used_at } : {}),
+    weights: {
+      ...(finiteOptionalNumber(weights.envelopeKg) === undefined ? {} : { envelopeKg: finiteOptionalNumber(weights.envelopeKg) }),
+      ...(finiteOptionalNumber(weights.basketKg) === undefined ? {} : { basketKg: finiteOptionalNumber(weights.basketKg) }),
+      ...(finiteOptionalNumber(weights.burnerKg) === undefined ? {} : { burnerKg: finiteOptionalNumber(weights.burnerKg) }),
+      fullCylinders: cylinders,
+    },
+    deletedAt: row.deleted_at,
+  };
+  return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: local };
 }
 
 async function readPreferencePage(input: Readonly<{
@@ -161,6 +209,49 @@ export function createBrowserPreferencePullService(input: Readonly<{
       "unit-preferences": adapter("unit-preferences"),
       "weather-preferences": adapter("weather-preferences"),
       "aviation-preferences": adapter("aviation-preferences"),
+    },
+    recordConflict: async (_conflict, mutation, row) => {
+      await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
+    },
+  });
+}
+
+export function createBrowserBalloonPullService(input: Readonly<{
+  client: SupabaseClient;
+  storage: Storage;
+  scope: `USER:${string}`;
+}>): CloudPullService {
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
+  return new CloudPullService({
+    scope: input.scope,
+    getScope: getRuntimeDataScope,
+    getOnlineUserId: async () => {
+      const { data, error } = await input.client.auth.getUser();
+      if (error) throw new Error("Cloud pull auth unavailable");
+      return data.user?.id ?? null;
+    },
+    outbox,
+    cursors: new BrowserCloudPullCursorRepository(input.storage),
+    readPage: async () => [],
+    applyLocally: () => false,
+    balloonDomain: {
+      readPage: async (cursor, limit) => {
+        let query = input.client.from("balloons")
+          .select("id,user_id,revision,created_at,updated_at,deleted_at,registration,display_name,manufacturer,model,category,volume_m3,applicable_mtom_kg,configuration_limits_confirmed,color,weights,is_favorite,last_used_at")
+          .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
+        if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+        const { data, error } = await query;
+        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
+        return (data ?? []).map(balloonRow);
+      },
+      applyLocally: (row) => applyBalloonFromCloudWithoutEnqueue(input.scope, row.value as CloudBalloon, input.storage),
+      hasBlockingLocalDependency: async (row) => {
+        if (!row.deletedAt) return false;
+        if (await balloonDocumentStorage.countByBalloonId(row.entityId) > 0) return true;
+        if ((loadBalloonRegistry().balloons.find(({ id }) => id === row.entityId)?.documents.length ?? 0) > 0) return true;
+        return loadPilotQualifications(input.storage).events.some(({ balloonId }) => balloonId === row.entityId);
+      },
     },
     recordConflict: async (_conflict, mutation, row) => {
       await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });

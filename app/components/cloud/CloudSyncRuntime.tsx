@@ -35,7 +35,7 @@ import {
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import type { CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
-import { createBrowserFavoriteWeatherPlacePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { createBrowserBalloonPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
 import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
@@ -78,6 +78,8 @@ declare global {
       pullWeatherPreferencesTargeted(): Promise<unknown>;
       pullAviationPreferencesTargeted(): Promise<unknown>;
       inspectPreferencePullState(): Promise<unknown>;
+      pullBalloonsTargeted(): Promise<unknown>;
+      inspectBalloonPullState(): Promise<unknown>;
     }>;
   }
 }
@@ -916,6 +918,20 @@ async function inspectPreferencePullState(scope: `USER:${string}`) {
   } as const;
 }
 
+async function inspectBalloonPullState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  const registry = loadBalloonRegistry();
+  return {
+    scope,
+    localBalloonCount: registry.balloons.length,
+    localBalloons: registry.balloons.map(({ id, registration, model }) => ({ id, registration, model })),
+    sidecars: (await outbox.listMetadata()).filter(({ entityType }) => entityType === "balloon"),
+    cursor: await new BrowserCloudPullCursorRepository(window.localStorage).get(scope, "balloon"),
+    pendingMutations: mutations.filter(({ entityType }) => entityType === "balloon"),
+  } as const;
+}
+
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
   const searchParams = useSearchParams();
@@ -981,6 +997,8 @@ export default function CloudSyncRuntime(): null {
       pullWeatherPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullWeatherPreferences(),
       pullAviationPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullAviationPreferences(),
       inspectPreferencePullState: () => inspectPreferencePullState(scope),
+      pullBalloonsTargeted: () => createBrowserBalloonPullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullBalloons(),
+      inspectBalloonPullState: () => inspectBalloonPullState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     let debounceTimer: number | undefined;
