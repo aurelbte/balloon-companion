@@ -36,6 +36,8 @@ import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMuta
 import type { CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
+import { CLOUD_BOOTSTRAP_DOMAIN_ORDER } from "../../lib/cloudBootstrapService.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
 import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
@@ -48,6 +50,7 @@ import {
 
 const activePasses = new Map<string, Promise<unknown>>();
 const pendingPasses = new Set<string>();
+const lastCloudBootstrapReports = new Map<string, unknown>();
 
 declare global {
   interface Window {
@@ -86,6 +89,8 @@ declare global {
       inspectLogbookEntryPullState(): Promise<unknown>;
       pullDocumentsTargeted(): Promise<unknown>;
       inspectDocumentPullState(): Promise<unknown>;
+      bootstrapCloudDataTargeted(): Promise<unknown>;
+      inspectCloudBootstrapState(): Promise<unknown>;
     }>;
   }
 }
@@ -982,6 +987,45 @@ async function inspectDocumentPullState(scope: `USER:${string}`) {
   } as const;
 }
 
+const BOOTSTRAP_CURSOR_DOMAINS = [
+  "unit-preferences",
+  "weather-preferences",
+  "aviation-preferences",
+  "favorite-weather-place",
+  "balloon",
+  "flight",
+  "logbook-entry",
+  "balloon-document",
+] as const;
+
+async function inspectCloudBootstrapState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  const cursors = new BrowserCloudPullCursorRepository(window.localStorage);
+  const [flights, documents] = await Promise.all([
+    new IndexedDbRecordedFlightStorage().listFlights(),
+    balloonDocumentStorage.listDocuments(),
+  ]);
+  return {
+    scope,
+    domainOrder: CLOUD_BOOTSTRAP_DOMAIN_ORDER,
+    cursors: Object.fromEntries(await Promise.all(BOOTSTRAP_CURSOR_DOMAINS.map(async (domain) => [domain, await cursors.get(scope, domain)] as const))),
+    outboxCount: mutations.length,
+    pendingByDomain: Object.fromEntries(BOOTSTRAP_CURSOR_DOMAINS.map((domain) => [domain, mutations.filter(({ entityType }) => entityType === domain).length])),
+    local: {
+      unitPreferences: Boolean(loadUnitPreferences()),
+      weatherPreferences: Boolean(loadWeatherPreferences()),
+      aviationPreferences: Boolean(loadAviationPreferences()),
+      favoriteWeatherPlaces: loadFavoriteWeatherPlaces().length,
+      balloons: loadBalloonRegistry().balloons.length,
+      flights: flights.length,
+      logbookEntries: loadFlightCompletionState().officialAscensions.length,
+      documents: documents.length,
+    },
+    lastReport: lastCloudBootstrapReports.get(scope) ?? null,
+  } as const;
+}
+
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
   const searchParams = useSearchParams();
@@ -1055,6 +1099,12 @@ export default function CloudSyncRuntime(): null {
       inspectLogbookEntryPullState: () => inspectLogbookEntryPullState(scope),
       pullDocumentsTargeted: () => createBrowserDocumentPullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullDocuments(),
       inspectDocumentPullState: () => inspectDocumentPullState(scope),
+      bootstrapCloudDataTargeted: async () => {
+        const report = await createBrowserCloudBootstrapService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).bootstrapCloudDataForCurrentUser();
+        lastCloudBootstrapReports.set(scope, report);
+        return report;
+      },
+      inspectCloudBootstrapState: () => inspectCloudBootstrapState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     let debounceTimer: number | undefined;
