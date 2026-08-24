@@ -20,9 +20,13 @@ test("le runtime utilise des déclencheurs événementiels sans polling", () => 
   assert.match(runtime, /auth\.state !== "SIGNED_IN"/);
   assert.match(runtime, /addEventListener\("online"/);
   assert.match(runtime, /SYNC_MUTATION_ENQUEUED_EVENT/);
-  assert.match(runtime, /setTimeout\(\(\) => runPass\(userId\), delay\)/);
+  assert.match(runtime, /new CloudSyncRuntimeController/);
+  assert.match(runtime, /automaticCloudSyncController\.setUser\(controlled \? null : userId\)/);
+  assert.match(runtime, /automaticCloudSyncController\.notifyOnline\(\)/);
+  assert.match(runtime, /automaticCloudSyncController\.notifyLocalMutation\(\)/);
+  assert.doesNotMatch(runtime, /activePasses|pendingPasses|runPass\(/);
   assert.doesNotMatch(runtime, /setInterval|poll/i);
-  assert.match(runtime, /if \(controlled\) return/);
+  assert.match(runtime, /automaticCloudSyncController\.setUser\(controlled \? null : userId\)/);
   assert.match(runtime, /__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
   assert.match(runtime, /useSearchParams\(\)/);
   assert.match(runtime, /\[auth\.state, auth\.user, currentSearch\]/);

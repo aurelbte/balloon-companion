@@ -38,6 +38,7 @@ import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../li
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
 import { CLOUD_BOOTSTRAP_DOMAIN_ORDER } from "../../lib/cloudBootstrapService.ts";
+import { CloudSyncRuntimeController } from "../../lib/cloudSyncRuntimeController.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
 import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
@@ -48,9 +49,9 @@ import {
   type ProtectedPreferenceRebaseType,
 } from "../../lib/protectedPreferenceConflictRebase.ts";
 
-const activePasses = new Map<string, Promise<unknown>>();
-const pendingPasses = new Set<string>();
 const lastCloudBootstrapReports = new Map<string, unknown>();
+let runtimeMountCount = 0;
+let runtimeUnmountGeneration = 0;
 
 declare global {
   interface Window {
@@ -99,26 +100,33 @@ function controlledTestMode(search = typeof window !== "undefined" ? window.loca
   return isAutomaticCloudSyncBlockedForControlledTest(process.env.NODE_ENV, search);
 }
 
-function runPass(userId: string): void {
-  const scope = `USER:${userId}` as const;
-  if (controlledTestMode()) return;
-  if (activePasses.has(scope)) { pendingPasses.add(scope); return; }
-  if (typeof window === "undefined" || !navigator.onLine) return;
-  const service = createBrowserCloudSyncService({
-    client: createBrowserSupabaseClient(),
-    storage: window.localStorage,
-    scope,
-    getScope: getRuntimeDataScope,
-  });
-  const pass = service.syncPendingMutations()
-    .catch((error: unknown) => {
-      if (process.env.NODE_ENV === "development") console.error("[cloudSync] Passe interrompue", error);
-    })
-    .finally(() => {
-      activePasses.delete(scope);
-      if (pendingPasses.delete(scope) && getRuntimeDataScope() === scope) runPass(userId);
+const automaticCloudSyncController = new CloudSyncRuntimeController({
+  isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
+  bootstrap: async (userId) => {
+    const scope = `USER:${userId}` as const;
+    const report = await createBrowserCloudBootstrapService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).bootstrapCloudDataForCurrentUser();
+    lastCloudBootstrapReports.set(scope, report);
+    return report;
+  },
+  push: async (userId) => {
+    const scope = `USER:${userId}` as const;
+    await createBrowserCloudSyncService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
+  },
+});
+
+function acquireRuntimeMount(): () => void {
+  runtimeMountCount += 1;
+  runtimeUnmountGeneration += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    runtimeMountCount -= 1;
+    const generation = ++runtimeUnmountGeneration;
+    queueMicrotask(() => {
+      if (runtimeMountCount === 0 && runtimeUnmountGeneration === generation) automaticCloudSyncController.setUser(null);
     });
-  activePasses.set(scope, pass);
+  };
 }
 
 async function createLocalOfficialAscensionTest(scope: `USER:${string}`): Promise<Readonly<{ ascensionId: string; mutationId: string }>> {
@@ -1032,10 +1040,15 @@ export default function CloudSyncRuntime(): null {
   const currentSearch = searchParams.toString();
 
   useEffect(() => {
-    if (auth.state !== "SIGNED_IN" || !auth.user) return;
+    const releaseRuntimeMount = acquireRuntimeMount();
+    if (auth.state !== "SIGNED_IN" || !auth.user) {
+      automaticCloudSyncController.setUser(null);
+      return releaseRuntimeMount;
+    }
     const userId = auth.user.id;
     const scope = `USER:${userId}` as const;
     const controlled = controlledTestMode(currentSearch ? `?${currentSearch}` : "");
+    automaticCloudSyncController.setUser(controlled ? null : userId);
     const syncTargetedMutationById = (mutationId: string) => createBrowserCloudSyncService({
       client: createBrowserSupabaseClient(),
       storage: window.localStorage,
@@ -1107,22 +1120,15 @@ export default function CloudSyncRuntime(): null {
       inspectCloudBootstrapState: () => inspectCloudBootstrapState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
-    let debounceTimer: number | undefined;
-    const schedule = (delay = 750) => {
-      if (controlled) return;
-      window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => runPass(userId), delay);
-    };
-    const online = () => schedule(0);
-    const mutation = () => schedule();
+    const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };
+    const mutation = () => { if (!controlled) automaticCloudSyncController.notifyLocalMutation(); };
     window.addEventListener("online", online);
     window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
-    schedule(0);
     return () => {
-      window.clearTimeout(debounceTimer);
       window.removeEventListener("online", online);
       window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
+      releaseRuntimeMount();
     };
   }, [auth.state, auth.user, currentSearch]);
 

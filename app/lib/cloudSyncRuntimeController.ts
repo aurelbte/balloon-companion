@@ -21,6 +21,8 @@ export class CloudSyncRuntimeController {
   private bootstrapRequested = false;
   private pushRequested = false;
   private running: Promise<void> | null = null;
+  private readyGeneration = -1;
+  private bootstrapInProgress = false;
 
   constructor(dependencies: Dependencies) {
     this.dependencies = dependencies;
@@ -30,13 +32,15 @@ export class CloudSyncRuntimeController {
     if (userId === this.userId) return;
     this.userId = userId;
     this.generation += 1;
+    this.readyGeneration = -1;
     this.bootstrapRequested = userId !== null;
     this.pushRequested = userId !== null;
     this.schedule();
   }
 
   notifyOnline(): void {
-    if (!this.userId || !this.dependencies.isOnline()) return;
+    if (!this.userId || !this.dependencies.isOnline() || this.bootstrapInProgress) return;
+    this.readyGeneration = -1;
     this.bootstrapRequested = true;
     this.schedule();
   }
@@ -61,7 +65,8 @@ export class CloudSyncRuntimeController {
     if (this.running || !this.userId || !this.dependencies.isOnline()) return;
     this.running = this.run().finally(() => {
       this.running = null;
-      if (this.userId && this.dependencies.isOnline() && this.bootstrapRequested) this.schedule();
+      if (this.userId && this.dependencies.isOnline()
+        && (this.bootstrapRequested || this.pushRequested && this.readyGeneration === this.generation)) this.schedule();
     });
   }
 
@@ -72,14 +77,20 @@ export class CloudSyncRuntimeController {
     let bootstrapSucceeded = false;
     if (this.bootstrapRequested) {
       this.bootstrapRequested = false;
-      const report = await this.dependencies.bootstrap(userId);
+      this.bootstrapInProgress = true;
+      let report: AutomaticBootstrapResult;
+      try { report = await this.dependencies.bootstrap(userId); }
+      catch { return; }
+      finally { this.bootstrapInProgress = false; }
       if (generation !== this.generation || userId !== this.userId) return;
       bootstrapSucceeded = report.state === "SUCCESS";
+      this.readyGeneration = bootstrapSucceeded ? generation : -1;
     }
-    if (bootstrapSucceeded && this.pushRequested && this.dependencies.isOnline()
+    if ((bootstrapSucceeded || this.readyGeneration === generation) && this.pushRequested && this.dependencies.isOnline()
       && generation === this.generation && userId === this.userId) {
       this.pushRequested = false;
-      await this.dependencies.push(userId);
+      try { await this.dependencies.push(userId); }
+      catch { /* A later enqueue/online event can safely retry the preserved outbox. */ }
     }
   }
 }

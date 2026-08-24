@@ -111,6 +111,17 @@ test("SUCCESS avec outbox préexistante autorise un drain unique après la fin d
   assert.deepEqual(order, ["bootstrap", "push"]);
 });
 
+test("un enqueue après SUCCESS déclenche un PUSH sans nouveau bootstrap", async () => {
+  const ctx = fixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  ctx.controller.notifyLocalMutation();
+  ctx.controller.notifyLocalMutation();
+  await ctx.controller.whenIdle();
+  assert.deepEqual(ctx.bootstraps, ["A"]);
+  assert.deepEqual(ctx.pushes, ["A", "A", "A"]);
+});
+
 test("une perte réseau pendant le bootstrap interdit le drain malgré SUCCESS", async () => {
   let online = true;
   const pushes = [];
