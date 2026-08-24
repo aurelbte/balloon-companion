@@ -38,7 +38,7 @@ import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../li
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
 import { CLOUD_BOOTSTRAP_DOMAIN_ORDER } from "../../lib/cloudBootstrapService.ts";
-import { CloudSyncRuntimeController } from "../../lib/cloudSyncRuntimeController.ts";
+import { CloudSyncRuntimeController, type CloudSyncRuntimeControllerSnapshot } from "../../lib/cloudSyncRuntimeController.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
 import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
@@ -50,8 +50,10 @@ import {
 } from "../../lib/protectedPreferenceConflictRebase.ts";
 
 const lastCloudBootstrapReports = new Map<string, unknown>();
+const CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY = "balloon-companion:dev:cloud-sync-runtime-diagnostic";
 let runtimeMountCount = 0;
 let runtimeUnmountGeneration = 0;
+let suppressRuntimeDiagnosticPersistence = false;
 
 declare global {
   interface Window {
@@ -92,6 +94,7 @@ declare global {
       inspectDocumentPullState(): Promise<unknown>;
       bootstrapCloudDataTargeted(): Promise<unknown>;
       inspectCloudBootstrapState(): Promise<unknown>;
+      inspectCloudSyncRuntimeControllerState(): Promise<unknown>;
     }>;
   }
 }
@@ -112,7 +115,23 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     const scope = `USER:${userId}` as const;
     await createBrowserCloudSyncService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
   },
+  onDiagnosticChange: (snapshot) => {
+    if (process.env.NODE_ENV === "development" && !suppressRuntimeDiagnosticPersistence && typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY, JSON.stringify(snapshot));
+    }
+  },
 });
+
+function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeControllerSnapshot {
+  if (typeof sessionStorage !== "undefined") {
+    const stored = sessionStorage.getItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY);
+    if (stored) {
+      try { return JSON.parse(stored) as CloudSyncRuntimeControllerSnapshot; }
+      catch { /* Fall back to the live, read-only snapshot. */ }
+    }
+  }
+  return automaticCloudSyncController.inspect();
+}
 
 function acquireRuntimeMount(): () => void {
   runtimeMountCount += 1;
@@ -1048,7 +1067,11 @@ export default function CloudSyncRuntime(): null {
     const userId = auth.user.id;
     const scope = `USER:${userId}` as const;
     const controlled = controlledTestMode(currentSearch ? `?${currentSearch}` : "");
-    automaticCloudSyncController.setUser(controlled ? null : userId);
+    if (controlled) {
+      suppressRuntimeDiagnosticPersistence = true;
+      automaticCloudSyncController.setUser(null);
+      suppressRuntimeDiagnosticPersistence = false;
+    } else automaticCloudSyncController.setUser(userId);
     const syncTargetedMutationById = (mutationId: string) => createBrowserCloudSyncService({
       client: createBrowserSupabaseClient(),
       storage: window.localStorage,
@@ -1118,6 +1141,7 @@ export default function CloudSyncRuntime(): null {
         return report;
       },
       inspectCloudBootstrapState: () => inspectCloudBootstrapState(scope),
+      inspectCloudSyncRuntimeControllerState: async () => inspectCloudSyncRuntimeControllerState(),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };

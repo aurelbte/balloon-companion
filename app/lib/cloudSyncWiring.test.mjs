@@ -21,12 +21,12 @@ test("le runtime utilise des déclencheurs événementiels sans polling", () => 
   assert.match(runtime, /addEventListener\("online"/);
   assert.match(runtime, /SYNC_MUTATION_ENQUEUED_EVENT/);
   assert.match(runtime, /new CloudSyncRuntimeController/);
-  assert.match(runtime, /automaticCloudSyncController\.setUser\(controlled \? null : userId\)/);
+  assert.match(runtime, /automaticCloudSyncController\.setUser\(userId\)/);
   assert.match(runtime, /automaticCloudSyncController\.notifyOnline\(\)/);
   assert.match(runtime, /automaticCloudSyncController\.notifyLocalMutation\(\)/);
   assert.doesNotMatch(runtime, /activePasses|pendingPasses|runPass\(/);
   assert.doesNotMatch(runtime, /setInterval|poll/i);
-  assert.match(runtime, /automaticCloudSyncController\.setUser\(controlled \? null : userId\)/);
+  assert.match(runtime, /suppressRuntimeDiagnosticPersistence = true[\s\S]*automaticCloudSyncController\.setUser\(null\)/);
   assert.match(runtime, /__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
   assert.match(runtime, /useSearchParams\(\)/);
   assert.match(runtime, /\[auth\.state, auth\.user, currentSearch\]/);
@@ -36,6 +36,14 @@ test("le harness ciblé suit la query sur toutes les routes sans exposition glob
   assert.match(runtime, /controlledTestMode\(currentSearch \? `\?\$\{currentSearch\}` : ""\)/);
   assert.match(runtime, /if \(controlledApi\) window\.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi/);
   assert.match(runtime, /delete window\.__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
+});
+
+test("le diagnostic runtime targeted est read-only et réutilise le contrôleur production", () => {
+  assert.match(runtime, /inspectCloudSyncRuntimeControllerState/);
+  assert.match(runtime, /automaticCloudSyncController\.inspect\(\)/);
+  assert.match(runtime, /sessionStorage\.getItem\(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY\)/);
+  const helper = runtime.match(/function inspectCloudSyncRuntimeControllerState[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.doesNotMatch(helper, /bootstrapCloudDataForCurrentUser|syncPendingMutations|syncMutationById|\.rpc\(|\.enqueue\(|\.remove\(|\.setMetadata\(/);
 });
 
 test("le harness ciblé crée une ascension locale DEV sans appeler le service Cloud", () => {

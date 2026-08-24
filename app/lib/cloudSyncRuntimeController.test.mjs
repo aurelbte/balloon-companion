@@ -73,6 +73,8 @@ test("PARTIAL conserve le PUSH en attente et une reprise réussie l'autorise", a
   ctx.controller.setUser("A");
   await ctx.controller.whenIdle();
   assert.deepEqual(ctx.pushes, []);
+  assert.equal(ctx.controller.inspect().lastPushAuthorized, false);
+  assert.equal(ctx.controller.inspect().lastPushRefusalReason, "BOOTSTRAP_PARTIAL");
   ctx.controller.resumeBootstrap();
   await ctx.controller.whenIdle();
   assert.deepEqual(ctx.bootstraps, ["A", "A"]);
@@ -133,6 +135,61 @@ test("une perte réseau pendant le bootstrap interdit le drain malgré SUCCESS",
   controller.setUser("A");
   await controller.whenIdle();
   assert.deepEqual(pushes, []);
+});
+
+test("le snapshot observe SUCCESS, ONLINE, déduplication et PUSH sans donnée métier", async () => {
+  const ctx = fixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  ctx.controller.notifyOnline();
+  ctx.controller.notifyOnline();
+  await ctx.controller.whenIdle();
+  const snapshot = ctx.controller.inspect();
+  assert.equal(snapshot.scope, "USER:A");
+  assert.equal(snapshot.lastTrigger, "ONLINE");
+  assert.equal(snapshot.lastBootstrapState, "SUCCESS");
+  assert.equal(snapshot.lastPushAuthorized, true);
+  assert.equal(snapshot.lastPushExecuted, false);
+  assert.ok(snapshot.deduplicatedRequests >= 1);
+  assert.ok(snapshot.history.some(({ type }) => type === "TRIGGER_ONLINE"));
+  assert.ok(snapshot.history.some(({ type }) => type === "PUSH_COMPLETED"));
+  assert.equal(JSON.stringify(snapshot).includes("payload"), false);
+});
+
+test("STOPPED_ERROR sanitise le diagnostic et refuse le PUSH", async () => {
+  const token = "eyJheader.payload.signature";
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => { throw new Error(`failure ${token}`); },
+    push: async () => { assert.fail("PUSH interdit"); },
+  });
+  controller.setUser("A");
+  await controller.whenIdle();
+  const snapshot = controller.inspect();
+  assert.equal(snapshot.lastBootstrapState, "STOPPED_ERROR");
+  assert.equal(snapshot.lastPushAuthorized, false);
+  assert.equal(snapshot.lastError.message.includes(token), false);
+  assert.match(snapshot.lastError.message, /\[REDACTED\]/);
+});
+
+test("USER switch et logout sont observables sans résultat tardif de l'ancien USER", async () => {
+  let release;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async (userId) => { if (userId === "A") await new Promise((resolve) => { release = resolve; }); return { state: "SUCCESS", resumable: false }; },
+    push: async () => {},
+  });
+  controller.setUser("A");
+  await Promise.resolve();
+  controller.setUser("B");
+  release();
+  await controller.whenIdle();
+  controller.setUser(null);
+  const snapshot = controller.inspect();
+  assert.equal(snapshot.userId, null);
+  assert.ok(snapshot.cancelledExecutions >= 1);
+  assert.ok(snapshot.history.some(({ type }) => type === "USER_SWITCH"));
+  assert.ok(snapshot.history.some(({ type }) => type === "LOGOUT"));
 });
 
 test("une mutation pendant un bootstrap finalement BLOCKED reste intacte et ne déclenche aucun drain", async () => {
