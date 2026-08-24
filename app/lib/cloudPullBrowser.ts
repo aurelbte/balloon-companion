@@ -7,6 +7,7 @@ import {
   type FavoriteWeatherPlaceCloudRow,
   type FavoriteWeatherPlacePullConflict,
   type FlightCloudRow,
+  type LogbookEntryCloudRow,
   type PreferenceCloudRow,
   type PreferencePullDomain,
 } from "./cloudPullService.ts";
@@ -21,7 +22,8 @@ import { applyWeatherPreferencesFromCloudWithoutEnqueue } from "./weatherPrefere
 import { applyAviationPreferencesFromCloudWithoutEnqueue } from "./aviation/aviationPreferencesStorage.ts";
 import type { RecordedFlight, RecordedFlightSummary } from "./recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
-import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
+import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
+import { OFFICIAL_FLIGHT_NATURES, type OfficialAscension } from "./flightCompletion.ts";
 
 function quotedPostgrestValue(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -175,6 +177,60 @@ function flightRow(value: unknown): FlightCloudRow {
     balloonId: row.balloon_id as string | null,
   };
   return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: local };
+}
+
+function localizedLogbookDate(dateIso: string): string {
+  const parsed = new Date(`${dateIso}T12:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) throw new Error("Invalid logbook entry date");
+  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(parsed);
+}
+
+function logbookEntryRow(value: unknown): LogbookEntryCloudRow {
+  if (!value || typeof value !== "object") throw new Error("Invalid logbook entry cloud row");
+  const row = value as Record<string, unknown>;
+  const nullableNumber = (field: string) => row[field] === null || typeof row[field] === "number" && Number.isFinite(row[field]);
+  const nullableObject = (field: string) => row[field] === null || Boolean(row[field]) && typeof row[field] === "object" && !Array.isArray(row[field]);
+  if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.revision !== "number"
+    || typeof row.created_at !== "string" || typeof row.updated_at !== "string"
+    || (row.deleted_at !== null && typeof row.deleted_at !== "string")
+    || (row.flight_id !== null && typeof row.flight_id !== "string")
+    || !["GPS_BALLOON_COMPANION", "MANUAL"].includes(String(row.source))
+    || typeof row.date_iso !== "string" || typeof row.balloon_model !== "string"
+    || (row.balloon_manufacturer !== null && typeof row.balloon_manufacturer !== "string")
+    || typeof row.registration !== "string" || typeof row.departure !== "string" || typeof row.arrival !== "string"
+    || !["Libre à air chaud", "Libre à gaz"].includes(String(row.category))
+    || !["Pilote", "Élève"].includes(String(row.pilot_function)) || typeof row.night_flight !== "boolean"
+    || !nullableNumber("maximum_altitude_m") || !nullableNumber("gps_duration_minutes")
+    || typeof row.official_duration_minutes !== "number" || !Number.isInteger(row.official_duration_minutes)
+    || typeof row.observations !== "string" || !OFFICIAL_FLIGHT_NATURES.includes(row.flight_nature as typeof OFFICIAL_FLIGHT_NATURES[number])
+    || typeof row.takeoff_count !== "number" || !Number.isInteger(row.takeoff_count)
+    || typeof row.landing_count !== "number" || !Number.isInteger(row.landing_count)
+    || !nullableObject("instructor") || !nullableObject("examiner")) throw new Error("Invalid logbook entry cloud row");
+  const ascension: OfficialAscension = {
+    id: row.id,
+    sourceFlightId: row.flight_id as string | null,
+    source: row.source as OfficialAscension["source"],
+    dateIso: row.date_iso,
+    date: localizedLogbookDate(row.date_iso),
+    balloonModel: row.balloon_model,
+    ...(typeof row.balloon_manufacturer === "string" ? { balloonManufacturer: row.balloon_manufacturer } : {}),
+    registration: row.registration,
+    departure: row.departure,
+    arrival: row.arrival,
+    category: row.category as OfficialAscension["category"],
+    pilotFunction: row.pilot_function as OfficialAscension["pilotFunction"],
+    nightFlight: row.night_flight,
+    maximumAltitudeM: row.maximum_altitude_m as number | null,
+    gpsDurationMinutes: row.gps_duration_minutes as number | null,
+    officialDurationMinutes: row.official_duration_minutes,
+    observations: row.observations,
+    flightNature: row.flight_nature as OfficialAscension["flightNature"],
+    takeoffCount: row.takeoff_count,
+    landingCount: row.landing_count,
+    ...(row.instructor ? { instructor: row.instructor as NonNullable<OfficialAscension["instructor"]> } : {}),
+    ...(row.examiner ? { examiner: row.examiner as NonNullable<OfficialAscension["examiner"]> } : {}),
+  };
+  return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: ascension };
 }
 
 async function readPreferencePage(input: Readonly<{
@@ -369,6 +425,44 @@ export function createBrowserFlightPullService(input: Readonly<{
         if (!await flights.applyFromCloudWithoutEnqueue(input.scope, row.entityId, flight)) return false;
         return applyRecordedFlightToJournalFromCloudWithoutEnqueue(input.scope, row.entityId, flight, row.deletedAt ? null : local.journal, input.storage);
       },
+    },
+    recordConflict: async (_conflict, mutation, row) => {
+      await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
+    },
+  });
+}
+
+export function createBrowserLogbookEntryPullService(input: Readonly<{
+  client: SupabaseClient;
+  storage: Storage;
+  scope: `USER:${string}`;
+}>): CloudPullService {
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
+  return new CloudPullService({
+    scope: input.scope,
+    getScope: getRuntimeDataScope,
+    getOnlineUserId: async () => {
+      const { data, error } = await input.client.auth.getUser();
+      if (error) throw new Error("Cloud pull auth unavailable");
+      return data.user?.id ?? null;
+    },
+    outbox,
+    cursors: new BrowserCloudPullCursorRepository(input.storage),
+    readPage: async () => [],
+    applyLocally: () => false,
+    logbookEntryDomain: {
+      readPage: async (cursor, limit) => {
+        let query = input.client.from("logbook_entries")
+          .select("id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner")
+          .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
+        if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+        const { data, error } = await query;
+        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
+        return (data ?? []).map(logbookEntryRow);
+      },
+      localAnomaly: (row) => row.deletedAt ? null : hasOfficialAscensionSourceFlightConflict(row.entityId, (row.value as OfficialAscension).sourceFlightId) ? "LOCAL_UNIQUENESS_CONFLICT" : null,
+      applyLocally: (row) => applyOfficialAscensionFromCloudWithoutEnqueue(input.scope, row.entityId, row.deletedAt ? null : row.value as OfficialAscension, input.storage),
     },
     recordConflict: async (_conflict, mutation, row) => {
       await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });

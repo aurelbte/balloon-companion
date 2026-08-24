@@ -35,7 +35,7 @@ import {
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import type { CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
-import { createBrowserBalloonPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { createBrowserBalloonPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
 import { FAVORITE_WEATHER_PLACE_PULL_DOMAIN } from "../../lib/cloudPullService.ts";
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
@@ -82,6 +82,8 @@ declare global {
       inspectBalloonPullState(): Promise<unknown>;
       pullFlightsTargeted(): Promise<unknown>;
       inspectFlightPullState(): Promise<unknown>;
+      pullLogbookEntriesTargeted(): Promise<unknown>;
+      inspectLogbookEntryPullState(): Promise<unknown>;
     }>;
   }
 }
@@ -950,6 +952,20 @@ async function inspectFlightPullState(scope: `USER:${string}`) {
   } as const;
 }
 
+async function inspectLogbookEntryPullState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  const ascensions = loadFlightCompletionState().officialAscensions;
+  return {
+    scope,
+    localOfficialAscensionCount: ascensions.length,
+    localOfficialAscensions: ascensions.map(({ id, sourceFlightId, registration, dateIso }) => ({ id, sourceFlightId, registration, dateIso })),
+    sidecars: (await outbox.listMetadata()).filter(({ entityType }) => entityType === "logbook-entry"),
+    cursor: await new BrowserCloudPullCursorRepository(window.localStorage).get(scope, "logbook-entry"),
+    pendingMutations: mutations.filter(({ entityType }) => entityType === "logbook-entry"),
+  } as const;
+}
+
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
   const searchParams = useSearchParams();
@@ -1019,6 +1035,8 @@ export default function CloudSyncRuntime(): null {
       inspectBalloonPullState: () => inspectBalloonPullState(scope),
       pullFlightsTargeted: () => createBrowserFlightPullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullFlights(),
       inspectFlightPullState: () => inspectFlightPullState(scope),
+      pullLogbookEntriesTargeted: () => createBrowserLogbookEntryPullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullLogbookEntries(),
+      inspectLogbookEntryPullState: () => inspectLogbookEntryPullState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     let debounceTimer: number | undefined;

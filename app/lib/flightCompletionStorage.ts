@@ -172,6 +172,35 @@ export function applyRecordedFlightToJournalFromCloudWithoutEnqueue(
   return true;
 }
 
+export function hasOfficialAscensionSourceFlightConflict(id: string, sourceFlightId: string | null): boolean {
+  if (!sourceFlightId) return false;
+  return loadFlightCompletionState().officialAscensions.some((ascension) => ascension.id !== id && ascension.sourceFlightId === sourceFlightId);
+}
+
+/** Pull-only OfficialAscension hydration; no qualification reconciliation and no enqueue. */
+export function applyOfficialAscensionFromCloudWithoutEnqueue(
+  scope: `USER:${string}`,
+  id: string,
+  ascension: OfficialAscension | null,
+  storage: Storage = window.localStorage,
+): boolean {
+  if (typeof window === "undefined" || getRuntimeDataScope() !== scope) return false;
+  if (ascension && hasOfficialAscensionSourceFlightConflict(id, ascension.sourceFlightId)) return false;
+  const current = loadFlightCompletionState();
+  let persistedBase: FlightCompletionState = current;
+  try {
+    const raw = JSON.parse(readScopedBusinessValue(storage, STORAGE_KEY) ?? "null") as Partial<FlightCompletionState> | null;
+    if (raw && typeof raw === "object" && Array.isArray(raw.journalFlights) && Array.isArray(raw.officialAscensions) && raw.openingBalance) {
+      persistedBase = raw as FlightCompletionState;
+    }
+  } catch {}
+  const retained = current.officialAscensions.filter((item) => item.id !== id);
+  const officialAscensions = ascension ? [...retained, ascension] : retained;
+  if (!writeScopedBusinessValue(storage, STORAGE_KEY, JSON.stringify({ ...persistedBase, officialAscensions } satisfies FlightCompletionState))) return false;
+  window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
+  return true;
+}
+
 export function persistPilotExperience(balance: {
   hours: number;
   minutes: number;
