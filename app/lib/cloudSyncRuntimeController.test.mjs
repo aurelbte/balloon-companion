@@ -79,12 +79,58 @@ test("PARTIAL conserve le PUSH en attente et une reprise réussie l'autorise", a
   assert.deepEqual(ctx.pushes, ["A"]);
 });
 
-test("une mutation pendant le bootstrap est mise en attente sans concurrence", async () => {
-  let release;
+for (const scenario of [
+  { label: "PARTIAL avec pending local", state: "PARTIAL" },
+  { label: "PARTIAL avec conflit", state: "PARTIAL" },
+  { label: "BLOCKED", state: "BLOCKED" },
+  { label: "STOPPED_ERROR", state: "STOPPED_ERROR" },
+  { label: "OFFLINE retourné par le bootstrap", state: "OFFLINE" },
+]) {
+  test(`${scenario.label} n'autorise jamais le drain automatique`, async () => {
+    const pendingOutbox = [{ mutationId: "existing-user-mutation", attempts: 0 }];
+    const snapshot = structuredClone(pendingOutbox);
+    const ctx = fixture([{ state: scenario.state, resumable: true }]);
+    ctx.controller.setUser("A");
+    await ctx.controller.whenIdle();
+    assert.deepEqual(ctx.pushes, []);
+    assert.deepEqual(pendingOutbox, snapshot);
+  });
+}
+
+test("SUCCESS avec outbox préexistante autorise un drain unique après la fin du bootstrap", async () => {
   const order = [];
+  const outbox = [{ mutationId: "valid-pending", entityType: "flight" }];
   const controller = new CloudSyncRuntimeController({
     isOnline: () => true,
-    bootstrap: async () => { order.push("bootstrap:start"); await new Promise((resolve) => { release = resolve; }); order.push("bootstrap:end"); return { state: "SUCCESS", resumable: false }; },
+    bootstrap: async () => { order.push("bootstrap"); return { state: "SUCCESS", resumable: false }; },
+    push: async () => { order.push("push"); assert.deepEqual(outbox, [{ mutationId: "valid-pending", entityType: "flight" }]); },
+  });
+  controller.setUser("A");
+  controller.notifyLocalMutation();
+  await controller.whenIdle();
+  assert.deepEqual(order, ["bootstrap", "push"]);
+});
+
+test("une perte réseau pendant le bootstrap interdit le drain malgré SUCCESS", async () => {
+  let online = true;
+  const pushes = [];
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => online,
+    bootstrap: async () => { online = false; return { state: "SUCCESS", resumable: false }; },
+    push: async (userId) => { pushes.push(userId); },
+  });
+  controller.setUser("A");
+  await controller.whenIdle();
+  assert.deepEqual(pushes, []);
+});
+
+test("une mutation pendant un bootstrap finalement BLOCKED reste intacte et ne déclenche aucun drain", async () => {
+  let release;
+  const order = [];
+  const outbox = [{ mutationId: "created-during-bootstrap" }];
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => { order.push("bootstrap:start"); await new Promise((resolve) => { release = resolve; }); order.push("bootstrap:end"); return { state: "BLOCKED", resumable: true }; },
     push: async () => { order.push("push"); },
   });
   controller.setUser("A");
@@ -92,5 +138,6 @@ test("une mutation pendant le bootstrap est mise en attente sans concurrence", a
   controller.notifyLocalMutation();
   release();
   await controller.whenIdle();
-  assert.deepEqual(order, ["bootstrap:start", "bootstrap:end", "push"]);
+  assert.deepEqual(order, ["bootstrap:start", "bootstrap:end"]);
+  assert.deepEqual(outbox, [{ mutationId: "created-during-bootstrap" }]);
 });

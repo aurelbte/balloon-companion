@@ -1,5 +1,5 @@
 export type AutomaticBootstrapResult = Readonly<{
-  state: "SUCCESS" | "PARTIAL" | "BLOCKED" | "OFFLINE" | "SESSION_INVALID";
+  state: "SUCCESS" | "PARTIAL" | "BLOCKED" | "STOPPED_ERROR" | "OFFLINE" | "SESSION_INVALID";
   resumable: boolean;
 }>;
 
@@ -76,7 +76,8 @@ export class CloudSyncRuntimeController {
       if (generation !== this.generation || userId !== this.userId) return;
       bootstrapSucceeded = report.state === "SUCCESS";
     }
-    if (bootstrapSucceeded && this.pushRequested && generation === this.generation && userId === this.userId) {
+    if (bootstrapSucceeded && this.pushRequested && this.dependencies.isOnline()
+      && generation === this.generation && userId === this.userId) {
       this.pushRequested = false;
       await this.dependencies.push(userId);
     }
