@@ -33,7 +33,7 @@ import {
   saveFlightCompletionState,
 } from "../../lib/flightCompletionStorage.ts";
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
-import type { CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
+import { nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
@@ -116,6 +116,7 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     const scope = `USER:${userId}` as const;
     await createBrowserCloudSyncService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
   },
+  getNextEligibleRetryAt: async (userId) => nextEligibleRetryAt(await new IndexedDbSyncOutboxStorage(`USER:${userId}`).list()),
   onDiagnosticChange: (snapshot) => {
     if (process.env.NODE_ENV === "development" && !suppressRuntimeDiagnosticPersistence && typeof sessionStorage !== "undefined") {
       sessionStorage.setItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY, JSON.stringify(snapshot));
@@ -1182,11 +1183,14 @@ export default function CloudSyncRuntime(): null {
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };
     const mutation = () => { if (!controlled) automaticCloudSyncController.notifyLocalMutation(); };
+    const visibility = () => { if (!controlled && document.visibilityState === "visible") void automaticCloudSyncController.notifyVisible(); };
     window.addEventListener("online", online);
     window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
+    document.addEventListener("visibilitychange", visibility);
     return () => {
       window.removeEventListener("online", online);
       window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
+      document.removeEventListener("visibilitychange", visibility);
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
       releaseRuntimeMount();
     };

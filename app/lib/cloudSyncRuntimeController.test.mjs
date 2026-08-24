@@ -209,3 +209,93 @@ test("une mutation pendant un bootstrap finalement BLOCKED reste intacte et ne d
   assert.deepEqual(order, ["bootstrap:start", "bootstrap:end"]);
   assert.deepEqual(outbox, [{ mutationId: "created-during-bootstrap" }]);
 });
+
+function retryFixture() {
+  let online = true, nowMs = Date.parse("2026-08-24T10:00:00.000Z"), next = "2026-08-24T10:01:00.000Z";
+  const timers = new Map(), pushes = [];
+  let timerId = 0;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => online,
+    bootstrap: async () => ({ state: "SUCCESS", resumable: false }),
+    push: async () => { pushes.push("push"); if (next && nowMs >= Date.parse(next)) next = null; },
+    getNextEligibleRetryAt: async () => next,
+    nowMs: () => nowMs,
+    setTimer: (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
+    clearTimer: (id) => timers.delete(id),
+  });
+  return { controller, timers, pushes, setNext: (value) => { next = value; }, setOnline: (value) => { online = value; }, setNow: (value) => { nowMs = Date.parse(value); } };
+}
+
+test("une mutation retryable programme un timer unique et une échéance plus proche le remplace", async () => {
+  const ctx = retryFixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  assert.equal(ctx.timers.size, 1);
+  assert.equal(ctx.controller.inspect().nextEligibleRetryAt, "2026-08-24T10:01:00.000Z");
+  ctx.setNext("2026-08-24T10:00:30.000Z");
+  await ctx.controller.notifyVisible();
+  assert.equal(ctx.timers.size, 1);
+  assert.equal(ctx.controller.inspect().lastTrigger, "VISIBILITY");
+  assert.equal(ctx.controller.inspect().nextEligibleRetryAt, "2026-08-24T10:00:30.000Z");
+});
+
+test("le timer dû déclenche un PUSH sérialisé puis annule le réveil", async () => {
+  const ctx = retryFixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  const timer = [...ctx.timers.values()][0];
+  ctx.setNow("2026-08-24T10:01:00.000Z");
+  timer.callback();
+  await ctx.controller.whenIdle();
+  assert.deepEqual(ctx.pushes, ["push", "push"]);
+  assert.equal(ctx.controller.inspect().retryTimerScheduled, false);
+  assert.equal(ctx.controller.inspect().lastTrigger, "RETRY_TIMER");
+});
+
+test("un timer expiré offline attend ONLINE sans tentative ni concurrence", async () => {
+  const ctx = retryFixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  const timer = [...ctx.timers.values()][0];
+  ctx.setOnline(false);
+  ctx.setNow("2026-08-24T10:01:00.000Z");
+  timer.callback();
+  await ctx.controller.whenIdle();
+  assert.deepEqual(ctx.pushes, ["push"]);
+  ctx.setOnline(true);
+  ctx.controller.notifyOnline();
+  await ctx.controller.whenIdle();
+  assert.deepEqual(ctx.pushes, ["push", "push"]);
+});
+
+test("une outbox sans retry annule le timer et le logout l'annule aussi", async () => {
+  const ctx = retryFixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  assert.equal(ctx.controller.inspect().retryTimerScheduled, true);
+  ctx.setNext(null);
+  await ctx.controller.notifyVisible();
+  assert.equal(ctx.controller.inspect().retryTimerScheduled, false);
+
+  ctx.setNext("2026-08-24T10:02:00.000Z");
+  await ctx.controller.notifyVisible();
+  assert.equal(ctx.controller.inspect().retryTimerForUserId, "A");
+  ctx.controller.setUser(null);
+  assert.equal(ctx.controller.inspect().retryTimerScheduled, false);
+  assert.equal(ctx.controller.inspect().retryTimerForUserId, null);
+});
+
+test("un USER switch invalide l'ancien timer avant de cibler le nouveau USER", async () => {
+  const ctx = retryFixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  const oldTimer = [...ctx.timers.values()][0];
+  ctx.controller.setUser("B");
+  await ctx.controller.whenIdle();
+  assert.equal(ctx.controller.inspect().retryTimerForUserId, "B");
+  ctx.setNow("2026-08-24T10:01:00.000Z");
+  oldTimer.callback();
+  await ctx.controller.whenIdle();
+  assert.equal(ctx.controller.inspect().userId, "B");
+  assert.deepEqual(ctx.pushes, ["push", "push"]);
+});

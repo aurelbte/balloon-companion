@@ -26,6 +26,8 @@ test("le runtime utilise des déclencheurs événementiels sans polling", () => 
   assert.match(runtime, /automaticCloudSyncController\.notifyLocalMutation\(\)/);
   assert.doesNotMatch(runtime, /activePasses|pendingPasses|runPass\(/);
   assert.doesNotMatch(runtime, /setInterval|poll/i);
+  assert.match(runtime, /addEventListener\("visibilitychange"/);
+  assert.doesNotMatch(runtime, /addEventListener\("focus"/);
   assert.match(runtime, /suppressRuntimeDiagnosticPersistence = true[\s\S]*automaticCloudSyncController\.setUser\(null\)/);
   assert.match(runtime, /__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
   assert.match(runtime, /useSearchParams\(\)/);

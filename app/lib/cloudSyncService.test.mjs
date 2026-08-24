@@ -5,6 +5,7 @@ import {
   CloudSyncTransportError,
   MemoryCloudSyncIssueRepository,
   cloudSyncBackoffMs,
+  nextEligibleRetryAt,
 } from "./cloudSyncService.ts";
 import { BrowserCloudSyncPayloadProvider, scanInitialCloudSyncInventory } from "./cloudSyncBrowser.ts";
 import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
@@ -17,6 +18,18 @@ import { isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestCon
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const NOW = new Date("2026-08-18T15:00:00.000Z");
+
+test("nextEligibleRetryAt est read-only et ignore conflit, local-only et date invalide", () => {
+  const mutations = [
+    { mutationId: "retry", entityType: "flight", entityId: "f", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 1, lastErrorCode: "NETWORK", nextAttemptAt: "2026-08-18T15:01:00.000Z" },
+    { mutationId: "later", entityType: "balloon", entityId: "b", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 1, lastErrorCode: "SERVER", nextAttemptAt: "2026-08-18T15:02:00.000Z" },
+    { mutationId: "conflict", entityType: "flight", entityId: "c", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 1, lastErrorCode: "CONFLICT", nextAttemptAt: "2026-08-18T15:00:30.000Z" },
+    { mutationId: "local", entityType: "flight-completion", entityId: "singleton", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 1, nextAttemptAt: "2026-08-18T15:00:10.000Z" },
+  ];
+  const snapshot = structuredClone(mutations);
+  assert.equal(nextEligibleRetryAt(mutations), "2026-08-18T15:01:00.000Z");
+  assert.deepEqual(mutations, snapshot);
+});
 
 class MemoryStorage {
   values = new Map();

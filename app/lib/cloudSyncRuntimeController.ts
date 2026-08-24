@@ -5,7 +5,7 @@ export type AutomaticBootstrapResult = Readonly<{
   domains?: unknown;
 }>;
 
-export type CloudSyncRuntimeTrigger = "USER_SESSION" | "ONLINE" | "LOCAL_MUTATION" | "RESUME";
+export type CloudSyncRuntimeTrigger = "USER_SESSION" | "ONLINE" | "LOCAL_MUTATION" | "RESUME" | "RETRY_TIMER" | "VISIBILITY";
 export type CloudSyncRuntimeDiagnosticEvent = Readonly<{ at: string; type: string; userId: string | null; result?: string }>;
 export type CloudSyncRuntimeControllerSnapshot = Readonly<{
   scope: `USER:${string}` | null;
@@ -26,6 +26,9 @@ export type CloudSyncRuntimeControllerSnapshot = Readonly<{
   deduplicatedRequests: number;
   cancelledExecutions: number;
   history: readonly CloudSyncRuntimeDiagnosticEvent[];
+  nextEligibleRetryAt: string | null;
+  retryTimerScheduled: boolean;
+  retryTimerForUserId: string | null;
 }>;
 
 type Dependencies = Readonly<{
@@ -34,6 +37,10 @@ type Dependencies = Readonly<{
   push(userId: string): Promise<unknown>;
   now?(): string;
   onDiagnosticChange?(snapshot: CloudSyncRuntimeControllerSnapshot): void;
+  getNextEligibleRetryAt?(userId: string): Promise<string | null>;
+  setTimer?(callback: () => void, delayMs: number): unknown;
+  clearTimer?(timer: unknown): void;
+  nowMs?(): number;
 }>;
 
 /**
@@ -63,6 +70,10 @@ export class CloudSyncRuntimeController {
   private deduplicatedRequests = 0;
   private cancelledExecutions = 0;
   private history: CloudSyncRuntimeDiagnosticEvent[] = [];
+  private nextRetryAt: string | null = null;
+  private retryTimer: unknown = null;
+  private retryTimerUserId: string | null = null;
+  private retryDue = false;
 
   constructor(dependencies: Dependencies) {
     this.dependencies = dependencies;
@@ -73,6 +84,8 @@ export class CloudSyncRuntimeController {
     const previous = this.userId;
     this.userId = userId;
     this.generation += 1;
+    this.cancelRetryTimer();
+    this.retryDue = false;
     if (this.running && previous) this.cancelledExecutions += 1;
     this.readyGeneration = -1;
     this.bootstrapRequested = userId !== null;
@@ -85,6 +98,14 @@ export class CloudSyncRuntimeController {
   notifyOnline(): void {
     if (!this.userId || !this.dependencies.isOnline()) return;
     if (this.bootstrapInProgress) { this.deduplicatedRequests += 1; this.publish(); return; }
+    if (this.retryDue && this.readyGeneration === this.generation) {
+      this.retryDue = false;
+      this.pushRequested = true;
+      this.lastTrigger = "ONLINE";
+      this.record("TRIGGER_ONLINE_RETRY", this.userId);
+      this.schedule();
+      return;
+    }
     this.readyGeneration = -1;
     this.bootstrapRequested = true;
     this.lastTrigger = "ONLINE";
@@ -110,6 +131,13 @@ export class CloudSyncRuntimeController {
     this.schedule();
   }
 
+  async notifyVisible(): Promise<void> {
+    if (!this.userId) return;
+    this.lastTrigger = "VISIBILITY";
+    this.record("TRIGGER_VISIBILITY", this.userId);
+    await this.refreshRetrySchedule();
+  }
+
   inspect(): CloudSyncRuntimeControllerSnapshot {
     return {
       scope: this.userId ? `USER:${this.userId}` : null,
@@ -130,6 +158,9 @@ export class CloudSyncRuntimeController {
       deduplicatedRequests: this.deduplicatedRequests,
       cancelledExecutions: this.cancelledExecutions,
       history: this.history.map((event) => ({ ...event })),
+      nextEligibleRetryAt: this.nextRetryAt,
+      retryTimerScheduled: this.retryTimer !== null,
+      retryTimerForUserId: this.retryTimerUserId,
     };
   }
 
@@ -139,8 +170,9 @@ export class CloudSyncRuntimeController {
 
   private schedule(): void {
     if (this.running || !this.userId || !this.dependencies.isOnline()) return;
-    this.running = this.run().finally(() => {
+    this.running = this.run().finally(async () => {
       this.running = null;
+      await this.refreshRetrySchedule();
       if (this.userId && this.dependencies.isOnline()
         && (this.bootstrapRequested || this.pushRequested && this.readyGeneration === this.generation)) this.schedule();
     });
@@ -201,6 +233,7 @@ export class CloudSyncRuntimeController {
   }
 
   private now(): string { return this.dependencies.now?.() ?? new Date().toISOString(); }
+  private nowMs(): number { return this.dependencies.nowMs?.() ?? Date.now(); }
   private sanitize(message: string): string { return message.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED]").slice(0, 300); }
   private safeError(error: unknown): Readonly<{ code: string; message: string }> {
     return { code: "UNEXPECTED_ERROR", message: this.sanitize(error instanceof Error ? error.message : "Unknown runtime error") };
@@ -211,4 +244,48 @@ export class CloudSyncRuntimeController {
     this.publish();
   }
   private publish(): void { this.dependencies.onDiagnosticChange?.(this.inspect()); }
+
+  private cancelRetryTimer(): void {
+    if (this.retryTimer !== null) (this.dependencies.clearTimer ?? clearTimeout)(this.retryTimer as ReturnType<typeof setTimeout>);
+    if (this.retryTimer !== null) this.record("RETRY_TIMER_CANCELLED", this.retryTimerUserId);
+    this.retryTimer = null;
+    this.retryTimerUserId = null;
+    this.nextRetryAt = null;
+  }
+
+  private async refreshRetrySchedule(): Promise<void> {
+    const userId = this.userId;
+    const generation = this.generation;
+    if (!userId || !this.dependencies.getNextEligibleRetryAt) { this.cancelRetryTimer(); return; }
+    const next = await this.dependencies.getNextEligibleRetryAt(userId).catch(() => null);
+    if (generation !== this.generation || userId !== this.userId) return;
+    this.cancelRetryTimer();
+    this.nextRetryAt = next;
+    if (!next) { this.publish(); return; }
+    const remaining = Date.parse(next) - this.nowMs();
+    if (remaining <= 0) { this.onRetryDue(userId, generation); return; }
+    const delay = Math.min(remaining, 2_147_483_647);
+    const scheduleTimer = this.dependencies.setTimer ?? ((callback: () => void, delayMs: number) => setTimeout(callback, delayMs));
+    this.retryTimerUserId = userId;
+    this.retryTimer = scheduleTimer(() => {
+      this.retryTimer = null;
+      this.retryTimerUserId = null;
+      if (generation !== this.generation || userId !== this.userId) return;
+      if (Date.parse(next) > this.nowMs()) { void this.refreshRetrySchedule(); return; }
+      this.onRetryDue(userId, generation);
+    }, delay);
+    this.record("RETRY_TIMER_SCHEDULED", userId, next);
+  }
+
+  private onRetryDue(userId: string, generation: number): void {
+    this.nextRetryAt = null;
+    this.retryDue = true;
+    this.lastTrigger = "RETRY_TIMER";
+    this.record("TRIGGER_RETRY_TIMER", userId);
+    if (generation !== this.generation || userId !== this.userId || !this.dependencies.isOnline()
+      || this.readyGeneration !== generation) return;
+    this.retryDue = false;
+    this.pushRequested = true;
+    this.schedule();
+  }
 }

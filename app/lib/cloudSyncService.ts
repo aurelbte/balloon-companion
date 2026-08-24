@@ -108,6 +108,16 @@ function isEligible(mutation: SyncMutation, now: Date): boolean {
   return !mutation.nextAttemptAt || Date.parse(mutation.nextAttemptAt) <= now.getTime();
 }
 
+export function nextEligibleRetryAt(mutations: readonly SyncMutation[]): string | null {
+  let next: number | null = null;
+  for (const mutation of mutations) {
+    if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType) || mutation.lastErrorCode === "CONFLICT" || !mutation.nextAttemptAt) continue;
+    const timestamp = Date.parse(mutation.nextAttemptAt);
+    if (Number.isFinite(timestamp) && (next === null || timestamp < next)) next = timestamp;
+  }
+  return next === null ? null : new Date(next).toISOString();
+}
+
 export class CloudSyncService {
   private readonly dependencies: CloudSyncDependencies;
   constructor(dependencies: CloudSyncDependencies) { this.dependencies = dependencies; }
