@@ -50,12 +50,12 @@ test("le diff OfficialAscension produit UPSERT et DELETE par identifiant", () =>
   assert.deepEqual(officialAscensionCloudMutations([ascension], []), [{ entityId: "ascension-a", operation: "DELETE" }]);
 });
 
-test("logbook-entry reste exclu du drain global et autorisé en ciblé", () => {
+test("logbook-entry est autorisé dans le drain global et en ciblé", () => {
   const service = readFileSync(new URL("./cloudSyncService.ts", import.meta.url), "utf8");
-  const automatic = service.match(/PHASE_3A_SYNC_ENTITY_TYPES = Object\.freeze\(\[([\s\S]*?)\]/)?.[1] ?? "";
-  const targeted = service.match(/PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = Object\.freeze\(([^\n]+)/)?.[1] ?? "";
-  assert.doesNotMatch(automatic, /logbook-entry/);
-  assert.match(targeted, /logbook-entry/);
+  const automatic = service.match(/AUTOMATIC_SYNC_ENTITY_TYPES = Object\.freeze\(\[\.\.\.PHASE_3A_SYNC_ENTITY_TYPES,([^\]]+)/)?.[1] ?? "";
+  const targeted = service.match(/PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = ([^;]+)/)?.[1] ?? "";
+  assert.match(automatic, /logbook-entry/);
+  assert.equal(targeted, "AUTOMATIC_SYNC_ENTITY_TYPES");
 });
 
 test("la migration ajoute le schéma et le protocole logbook_entry sans être appliquée", () => {

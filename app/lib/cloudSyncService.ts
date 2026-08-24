@@ -11,7 +11,8 @@ export const PHASE_3A_SYNC_ENTITY_TYPES = Object.freeze([
 ] as const);
 
 export type Phase3ASyncEntityType = typeof PHASE_3A_SYNC_ENTITY_TYPES[number];
-export const PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = Object.freeze([...PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "flight", "logbook-entry", "balloon-document"] as const);
+export const AUTOMATIC_SYNC_ENTITY_TYPES = Object.freeze([...PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "flight", "logbook-entry", "balloon-document"] as const);
+export const PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = AUTOMATIC_SYNC_ENTITY_TYPES;
 export type CloudMutationStatus = "APPLIED" | "ALREADY_APPLIED" | "CONFLICT" | "NOT_FOUND";
 
 export type CloudMutationRequest = Readonly<{
@@ -88,8 +89,9 @@ export type CloudSyncPassResult = Readonly<{
   ignored: number;
 }>;
 
-const AUTOMATIC_ALLOWED_TYPES = new Set<string>(PHASE_3A_SYNC_ENTITY_TYPES);
+const AUTOMATIC_ALLOWED_TYPES = new Set<string>(AUTOMATIC_SYNC_ENTITY_TYPES);
 const TARGETED_ALLOWED_TYPES = new Set<string>(PHASE_3B_TARGETED_SYNC_ENTITY_TYPES);
+const AUTOMATIC_TYPE_PRIORITY = new Map<string, number>(AUTOMATIC_SYNC_ENTITY_TYPES.map((entityType, index) => [entityType, index]));
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
 const BASE_BACKOFF_MS = 5 * 1000;
 
@@ -113,7 +115,11 @@ export class CloudSyncService {
   async syncPendingMutations(): Promise<CloudSyncPassResult> {
     const authorization = await this.authorizePass();
     if ("state" in authorization) return authorization;
-    return this.processMutations(await this.dependencies.outbox.list(), authorization, AUTOMATIC_ALLOWED_TYPES);
+    const mutations = (await this.dependencies.outbox.list()).map((mutation, index) => ({ mutation, index }))
+      .sort((left, right) => (AUTOMATIC_TYPE_PRIORITY.get(left.mutation.entityType) ?? Number.MAX_SAFE_INTEGER)
+        - (AUTOMATIC_TYPE_PRIORITY.get(right.mutation.entityType) ?? Number.MAX_SAFE_INTEGER) || left.index - right.index)
+      .map(({ mutation }) => mutation);
+    return this.processMutations(mutations, authorization, AUTOMATIC_ALLOWED_TYPES);
   }
 
   async syncMutationById(mutationId: string): Promise<CloudSyncPassResult> {

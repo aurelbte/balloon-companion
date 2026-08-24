@@ -91,7 +91,7 @@ test("ALREADY_APPLIED nettoie un replay après crash", async () => {
 
 test("CONFLICT conserve mutation et contexte serveur sans écraser le local", async () => {
   const value = fixture({ apply: async (request) => ({ status: "CONFLICT", entityId: request.entityId, revision: 7, serverUpdatedAt: NOW.toISOString(), deletedAt: null }) });
-  await value.outbox.enqueue({ entityType: "unit-preferences", entityId: "singleton", operation: "UPSERT" });
+  await value.outbox.enqueue({ entityType: "balloon", entityId: "balloon-conflict", operation: "UPSERT" });
   assert.equal((await value.service.syncPendingMutations()).conflicts, 1);
   assert.equal((await value.outbox.list()).length, 1);
   assert.deepEqual((await value.issues.list()).map(({ kind, serverRevision }) => ({ kind, serverRevision })), [{ kind: "CONFLICT", serverRevision: 7 }]);
@@ -136,51 +136,38 @@ test("un changement USER A vers USER B invalide la passe avant nettoyage local",
   assert.equal((await value.outbox.list()).length, 1);
 });
 
-test("les domaines interdits sont ignorés sans suppression", async () => {
+test("les domaines non transportés restent ignorés sans suppression", async () => {
   const value = fixture();
-  for (const entityType of ["recorded-flight", "balloon", "flight-completion", "balloon-document"]) {
+  for (const entityType of ["recorded-flight", "flight-completion"]) {
     await value.outbox.enqueue({ entityType, entityId: entityType, operation: "UPSERT" });
   }
   const result = await value.service.syncPendingMutations();
-  assert.equal(result.ignored, 4);
+  assert.equal(result.ignored, 2);
   assert.equal(value.calls(), 0);
-  assert.equal((await value.outbox.list()).length, 4);
+  assert.equal((await value.outbox.list()).length, 2);
 });
 
-test("balloon reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
+test("le drain automatique traite les domaines métier dans l'ordre de dépendance", async () => {
   const value = fixture();
-  const balloon = await value.outbox.enqueue({ entityType: "balloon", entityId: "balloon-test", operation: "UPSERT" });
-  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
-  assert.equal(value.calls(), 0);
-  assert.equal((await value.service.syncMutationById(balloon.mutationId)).applied, 1);
-  assert.equal(value.calls(), 1);
+  for (const [entityType, entityId] of [["balloon-document", "document"], ["logbook-entry", "entry"], ["flight", "flight"], ["balloon", "balloon"]]) {
+    await value.outbox.enqueue({ entityType, entityId, operation: "UPSERT" });
+  }
+  assert.equal((await value.service.syncPendingMutations()).applied, 4);
+  assert.deepEqual(value.requests.map(({ entityType }) => entityType), ["balloon", "flight", "logbook-entry", "balloon-document"]);
+  assert.deepEqual(await value.outbox.list(), []);
 });
 
-test("flight reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
-  const value = fixture();
-  const flight = await value.outbox.enqueue({ entityType: "flight", entityId: "flight-test", operation: "UPSERT" });
-  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
-  assert.equal(value.calls(), 0);
-  assert.equal((await value.service.syncMutationById(flight.mutationId)).applied, 1);
-  assert.equal(value.calls(), 1);
-});
-
-test("logbook-entry reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
-  const value = fixture();
-  const entry = await value.outbox.enqueue({ entityType: "logbook-entry", entityId: "ascension-test", operation: "UPSERT" });
-  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
-  assert.equal(value.calls(), 0);
-  assert.equal((await value.service.syncMutationById(entry.mutationId)).applied, 1);
-  assert.equal(value.calls(), 1);
-});
-
-test("balloon-document reste ignoré en passe automatique mais fonctionne en ciblé", async () => {
-  const value = fixture();
-  const document = await value.outbox.enqueue({ entityType: "balloon-document", entityId: "document-test", operation: "UPSERT" });
-  assert.equal((await value.service.syncPendingMutations()).ignored, 1);
-  assert.equal(value.calls(), 0);
-  assert.equal((await value.service.syncMutationById(document.mutationId)).applied, 1);
-  assert.equal(value.calls(), 1);
+test("un parent balloon en erreur conserve le parent et sa dépendance non tentée", async () => {
+  const value = fixture({ apply: async (request) => {
+    if (request.entityType === "balloon") throw new CloudSyncTransportError("SERVER", "parent unavailable");
+    return { status: "APPLIED", entityId: request.entityId, revision: 0, serverUpdatedAt: NOW.toISOString(), deletedAt: null };
+  } });
+  const document = await value.outbox.enqueue({ entityType: "balloon-document", entityId: "document", operation: "UPSERT" });
+  const balloon = await value.outbox.enqueue({ entityType: "balloon", entityId: "balloon", operation: "UPSERT" });
+  assert.equal((await value.service.syncPendingMutations()).state, "STOPPED_ERROR");
+  const remaining = await value.outbox.list();
+  assert.equal(remaining.find(({ mutationId }) => mutationId === balloon.mutationId).attempts, 1);
+  assert.equal(remaining.find(({ mutationId }) => mutationId === document.mutationId).attempts, 0);
 });
 
 test("le payload profil et favori exclut trace, document et Blob", async () => {

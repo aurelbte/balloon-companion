@@ -235,15 +235,15 @@ test("l’audit Cloud final inventorie uniquement en lecture les mutations et si
   assert.doesNotMatch(helper, /syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(|\.update\(|\.delete\(|\.enqueue\(|\.remove\(|\.removeMany\(|\.setMetadata\(|\.markAttempt\(|\.updateMutation\(|save[A-Z]|writeScoped/);
 });
 
-test("la liste blanche client 3A exclut vols, ballons, carnet et documents", () => {
-  const allowedBlock = service.match(/PHASE_3A_SYNC_ENTITY_TYPES = Object\.freeze\(\[([\s\S]*?)\]/)?.[1] ?? "";
-  for (const allowed of ["pilot-profile", "unit-preferences", "weather-preferences", "aviation-preferences", "favorite-launch-site", "favorite-weather-place"]) assert.match(allowedBlock, new RegExp(allowed));
-  for (const forbidden of ["recorded-flight", "balloon", "flight-completion", "balloon-document"]) assert.doesNotMatch(allowedBlock, new RegExp(forbidden));
+test("la liste blanche automatique inclut les domaines métier validés", () => {
+  const allowedBlock = service.match(/AUTOMATIC_SYNC_ENTITY_TYPES = Object\.freeze\(\[\.\.\.PHASE_3A_SYNC_ENTITY_TYPES,([^\]]+)/)?.[1] ?? "";
+  for (const allowed of ["balloon", "flight", "logbook-entry", "balloon-document"]) assert.match(allowedBlock, new RegExp(allowed));
+  for (const forbidden of ["recorded-flight", "flight-completion"]) assert.doesNotMatch(allowedBlock, new RegExp(forbidden));
 });
 
-test("3B autorise balloon, flight, logbook-entry et balloon-document uniquement via syncMutationById", () => {
+test("3B conserve les mêmes domaines via syncMutationById", () => {
   assert.match(service, /PHASE_3B_TARGETED_SYNC_ENTITY_TYPES/);
-  assert.match(service, /PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = Object\.freeze\(\[\.\.\.PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "flight", "logbook-entry", "balloon-document"\]/);
+  assert.match(service, /PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = AUTOMATIC_SYNC_ENTITY_TYPES/);
   assert.match(service, /syncPendingMutations[\s\S]*AUTOMATIC_ALLOWED_TYPES/);
   assert.match(service, /syncMutationById[\s\S]*TARGETED_ALLOWED_TYPES/);
 });

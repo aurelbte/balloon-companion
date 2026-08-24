@@ -59,13 +59,13 @@ test("DELETE document ne lit aucun fichier ni aucune métadonnée", async () => 
   assert.equal(loads, 0);
 });
 
-test("balloon-document est ciblé uniquement et son stockage conserve les mutations métier", () => {
+test("balloon-document est autorisé automatiquement et son stockage conserve les mutations métier", () => {
   const service = readFileSync(new URL("./cloudSyncService.ts", import.meta.url), "utf8");
   const documentStorage = readFileSync(new URL("./balloonDocumentStorage.ts", import.meta.url), "utf8");
-  const automatic = service.match(/PHASE_3A_SYNC_ENTITY_TYPES = Object\.freeze\(\[([\s\S]*?)\]/)?.[1] ?? "";
-  const targeted = service.match(/PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = Object\.freeze\(([^\n]+)/)?.[1] ?? "";
-  assert.doesNotMatch(automatic, /balloon-document/);
-  assert.match(targeted, /balloon-document/);
+  const automatic = service.match(/AUTOMATIC_SYNC_ENTITY_TYPES = Object\.freeze\(\[\.\.\.PHASE_3A_SYNC_ENTITY_TYPES,([^\]]+)/)?.[1] ?? "";
+  const targeted = service.match(/PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = ([^;]+)/)?.[1] ?? "";
+  assert.match(automatic, /balloon-document/);
+  assert.equal(targeted, "AUTOMATIC_SYNC_ENTITY_TYPES");
   assert.match(documentStorage, /enqueueLocalSyncMutation\("balloon-document", id\)/);
   assert.match(documentStorage, /enqueueLocalSyncMutation\("balloon-document", documentId, "DELETE"\)/);
 });
