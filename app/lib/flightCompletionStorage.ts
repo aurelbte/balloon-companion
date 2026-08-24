@@ -213,6 +213,19 @@ export function applyOfficialAscensionFromCloudWithoutEnqueue(
   return true;
 }
 
+/** Pull-only opening balance hydration used by the Cloud profile singleton. */
+export function applyOpeningBalanceFromCloudWithoutEnqueue(
+  scope: `USER:${string}`,
+  openingBalance: FlightCompletionState["openingBalance"],
+  storage: Storage = window.localStorage,
+): boolean {
+  if (typeof window === "undefined" || getRuntimeDataScope() !== scope) return false;
+  const current = loadFlightCompletionState();
+  if (!writeScopedBusinessValue(storage, STORAGE_KEY, JSON.stringify({ ...current, openingBalance } satisfies FlightCompletionState))) return false;
+  window.dispatchEvent(new Event(FLIGHT_COMPLETION_EVENT));
+  return true;
+}
+
 export function persistPilotExperience(balance: {
   hours: number;
   minutes: number;

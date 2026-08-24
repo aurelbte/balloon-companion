@@ -11,6 +11,7 @@ import {
   type FavoriteWeatherPlacePullConflict,
   type FlightCloudRow,
   type LogbookEntryCloudRow,
+  type PilotProfileCloudRow,
   type PreferenceCloudRow,
   type PreferencePullDomain,
 } from "./cloudPullService.ts";
@@ -26,9 +27,11 @@ import { applyWeatherPreferencesFromCloudWithoutEnqueue } from "./weatherPrefere
 import { applyAviationPreferencesFromCloudWithoutEnqueue } from "./aviation/aviationPreferencesStorage.ts";
 import type { RecordedFlight, RecordedFlightSummary } from "./recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
-import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
+import { applyOfficialAscensionFromCloudWithoutEnqueue, applyOpeningBalanceFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
 import { OFFICIAL_FLIGHT_NATURES, type OfficialAscension } from "./flightCompletion.ts";
 import { BALLOON_DOCUMENT_CATEGORY_ORDER, type BalloonDocument } from "./balloonDocuments.ts";
+import { normalizePilotProfile, type PilotProfile } from "./pilotProfile.ts";
+import { applyPilotProfileFromCloudWithoutEnqueue } from "./pilotProfileStorage.ts";
 
 function quotedPostgrestValue(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -89,6 +92,39 @@ function preferenceRow(value: unknown, domain: PreferencePullDomain): Preference
     ? { airportIcao: typeof row.airport_icao === "string" ? row.airport_icao : null, favorites: Array.isArray(row.favorites) ? row.favorites : [] }
     : row.preferences;
   return { id: row.id, entityId: "singleton", userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: valueForLocal };
+}
+
+type CloudPilotProfileLocalValue = Readonly<{
+  profile: PilotProfile;
+  openingBalance: Readonly<{ confirmed: boolean; ascensions: number | null; officialDurationMinutes: number | null }>;
+}>;
+
+function pilotProfileRow(value: unknown): PilotProfileCloudRow {
+  if (!value || typeof value !== "object") throw new Error("Invalid pilot profile cloud row");
+  const row = value as Record<string, unknown>;
+  const nullableString = (key: string) => row[key] === null || typeof row[key] === "string";
+  const nullableNonNegativeInteger = (key: string) => row[key] === null
+    || typeof row[key] === "number" && Number.isInteger(row[key]) && row[key] >= 0;
+  if (row.id !== "profile" || typeof row.user_id !== "string" || typeof row.revision !== "number"
+    || typeof row.created_at !== "string" || typeof row.updated_at !== "string"
+    || (row.deleted_at !== null && typeof row.deleted_at !== "string")
+    || typeof row.first_name !== "string" || typeof row.last_name !== "string" || typeof row.license_number !== "string"
+    || !nullableString("usual_function") || !nullableString("flight_test_due_date") || !nullableString("medical_due_date")
+    || typeof row.experience_confirmed !== "boolean" || !nullableNonNegativeInteger("opening_ascensions")
+    || !nullableNonNegativeInteger("opening_official_duration_minutes")) throw new Error("Invalid pilot profile cloud row");
+  const valueForLocal: CloudPilotProfileLocalValue = {
+    profile: normalizePilotProfile({
+      firstName: row.first_name, lastName: row.last_name, licenseNumber: row.license_number,
+      usualFunction: row.usual_function, flightTestDueDateIso: row.flight_test_due_date ?? "",
+      medicalDueDateIso: row.medical_due_date ?? "",
+    }),
+    openingBalance: {
+      confirmed: row.experience_confirmed,
+      ascensions: row.opening_ascensions as number | null,
+      officialDurationMinutes: row.opening_official_duration_minutes as number | null,
+    },
+  };
+  return { id: "profile", entityId: "singleton", userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: valueForLocal };
 }
 
 function finiteOptionalNumber(value: unknown): number | undefined {
@@ -443,6 +479,49 @@ export function createBrowserPreferencePullService(input: Readonly<{
       "unit-preferences": adapter("unit-preferences"),
       "weather-preferences": adapter("weather-preferences"),
       "aviation-preferences": adapter("aviation-preferences"),
+    },
+    recordConflict: async (_conflict, mutation, row) => {
+      await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
+    },
+  });
+}
+
+export function createBrowserPilotProfilePullService(input: Readonly<{
+  client: SupabaseClient;
+  storage: Storage;
+  scope: `USER:${string}`;
+}>): CloudPullService {
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
+  return new CloudPullService({
+    scope: input.scope,
+    getScope: getRuntimeDataScope,
+    getOnlineUserId: async () => {
+      const { data, error } = await input.client.auth.getUser();
+      if (error) throw new Error("Cloud pull auth unavailable");
+      return data.user?.id ?? null;
+    },
+    outbox,
+    cursors: new BrowserCloudPullCursorRepository(input.storage),
+    readPage: async () => [],
+    applyLocally: () => false,
+    profileDomain: {
+      readPage: async (cursor, limit) => {
+        let query = input.client.from("profiles")
+          .select("id,user_id,revision,created_at,updated_at,deleted_at,first_name,last_name,license_number,usual_function,flight_test_due_date,medical_due_date,experience_confirmed,opening_ascensions,opening_official_duration_minutes")
+          .eq("id", "profile").order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
+        if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+        const { data, error } = await query;
+        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
+        return (data ?? []).map(pilotProfileRow);
+      },
+      applyLocally: (row) => {
+        const local = row.value as CloudPilotProfileLocalValue;
+        if (!applyPilotProfileFromCloudWithoutEnqueue(input.scope, row.deletedAt ? null : local.profile, input.storage)) return false;
+        return applyOpeningBalanceFromCloudWithoutEnqueue(input.scope, row.deletedAt
+          ? { confirmed: false, ascensions: null, officialDurationMinutes: null }
+          : local.openingBalance, input.storage);
+      },
     },
     recordConflict: async (_conflict, mutation, row) => {
       await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });

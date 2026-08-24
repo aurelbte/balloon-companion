@@ -3,6 +3,7 @@ import type { FavoriteWeatherPlacePullReport } from "./cloudPullService.ts";
 import type { SyncMutation } from "./syncOutbox.ts";
 
 export const CLOUD_BOOTSTRAP_DOMAIN_ORDER = [
+  "profile",
   "unitPreferences",
   "weatherPreferences",
   "aviationPreferences",
@@ -16,13 +17,12 @@ export const CLOUD_BOOTSTRAP_DOMAIN_ORDER = [
 
 export type CloudBootstrapDomain = typeof CLOUD_BOOTSTRAP_DOMAIN_ORDER[number];
 export type CloudBootstrapState = "SUCCESS" | "PARTIAL" | "BLOCKED" | "OFFLINE" | "SESSION_INVALID";
-export type CloudBootstrapSkipped = Readonly<{ state: "SKIPPED_NOT_IMPLEMENTED" | "SKIPPED_NOT_READY" }>;
 export type CloudBootstrapReport = Readonly<{
   state: CloudBootstrapState;
   startedAt: string;
   completedAt: string;
   userId: string | null;
-  domains: Partial<Record<CloudBootstrapDomain, FavoriteWeatherPlacePullReport>> & Readonly<{ profile: CloudBootstrapSkipped }>;
+  domains: Partial<Record<CloudBootstrapDomain, FavoriteWeatherPlacePullReport>>;
   totals: Readonly<{ fetched: number; applied: number; tombstonesApplied: number; preservedLocalPending: number; conflicts: number; anomalies: number }>;
   stoppedAtDomain: CloudBootstrapDomain | null;
   resumable: boolean;
@@ -57,7 +57,7 @@ export class CloudBootstrapService {
   async bootstrapCloudDataForCurrentUser(): Promise<CloudBootstrapReport> {
     const startedAt = this.dependencies.now();
     const expectedUserId = userIdFromScope(this.dependencies.scope);
-    const domains: CloudBootstrapReport["domains"] = { profile: { state: "SKIPPED_NOT_READY" } };
+    const domains: CloudBootstrapReport["domains"] = {};
     const totals = { fetched: 0, applied: 0, tombstonesApplied: 0, preservedLocalPending: 0, conflicts: 0, anomalies: 0 };
     let before: readonly SyncMutation[] = [];
     let state: CloudBootstrapState = "SUCCESS";

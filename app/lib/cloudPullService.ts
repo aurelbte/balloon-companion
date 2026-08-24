@@ -6,12 +6,13 @@ export const FAVORITE_WEATHER_PLACE_PULL_DOMAIN = "favorite-weather-place";
 export const FAVORITE_LAUNCH_SITE_PULL_DOMAIN = "favorite-launch-site";
 export const PREFERENCE_PULL_DOMAINS = ["unit-preferences", "weather-preferences", "aviation-preferences"] as const;
 export type PreferencePullDomain = typeof PREFERENCE_PULL_DOMAINS[number];
-type PullDomain = typeof FAVORITE_WEATHER_PLACE_PULL_DOMAIN | typeof FAVORITE_LAUNCH_SITE_PULL_DOMAIN | PreferencePullDomain | "balloon" | "flight" | "logbook-entry" | "balloon-document";
+type PullDomain = typeof FAVORITE_WEATHER_PLACE_PULL_DOMAIN | typeof FAVORITE_LAUNCH_SITE_PULL_DOMAIN | PreferencePullDomain | "pilot-profile" | "balloon" | "flight" | "logbook-entry" | "balloon-document";
 
 type CloudPullRow = Readonly<{ id: string; entityId: string; userId: string; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type FavoriteWeatherPlaceCloudRow = Readonly<{ id: string; userId: string; syncId: string | null; name: string; latitude: number; longitude: number; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type FavoriteLaunchSiteCloudRow = Readonly<{ id: string; entityId: string; userId: string; syncId: string | null; name: string; sourceName: string | null; latitude: number; longitude: number; icaoCode: string | null; altitudeAmslM: number | null; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type PreferenceCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
+export type PilotProfileCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type BalloonCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type FlightCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type LogbookEntryCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
@@ -42,6 +43,7 @@ export type FavoriteWeatherPlacePullDependencies = Readonly<{
   readPage(cursor: CloudPullCursor | null, limit: number): Promise<readonly FavoriteWeatherPlaceCloudRow[]>;
   applyLocally(row: FavoriteWeatherPlaceCloudRow): Promise<boolean> | boolean;
   favoriteLaunchSiteDomain?: PullDomainAdapter<FavoriteLaunchSiteCloudRow>;
+  profileDomain?: PullDomainAdapter<PilotProfileCloudRow>;
   preferenceDomains?: Partial<Record<PreferencePullDomain, PullDomainAdapter<PreferenceCloudRow>>>;
   balloonDomain?: PullDomainAdapter<BalloonCloudRow>;
   flightDomain?: PullDomainAdapter<FlightCloudRow>;
@@ -74,6 +76,7 @@ export class CloudPullService {
     }, pageSize);
   }
   pullFavoriteLaunchSites(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.favoriteLaunchSiteDomain ? this.pullDomain(FAVORITE_LAUNCH_SITE_PULL_DOMAIN, this.dependencies.favoriteLaunchSiteDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
+  pullPilotProfile(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.profileDomain ? this.pullDomain("pilot-profile", this.dependencies.profileDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
   pullUnitPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("unit-preferences", pageSize); }
   pullWeatherPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("weather-preferences", pageSize); }
   pullAviationPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("aviation-preferences", pageSize); }

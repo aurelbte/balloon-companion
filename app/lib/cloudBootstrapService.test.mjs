@@ -31,12 +31,13 @@ test("appareil vierge suit l'ordre exact et agrège un SUCCESS", async () => {
   const report = await new CloudBootstrapService(ctx.deps).bootstrapCloudDataForCurrentUser();
   assert.equal(report.state, "SUCCESS");
   assert.deepEqual(ctx.calls, [...CLOUD_BOOTSTRAP_DOMAIN_ORDER]);
+  assert.equal(ctx.calls[0], "profile");
   assert.ok(ctx.calls.indexOf("balloons") < ctx.calls.indexOf("flights"));
   assert.ok(ctx.calls.indexOf("favoriteWeatherPlaces") < ctx.calls.indexOf("favoriteLaunchSites"));
   assert.ok(ctx.calls.indexOf("favoriteLaunchSites") < ctx.calls.indexOf("balloons"));
   assert.ok(ctx.calls.indexOf("balloons") < ctx.calls.indexOf("documents"));
   assert.ok(ctx.calls.indexOf("flights") < ctx.calls.indexOf("logbookEntries"));
-  assert.deepEqual(report.totals, { fetched: 9, applied: 9, tombstonesApplied: 0, preservedLocalPending: 0, conflicts: 0, anomalies: 0 });
+  assert.deepEqual(report.totals, { fetched: 10, applied: 10, tombstonesApplied: 0, preservedLocalPending: 0, conflicts: 0, anomalies: 0 });
   assert.equal(report.outboxPreserved, true);
   assert.equal(report.resumable, false);
 });
@@ -59,7 +60,7 @@ test("anomalie balloon bloque immédiatement flights, logbook et documents", asy
   const report = await new CloudBootstrapService(ctx.deps).bootstrapCloudDataForCurrentUser();
   assert.equal(report.state, "BLOCKED");
   assert.equal(report.stoppedAtDomain, "balloons");
-  assert.deepEqual(ctx.calls, ["unitPreferences", "weatherPreferences", "aviationPreferences", "favoriteWeatherPlaces", "favoriteLaunchSites", "balloons"]);
+  assert.deepEqual(ctx.calls, ["profile", "unitPreferences", "weatherPreferences", "aviationPreferences", "favoriteWeatherPlaces", "favoriteLaunchSites", "balloons"]);
   assert.equal(report.domains.flights, undefined);
   assert.equal(report.totals.anomalies, 1);
 });
@@ -80,7 +81,7 @@ test("offline en cours arrête avant le domaine suivant et reste reprenable", as
   assert.equal(report.state, "OFFLINE");
   assert.equal(report.stoppedAtDomain, "weatherPreferences");
   assert.equal(report.resumable, true);
-  assert.deepEqual(ctx.calls, ["unitPreferences"]);
+  assert.deepEqual(ctx.calls, ["profile", "unitPreferences"]);
 });
 
 test("GUEST, session expirée et USER switch sont refusés", async () => {
@@ -92,7 +93,7 @@ test("GUEST, session expirée et USER switch sont refusés", async () => {
   const report = await new CloudBootstrapService(switched.deps).bootstrapCloudDataForCurrentUser();
   assert.equal(report.state, "SESSION_INVALID");
   assert.equal(report.stoppedAtDomain, "weatherPreferences");
-  assert.deepEqual(switched.calls, ["unitPreferences"]);
+  assert.deepEqual(switched.calls, ["profile", "unitPreferences"]);
 });
 
 test("échec d'un domaine est PARTIAL et une reprise rejoue sans rollback global", async () => {
@@ -109,10 +110,10 @@ test("échec d'un domaine est PARTIAL et une reprise rejoue sans rollback global
   assert.equal(second.domains.flights.applied, 0);
 });
 
-test("favorite_launch_site est intégré et profile reste explicitement SKIP", async () => {
+test("profile et favorite_launch_site sont intégrés au bootstrap", async () => {
   const report = await new CloudBootstrapService(context().deps).bootstrapCloudDataForCurrentUser();
   assert.equal(report.domains.favoriteLaunchSites.state, "COMPLETED");
-  assert.deepEqual(report.domains.profile, { state: "SKIPPED_NOT_READY" });
+  assert.equal(report.domains.profile.state, "COMPLETED");
 });
 
 test("toute mutation créée pendant hydratation bloque le verdict et préserve l'ancienne", async () => {

@@ -5,6 +5,9 @@ import { setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
 import { CloudPullService, CloudPullTechnicalError } from "./cloudPullService.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue, FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue, FAVORITE_LAUNCH_SITES_STORAGE_KEY } from "./favoriteLaunchSites.ts";
+import { applyPilotProfileFromCloudWithoutEnqueue, PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
+import { applyOpeningBalanceFromCloudWithoutEnqueue, FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+import { createEmptyFlightCompletionState } from "./flightCompletion.ts";
 import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -66,6 +69,68 @@ function launchDependencies(rows = [row({ id: "launch-a" })]) {
   };
   return context;
 }
+
+function profileDependencies(rows = [row({ id: "profile", entityId: "singleton" })]) {
+  const context = dependencies(rows.map((candidate) => ({ ...candidate, id: "profile", entityId: "singleton" })));
+  context.deps.profileDomain = { readPage: context.deps.readPage, applyLocally: context.deps.applyLocally };
+  return context;
+}
+
+test("pilot-profile restaure le singleton, gère l'absence et protège le pending", async () => {
+  const restored = profileDependencies();
+  const report = await new CloudPullService(restored.deps).pullPilotProfile();
+  assert.equal(report.applied, 1);
+  assert.deepEqual(await restored.outbox.getMetadata("pilot-profile", "singleton"), {
+    entityType: "pilot-profile", entityId: "singleton", revision: 0, updatedAt: timestamp,
+  });
+  assert.deepEqual(await restored.outbox.list(), []);
+
+  const absent = profileDependencies([]);
+  assert.deepEqual(await new CloudPullService(absent.deps).pullPilotProfile(), {
+    state: "COMPLETED", fetched: 0, applied: 0, tombstonesApplied: 0, preservedLocalPending: 0,
+    conflicts: [], anomalies: [], pages: 1, cursor: null,
+  });
+
+  const pending = profileDependencies([row({ id: "profile", entityId: "singleton", revision: 2 })]);
+  await pending.outbox.setMetadata({ entityType: "pilot-profile", entityId: "singleton", revision: 2, updatedAt: timestamp });
+  await pending.outbox.enqueue({ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT", baseRevision: 2 });
+  assert.equal((await new CloudPullService(pending.deps).pullPilotProfile()).preservedLocalPending, 1);
+  assert.equal(pending.applied.length, 0);
+});
+
+test("pilot-profile protège conflit, USER switch et logout", async () => {
+  const conflict = profileDependencies([row({ id: "profile", entityId: "singleton", revision: 2 })]);
+  await conflict.outbox.setMetadata({ entityType: "pilot-profile", entityId: "singleton", revision: 1, updatedAt: timestamp });
+  await conflict.outbox.enqueue({ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT", baseRevision: 1 });
+  assert.equal((await new CloudPullService(conflict.deps).pullPilotProfile()).conflicts[0].reason, "REMOTE_ADVANCED");
+
+  const switched = profileDependencies();
+  let checks = 0;
+  switched.deps.getScope = () => (++checks >= 4 ? "USER:user-2" : scope);
+  assert.equal((await new CloudPullService(switched.deps).pullPilotProfile()).state, "STOPPED_USER_SWITCH");
+
+  const logout = profileDependencies();
+  logout.setScope(null);
+  assert.equal((await new CloudPullService(logout.deps).pullPilotProfile()).state, "REFUSED_NO_SESSION");
+});
+
+test("l'import silencieux profile restaure identité et solde initial sans enqueue", () => {
+  const values = new Map(), events = [];
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  globalThis.window = { localStorage: storage, dispatchEvent: (event) => { events.push(event.type); return true; } };
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-1", email: "test@example.test", firstName: "", lastName: "" } });
+  storage.setItem(scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY), JSON.stringify(createEmptyFlightCompletionState()));
+  const profile = { version: 1, firstName: "Ada", lastName: "Lovelace", licenseNumber: "bpl-1", usualFunction: "Pilote", flightTestDueDateIso: "2027-01-02", medicalDueDateIso: "2027-03-04" };
+  assert.equal(applyPilotProfileFromCloudWithoutEnqueue(scope, profile, storage), true);
+  assert.equal(applyOpeningBalanceFromCloudWithoutEnqueue(scope, { confirmed: true, ascensions: 12, officialDurationMinutes: 345 }, storage), true);
+  assert.equal(JSON.parse(values.get(scopedBusinessStorageKey(scope, PILOT_PROFILE_STORAGE_KEY))).licenseNumber, "BPL-1");
+  assert.equal(applyPilotProfileFromCloudWithoutEnqueue(scope, { ...profile, firstName: "Grace", licenseNumber: "bpl-2" }, storage), true);
+  assert.deepEqual(JSON.parse(values.get(scopedBusinessStorageKey(scope, PILOT_PROFILE_STORAGE_KEY))).firstName, "Grace");
+  assert.deepEqual(JSON.parse(values.get(scopedBusinessStorageKey(scope, PILOT_PROFILE_STORAGE_KEY))).licenseNumber, "BPL-2");
+  assert.deepEqual(JSON.parse(values.get(scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY))).openingBalance, { confirmed: true, ascensions: 12, officialDurationMinutes: 345 });
+  assert.equal(events.includes("balloon-companion:sync-mutation-enqueued"), false);
+  delete globalThis.window;
+});
 
 test("favorite_launch_site importe, pagine et pose ses sidecars sans mutation", async () => {
   const context = launchDependencies([row({ id: "a" }), row({ id: "b" }), row({ id: "c", updatedAt: "2026-08-23T12:01:00.000Z" })]);
@@ -297,6 +362,18 @@ test("les helpers launch site ciblés utilisent uniquement le PULL et l'inspecti
   assert.match(runtime, /inspectFavoriteLaunchSitePullState: \(\) => inspectFavoriteLaunchSitePullState\(scope\)/);
   const pull = runtime.match(/async function pullFavoriteLaunchSitesTargetedWithVerification[\s\S]*?\n\}/)?.[0] ?? "";
   const inspection = runtime.match(/async function inspectFavoriteLaunchSitePullState[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.doesNotMatch(pull, /syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
+  assert.doesNotMatch(inspection, /syncMutationById|syncPendingMutations|\.rpc\(|\.enqueue\(|\.setMetadata\(|save[A-Z]/);
+});
+
+test("les helpers profile ciblés restent PULL-only et READ-ONLY", () => {
+  const runtime = readFileSync(new URL("../components/cloud/CloudSyncRuntime.tsx", import.meta.url), "utf8");
+  const browser = readFileSync(new URL("./cloudPullBrowser.ts", import.meta.url), "utf8");
+  assert.match(browser, /from\("profiles"\)[\s\S]*?first_name[\s\S]*?opening_official_duration_minutes/);
+  assert.match(runtime, /pullPilotProfileTargeted: \(\) => pullPilotProfileTargetedWithVerification\(scope\)/);
+  assert.match(runtime, /inspectPilotProfilePullState: \(\) => inspectPilotProfilePullState\(scope\)/);
+  const pull = runtime.match(/async function pullPilotProfileTargetedWithVerification[\s\S]*?\n\}/)?.[0] ?? "";
+  const inspection = runtime.match(/async function inspectPilotProfilePullState[\s\S]*?\n\}/)?.[0] ?? "";
   assert.doesNotMatch(pull, /syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
   assert.doesNotMatch(inspection, /syncMutationById|syncPendingMutations|\.rpc\(|\.enqueue\(|\.setMetadata\(|save[A-Z]/);
 });

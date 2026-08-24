@@ -8,6 +8,7 @@ import {
   createBrowserFavoriteWeatherPlacePullService,
   createBrowserFlightPullService,
   createBrowserLogbookEntryPullService,
+  createBrowserPilotProfilePullService,
   createBrowserPreferencePullService,
 } from "./cloudPullBrowser.ts";
 import { IndexedDbSyncOutboxStorage } from "./syncOutbox.ts";
@@ -18,6 +19,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
   scope: `USER:${string}`;
 }>): CloudBootstrapService {
   const preferences = createBrowserPreferencePullService(input);
+  const profile = createBrowserPilotProfilePullService(input);
   const favoriteWeatherPlaces = createBrowserFavoriteWeatherPlacePullService(input);
   const favoriteLaunchSites = createBrowserFavoriteLaunchSitePullService(input);
   const balloons = createBrowserBalloonPullService(input);
@@ -36,6 +38,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
     isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
     listOutbox: () => outbox.list(),
     pulls: {
+      profile: () => profile.pullPilotProfile(),
       unitPreferences: () => preferences.pullUnitPreferences(),
       weatherPreferences: () => preferences.pullWeatherPreferences(),
       aviationPreferences: () => preferences.pullAviationPreferences(),

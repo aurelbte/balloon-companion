@@ -35,7 +35,7 @@ import {
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import { nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
-import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPilotProfilePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
 import { CLOUD_BOOTSTRAP_DOMAIN_ORDER } from "../../lib/cloudBootstrapService.ts";
 import { CloudSyncRuntimeController, type CloudSyncRuntimeControllerSnapshot } from "../../lib/cloudSyncRuntimeController.ts";
@@ -44,6 +44,7 @@ import { FAVORITE_LAUNCH_SITE_PULL_DOMAIN, FAVORITE_WEATHER_PLACE_PULL_DOMAIN } 
 import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferencesStorage.ts";
 import { loadWeatherPreferences, saveWeatherPreferences } from "../../lib/weatherPreferencesStorage.ts";
 import { loadAviationPreferences, saveAviationPreferences } from "../../lib/aviation/aviationPreferencesStorage.ts";
+import { loadPilotProfile } from "../../lib/pilotProfileStorage.ts";
 import {
   resolveProtectedPreferenceConflictLocalWins,
   type ProtectedPreferenceRebaseType,
@@ -82,6 +83,8 @@ declare global {
       inspectFavoriteWeatherPullTestState(): Promise<unknown>;
       pullFavoriteLaunchSitesTargeted(): Promise<unknown>;
       inspectFavoriteLaunchSitePullState(): Promise<unknown>;
+      pullPilotProfileTargeted(): Promise<unknown>;
+      inspectPilotProfilePullState(): Promise<unknown>;
       pullUnitPreferencesTargeted(): Promise<unknown>;
       pullWeatherPreferencesTargeted(): Promise<unknown>;
       pullAviationPreferencesTargeted(): Promise<unknown>;
@@ -967,6 +970,36 @@ async function pullFavoriteLaunchSitesTargetedWithVerification(scope: `USER:${st
   }
 }
 
+async function inspectPilotProfilePullState(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const mutations = await outbox.list();
+  return {
+    scope,
+    localProfile: loadPilotProfile(),
+    localOpeningBalance: loadFlightCompletionState().openingBalance,
+    sidecar: await outbox.getMetadata("pilot-profile", "singleton"),
+    cursor: await new BrowserCloudPullCursorRepository(window.localStorage).get(scope, "pilot-profile"),
+    pendingMutations: mutations.filter(({ entityType, entityId }) => entityType === "pilot-profile" && entityId === "singleton"),
+  } as const;
+}
+
+async function pullPilotProfileTargetedWithVerification(scope: `USER:${string}`) {
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const before = await outbox.list();
+  let enqueueEvents = 0;
+  const countEnqueue = () => { enqueueEvents += 1; };
+  window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, countEnqueue);
+  try {
+    const report = await createBrowserPilotProfilePullService({
+      client: createBrowserSupabaseClient(), storage: window.localStorage, scope,
+    }).pullPilotProfile();
+    const after = await outbox.list();
+    return { ...report, controlledVerification: { enqueueEvents, outboxBefore: before.length, outboxAfter: after.length } } as const;
+  } finally {
+    window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, countEnqueue);
+  }
+}
+
 async function inspectPreferencePullState(scope: `USER:${string}`) {
   const outbox = new IndexedDbSyncOutboxStorage(scope);
   const mutations = await outbox.list();
@@ -1084,6 +1117,7 @@ async function inspectDocumentPullState(scope: `USER:${string}`) {
 }
 
 const BOOTSTRAP_CURSOR_DOMAINS = [
+  "pilot-profile",
   "unit-preferences",
   "weather-preferences",
   "aviation-preferences",
@@ -1110,6 +1144,7 @@ async function inspectCloudBootstrapState(scope: `USER:${string}`) {
     outboxCount: mutations.length,
     pendingByDomain: Object.fromEntries(BOOTSTRAP_CURSOR_DOMAINS.map((domain) => [domain, mutations.filter(({ entityType }) => entityType === domain).length])),
     local: {
+      profile: loadPilotProfile(),
       unitPreferences: Boolean(loadUnitPreferences()),
       weatherPreferences: Boolean(loadWeatherPreferences()),
       aviationPreferences: Boolean(loadAviationPreferences()),
@@ -1196,6 +1231,8 @@ export default function CloudSyncRuntime(): null {
       inspectFavoriteWeatherPullTestState: () => inspectFavoriteWeatherPullTestState(scope),
       pullFavoriteLaunchSitesTargeted: () => pullFavoriteLaunchSitesTargetedWithVerification(scope),
       inspectFavoriteLaunchSitePullState: () => inspectFavoriteLaunchSitePullState(scope),
+      pullPilotProfileTargeted: () => pullPilotProfileTargetedWithVerification(scope),
+      inspectPilotProfilePullState: () => inspectPilotProfilePullState(scope),
       pullUnitPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullUnitPreferences(),
       pullWeatherPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullWeatherPreferences(),
       pullAviationPreferencesTargeted: () => createBrowserPreferencePullService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).pullAviationPreferences(),
