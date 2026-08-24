@@ -95,6 +95,7 @@ declare global {
       bootstrapCloudDataTargeted(): Promise<unknown>;
       inspectCloudBootstrapState(): Promise<unknown>;
       inspectCloudSyncRuntimeControllerState(): Promise<unknown>;
+      inspectFlightLogbookAutoPushTestState(): Promise<unknown>;
     }>;
   }
 }
@@ -1000,6 +1001,40 @@ async function inspectLogbookEntryPullState(scope: `USER:${string}`) {
   } as const;
 }
 
+async function inspectFlightLogbookAutoPushTestState(scope: `USER:${string}`) {
+  const marker = "BC AUTO CLOUD TEST";
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const [mutations, metadata, recordedFlights] = await Promise.all([
+    outbox.list(),
+    outbox.listMetadata(),
+    new IndexedDbRecordedFlightStorage().listFlights(),
+  ]);
+  const completion = loadFlightCompletionState();
+  const journalFlights = completion.journalFlights.filter((flight) =>
+    flight.customTitle?.includes(marker) || flight.departure.includes(marker) || flight.arrival.includes(marker),
+  );
+  const flightIds = new Set(journalFlights.map(({ sourceFlightId, id }) => sourceFlightId ?? id));
+  const ascensions = completion.officialAscensions.filter((ascension) =>
+    ascension.observations.includes(marker) || ascension.sourceFlightId !== null && flightIds.has(ascension.sourceFlightId),
+  );
+  const ascensionIds = new Set(ascensions.map(({ id }) => id));
+  return {
+    scope,
+    flights: journalFlights.map((flight) => {
+      const flightId = flight.sourceFlightId ?? flight.id;
+      const recorded = recordedFlights.find(({ id }) => id === flightId);
+      return { flightId, customTitle: flight.customTitle, departure: flight.departure, arrival: flight.arrival, localPointCount: recorded?.points.length ?? 0 };
+    }),
+    logbookEntries: ascensions.map(({ id, sourceFlightId, observations }) => ({ id, sourceFlightId, observations })),
+    sidecars: metadata.filter(({ entityType, entityId }) =>
+      entityType === "flight" && flightIds.has(entityId) || entityType === "logbook-entry" && ascensionIds.has(entityId),
+    ),
+    pendingMutations: mutations.filter(({ entityType, entityId }) =>
+      entityType === "flight" && flightIds.has(entityId) || entityType === "logbook-entry" && ascensionIds.has(entityId),
+    ),
+  } as const;
+}
+
 async function inspectDocumentPullState(scope: `USER:${string}`) {
   const outbox = new IndexedDbSyncOutboxStorage(scope);
   const mutations = await outbox.list();
@@ -1142,6 +1177,7 @@ export default function CloudSyncRuntime(): null {
       },
       inspectCloudBootstrapState: () => inspectCloudBootstrapState(scope),
       inspectCloudSyncRuntimeControllerState: async () => inspectCloudSyncRuntimeControllerState(),
+      inspectFlightLogbookAutoPushTestState: () => inspectFlightLogbookAutoPushTestState(scope),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };

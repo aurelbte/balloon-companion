@@ -46,6 +46,15 @@ test("le diagnostic runtime targeted est read-only et réutilise le contrôleur 
   assert.doesNotMatch(helper, /bootstrapCloudDataForCurrentUser|syncPendingMutations|syncMutationById|\.rpc\(|\.enqueue\(|\.remove\(|\.setMetadata\(/);
 });
 
+test("l'inspection flight/logbook automatique est strictement read-only", () => {
+  assert.match(runtime, /inspectFlightLogbookAutoPushTestState/);
+  assert.match(runtime, /BC AUTO CLOUD TEST/);
+  const helper = runtime.match(/async function inspectFlightLogbookAutoPushTestState[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(helper, /entityType === "flight"/);
+  assert.match(helper, /entityType === "logbook-entry"/);
+  assert.doesNotMatch(helper, /syncMutationById|syncPendingMutations|bootstrapCloudDataForCurrentUser|\.rpc\(|\.enqueue\(|\.remove\(|\.setMetadata\(|save[A-Z]|persist[A-Z]|delete[A-Z]/);
+});
+
 test("le harness ciblé crée une ascension locale DEV sans appeler le service Cloud", () => {
   assert.match(runtime, /createLocalOfficialAscensionTest\(\)/);
   assert.match(runtime, /persistManualOfficialAscension\(\{/);
