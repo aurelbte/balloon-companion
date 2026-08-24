@@ -1,4 +1,4 @@
-import { officialAscensionFlightNature, type OfficialAscension } from "./flightCompletion.ts";
+import { officialAscensionFlightNature, roundJournalAltitudeMeters, type OfficialAscension } from "./flightCompletion.ts";
 
 export type OfficialAscensionEditValues = {
   dateIso: string;
@@ -39,7 +39,7 @@ export function officialAscensionToEditValues(
     maximumAltitudeM:
       ascension.maximumAltitudeM === null
         ? ""
-        : String(ascension.maximumAltitudeM),
+        : String(roundJournalAltitudeMeters(ascension.maximumAltitudeM)),
     officialDurationMinutes: ascension.officialDurationMinutes,
     flightNature: officialAscensionFlightNature(ascension),
     takeoffCount: ascension.takeoffCount === undefined ? "" : String(ascension.takeoffCount),

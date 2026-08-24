@@ -10,6 +10,7 @@ import {
   validateOfficialAscension,
   type CompletionJournalFlight,
   removeJournalFlight,
+  roundJournalAltitudeMeters,
   setJournalFlightLogbookStatus,
   setJournalFlightCustomTitle,
   setJournalFlightNotes,
@@ -109,6 +110,13 @@ function normalizeState(value: unknown): FlightCompletionState | null {
           : undefined;
       return {
         ...flight,
+        maxAltitudeM: roundJournalAltitudeMeters(flight.maxAltitudeM),
+        ...(flight.statistics ? { statistics: {
+          ...flight.statistics,
+          takeoffAltitudeAmslM: roundJournalAltitudeMeters(flight.statistics.takeoffAltitudeAmslM),
+          landingAltitudeAmslM: roundJournalAltitudeMeters(flight.statistics.landingAltitudeAmslM),
+          averageAltitudeAmslM: roundJournalAltitudeMeters(flight.statistics.averageAltitudeAmslM),
+        } } : {}),
         generatedTitle,
         ...(customTitle ? { customTitle } : {}),
         title: undefined,
@@ -118,7 +126,11 @@ function normalizeState(value: unknown): FlightCompletionState | null {
           : "CARNET_PENDING",
       };
     }),
-    officialAscensions: state.officialAscensions,
+    officialAscensions: state.officialAscensions.map((ascension) => ({
+      ...ascension,
+      ...(ascension.maximumAltitudeM === null || typeof ascension.maximumAltitudeM === "number"
+        ? { maximumAltitudeM: roundJournalAltitudeMeters(ascension.maximumAltitudeM) } : {}),
+    })),
   };
 }
 

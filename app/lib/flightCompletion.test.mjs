@@ -13,6 +13,7 @@ import {
   ensureCompletionJournalFlight,
   removeOfficialAscension,
   removeJournalFlight,
+  roundJournalAltitudeMeters,
   setJournalFlightLogbookStatus,
   updateOfficialAscension,
   validateOfficialAscension,
@@ -184,7 +185,7 @@ test("modifier une ascension préserve le vol GPS, sa trace et ses métadonnées
   assert.equal(calculatePilotOfficialTotals(modified).totalHoursExact, 8_265 / 60);
 });
 
-test("la durée seule déclenche l’update sans normaliser l’altitude GPS", () => {
+test("la durée seule déclenche l’update et normalise l’altitude métier", () => {
   const originalInput = {
     ...defaultOfficialAscensionInput(),
     officialDurationMinutes: 69,
@@ -208,7 +209,16 @@ test("la durée seule déclenche l’update sans normaliser l’altitude GPS", (
   assert.equal(modified.officialAscensions.length, 1);
   assert.equal(modified.officialAscensions[0].id, ascension.id);
   assert.equal(modified.officialAscensions[0].officialDurationMinutes, 70);
-  assert.equal(modified.officialAscensions[0].maximumAltitudeM, 550.0596481952816);
+  assert.equal(modified.officialAscensions[0].maximumAltitudeM, 550);
+});
+
+test("les altitudes Journal/Carnet utilisent un arrondi entier cohérent", () => {
+  assert.equal(roundJournalAltitudeMeters(140.8153415846565), 141);
+  assert.equal(roundJournalAltitudeMeters(140.2), 140);
+  assert.equal(roundJournalAltitudeMeters(140), 140);
+  assert.equal(roundJournalAltitudeMeters(null), null);
+  const legacy = { ...validateOfficialAscension(createEmptyFlightCompletionState(), DEMO_COMPLETION_FLIGHT_ID, defaultOfficialAscensionInput()).officialAscensions[0], maximumAltitudeM: 140.8153415846565 };
+  assert.equal(officialAscensionToEditValues(legacy).maximumAltitudeM, "141");
 });
 
 test("le formulaire de modification reçoit tous les champs officiels préremplis", () => {

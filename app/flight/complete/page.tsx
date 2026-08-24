@@ -7,6 +7,7 @@ import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import {
   adjustOfficialDurationMinutes,
   defaultOfficialAscensionInput,
+  roundJournalAltitudeMeters,
   type OfficialAscensionInput,
 } from "../../lib/flightCompletion";
 import { ensureDemoCompletionPersisted, persistJournalFlightDecision, persistOfficialAscension } from "../../lib/flightCompletionStorage";
@@ -55,7 +56,7 @@ export default function FlightCompletePage() {
       departure: activeFlight.departure,
       arrival: activeFlight.arrival,
       pilotFunction: role,
-      maximumAltitudeM: activeFlight.maxAltitudeM,
+      maximumAltitudeM: roundJournalAltitudeMeters(activeFlight.maxAltitudeM),
       officialDurationMinutes: duration,
     } satisfies OfficialAscensionInput;
   }, [activeFlight, officialDuration, role]);

@@ -71,6 +71,14 @@ export type OfficialAscensionInput = Omit<
   "id" | "source" | "sourceFlightId" | "gpsDurationMinutes"
 >;
 
+export function roundJournalAltitudeMeters(value: number | null): number | null {
+  return value === null || !Number.isFinite(value) ? null : Math.round(value);
+}
+
+function withRoundedOfficialAltitude(input: OfficialAscensionInput): OfficialAscensionInput {
+  return { ...input, maximumAltitudeM: roundJournalAltitudeMeters(input.maximumAltitudeM) };
+}
+
 export function officialAscensionFlightNature(ascension: Pick<OfficialAscension, "flightNature">): OfficialFlightNature {
   return ascension.flightNature && OFFICIAL_FLIGHT_NATURES.includes(ascension.flightNature) ? ascension.flightNature : "STANDARD";
 }
@@ -180,7 +188,7 @@ export function validateOfficialAscension(
   const sourceFlight = state.journalFlights.find(({ id }) => id === sourceFlightId);
   if (!sourceFlight) return state;
   const ascension: OfficialAscension = {
-    ...input,
+    ...withRoundedOfficialAltitude(input),
     id: sourceFlightId === DEMO_COMPLETION_FLIGHT_ID ? DEMO_COMPLETION_ASCENSION_ID : `ascension-${sourceFlightId}`,
     sourceFlightId,
     source: "GPS_BALLOON_COMPANION",
@@ -271,7 +279,7 @@ export function addManualOfficialAscension(
   return {
     ...state,
     officialAscensions: [...state.officialAscensions, {
-      ...input,
+      ...withRoundedOfficialAltitude(input),
       id,
       sourceFlightId: null,
       source: "MANUAL",
@@ -305,12 +313,13 @@ export function updateOfficialAscension(
   const index = state.officialAscensions.findIndex(({ id }) => id === ascensionId);
   if (index < 0) return state;
   const current = state.officialAscensions[index]!;
-  const unchanged = (Object.keys(input) as Array<keyof OfficialAscensionInput>)
-    .every((key) => current[key] === input[key]);
+  const normalizedInput = withRoundedOfficialAltitude(input);
+  const unchanged = (Object.keys(normalizedInput) as Array<keyof OfficialAscensionInput>)
+    .every((key) => current[key] === normalizedInput[key]);
   if (unchanged) return state;
   const officialAscensions = [...state.officialAscensions];
   officialAscensions[index] = {
-    ...input,
+    ...normalizedInput,
     id: current.id,
     source: current.source,
     sourceFlightId: current.sourceFlightId,

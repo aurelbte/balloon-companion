@@ -35,6 +35,17 @@ test("un vol GPS long devient une entrée Journal légère dont la trace reste r
   assert.equal(recordedFlightPointsToJournalPoints(recorded).length, 420);
   assert.ok(journal.distanceKm > 30);
   assert.equal(journal.balloonRegistration, "F-HLFM");
+  assert.equal(Number.isInteger(journal.maxAltitudeM), true);
+  assert.equal(Number.isInteger(journal.statistics.takeoffAltitudeAmslM), true);
+  assert.equal(recorded.points.some(({ altitudeMeters }) => altitudeMeters !== null && !Number.isInteger(altitudeMeters)), true, "la trace GPS brute reste décimale");
+});
+
+test("un vol metadata-only préremplit le Journal avec une altitude arrondie", () => {
+  const startedAt = Date.UTC(2026, 7, 2, 5, 30);
+  const source = finalizeRecordedFlight(createRecordedFlight({ id: "metadata-altitude", startedAt }), startedAt + 60_000);
+  const journal = recordedFlightToJournalFlight({ ...source, points: [], summary: { ...source.summary, maxAltitudeMeters: 140.8153415846565 } });
+  assert.equal(journal.maxAltitudeM, 141);
+  assert.deepEqual(source.points, []);
 });
 
 test("une récupération sans heure de fin utilise le dernier point et reste idempotente", () => {

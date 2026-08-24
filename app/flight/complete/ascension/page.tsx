@@ -8,6 +8,7 @@ import OfficialAscensionForm, {
 import {
   defaultOfficialAscensionInput,
   DEMO_COMPLETION_FLIGHT_ID,
+  roundJournalAltitudeMeters,
 } from "../../../lib/flightCompletion";
 import {
   ensureDemoCompletionPersisted,
@@ -39,7 +40,7 @@ function toFormValues(flightId: string): OfficialAscensionFormValues {
     category: value.category,
     pilotFunction: value.pilotFunction,
     nightFlight: value.nightFlight,
-    maximumAltitudeM: value.maximumAltitudeM === null ? "" : String(value.maximumAltitudeM),
+    maximumAltitudeM: value.maximumAltitudeM === null ? "" : String(roundJournalAltitudeMeters(value.maximumAltitudeM)),
     officialDurationMinutes: value.officialDurationMinutes,
     flightNature: value.flightNature ?? "STANDARD",
     takeoffCount: value.takeoffCount === undefined ? "1" : String(value.takeoffCount),

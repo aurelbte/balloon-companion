@@ -5,7 +5,7 @@ import {
   type RecordedFlight,
   type RecordedFlightPoint,
 } from "./recordedFlight.ts";
-import type { CompletionJournalFlight } from "./flightCompletion.ts";
+import { roundJournalAltitudeMeters, type CompletionJournalFlight } from "./flightCompletion.ts";
 import type { JournalFlight } from "./journalMockData.ts";
 import type { PersistedFlightSession } from "../types/flight.ts";
 import { calculateRecordedFlightSummary as calculateSummary, geoPointToRecordedFlightPoint } from "./recordedFlight.ts";
@@ -134,13 +134,13 @@ export function recordedFlightToJournalFlight(
     distanceKm: summary.distanceMeters / 1000,
     takeoffTime,
     landingTime: timeLabel(endedAt),
-    maxAltitudeM: summary.maxAltitudeMeters,
+    maxAltitudeM: roundJournalAltitudeMeters(summary.maxAltitudeMeters),
     maxSpeedKmh: summary.maxGroundSpeedMetersPerSecond === null ? null : summary.maxGroundSpeedMetersPerSecond * 3.6,
     notes: source.notes?.trim() || (options.recovered ? "Vol récupéré depuis une session GPS locale." : null),
     statistics: {
-      takeoffAltitudeAmslM: first?.altitudeMeters ?? null,
-      landingAltitudeAmslM: last?.altitudeMeters ?? null,
-      averageAltitudeAmslM: average(altitudes),
+      takeoffAltitudeAmslM: roundJournalAltitudeMeters(first?.altitudeMeters ?? null),
+      landingAltitudeAmslM: roundJournalAltitudeMeters(last?.altitudeMeters ?? null),
+      averageAltitudeAmslM: roundJournalAltitudeMeters(average(altitudes)),
       averageSpeedKmh: metadataOnly
         ? summary.averageGroundSpeedMetersPerSecond === null ? null : summary.averageGroundSpeedMetersPerSecond * 3.6
         : average(speeds) === null ? null : average(speeds)! * 3.6,

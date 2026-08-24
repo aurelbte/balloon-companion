@@ -6,6 +6,7 @@ import { formatOfficialDuration } from "../../lib/ascensionMockData";
 import styles from "../../journal/Journal.module.css";
 import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 import { formatFlightAltitude } from "../../lib/unitPreferences";
+import { roundJournalAltitudeMeters } from "../../lib/flightCompletion";
 
 export default function CompletionAscensionDetail({ ascensionId }: { ascensionId: string }) {
   const units = useUnitPreferences();
@@ -27,7 +28,7 @@ export default function CompletionAscensionDetail({ ascensionId }: { ascensionId
     ["Lieu d’atterrissage", ascension.arrival],
     ["Fonction", ascension.pilotFunction],
     ["Vol de nuit", ascension.nightFlight ? "Oui" : "Non"],
-    ["Altitude atteinte", ascension.maximumAltitudeM === null ? "—" : formatFlightAltitude(ascension.maximumAltitudeM, units.flightInstruments.altitudeUnit)],
+    ["Altitude atteinte", ascension.maximumAltitudeM === null ? "—" : formatFlightAltitude(roundJournalAltitudeMeters(ascension.maximumAltitudeM)!, units.flightInstruments.altitudeUnit)],
     ["Temps officiel", formatOfficialDuration(ascension.officialDurationMinutes)],
     ["Origine", "GPS · Balloon Companion"],
   ] as const;
