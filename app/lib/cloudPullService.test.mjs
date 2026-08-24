@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
-import { CloudPullService } from "./cloudPullService.ts";
+import { CloudPullService, CloudPullTechnicalError } from "./cloudPullService.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue, FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
@@ -106,11 +106,20 @@ test("le curseur n’avance pas après un échec et la reprise rejoue la ligne",
   context.cursors.failOnId = "b";
   const first = await new CloudPullService(context.deps).pullFavoriteWeatherPlaces(2);
   assert.equal(first.state, "STOPPED_ERROR");
+  assert.deepEqual(first.error, { step: "WRITE_CURSOR", code: "UNEXPECTED_ERROR", message: "cursor failed" });
   assert.deepEqual(context.cursors.cursor, { updatedAt: timestamp, id: "a" });
   context.cursors.failOnId = null;
   const second = await new CloudPullService(context.deps).pullFavoriteWeatherPlaces(2);
   assert.equal(second.state, "COMPLETED");
   assert.deepEqual(context.cursors.cursor, { updatedAt: timestamp, id: "b" });
+});
+
+test("STOPPED_ERROR expose le diagnostic technique sûr de l'adaptateur", async () => {
+  const context = dependencies();
+  context.deps.readPage = async () => { throw new CloudPullTechnicalError("PARSE_ROW", "INVALID_FLIGHT_ROW", "Invalid flight cloud summary"); };
+  const result = await new CloudPullService(context.deps).pullFavoriteWeatherPlaces();
+  assert.equal(result.state, "STOPPED_ERROR");
+  assert.deepEqual(result.error, { step: "PARSE_ROW", code: "INVALID_FLIGHT_ROW", message: "Invalid flight cloud summary" });
 });
 
 test("un pull répété est idempotent", async () => {

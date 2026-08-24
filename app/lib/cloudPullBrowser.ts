@@ -3,6 +3,7 @@ import { getRuntimeDataScope } from "./auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository } from "./cloudSyncBrowser.ts";
 import {
   CloudPullService,
+  CloudPullTechnicalError,
   type BalloonCloudRow,
   type DocumentCloudRow,
   type FavoriteWeatherPlaceCloudRow,
@@ -124,14 +125,14 @@ function nullableFiniteNumber(value: unknown): number | null | undefined {
 function flightSummary(value: unknown): RecordedFlightSummary {
   if (!value || typeof value !== "object") throw new Error("Invalid flight cloud summary");
   const summary = value as Record<string, unknown>;
-  const required = ["durationSeconds", "distanceMeters", "minAltitudeMeters", "maxAltitudeMeters", "averageGroundSpeedMetersPerSecond", "maxGroundSpeedMetersPerSecond"] as const;
-  if (required.some((key) => key.endsWith("Meters") || key.endsWith("Seconds")
-    ? typeof summary[key] !== "number" || !Number.isFinite(summary[key])
-    : nullableFiniteNumber(summary[key]) === undefined)) throw new Error("Invalid flight cloud summary");
+  const required = ["durationSeconds", "distanceMeters"] as const;
+  const nullable = ["minAltitudeMeters", "maxAltitudeMeters", "averageGroundSpeedMetersPerSecond", "maxGroundSpeedMetersPerSecond"] as const;
+  if (required.some((key) => typeof summary[key] !== "number" || !Number.isFinite(summary[key]))
+    || nullable.some((key) => nullableFiniteNumber(summary[key]) === undefined)) throw new Error("Invalid flight cloud summary");
   return value as RecordedFlightSummary;
 }
 
-function flightRow(value: unknown): FlightCloudRow {
+export function parseFlightCloudRow(value: unknown): FlightCloudRow {
   if (!value || typeof value !== "object") throw new Error("Invalid flight cloud row");
   const row = value as Record<string, unknown>;
   if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.revision !== "number"
@@ -447,8 +448,12 @@ export function createBrowserFlightPullService(input: Readonly<{
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
         const { data, error } = await query;
-        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
-        return (data ?? []).map(flightRow);
+        if (error) throw new CloudPullTechnicalError("READ_PAGE", error.code ?? "SUPABASE_READ_ERROR", `flights SELECT: ${error.message}`);
+        try {
+          return (data ?? []).map(parseFlightCloudRow);
+        } catch (error) {
+          throw new CloudPullTechnicalError("PARSE_ROW", "INVALID_FLIGHT_ROW", error instanceof Error ? error.message : "Invalid flight cloud row");
+        }
       },
       applyLocally: async (row) => {
         const local = row.value as CloudFlightLocalValue;

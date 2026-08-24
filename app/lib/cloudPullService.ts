@@ -16,7 +16,19 @@ export type LogbookEntryCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type DocumentCloudRow = CloudPullRow & Readonly<{ value: unknown }>;
 export type FavoriteWeatherPlacePullConflict = Readonly<{ entityId: string; reason: "REMOTE_ADVANCED" | "REMOTE_TOMBSTONE" | "LOCAL_CREATION_COLLISION"; cloudRevision: number; mutationId: string }>;
 export type FavoriteWeatherPlacePullAnomaly = Readonly<{ entityId: string; reason: "REMOTE_REVISION_BEHIND_LOCAL" | "LOCAL_BASE_REVISION_AHEAD" | "LOCAL_DEPENDENCY" | "LOCAL_UNIQUENESS_CONFLICT" | "LOCAL_BLOB_PRESENT"; cloudRevision: number; localRevision: number }>;
-export type FavoriteWeatherPlacePullReport = Readonly<{ state: "COMPLETED" | "REFUSED_GUEST" | "REFUSED_NO_SESSION" | "STOPPED_USER_SWITCH" | "STOPPED_ERROR" | "BLOCKED_ANOMALY"; fetched: number; applied: number; tombstonesApplied: number; preservedLocalPending: number; conflicts: readonly FavoriteWeatherPlacePullConflict[]; anomalies: readonly FavoriteWeatherPlacePullAnomaly[]; pages: number; cursor: CloudPullCursor | null }>;
+export type CloudPullFailure = Readonly<{ step: "READ_PAGE" | "PARSE_ROW" | "APPLY_LOCAL" | "WRITE_SIDECAR" | "WRITE_CURSOR" | "UNKNOWN"; code: string; message: string }>;
+export type FavoriteWeatherPlacePullReport = Readonly<{ state: "COMPLETED" | "REFUSED_GUEST" | "REFUSED_NO_SESSION" | "STOPPED_USER_SWITCH" | "STOPPED_ERROR" | "BLOCKED_ANOMALY"; fetched: number; applied: number; tombstonesApplied: number; preservedLocalPending: number; conflicts: readonly FavoriteWeatherPlacePullConflict[]; anomalies: readonly FavoriteWeatherPlacePullAnomaly[]; pages: number; cursor: CloudPullCursor | null; error?: CloudPullFailure }>;
+
+export class CloudPullTechnicalError extends Error {
+  readonly step: CloudPullFailure["step"];
+  readonly code: string;
+  constructor(step: CloudPullFailure["step"], code: string, message: string) {
+    super(message);
+    this.name = "CloudPullTechnicalError";
+    this.step = step;
+    this.code = code;
+  }
+}
 
 type PullDomainAdapter<Row extends CloudPullRow> = Readonly<{ readPage(cursor: CloudPullCursor | null, limit: number): Promise<readonly Row[]>; applyLocally(row: Row): Promise<boolean> | boolean; hasBlockingLocalDependency?(row: Row): Promise<boolean> | boolean; localAnomaly?(row: Row): Promise<FavoriteWeatherPlacePullAnomaly["reason"] | null> | FavoriteWeatherPlacePullAnomaly["reason"] | null }>;
 export type FavoriteWeatherPlacePullDependencies = Readonly<{
@@ -37,6 +49,16 @@ export type FavoriteWeatherPlacePullDependencies = Readonly<{
 
 function userIdFromScope(scope: LocalDataScope | null): string | null { return scope?.startsWith("USER:") ? scope.slice(5) : null; }
 function emptyReport(state: FavoriteWeatherPlacePullReport["state"], cursor: CloudPullCursor | null = null): FavoriteWeatherPlacePullReport { return { state, fetched: 0, applied: 0, tombstonesApplied: 0, preservedLocalPending: 0, conflicts: [], anomalies: [], pages: 0, cursor }; }
+
+function pullFailure(error: unknown, fallbackStep: CloudPullFailure["step"]): CloudPullFailure {
+  const technical = error instanceof CloudPullTechnicalError ? error : null;
+  const rawMessage = error instanceof Error ? error.message : "Unknown cloud pull error";
+  return {
+    step: technical?.step ?? fallbackStep,
+    code: technical?.code ?? "UNEXPECTED_ERROR",
+    message: rawMessage.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED]").slice(0, 300),
+  };
+}
 
 export class CloudPullService {
   private readonly dependencies: FavoriteWeatherPlacePullDependencies;
@@ -70,10 +92,12 @@ export class CloudPullService {
     const userScope = this.dependencies.scope as `USER:${string}`;
     let cursor = await this.dependencies.cursors.get(userScope, domain);
     let fetched = 0, applied = 0, tombstonesApplied = 0, preservedLocalPending = 0, pages = 0;
+    let currentStep: CloudPullFailure["step"] = "READ_PAGE";
     const conflicts: FavoriteWeatherPlacePullConflict[] = [], anomalies: FavoriteWeatherPlacePullAnomaly[] = [];
     try {
       while (true) {
         if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
+        currentStep = "READ_PAGE";
         const rows = await adapter.readPage(cursor, pageSize);
         pages += 1;
         if (rows.length === 0) break;
@@ -98,21 +122,24 @@ export class CloudPullService {
               return { state: "BLOCKED_ANOMALY", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
             }
             if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
+            currentStep = "APPLY_LOCAL";
             if (!await adapter.applyLocally(row)) throw new Error("Cloud row could not be applied locally");
             if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
+            currentStep = "WRITE_SIDECAR";
             await this.dependencies.outbox.setMetadata({ entityType: domain, entityId: row.entityId, revision: row.revision, updatedAt: row.updatedAt, ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}) });
             applied += 1;
             if (row.deletedAt) tombstonesApplied += 1;
           }
           if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
           const nextCursor = { updatedAt: row.updatedAt, id: row.id };
+          currentStep = "WRITE_CURSOR";
           await this.dependencies.cursors.set(userScope, domain, nextCursor);
           cursor = nextCursor;
         }
         if (rows.length < pageSize) break;
       }
       return { state: "COMPLETED", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
-    } catch { return { state: "STOPPED_ERROR", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor }; }
+    } catch (error) { return { state: "STOPPED_ERROR", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor, error: pullFailure(error, currentStep) }; }
   }
 
   private async onlineUserIs(expectedUserId: string): Promise<boolean> {

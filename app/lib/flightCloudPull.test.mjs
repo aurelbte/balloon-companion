@@ -7,12 +7,28 @@ import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { mergeRecordedFlightFromCloud } from "./recordedFlightStorage.ts";
 import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
 import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+import { parseFlightCloudRow } from "./cloudPullBrowser.ts";
 
 const scope = "USER:user-1";
 const now = "2026-08-23T16:00:00.000Z";
 const summary = { durationSeconds: 2400, distanceMeters: 12345, minAltitudeMeters: 100, maxAltitudeMeters: 900, averageGroundSpeedMetersPerSecond: 5, maxGroundSpeedMetersPerSecond: 8, maximumClimbRateMetersPerSecond: 2, maximumDescentRateMetersPerSecond: -1 };
 const flight = (overrides = {}) => ({ id: "flight-a", schemaVersion: 1, status: "COMPLETED", startedAt: Date.parse(now), endedAt: Date.parse(now) + 2400000, points: [], summary, createdAt: Date.parse(now), updatedAt: Date.parse(now), balloonRegistration: "F-CLOUD", startLocationLabel: "Cloud départ", endLocationLabel: "Cloud arrivée", generatedTitle: "Cloud flight", notes: "metadata only", ...overrides });
 const row = (overrides = {}) => ({ id: "flight-a", entityId: "flight-a", userId: "user-1", revision: 0, createdAt: now, updatedAt: now, deletedAt: null, value: { flight: flight(), journal: { customTitle: null, origin: "REAL_GPS", logbookStatus: "CARNET_PENDING", recovered: false }, balloonId: null }, ...overrides });
+
+test("le parseur accepte le résumé valide d'un vol Cloud sans altitude GPS", () => {
+  const parsed = parseFlightCloudRow({
+    id: "flight-without-gps", user_id: "user-1", revision: 0, created_at: now, updated_at: now, deleted_at: null,
+    schema_version: 1, status: "COMPLETED", started_at: now, ended_at: now, balloon_id: null,
+    balloon_registration: null, start_location_label: "Départ test", end_location_label: "Arrivée test",
+    generated_title: null, custom_title: "BC CLOUD FLIGHT TARGETED TEST", notes: null,
+    origin: "MANUAL", logbook_status: "JOURNAL_ONLY", recovered: false,
+    summary: { ...summary, minAltitudeMeters: null, maxAltitudeMeters: null, averageGroundSpeedMetersPerSecond: null, maxGroundSpeedMetersPerSecond: null },
+    weather_model: null, weather_snapshot: null, ground_calibration: null,
+  });
+  assert.equal(parsed.value.flight.summary.minAltitudeMeters, null);
+  assert.equal(parsed.value.flight.summary.maxAltitudeMeters, null);
+  assert.deepEqual(parsed.value.flight.points, []);
+});
 
 class Cursors {
   values = new Map();
