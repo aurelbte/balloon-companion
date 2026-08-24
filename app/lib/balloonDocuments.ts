@@ -19,7 +19,8 @@ export type BalloonDocument = Readonly<{
   sizeBytes: number;
   createdAt: string;
   updatedAt: string;
-  storageKey: string;
+  /** Présent uniquement lorsqu'un fichier existe réellement sur cet appareil. */
+  storageKey?: string;
   notes?: string;
   issueDate?: string;
   expiryDate?: string;

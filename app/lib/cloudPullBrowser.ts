@@ -4,6 +4,7 @@ import { BrowserCloudSyncIssueRepository } from "./cloudSyncBrowser.ts";
 import {
   CloudPullService,
   type BalloonCloudRow,
+  type DocumentCloudRow,
   type FavoriteWeatherPlaceCloudRow,
   type FavoriteWeatherPlacePullConflict,
   type FlightCloudRow,
@@ -24,6 +25,7 @@ import type { RecordedFlight, RecordedFlightSummary } from "./recordedFlight.ts"
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
 import { OFFICIAL_FLIGHT_NATURES, type OfficialAscension } from "./flightCompletion.ts";
+import { BALLOON_DOCUMENT_CATEGORY_ORDER, type BalloonDocument } from "./balloonDocuments.ts";
 
 function quotedPostgrestValue(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -231,6 +233,35 @@ function logbookEntryRow(value: unknown): LogbookEntryCloudRow {
     ...(row.examiner ? { examiner: row.examiner as NonNullable<OfficialAscension["examiner"]> } : {}),
   };
   return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: ascension };
+}
+
+function documentRow(value: unknown): DocumentCloudRow {
+  if (!value || typeof value !== "object") throw new Error("Invalid document cloud row");
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.revision !== "number"
+    || typeof row.created_at !== "string" || typeof row.updated_at !== "string"
+    || (row.deleted_at !== null && typeof row.deleted_at !== "string") || typeof row.balloon_id !== "string"
+    || !BALLOON_DOCUMENT_CATEGORY_ORDER.includes(row.category as typeof BALLOON_DOCUMENT_CATEGORY_ORDER[number])
+    || typeof row.title !== "string" || typeof row.original_filename !== "string" || typeof row.mime_type !== "string"
+    || typeof row.size_bytes !== "number" || !Number.isFinite(row.size_bytes)
+    || (row.notes !== null && typeof row.notes !== "string")
+    || (row.issue_date !== null && typeof row.issue_date !== "string")
+    || (row.expiry_date !== null && typeof row.expiry_date !== "string")) throw new Error("Invalid document cloud row");
+  const document: BalloonDocument = {
+    id: row.id,
+    balloonId: row.balloon_id,
+    category: row.category as BalloonDocument["category"],
+    title: row.title,
+    originalFileName: row.original_filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(typeof row.notes === "string" ? { notes: row.notes } : {}),
+    ...(typeof row.issue_date === "string" ? { issueDate: row.issue_date } : {}),
+    ...(typeof row.expiry_date === "string" ? { expiryDate: row.expiry_date } : {}),
+  };
+  return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: document };
 }
 
 async function readPreferencePage(input: Readonly<{
@@ -463,6 +494,44 @@ export function createBrowserLogbookEntryPullService(input: Readonly<{
       },
       localAnomaly: (row) => row.deletedAt ? null : hasOfficialAscensionSourceFlightConflict(row.entityId, (row.value as OfficialAscension).sourceFlightId) ? "LOCAL_UNIQUENESS_CONFLICT" : null,
       applyLocally: (row) => applyOfficialAscensionFromCloudWithoutEnqueue(input.scope, row.entityId, row.deletedAt ? null : row.value as OfficialAscension, input.storage),
+    },
+    recordConflict: async (_conflict, mutation, row) => {
+      await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
+    },
+  });
+}
+
+export function createBrowserDocumentPullService(input: Readonly<{
+  client: SupabaseClient;
+  storage: Storage;
+  scope: `USER:${string}`;
+}>): CloudPullService {
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
+  return new CloudPullService({
+    scope: input.scope,
+    getScope: getRuntimeDataScope,
+    getOnlineUserId: async () => {
+      const { data, error } = await input.client.auth.getUser();
+      if (error) throw new Error("Cloud pull auth unavailable");
+      return data.user?.id ?? null;
+    },
+    outbox,
+    cursors: new BrowserCloudPullCursorRepository(input.storage),
+    readPage: async () => [],
+    applyLocally: () => false,
+    documentDomain: {
+      readPage: async (cursor, limit) => {
+        let query = input.client.from("documents")
+          .select("id,user_id,revision,created_at,updated_at,deleted_at,balloon_id,category,title,original_filename,mime_type,size_bytes,notes,issue_date,expiry_date")
+          .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
+        if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+        const { data, error } = await query;
+        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
+        return (data ?? []).map(documentRow);
+      },
+      localAnomaly: async (row) => row.deletedAt && await balloonDocumentStorage.hasLocalBlob(row.entityId) ? "LOCAL_BLOB_PRESENT" : null,
+      applyLocally: (row) => balloonDocumentStorage.applyMetadataFromCloudWithoutEnqueue(input.scope, row.entityId, row.deletedAt ? null : row.value as BalloonDocument),
     },
     recordConflict: async (_conflict, mutation, row) => {
       await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
