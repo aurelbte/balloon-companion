@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
 import { CloudPullService, CloudPullTechnicalError } from "./cloudPullService.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue, FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
+import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue, FAVORITE_LAUNCH_SITES_STORAGE_KEY } from "./favoriteLaunchSites.ts";
 import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -56,6 +57,77 @@ function dependencies(rows = [row()]) {
   };
   return { deps, outbox, cursors, applied, conflicts, setScope: (value) => { currentScope = value; }, setOnlineUserId: (value) => { onlineUserId = value; }, readCalls: () => readCalls };
 }
+
+function launchDependencies(rows = [row({ id: "launch-a" })]) {
+  const context = dependencies(rows.map((candidate) => ({ ...candidate, entityId: candidate.id })));
+  context.deps.favoriteLaunchSiteDomain = {
+    readPage: context.deps.readPage,
+    applyLocally: context.deps.applyLocally,
+  };
+  return context;
+}
+
+test("favorite_launch_site importe, pagine et pose ses sidecars sans mutation", async () => {
+  const context = launchDependencies([row({ id: "a" }), row({ id: "b" }), row({ id: "c", updatedAt: "2026-08-23T12:01:00.000Z" })]);
+  const result = await new CloudPullService(context.deps).pullFavoriteLaunchSites(2);
+  assert.equal(result.state, "COMPLETED");
+  assert.equal(result.applied, 3);
+  assert.deepEqual(context.applied.map(({ id }) => id), ["a", "b", "c"]);
+  assert.deepEqual(await context.outbox.getMetadata("favorite-launch-site", "c"), {
+    entityType: "favorite-launch-site", entityId: "c", revision: 0, updatedAt: "2026-08-23T12:01:00.000Z",
+  });
+  assert.deepEqual(await context.outbox.list(), []);
+  assert.equal((await new CloudPullService(context.deps).pullFavoriteLaunchSites(2)).applied, 0);
+});
+
+test("favorite_launch_site protège pending, conflits et révision locale avancée", async () => {
+  const preserved = launchDependencies([row({ id: "launch-a", revision: 2 })]);
+  await preserved.outbox.setMetadata({ entityType: "favorite-launch-site", entityId: "launch-a", revision: 2, updatedAt: timestamp });
+  await preserved.outbox.enqueue({ entityType: "favorite-launch-site", entityId: "launch-a", operation: "UPSERT", baseRevision: 2 });
+  assert.equal((await new CloudPullService(preserved.deps).pullFavoriteLaunchSites()).preservedLocalPending, 1);
+
+  const conflict = launchDependencies([row({ id: "launch-a", revision: 2 })]);
+  await conflict.outbox.setMetadata({ entityType: "favorite-launch-site", entityId: "launch-a", revision: 1, updatedAt: timestamp });
+  await conflict.outbox.enqueue({ entityType: "favorite-launch-site", entityId: "launch-a", operation: "UPSERT", baseRevision: 1 });
+  assert.equal((await new CloudPullService(conflict.deps).pullFavoriteLaunchSites()).conflicts[0].reason, "REMOTE_ADVANCED");
+
+  const anomaly = launchDependencies([row({ id: "launch-a", revision: 1 })]);
+  await anomaly.outbox.setMetadata({ entityType: "favorite-launch-site", entityId: "launch-a", revision: 2, updatedAt: timestamp });
+  assert.equal((await new CloudPullService(anomaly.deps).pullFavoriteLaunchSites()).state, "BLOCKED_ANOMALY");
+});
+
+test("favorite_launch_site traite tombstone, collision locale et USER switch avec le contrat commun", async () => {
+  const tombstone = launchDependencies([row({ id: "launch-a", revision: 1, deletedAt: timestamp })]);
+  const tombstoneReport = await new CloudPullService(tombstone.deps).pullFavoriteLaunchSites();
+  assert.equal(tombstoneReport.tombstonesApplied, 1);
+  assert.equal((await tombstone.outbox.getMetadata("favorite-launch-site", "launch-a")).deletedAt, timestamp);
+
+  const collision = launchDependencies([row({ id: "launch-a" })]);
+  const historical = { mutationId: "launch-collision", entityType: "favorite-launch-site", entityId: "launch-a", operation: "UPSERT", baseRevision: 0, createdAt: timestamp, attempts: 0 };
+  collision.deps.outbox = new MemorySyncOutboxStorage({ mutations: new Map([[historical.mutationId, historical]]) });
+  assert.equal((await new CloudPullService(collision.deps).pullFavoriteLaunchSites()).conflicts[0].reason, "LOCAL_CREATION_COLLISION");
+
+  const switched = launchDependencies();
+  let checks = 0;
+  switched.deps.getScope = () => (++checks >= 4 ? "USER:user-2" : scope);
+  assert.equal((await new CloudPullService(switched.deps).pullFavoriteLaunchSites()).state, "STOPPED_USER_SWITCH");
+  assert.equal(switched.applied.length, 0);
+});
+
+test("l’import silencieux launch site conserve tous les champs puis applique le tombstone sans enqueue", () => {
+  const values = new Map(), events = [];
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  globalThis.window = { localStorage: storage, dispatchEvent: (event) => { events.push(event.type); return true; } };
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-1", email: "test@example.test", firstName: "", lastName: "" } });
+  const cloud = { id: "launch-a", syncId: "00000000-0000-4000-8000-000000000001", name: "Terrain", sourceName: "Source", latitude: 50, longitude: 3, icaoCode: "LFQQ", altitudeAmslM: 42, createdAt: timestamp, updatedAt: timestamp, deletedAt: null };
+  assert.equal(applyFavoriteLaunchSiteFromCloudWithoutEnqueue(scope, cloud, storage), true);
+  const stored = JSON.parse(values.get(scopedBusinessStorageKey(scope, FAVORITE_LAUNCH_SITES_STORAGE_KEY)));
+  assert.deepEqual(stored.favorites, [{ id: "launch-a", syncId: cloud.syncId, name: "Terrain", sourceName: "Source", latitude: 50, longitude: 3, icaoCode: "LFQQ", altitudeAmslM: 42, createdAt: timestamp, updatedAt: timestamp }]);
+  assert.equal(applyFavoriteLaunchSiteFromCloudWithoutEnqueue(scope, { ...cloud, deletedAt: timestamp }, storage), true);
+  assert.deepEqual(JSON.parse(values.get(scopedBusinessStorageKey(scope, FAVORITE_LAUNCH_SITES_STORAGE_KEY))).favorites, []);
+  assert.equal(events.includes("balloon-companion:sync-mutation-enqueued"), false);
+  delete globalThis.window;
+});
 
 test("appareil vierge importe un favori actif, pose le sidecar et ne crée aucune mutation", async () => {
   const context = dependencies();
@@ -215,4 +287,16 @@ test("l’inspection du test Pull reste strictement read-only", () => {
   assert.match(helper, /outbox\.getMetadata/);
   assert.match(helper, /BrowserCloudPullCursorRepository/);
   assert.doesNotMatch(helper, /syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(|\.update\(|\.delete\(|\.enqueue\(|\.setMetadata\(|save[A-Z]/);
+});
+
+test("les helpers launch site ciblés utilisent uniquement le PULL et l'inspection locale", () => {
+  const runtime = readFileSync(new URL("../components/cloud/CloudSyncRuntime.tsx", import.meta.url), "utf8");
+  const browser = readFileSync(new URL("./cloudPullBrowser.ts", import.meta.url), "utf8");
+  assert.match(browser, /from\("favorite_launch_sites"\)[\s\S]*?source_name[\s\S]*?altitude_amsl_m/);
+  assert.match(runtime, /pullFavoriteLaunchSitesTargeted: \(\) => pullFavoriteLaunchSitesTargetedWithVerification\(scope\)/);
+  assert.match(runtime, /inspectFavoriteLaunchSitePullState: \(\) => inspectFavoriteLaunchSitePullState\(scope\)/);
+  const pull = runtime.match(/async function pullFavoriteLaunchSitesTargetedWithVerification[\s\S]*?\n\}/)?.[0] ?? "";
+  const inspection = runtime.match(/async function inspectFavoriteLaunchSitePullState[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.doesNotMatch(pull, /syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
+  assert.doesNotMatch(inspection, /syncMutationById|syncPendingMutations|\.rpc\(|\.enqueue\(|\.setMetadata\(|save[A-Z]/);
 });

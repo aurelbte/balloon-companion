@@ -32,9 +32,11 @@ test("appareil vierge suit l'ordre exact et agrège un SUCCESS", async () => {
   assert.equal(report.state, "SUCCESS");
   assert.deepEqual(ctx.calls, [...CLOUD_BOOTSTRAP_DOMAIN_ORDER]);
   assert.ok(ctx.calls.indexOf("balloons") < ctx.calls.indexOf("flights"));
+  assert.ok(ctx.calls.indexOf("favoriteWeatherPlaces") < ctx.calls.indexOf("favoriteLaunchSites"));
+  assert.ok(ctx.calls.indexOf("favoriteLaunchSites") < ctx.calls.indexOf("balloons"));
   assert.ok(ctx.calls.indexOf("balloons") < ctx.calls.indexOf("documents"));
   assert.ok(ctx.calls.indexOf("flights") < ctx.calls.indexOf("logbookEntries"));
-  assert.deepEqual(report.totals, { fetched: 8, applied: 8, tombstonesApplied: 0, preservedLocalPending: 0, conflicts: 0, anomalies: 0 });
+  assert.deepEqual(report.totals, { fetched: 9, applied: 9, tombstonesApplied: 0, preservedLocalPending: 0, conflicts: 0, anomalies: 0 });
   assert.equal(report.outboxPreserved, true);
   assert.equal(report.resumable, false);
 });
@@ -57,7 +59,7 @@ test("anomalie balloon bloque immédiatement flights, logbook et documents", asy
   const report = await new CloudBootstrapService(ctx.deps).bootstrapCloudDataForCurrentUser();
   assert.equal(report.state, "BLOCKED");
   assert.equal(report.stoppedAtDomain, "balloons");
-  assert.deepEqual(ctx.calls, ["unitPreferences", "weatherPreferences", "aviationPreferences", "favoriteWeatherPlaces", "balloons"]);
+  assert.deepEqual(ctx.calls, ["unitPreferences", "weatherPreferences", "aviationPreferences", "favoriteWeatherPlaces", "favoriteLaunchSites", "balloons"]);
   assert.equal(report.domains.flights, undefined);
   assert.equal(report.totals.anomalies, 1);
 });
@@ -107,9 +109,9 @@ test("échec d'un domaine est PARTIAL et une reprise rejoue sans rollback global
   assert.equal(second.domains.flights.applied, 0);
 });
 
-test("favorite_launch_site et profile restent explicitement SKIP", async () => {
+test("favorite_launch_site est intégré et profile reste explicitement SKIP", async () => {
   const report = await new CloudBootstrapService(context().deps).bootstrapCloudDataForCurrentUser();
-  assert.deepEqual(report.domains.favoriteLaunchSites, { state: "SKIPPED_NOT_IMPLEMENTED" });
+  assert.equal(report.domains.favoriteLaunchSites.state, "COMPLETED");
   assert.deepEqual(report.domains.profile, { state: "SKIPPED_NOT_READY" });
 });
 

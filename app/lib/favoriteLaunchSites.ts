@@ -1,5 +1,5 @@
 import type { GeocodingResult } from "./trajectory/integration.ts";
-import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const FAVORITE_LAUNCH_SITES_STORAGE_KEY = "balloon-companion-favorite-launch-sites-v1";
@@ -16,6 +16,20 @@ export type FavoriteLaunchSite = GeocodingResult & {
   createdAt: string;
   updatedAt: string;
 };
+
+export type CloudFavoriteLaunchSite = Readonly<{
+  id: string;
+  syncId?: string;
+  name: string;
+  sourceName?: string;
+  latitude: number;
+  longitude: number;
+  icaoCode?: string;
+  altitudeAmslM?: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}>;
 
 export const DEFAULT_FAVORITE_LAUNCH_SITES: readonly FavoriteLaunchSite[] = [
   { id: "favorite-lfqo", name: "LFQO", latitude: 50.686341, longitude: 3.079865, icaoCode: "LFQO", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
@@ -142,6 +156,37 @@ export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]
   }
 }
 
+/** Pull-only hydration primitive. It never calls the outbox or emits its enqueue event. */
+export function applyFavoriteLaunchSiteFromCloudWithoutEnqueue(
+  scope: `USER:${string}`,
+  cloud: CloudFavoriteLaunchSite,
+  storage: Storage = window.localStorage,
+): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, FAVORITE_LAUNCH_SITES_STORAGE_KEY);
+  let current: FavoriteLaunchSite[] = [];
+  try {
+    const value = JSON.parse(storage.getItem(key) ?? "null") as { version?: unknown; favorites?: unknown } | null;
+    if (value?.version === FAVORITE_LAUNCH_SITES_VERSION && Array.isArray(value.favorites)) current = value.favorites as FavoriteLaunchSite[];
+  } catch {}
+  const retained = current.filter(({ id }) => id !== cloud.id);
+  const next = cloud.deletedAt ? retained : [...retained, {
+    id: cloud.id,
+    ...(cloud.syncId ? { syncId: cloud.syncId } : {}),
+    name: cloud.name,
+    ...(cloud.sourceName ? { sourceName: cloud.sourceName } : {}),
+    latitude: cloud.latitude,
+    longitude: cloud.longitude,
+    ...(cloud.icaoCode ? { icaoCode: cloud.icaoCode } : {}),
+    ...(cloud.altitudeAmslM === undefined ? {} : { altitudeAmslM: cloud.altitudeAmslM }),
+    createdAt: cloud.createdAt,
+    updatedAt: cloud.updatedAt,
+  }];
+  storage.setItem(key, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites: next }));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(FAVORITE_LAUNCH_SITES_EVENT));
+  return true;
+}
+
 export function loadFavoriteLaunchSites(): FavoriteLaunchSite[] {
   if (typeof window === "undefined") return [];
   try {
@@ -166,7 +211,10 @@ export function loadFavoriteLaunchSites(): FavoriteLaunchSite[] {
       };
       const next = addFavoriteLaunchSite(unique, migrated, createdAt, site.name);
       const current = next.at(-1);
-      if (current) current.updatedAt = typeof site.updatedAt === "string" ? site.updatedAt : createdAt;
+      if (current) {
+        current.updatedAt = typeof site.updatedAt === "string" ? site.updatedAt : createdAt;
+        if (typeof site.syncId === "string") current.syncId = site.syncId;
+      }
       return next;
     }, []);
   } catch {

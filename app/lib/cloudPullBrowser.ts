@@ -6,6 +6,7 @@ import {
   CloudPullTechnicalError,
   type BalloonCloudRow,
   type DocumentCloudRow,
+  type FavoriteLaunchSiteCloudRow,
   type FavoriteWeatherPlaceCloudRow,
   type FavoriteWeatherPlacePullConflict,
   type FlightCloudRow,
@@ -18,6 +19,7 @@ import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import { BrowserCloudPullCursorRepository, type CloudPullCursor } from "./cloudPullState.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
+import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { IndexedDbSyncOutboxStorage, type SyncMutation } from "./syncOutbox.ts";
 import { applyUnitPreferencesFromCloudWithoutEnqueue } from "./unitPreferencesStorage.ts";
 import { applyWeatherPreferencesFromCloudWithoutEnqueue } from "./weatherPreferencesStorage.ts";
@@ -53,6 +55,27 @@ function cloudRow(value: unknown): FavoriteWeatherPlaceCloudRow {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
+  };
+}
+
+function favoriteLaunchSiteRow(value: unknown): FavoriteLaunchSiteCloudRow {
+  if (!value || typeof value !== "object") throw new Error("Invalid favorite launch site cloud row");
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.name !== "string"
+    || typeof row.latitude !== "number" || typeof row.longitude !== "number" || typeof row.revision !== "number"
+    || typeof row.created_at !== "string" || typeof row.updated_at !== "string"
+    || (row.deleted_at !== null && typeof row.deleted_at !== "string")
+    || (row.sync_id !== null && typeof row.sync_id !== "string")
+    || (row.source_name !== null && typeof row.source_name !== "string")
+    || (row.icao_code !== null && typeof row.icao_code !== "string")
+    || (row.altitude_amsl_m !== null && typeof row.altitude_amsl_m !== "number")) {
+    throw new Error("Invalid favorite launch site cloud row");
+  }
+  return {
+    id: row.id, entityId: row.id, userId: row.user_id, syncId: row.sync_id, name: row.name,
+    sourceName: row.source_name, latitude: row.latitude, longitude: row.longitude,
+    icaoCode: row.icao_code, altitudeAmslM: row.altitude_amsl_m, revision: row.revision,
+    createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at,
   };
 }
 
@@ -336,6 +359,55 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
         serverDeletedAt: row.deletedAt,
         recordedAt: new Date().toISOString(),
       });
+    },
+  });
+}
+
+export function createBrowserFavoriteLaunchSitePullService(input: Readonly<{
+  client: SupabaseClient;
+  storage: Storage;
+  scope: `USER:${string}`;
+}>): CloudPullService {
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
+  return new CloudPullService({
+    scope: input.scope,
+    getScope: getRuntimeDataScope,
+    getOnlineUserId: async () => {
+      const { data, error } = await input.client.auth.getUser();
+      if (error) throw new Error("Cloud pull auth unavailable");
+      return data.user?.id ?? null;
+    },
+    outbox,
+    cursors: new BrowserCloudPullCursorRepository(input.storage),
+    readPage: async () => [],
+    applyLocally: () => false,
+    favoriteLaunchSiteDomain: {
+      readPage: async (cursor, limit) => {
+        let query = input.client.from("favorite_launch_sites")
+          .select("id,user_id,sync_id,name,source_name,latitude,longitude,icao_code,altitude_amsl_m,revision,created_at,updated_at,deleted_at")
+          .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
+        if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+        const { data, error } = await query;
+        if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
+        return (data ?? []).map(favoriteLaunchSiteRow);
+      },
+      applyLocally: (row) => applyFavoriteLaunchSiteFromCloudWithoutEnqueue(input.scope, {
+        id: row.id,
+        ...(row.syncId ? { syncId: row.syncId } : {}),
+        name: row.name,
+        ...(row.sourceName ? { sourceName: row.sourceName } : {}),
+        latitude: row.latitude,
+        longitude: row.longitude,
+        ...(row.icaoCode ? { icaoCode: row.icaoCode } : {}),
+        ...(row.altitudeAmslM === null ? {} : { altitudeAmslM: row.altitudeAmslM }),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+      }, input.storage),
+    },
+    recordConflict: async (_conflict, mutation, row) => {
+      await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });
     },
   });
 }

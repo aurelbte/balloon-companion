@@ -4,6 +4,7 @@ import { CloudBootstrapService } from "./cloudBootstrapService.ts";
 import {
   createBrowserBalloonPullService,
   createBrowserDocumentPullService,
+  createBrowserFavoriteLaunchSitePullService,
   createBrowserFavoriteWeatherPlacePullService,
   createBrowserFlightPullService,
   createBrowserLogbookEntryPullService,
@@ -18,6 +19,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
 }>): CloudBootstrapService {
   const preferences = createBrowserPreferencePullService(input);
   const favoriteWeatherPlaces = createBrowserFavoriteWeatherPlacePullService(input);
+  const favoriteLaunchSites = createBrowserFavoriteLaunchSitePullService(input);
   const balloons = createBrowserBalloonPullService(input);
   const flights = createBrowserFlightPullService(input);
   const logbookEntries = createBrowserLogbookEntryPullService(input);
@@ -38,6 +40,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
       weatherPreferences: () => preferences.pullWeatherPreferences(),
       aviationPreferences: () => preferences.pullAviationPreferences(),
       favoriteWeatherPlaces: () => favoriteWeatherPlaces.pullFavoriteWeatherPlaces(),
+      favoriteLaunchSites: () => favoriteLaunchSites.pullFavoriteLaunchSites(),
       balloons: () => balloons.pullBalloons(),
       flights: () => flights.pullFlights(),
       logbookEntries: () => logbookEntries.pullLogbookEntries(),
