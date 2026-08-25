@@ -8,7 +8,7 @@ export const PREFERENCE_PULL_DOMAINS = ["unit-preferences", "weather-preferences
 export type PreferencePullDomain = typeof PREFERENCE_PULL_DOMAINS[number];
 type PullDomain = typeof FAVORITE_WEATHER_PLACE_PULL_DOMAIN | typeof FAVORITE_LAUNCH_SITE_PULL_DOMAIN | PreferencePullDomain | "pilot-profile" | "balloon" | "flight" | "logbook-entry" | "balloon-document";
 
-type CloudPullRow = Readonly<{ id: string; entityId: string; userId: string; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
+export type CloudPullRow = Readonly<{ id: string; entityId: string; userId: string; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null; value?: unknown }>;
 export type FavoriteWeatherPlaceCloudRow = Readonly<{ id: string; userId: string; syncId: string | null; name: string; latitude: number; longitude: number; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type FavoriteLaunchSiteCloudRow = Readonly<{ id: string; entityId: string; userId: string; syncId: string | null; name: string; sourceName: string | null; latitude: number; longitude: number; icaoCode: string | null; altitudeAmslM: number | null; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null }>;
 export type PreferenceCloudRow = CloudPullRow & Readonly<{ value: unknown }>;

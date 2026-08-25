@@ -27,6 +27,7 @@ export type StoredSyncMetadata = SyncMetadata & Readonly<{
 
 export interface SyncOutboxStorage {
   enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation>;
+  enqueueFresh(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision: number }>): Promise<SyncMutation>;
   list(): Promise<SyncMutation[]>;
   getMetadata(entityType: string, entityId: string): Promise<StoredSyncMetadata | null>;
   listMetadata(): Promise<StoredSyncMetadata[]>;
@@ -103,6 +104,13 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
       updatedAt: now,
       ...(input.operation === "DELETE" ? { deletedAt: now } : { deletedAt: undefined }),
     });
+    return mutation;
+  }
+
+  async enqueueFresh(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision: number }>): Promise<SyncMutation> {
+    const now = (this.dependencies.now ?? (() => new Date().toISOString()))();
+    const mutation = { mutationId: (this.dependencies.createId ?? mutationId)(), ...input, createdAt: now, attempts: 0 };
+    this.mutations.set(mutation.mutationId, mutation);
     return mutation;
   }
 
@@ -188,6 +196,19 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       const transaction = database.transaction([SYNC_MUTATIONS_STORE, SYNC_METADATA_STORE], "readwrite");
       transaction.objectStore(SYNC_MUTATIONS_STORE).put(mutation);
       transaction.objectStore(SYNC_METADATA_STORE).put(metadata);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    return mutation;
+  }
+
+  async enqueueFresh(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision: number }>): Promise<SyncMutation> {
+    const database = await this.database();
+    const mutation = { mutationId: mutationId(), ...input, createdAt: new Date().toISOString(), attempts: 0 };
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
+      transaction.objectStore(SYNC_MUTATIONS_STORE).add(mutation);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);

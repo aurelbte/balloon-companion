@@ -90,6 +90,17 @@ test("une mutation après tentative n'est pas coalescée avec l'opération incer
   assert.equal((await storage.list()).length, 2);
 });
 
+test("enqueueFresh crée toujours un nouvel historique sans réécrire la mutation tentée", async () => {
+  const storage = deterministicStorage();
+  const historical = await storage.enqueue({ entityType: "flight", entityId: "F", operation: "UPSERT", baseRevision: 2 });
+  await storage.markAttempt(historical.mutationId);
+  await storage.updateMutation(historical.mutationId, { lastErrorCode: "CONFLICT" });
+  const fresh = await storage.enqueueFresh({ entityType: "flight", entityId: "F", operation: "UPSERT", baseRevision: 3 });
+  assert.notEqual(fresh.mutationId, historical.mutationId);
+  assert.equal(fresh.baseRevision, 3);
+  assert.deepEqual((await storage.list()).find(({ mutationId }) => mutationId === historical.mutationId), { ...historical, attempts: 1, lastErrorCode: "CONFLICT" });
+});
+
 test("les métadonnées legacy commencent à revision zéro en UTC", () => {
   assert.deepEqual(createInitialSyncMetadata("2026-08-18T10:00:00.000Z"), {
     revision: 0,

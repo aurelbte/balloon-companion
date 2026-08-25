@@ -37,7 +37,7 @@ function quotedPostgrestValue(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-function cloudRow(value: unknown): FavoriteWeatherPlaceCloudRow {
+export function parseFavoriteWeatherPlaceCloudRow(value: unknown): FavoriteWeatherPlaceCloudRow {
   if (!value || typeof value !== "object") throw new Error("Invalid favorite weather place cloud row");
   const row = value as Record<string, unknown>;
   if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.name !== "string"
@@ -61,7 +61,7 @@ function cloudRow(value: unknown): FavoriteWeatherPlaceCloudRow {
   };
 }
 
-function favoriteLaunchSiteRow(value: unknown): FavoriteLaunchSiteCloudRow {
+export function parseFavoriteLaunchSiteCloudRow(value: unknown): FavoriteLaunchSiteCloudRow {
   if (!value || typeof value !== "object") throw new Error("Invalid favorite launch site cloud row");
   const row = value as Record<string, unknown>;
   if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.name !== "string"
@@ -131,7 +131,7 @@ function finiteOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function balloonRow(value: unknown): BalloonCloudRow {
+export function parseBalloonCloudRow(value: unknown): BalloonCloudRow {
   if (!value || typeof value !== "object") throw new Error("Invalid balloon cloud row");
   const row = value as Record<string, unknown>;
   if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.registration !== "string"
@@ -247,7 +247,7 @@ function localizedLogbookDate(dateIso: string): string {
   return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(parsed);
 }
 
-function logbookEntryRow(value: unknown): LogbookEntryCloudRow {
+export function parseLogbookEntryCloudRow(value: unknown): LogbookEntryCloudRow {
   if (!value || typeof value !== "object") throw new Error("Invalid logbook entry cloud row");
   const row = value as Record<string, unknown>;
   const nullableNumber = (field: string) => row[field] === null || typeof row[field] === "number" && Number.isFinite(row[field]);
@@ -295,7 +295,7 @@ function logbookEntryRow(value: unknown): LogbookEntryCloudRow {
   return { id: row.id, entityId: row.id, userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: ascension };
 }
 
-function documentRow(value: unknown): DocumentCloudRow {
+export function parseDocumentCloudRow(value: unknown): DocumentCloudRow {
   if (!value || typeof value !== "object") throw new Error("Invalid document cloud row");
   const row = value as Record<string, unknown>;
   if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.revision !== "number"
@@ -372,7 +372,7 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
       }
       const { data, error } = await query;
       if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
-      return (data ?? []).map(cloudRow);
+      return (data ?? []).map(parseFavoriteWeatherPlaceCloudRow);
     },
     applyLocally: (row) => applyFavoriteWeatherPlaceFromCloudWithoutEnqueue(input.scope, {
       id: row.id,
@@ -426,7 +426,7 @@ export function createBrowserFavoriteLaunchSitePullService(input: Readonly<{
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
         const { data, error } = await query;
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
-        return (data ?? []).map(favoriteLaunchSiteRow);
+        return (data ?? []).map(parseFavoriteLaunchSiteCloudRow);
       },
       applyLocally: (row) => applyFavoriteLaunchSiteFromCloudWithoutEnqueue(input.scope, {
         id: row.id,
@@ -556,7 +556,7 @@ export function createBrowserBalloonPullService(input: Readonly<{
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
         const { data, error } = await query;
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
-        return (data ?? []).map(balloonRow);
+        return (data ?? []).map(parseBalloonCloudRow);
       },
       applyLocally: (row) => applyBalloonFromCloudWithoutEnqueue(input.scope, row.value as CloudBalloon, input.storage),
       hasBlockingLocalDependency: async (row) => {
@@ -646,7 +646,7 @@ export function createBrowserLogbookEntryPullService(input: Readonly<{
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
         const { data, error } = await query;
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
-        return (data ?? []).map(logbookEntryRow);
+        return (data ?? []).map(parseLogbookEntryCloudRow);
       },
       localAnomaly: (row) => row.deletedAt ? null : hasOfficialAscensionSourceFlightConflict(row.entityId, (row.value as OfficialAscension).sourceFlightId) ? "LOCAL_UNIQUENESS_CONFLICT" : null,
       applyLocally: (row) => applyOfficialAscensionFromCloudWithoutEnqueue(input.scope, row.entityId, row.deletedAt ? null : row.value as OfficialAscension, input.storage),
@@ -684,7 +684,7 @@ export function createBrowserDocumentPullService(input: Readonly<{
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
         const { data, error } = await query;
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
-        return (data ?? []).map(documentRow);
+        return (data ?? []).map(parseDocumentCloudRow);
       },
       localAnomaly: async (row) => row.deletedAt && await balloonDocumentStorage.hasLocalBlob(row.entityId) ? "LOCAL_BLOB_PRESENT" : null,
       applyLocally: (row) => balloonDocumentStorage.applyMetadataFromCloudWithoutEnqueue(input.scope, row.entityId, row.deletedAt ? null : row.value as BalloonDocument),

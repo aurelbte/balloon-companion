@@ -49,9 +49,11 @@ import {
   resolveProtectedPreferenceConflictLocalWins,
   type ProtectedPreferenceRebaseType,
 } from "../../lib/protectedPreferenceConflictRebase.ts";
+import { createBrowserCrudConflictResolver } from "../../lib/crudConflictBrowser.ts";
 
 const lastCloudBootstrapReports = new Map<string, unknown>();
 const CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY = "balloon-companion:dev:cloud-sync-runtime-diagnostic";
+export const CLOUD_SYNC_RUNTIME_CHANGED_EVENT = "balloon-companion:cloud-sync-runtime-changed";
 let runtimeMountCount = 0;
 let runtimeUnmountGeneration = 0;
 let suppressRuntimeDiagnosticPersistence = false;
@@ -101,6 +103,8 @@ declare global {
       inspectCloudBootstrapState(): Promise<unknown>;
       inspectCloudSyncRuntimeControllerState(): Promise<unknown>;
       inspectFlightLogbookAutoPushTestState(): Promise<unknown>;
+      resolveCrudConflictLocalWins(entityType: string, entityId: string): Promise<unknown>;
+      resolveCrudConflictServerWins(entityType: string, entityId: string): Promise<unknown>;
     }>;
   }
 }
@@ -126,10 +130,11 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     if (process.env.NODE_ENV === "development" && !suppressRuntimeDiagnosticPersistence && typeof sessionStorage !== "undefined") {
       sessionStorage.setItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY, JSON.stringify(snapshot));
     }
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_RUNTIME_CHANGED_EVENT));
   },
 });
 
-function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeControllerSnapshot {
+export function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeControllerSnapshot {
   if (typeof sessionStorage !== "undefined") {
     const stored = sessionStorage.getItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY);
     if (stored) {
@@ -138,6 +143,10 @@ function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeControllerSna
     }
   }
   return automaticCloudSyncController.inspect();
+}
+
+export function retryCloudSyncThroughRuntimeController(): void {
+  automaticCloudSyncController.notifyOnline();
 }
 
 function acquireRuntimeMount(): () => void {
@@ -1253,6 +1262,8 @@ export default function CloudSyncRuntime(): null {
       inspectCloudBootstrapState: () => inspectCloudBootstrapState(scope),
       inspectCloudSyncRuntimeControllerState: async () => inspectCloudSyncRuntimeControllerState(),
       inspectFlightLogbookAutoPushTestState: () => inspectFlightLogbookAutoPushTestState(scope),
+      resolveCrudConflictLocalWins: (entityType: string, entityId: string) => createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).resolveLocalWins(entityType, entityId),
+      resolveCrudConflictServerWins: (entityType: string, entityId: string) => createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).resolveServerWins(entityType, entityId),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };

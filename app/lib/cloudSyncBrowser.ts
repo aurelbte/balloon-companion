@@ -27,6 +27,11 @@ import { normalizeUnitPreferences, UNIT_PREFERENCES_STORAGE_KEY } from "./unitPr
 import { EMPTY_WEATHER_PREFERENCES, WEATHER_PREFERENCES_STORAGE_KEY, type WeatherPreferences } from "./weatherPreferencesStorage.ts";
 
 const CLOUD_SYNC_ISSUES_STORAGE_KEY = "balloon-companion-cloud-sync-issues-v1";
+export const CLOUD_SYNC_ISSUES_CHANGED_EVENT = "balloon-companion:cloud-sync-issues-changed";
+
+function notifyIssuesChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_ISSUES_CHANGED_EVENT));
+}
 
 function readJson(storage: Storage, scope: `USER:${string}`, key: string): unknown {
   const raw = storage.getItem(scopedBusinessStorageKey(scope, key));
@@ -48,10 +53,12 @@ export class BrowserCloudSyncIssueRepository implements CloudSyncIssueRepository
     const issues = await this.list();
     const next = [...issues.filter((item) => item.entityType !== issue.entityType || item.entityId !== issue.entityId), issue];
     this.storage.setItem(scopedBusinessStorageKey(this.scope, CLOUD_SYNC_ISSUES_STORAGE_KEY), JSON.stringify(next));
+    notifyIssuesChanged();
   }
   async remove(entityType: string, entityId: string): Promise<void> {
     const next = (await this.list()).filter((item) => item.entityType !== entityType || item.entityId !== entityId);
     this.storage.setItem(scopedBusinessStorageKey(this.scope, CLOUD_SYNC_ISSUES_STORAGE_KEY), JSON.stringify(next));
+    notifyIssuesChanged();
   }
   async list(): Promise<readonly CloudSyncIssue[]> {
     const value = readJson(this.storage, this.scope, CLOUD_SYNC_ISSUES_STORAGE_KEY);
