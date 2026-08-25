@@ -7,10 +7,11 @@ import { SupabaseAuthProvider } from "../lib/auth/supabaseAuthProvider.ts";
 import type { AuthCredentials, AuthSnapshot, SignUpInput } from "../lib/auth/types.ts";
 import { UNKNOWN_AUTH_SNAPSHOT } from "../lib/auth/types.ts";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
-import { createPendingLocalDataMigration, inspectLegacyLocalData, type PendingLocalDataMigration } from "../lib/auth/dataScope.ts";
+import type { PendingLocalDataMigration } from "../lib/auth/dataScope.ts";
 import { getOrCreateDeviceIdentity } from "../lib/auth/deviceIdentity.ts";
-import { getLocalDataMigrationDecision, saveLocalDataMigrationDecision, type LocalDataMigrationDecision } from "../lib/auth/localDataMigrationDecision.ts";
-import { BrowserLocalDataMigrationRepository, hasCompletedLegacyMigration, migrateApprovedLegacyData, type LocalDataMigrationState } from "../lib/auth/localDataMigration.ts";
+import { saveLocalDataMigrationDecision, type LocalDataMigrationDecision } from "../lib/auth/localDataMigrationDecision.ts";
+import type { LocalDataMigrationState } from "../lib/auth/localDataMigration.ts";
+import { migrateGuestAndLegacyToUser, type GuestToUserMigrationCollision } from "../lib/auth/guestToUserMigration.ts";
 import { DATA_SCOPE_CHANGED_EVENT, setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "../lib/auth/dataScopeRuntime.ts";
 
 type AuthContextValue = AuthSnapshot & Readonly<{
@@ -21,6 +22,7 @@ type AuthContextValue = AuthSnapshot & Readonly<{
   pendingLocalDataMigration: PendingLocalDataMigration | null;
   decideLocalDataMigration(decision: LocalDataMigrationDecision): void;
   localDataMigrationState: LocalDataMigrationState | null;
+  localDataMigrationCollisions: readonly GuestToUserMigrationCollision[];
   authChoiceState: "AUTH_CHOICE_PENDING" | "GUEST_ACTIVE";
   activateGuestMode(): void;
 }>;
@@ -33,21 +35,13 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const [snapshot, setSnapshot] = useState<AuthSnapshot>(UNKNOWN_AUTH_SNAPSHOT);
   const [pendingLocalDataMigration, setPendingLocalDataMigration] = useState<PendingLocalDataMigration | null>(null);
   const [localDataMigrationState, setLocalDataMigrationState] = useState<LocalDataMigrationState | null>(null);
+  const [localDataMigrationCollisions, setLocalDataMigrationCollisions] = useState<readonly GuestToUserMigrationCollision[]>([]);
+  const [dataReadyUserId, setDataReadyUserId] = useState<string | null>(null);
   const [authChoiceState, setAuthChoiceState] = useState<"AUTH_CHOICE_PENDING" | "GUEST_ACTIVE">("AUTH_CHOICE_PENDING");
   setRuntimeAuthSnapshot(snapshot);
   setRuntimeGuestModeActive(authChoiceState === "GUEST_ACTIVE");
 
   useEffect(() => { window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT)); }, [snapshot, authChoiceState]);
-
-  const startApprovedMigration = useCallback((userId: string, deviceId: string) => {
-    setLocalDataMigrationState("MIGRATION_APPROVED");
-    const repository = new BrowserLocalDataMigrationRepository(window.localStorage, window.indexedDB);
-    void migrateApprovedLegacyData({ userId, deviceId, repository, onState: (state) => {
-      setLocalDataMigrationState(state);
-      if (state === "MIGRATION_COMPLETE") window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT));
-    } })
-      .catch(() => setLocalDataMigrationState({ state: "MIGRATION_FAILED", collection: "preferences", id: "LEGACY_UNSCOPED", reason: "COPY_FAILED" }));
-  }, []);
 
   useEffect(() => {
     if (pathname === "/auth/confirmed") return;
@@ -58,26 +52,25 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   }, [pathname, provider]);
 
   useEffect(() => {
-    if (snapshot.state !== "SIGNED_IN" || !snapshot.user) { setPendingLocalDataMigration(null); return; }
-    let active = true;
+    if ((snapshot.state !== "SIGNED_IN" && snapshot.state !== "OFFLINE_SESSION") || !snapshot.user) {
+      setPendingLocalDataMigration(null); setDataReadyUserId(null); setLocalDataMigrationCollisions([]); return;
+    }
+    let active = true; const userId = snapshot.user.id;
+    setDataReadyUserId(null); setLocalDataMigrationState("MIGRATION_COPYING");
     const deviceId = getOrCreateDeviceIdentity(window.localStorage).deviceId;
-    if (hasCompletedLegacyMigration(window.localStorage, snapshot.user.id, deviceId)) {
-      setLocalDataMigrationState("MIGRATION_COMPLETE");
-      setPendingLocalDataMigration(null);
-      return;
-    }
-    const existingDecision = getLocalDataMigrationDecision(window.localStorage, snapshot.user.id, deviceId);
-    if (existingDecision) {
-      setPendingLocalDataMigration(null);
-      if (existingDecision.decision === "MIGRATION_APPROVED") startApprovedMigration(snapshot.user.id, deviceId);
-      return;
-    }
-    void inspectLegacyLocalData(window.localStorage, window.indexedDB)
-      .then((legacyDataSummary) => {
-        if (active) setPendingLocalDataMigration(createPendingLocalDataMigration({ snapshot, deviceId, legacyDataSummary }));
+    void migrateGuestAndLegacyToUser({ userId, deviceId, storage: window.localStorage, factory: window.indexedDB })
+      .then((report) => {
+        if (!active || snapshot.user?.id !== userId) return;
+        setLocalDataMigrationCollisions(report.collisions); setLocalDataMigrationState("MIGRATION_COMPLETE");
+        setDataReadyUserId(userId); window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT));
+      })
+      .catch(() => {
+        if (!active) return;
+        setLocalDataMigrationState({ state: "MIGRATION_FAILED", collection: "preferences", id: "GUEST_OR_LEGACY", reason: "COPY_FAILED" });
+        setDataReadyUserId(userId);
       });
     return () => { active = false; };
-  }, [snapshot, startApprovedMigration]);
+  }, [snapshot]);
 
   const decideLocalDataMigration = useCallback((decision: LocalDataMigrationDecision) => {
     const migration = pendingLocalDataMigration;
@@ -88,8 +81,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
       decision,
     });
     setPendingLocalDataMigration(null);
-    if (decision === "MIGRATION_APPROVED") startApprovedMigration(migration.userId, migration.deviceId);
-  }, [pendingLocalDataMigration, snapshot, startApprovedMigration]);
+  }, [pendingLocalDataMigration, snapshot]);
 
   const signUp = useCallback(async (input: SignUpInput) => {
     await provider.signUp(input);
@@ -133,8 +125,9 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   }, [provider]);
 
   const runtimeKey = snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION" ? `USER:${snapshot.user?.id}` : `${snapshot.state}:${authChoiceState}`;
-  const runtimeChildren = snapshot.state === "UNKNOWN" && pathname !== "/auth/confirmed" ? null : <Fragment key={runtimeKey}>{children}</Fragment>;
-  return <AuthContext.Provider value={{ ...snapshot, signUp, signIn, signOut, confirmEmail, pendingLocalDataMigration, decideLocalDataMigration, localDataMigrationState, authChoiceState, activateGuestMode }}>{runtimeChildren}</AuthContext.Provider>;
+  const userWaitingForMigration = (snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION") && snapshot.user && dataReadyUserId !== snapshot.user.id;
+  const runtimeChildren = (snapshot.state === "UNKNOWN" && pathname !== "/auth/confirmed") || userWaitingForMigration ? null : <Fragment key={runtimeKey}>{children}</Fragment>;
+  return <AuthContext.Provider value={{ ...snapshot, signUp, signIn, signOut, confirmEmail, pendingLocalDataMigration, decideLocalDataMigration, localDataMigrationState, localDataMigrationCollisions, authChoiceState, activateGuestMode }}>{runtimeChildren}</AuthContext.Provider>;
 }
 
 export function useBalloonAuth(): AuthContextValue {

@@ -31,7 +31,8 @@ test("le runtime utilise des déclencheurs événementiels sans polling", () => 
   assert.match(runtime, /suppressRuntimeDiagnosticPersistence = true[\s\S]*automaticCloudSyncController\.setUser\(null\)/);
   assert.match(runtime, /__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
   assert.match(runtime, /useSearchParams\(\)/);
-  assert.match(runtime, /\[auth\.state, auth\.user, currentSearch\]/);
+  assert.match(runtime, /\[auth\.state, auth\.user, auth\.localDataMigrationState, auth\.localDataMigrationCollisions, currentSearch\]/);
+  assert.match(runtime, /auth\.localDataMigrationState !== "MIGRATION_COMPLETE"/);
 });
 
 test("le harness ciblé suit la query sur toutes les routes sans exposition globale", () => {

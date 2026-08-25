@@ -7,7 +7,8 @@ import styles from "./LocalDataMigrationDialog.module.css";
 export default function LocalDataMigrationDialog() {
   const auth = useBalloonAuth();
   const migration = auth.pendingLocalDataMigration;
-  const visible = auth.state === "SIGNED_IN" && migration?.state === "PENDING_LOCAL_DATA_MIGRATION";
+  const collisions = auth.localDataMigrationCollisions;
+  const visible = auth.state === "SIGNED_IN" && (migration?.state === "PENDING_LOCAL_DATA_MIGRATION" || collisions.length > 0);
 
   useEffect(() => {
     if (!visible) return;
@@ -17,6 +18,15 @@ export default function LocalDataMigrationDialog() {
   }, [visible]);
 
   if (!visible) return null;
+  if (collisions.length > 0) return <div className={styles.backdrop}>
+    <section className={styles.sheet} role="dialog" aria-modal="true" aria-labelledby="local-data-title">
+      <div className={styles.handle} aria-hidden="true" />
+      <h2 id="local-data-title">Données différentes sur cet appareil</h2>
+      <p>Des données présentes sur cet appareil diffèrent de celles du compte. Elles ont été conservées sans écrasement. La synchronisation Cloud reste suspendue jusqu’à leur résolution.</p>
+      <p>{collisions.length} élément{collisions.length > 1 ? "s" : ""} à examiner.</p>
+    </section>
+  </div>;
+  if (!migration) return null;
   const summary = migration.legacyDataSummary;
 
   return (

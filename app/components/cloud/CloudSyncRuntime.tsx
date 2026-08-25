@@ -1179,6 +1179,10 @@ export default function CloudSyncRuntime(): null {
       automaticCloudSyncController.setUser(null);
       return releaseRuntimeMount;
     }
+    if (auth.localDataMigrationState !== "MIGRATION_COMPLETE" || auth.localDataMigrationCollisions.length > 0) {
+      automaticCloudSyncController.setUser(null);
+      return releaseRuntimeMount;
+    }
     const userId = auth.user.id;
     const scope = `USER:${userId}` as const;
     const controlled = controlledTestMode(currentSearch ? `?${currentSearch}` : "");
@@ -1279,7 +1283,7 @@ export default function CloudSyncRuntime(): null {
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
       releaseRuntimeMount();
     };
-  }, [auth.state, auth.user, currentSearch]);
+  }, [auth.state, auth.user, auth.localDataMigrationState, auth.localDataMigrationCollisions, currentSearch]);
 
   return null;
 }
