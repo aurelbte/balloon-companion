@@ -29,7 +29,7 @@ import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.
 import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
 import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
 import { migrateLegacyFlightTrackToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
-import { drainFlightTrackQueue, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
+import { drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import {
   loadFlightCompletionState,
   persistJournalFlight,
@@ -117,6 +117,8 @@ declare global {
       downloadFlightTrackTargeted(flightId: string): Promise<unknown>;
       inspectFlightTrackQueueState(): Promise<unknown>;
       drainFlightTrackQueueTargeted(): Promise<unknown>;
+      uploadFlightTrackToR2Targeted(flightId: string): Promise<unknown>;
+      inspectFlightTrackR2TargetedState(flightId: string): Promise<unknown>;
       migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
     }>;
   }
@@ -1336,6 +1338,27 @@ export default function CloudSyncRuntime(): null {
       drainFlightTrackQueueTargeted: () => {
         const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope);
         return drainFlightTrackQueue({ scope, storage: new IndexedDbFlightTrackQueueStorage(scope), transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
+      },
+      uploadFlightTrackToR2Targeted: async (flightId: string) => {
+        const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope);
+        const queue = new IndexedDbFlightTrackQueueStorage(scope);
+        const stateBefore = await tracks.inspect(flightId);
+        const job = await enqueueFlightTrackJob(queue, { scope, flightId, operation: "UPLOAD", generation: stateBefore.generation ?? 1 });
+        const targetedQueue = {
+          list: async () => (await queue.list()).filter(({ jobId }) => jobId === job.jobId),
+          put: (value: Parameters<typeof queue.put>[0]) => queue.put(value),
+          remove: (jobId: string) => queue.remove(jobId),
+          removeMany: (jobIds: readonly string[]) => queue.removeMany(jobIds),
+        };
+        const result = await drainFlightTrackQueue({ scope, storage: targetedQueue, transport: { upload: (id) => tracks.uploadToR2Targeted(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
+        return { jobId: job.jobId, result, state: await tracks.inspect(flightId) } as const;
+      },
+      inspectFlightTrackR2TargetedState: async (flightId: string) => {
+        const [state, jobs] = await Promise.all([
+          new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope).inspect(flightId),
+          new IndexedDbFlightTrackQueueStorage(scope).list(),
+        ]);
+        return { ...state, pendingJobs: jobs.filter((job) => job.flightId === flightId) } as const;
       },
       migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;

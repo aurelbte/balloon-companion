@@ -105,13 +105,13 @@ export class BrowserFlightTrackCloudService {
     };
   }
 
-  async upload(flightId: string): Promise<FlightTrackSyncState> {
+  private async uploadInternal(flightId: string, forceR2: boolean): Promise<FlightTrackSyncState> {
     const userId = this.userId();
     const flight = await this.storage.getFlight(flightId);
     if (!flight || flight.points.length === 0) throw new Error("LOCAL_TRACK_NOT_FOUND");
     const remote = await this.remote(flightId);
     if (!remote || remote.deletedAt) throw new Error("REMOTE_FLIGHT_NOT_AVAILABLE");
-    if (remote.status === "READY" && remote.objectKey && remote.checksum) return this.inspect(flightId);
+    if (!forceR2 && remote.status === "READY" && remote.objectKey && remote.checksum) return this.inspect(flightId);
     const generation = remote.generation || 1;
     const bytes = encodeFlightTrackBlob(createFlightTrackBlob(flight));
     const checksum = await sha256Hex(bytes);
@@ -129,6 +129,15 @@ export class BrowserFlightTrackCloudService {
     }).eq("user_id", userId).eq("id", flightId).is("deleted_at", null);
     if (updateError) throw new Error(`TRACK_METADATA_UPDATE:${updateError.code ?? "UNKNOWN"}`);
     return this.inspect(flightId);
+  }
+
+  async upload(flightId: string): Promise<FlightTrackSyncState> {
+    return this.uploadInternal(flightId, false);
+  }
+
+  /** DEV targeted transition only: uploads the local trace to R2 even when legacy metadata is READY. */
+  async uploadToR2Targeted(flightId: string): Promise<FlightTrackSyncState> {
+    return this.uploadInternal(flightId, true);
   }
 
   async download(flightId: string): Promise<FlightTrackSyncState> {

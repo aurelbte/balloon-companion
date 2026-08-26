@@ -68,3 +68,14 @@ test("configuration et route R2 restent server-only avec URLs cinq minutes et mi
   assert.match(route, /authorizeFlightTrack/);
   assert.doesNotMatch(env, /NEXT_PUBLIC_R2/);
 });
+
+test("helpers R2 ciblés restent dans l'API DEV contrôlée et l'inspection est read-only", async () => {
+  const runtime = await (await import("node:fs/promises")).readFile(new URL("../components/cloud/CloudSyncRuntime.tsx", import.meta.url), "utf8");
+  assert.match(runtime, /controlledTestMode/);
+  assert.match(runtime, /uploadFlightTrackToR2Targeted:/);
+  assert.match(runtime, /inspectFlightTrackR2TargetedState:/);
+  const inspector = runtime.match(/inspectFlightTrackR2TargetedState:[\s\S]*?migrateLegacyFlightTrackToR2Targeted:/)?.[0] ?? "";
+  assert.match(inspector, /\.inspect\(flightId\)/);
+  assert.match(inspector, /\.list\(\)/);
+  assert.doesNotMatch(inspector, /\.put\(|\.remove\(|\.update\(|\.upload/);
+});

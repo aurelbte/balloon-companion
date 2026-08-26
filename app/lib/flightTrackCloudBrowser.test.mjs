@@ -183,3 +183,17 @@ test("transition: une ancienne trace Supabase reste lisible et un nouvel upload 
   assert.equal(cloud.remote.storage_provider, "R2");
   assert.match(cloud.remote.object_key, /^users\/user-a\/flights\//);
 });
+
+test("upload R2 ciblé remplace seulement les métadonnées transport et conserve l'ancien blob Supabase", async () => {
+  user();
+  const cloud = fakeCloud();
+  const legacyKey = "user-a/flights/flight-a/track-v1.json";
+  cloud.objects.set(legacyKey, new Blob(["legacy"]));
+  Object.assign(cloud.remote, { object_key: legacyKey, checksum: "b".repeat(64), blob_size: 6, blob_status: "READY", storage_provider: "SUPABASE_STORAGE" });
+  const state = await service(cloud, localStorageWith(recorded(3))).uploadToR2Targeted("flight-a");
+  assert.equal(state.provider, "R2");
+  assert.equal(cloud.objects.has(legacyKey), true);
+  assert.equal(cloud.objects.size, 2);
+  assert.equal(cloud.remote.track_generation, 1);
+  assert.equal(cloud.remote.storage_provider, "R2");
+});
