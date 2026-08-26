@@ -13,7 +13,7 @@ import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import { FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { BALLOON_REGISTRY_STORAGE_KEY } from "./balloonStorage.ts";
-import { isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestControl.ts";
+import { createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestControl.ts";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -352,4 +352,10 @@ test("la protection ciblée est explicite par URL en développement comme en pro
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "?cloudSyncTest=targeted"), true);
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("development", ""), false);
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", ""), false);
+});
+
+test("l API ciblée d attente existe mais refuse proprement tant que le scope est indisponible", async () => {
+  const api = createScopeUnavailableControlledApi();
+  assert.equal(typeof api.inspectFlightTrackR2TargetedState, "function");
+  await assert.rejects(api.inspectFlightTrackR2TargetedState("flight-a"), /SCOPE_UNAVAILABLE/);
 });

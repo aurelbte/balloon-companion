@@ -7,3 +7,11 @@ export function isAutomaticCloudSyncBlockedForControlledTest(
 ): boolean {
   return new URLSearchParams(search).get("cloudSyncTest") === "targeted";
 }
+
+export function createScopeUnavailableControlledApi<T extends object>(): T {
+  return new Proxy({} as T, {
+    get: (_target, property) => property === "then"
+      ? undefined
+      : () => Promise.reject(new Error("SCOPE_UNAVAILABLE")),
+  });
+}

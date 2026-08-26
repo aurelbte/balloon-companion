@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { getRuntimeDataScope } from "../../lib/auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "../../lib/cloudSyncBrowser.ts";
-import { isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
+import { createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client.ts";
 import { addBalloon, deleteBalloon, editBalloon, loadBalloonRegistry } from "../../lib/balloonStorage.ts";
 import { balloonDocumentStorage } from "../../lib/balloonDocumentStorage.ts";
@@ -1204,17 +1204,25 @@ export default function CloudSyncRuntime(): null {
 
   useEffect(() => {
     const releaseRuntimeMount = acquireRuntimeMount();
+    const controlled = controlledTestMode(currentSearch ? `?${currentSearch}` : "");
+    const unavailableControlledApi = controlled
+      ? createScopeUnavailableControlledApi<NonNullable<Window["__BC_CLOUD_SYNC_CONTROLLED_TEST__"]>>()
+      : null;
+    if (unavailableControlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = unavailableControlledApi;
+    const releaseBeforeScope = () => {
+      if (unavailableControlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === unavailableControlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
+      releaseRuntimeMount();
+    };
     if (auth.state !== "SIGNED_IN" || !auth.user) {
       automaticCloudSyncController.setUser(null);
-      return releaseRuntimeMount;
+      return releaseBeforeScope;
     }
     if (auth.localDataMigrationState !== "MIGRATION_COMPLETE" || auth.localDataMigrationCollisions.length > 0) {
       automaticCloudSyncController.setUser(null);
-      return releaseRuntimeMount;
+      return releaseBeforeScope;
     }
     const userId = auth.user.id;
     const scope = `USER:${userId}` as const;
-    const controlled = controlledTestMode(currentSearch ? `?${currentSearch}` : "");
     if (controlled) {
       suppressRuntimeDiagnosticPersistence = true;
       automaticCloudSyncController.setUser(null);
