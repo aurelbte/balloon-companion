@@ -68,7 +68,8 @@ test("wiring: import silencieux sans enqueue et upload séparé des mutations fl
   const storage = await fs.readFile(new URL("./recordedFlightStorage.ts", import.meta.url), "utf8");
   const browser = await fs.readFile(new URL("./flightTrackCloudBrowser.ts", import.meta.url), "utf8");
   assert.doesNotMatch(storage.match(/hydrateTrackFromCloudWithoutEnqueue[\s\S]*?\n  \}/)?.[0] ?? "", /enqueueLocalSyncMutation/);
-  assert.match(browser, /upload\(objectKey,[\s\S]*upsert: true/);
+  assert.match(browser, /r2Provider\.upload/);
+  assert.match(browser, /storage_provider: "R2"/);
   assert.doesNotMatch(browser, /enqueueLocalSyncMutation|logbook-entry/);
 });
 

@@ -28,6 +28,7 @@ import { createRecordedFlight, finalizeRecordedFlight } from "../../lib/recorded
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.ts";
 import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
 import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
+import { migrateLegacyFlightTrackToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
 import { drainFlightTrackQueue, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import {
   loadFlightCompletionState,
@@ -116,6 +117,7 @@ declare global {
       downloadFlightTrackTargeted(flightId: string): Promise<unknown>;
       inspectFlightTrackQueueState(): Promise<unknown>;
       drainFlightTrackQueueTargeted(): Promise<unknown>;
+      migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
     }>;
   }
 }
@@ -1335,6 +1337,7 @@ export default function CloudSyncRuntime(): null {
         const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope);
         return drainFlightTrackQueue({ scope, storage: new IndexedDbFlightTrackQueueStorage(scope), transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
       },
+      migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };

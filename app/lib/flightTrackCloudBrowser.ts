@@ -4,7 +4,6 @@ import {
   createFlightTrackBlob,
   encodeFlightTrackBlob,
   FLIGHT_TRACK_BLOB_SCHEMA_VERSION,
-  FLIGHT_TRACK_BUCKET,
   parseFlightTrackBlob,
   safeFlightTrackObjectKey,
   sha256Hex,
@@ -12,6 +11,7 @@ import {
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, loadFlightCompletionState } from "./flightCompletionStorage.ts";
 import { enqueueFlightTrackJob, type FlightTrackQueueStorage } from "./flightTrackQueue.ts";
+import { R2FlightTrackBlobProvider, SupabaseLegacyFlightTrackBlobProvider, type FlightTrackBlobProvider, type FlightTrackProviderName } from "./flightTrackBlobProvider.ts";
 
 type RemoteTrack = Readonly<{
   objectKey: string | null;
@@ -20,6 +20,7 @@ type RemoteTrack = Readonly<{
   generation: number;
   status: string;
   deletedAt: string | null;
+  provider: FlightTrackProviderName | null;
 }>;
 
 export type FlightTrackSyncState = Readonly<{
@@ -31,17 +32,25 @@ export type FlightTrackSyncState = Readonly<{
   checksum: string | null;
   uploadPending: boolean;
   downloadState: "LOCAL_COMPLETE" | "REMOTE_AVAILABLE" | "LOCAL_ONLY" | "DELETED";
+  provider: FlightTrackProviderName | null;
 }>;
 
 export class BrowserFlightTrackCloudService {
   private readonly client: SupabaseClient;
   private readonly scope: `USER:${string}`;
   private readonly storage: Pick<IndexedDbRecordedFlightStorage, "getFlight" | "listFlights" | "hydrateTrackFromCloudWithoutEnqueue">;
+  private readonly r2Provider: FlightTrackBlobProvider;
+  private readonly legacyProvider: FlightTrackBlobProvider;
   constructor(
     client: SupabaseClient,
     scope: `USER:${string}`,
     storage: Pick<IndexedDbRecordedFlightStorage, "getFlight" | "listFlights" | "hydrateTrackFromCloudWithoutEnqueue"> = new IndexedDbRecordedFlightStorage(),
-  ) { this.client = client; this.scope = scope; this.storage = storage; }
+    providers: Readonly<{ r2?: FlightTrackBlobProvider; legacy?: FlightTrackBlobProvider }> = {},
+  ) {
+    this.client = client; this.scope = scope; this.storage = storage;
+    this.r2Provider = providers.r2 ?? new R2FlightTrackBlobProvider();
+    this.legacyProvider = providers.legacy ?? new SupabaseLegacyFlightTrackBlobProvider(client.storage);
+  }
 
   private userId(): string {
     if (getRuntimeDataScope() !== this.scope) throw new Error("TRACK_USER_SWITCH");
@@ -64,7 +73,7 @@ export class BrowserFlightTrackCloudService {
   private async remote(flightId: string): Promise<RemoteTrack | null> {
     const userId = this.userId();
     const { data, error } = await this.client.from("flights")
-      .select("object_key,checksum,blob_size,blob_status,track_generation,deleted_at")
+      .select("object_key,checksum,blob_size,blob_status,track_generation,deleted_at,storage_provider")
       .eq("user_id", userId).eq("id", flightId).maybeSingle();
     if (error) throw new Error(`TRACK_METADATA_READ:${error.code ?? "UNKNOWN"}`);
     if (!data) return null;
@@ -75,6 +84,7 @@ export class BrowserFlightTrackCloudService {
       generation: Number(data.track_generation ?? 1),
       status: data.blob_status,
       deletedAt: data.deleted_at,
+      provider: data.storage_provider === "R2" ? "R2" : data.storage_provider === "SUPABASE_STORAGE" ? "SUPABASE_STORAGE" : null,
     };
   }
 
@@ -91,6 +101,7 @@ export class BrowserFlightTrackCloudService {
       checksum: remote?.checksum ?? null,
       uploadPending: localPoints > 0 && !remoteAvailable && !remote?.deletedAt,
       downloadState: remote?.deletedAt ? "DELETED" : localPoints > 0 ? "LOCAL_COMPLETE" : remoteAvailable ? "REMOTE_AVAILABLE" : "LOCAL_ONLY",
+      provider: remote?.provider ?? null,
     };
   }
 
@@ -102,16 +113,13 @@ export class BrowserFlightTrackCloudService {
     if (!remote || remote.deletedAt) throw new Error("REMOTE_FLIGHT_NOT_AVAILABLE");
     if (remote.status === "READY" && remote.objectKey && remote.checksum) return this.inspect(flightId);
     const generation = remote.generation || 1;
-    const objectKey = safeFlightTrackObjectKey(userId, flightId, generation);
     const bytes = encodeFlightTrackBlob(createFlightTrackBlob(flight));
     const checksum = await sha256Hex(bytes);
     this.userId();
-    const { error: uploadError } = await this.client.storage.from(FLIGHT_TRACK_BUCKET)
-      .upload(objectKey, new Blob([bytes.slice().buffer], { type: "application/json" }), { upsert: true, contentType: "application/json" });
-    if (uploadError) throw new Error(`TRACK_UPLOAD:${uploadError.message}`);
+    const { objectKey } = await this.r2Provider.upload({ flightId, generation, bytes, checksum });
     this.userId();
     const { error: updateError } = await this.client.from("flights").update({
-      storage_provider: "SUPABASE_STORAGE",
+      storage_provider: "R2",
       object_key: objectKey,
       format_version: FLIGHT_TRACK_BLOB_SCHEMA_VERSION,
       checksum,
@@ -129,11 +137,12 @@ export class BrowserFlightTrackCloudService {
     if (local.points.length > 0) { await this.rebuildJournalFromLocalTrace(flightId); return this.inspect(flightId); }
     const remote = await this.remote(flightId);
     if (!remote || remote.deletedAt || remote.status !== "READY" || !remote.objectKey || !remote.checksum) throw new Error("REMOTE_TRACK_NOT_AVAILABLE");
-    const expectedKey = safeFlightTrackObjectKey(this.userId(), flightId, remote.generation);
-    if (remote.objectKey !== expectedKey) throw new Error("INVALID_REMOTE_OBJECT_KEY");
-    const { data, error } = await this.client.storage.from(FLIGHT_TRACK_BUCKET).download(expectedKey);
-    if (error || !data) throw new Error(`TRACK_DOWNLOAD:${error?.message ?? "EMPTY"}`);
-    const bytes = new Uint8Array(await data.arrayBuffer());
+    const provider = remote.provider === "R2" ? this.r2Provider : this.legacyProvider;
+    if (provider.name === "SUPABASE_STORAGE") {
+      const expectedKey = safeFlightTrackObjectKey(this.userId(), flightId, remote.generation);
+      if (remote.objectKey !== expectedKey) throw new Error("INVALID_REMOTE_OBJECT_KEY");
+    }
+    const bytes = await provider.download({ flightId, generation: remote.generation, objectKey: remote.objectKey });
     if (remote.sizeBytes !== null && bytes.byteLength !== remote.sizeBytes) throw new Error("TRACK_SIZE_MISMATCH");
     if (await sha256Hex(bytes) !== remote.checksum) throw new Error("TRACK_CHECKSUM_MISMATCH");
     const blob = parseFlightTrackBlob(bytes, flightId);
@@ -165,15 +174,15 @@ export class BrowserFlightTrackCloudService {
   async cleanupDeletedTracks(): Promise<number> {
     const userId = this.userId();
     const { data, error } = await this.client.from("flights")
-      .select("id,object_key,track_generation")
+      .select("id,object_key,track_generation,storage_provider")
       .eq("user_id", userId).not("deleted_at", "is", null).eq("blob_status", "READY");
     if (error) throw new Error(`TRACK_CLEANUP_READ:${error.code ?? "UNKNOWN"}`);
     let cleaned = 0;
     for (const row of data ?? []) {
-      const expectedKey = safeFlightTrackObjectKey(userId, row.id, Number(row.track_generation ?? 1));
-      if (row.object_key !== expectedKey) throw new Error("INVALID_REMOTE_OBJECT_KEY");
-      const { error: removeError } = await this.client.storage.from(FLIGHT_TRACK_BUCKET).remove([expectedKey]);
-      if (removeError) throw new Error(`TRACK_CLEANUP:${removeError.message}`);
+      const generation = Number(row.track_generation ?? 1);
+      const provider = row.storage_provider === "R2" ? this.r2Provider : this.legacyProvider;
+      if (provider.name === "SUPABASE_STORAGE" && row.object_key !== safeFlightTrackObjectKey(userId, row.id, generation)) throw new Error("INVALID_REMOTE_OBJECT_KEY");
+      await provider.delete({ flightId: row.id, generation, objectKey: row.object_key });
       this.userId();
       const { error: updateError } = await this.client.from("flights").update({ object_key: null, checksum: null, blob_size: null, blob_status: "LOCAL_ONLY", storage_provider: null, format_version: null })
         .eq("user_id", userId).eq("id", row.id).not("deleted_at", "is", null);
@@ -185,15 +194,15 @@ export class BrowserFlightTrackCloudService {
 
   async cleanup(flightId: string): Promise<void> {
     const userId = this.userId();
-    const { data, error } = await this.client.from("flights").select("id,object_key,track_generation,deleted_at")
+    const { data, error } = await this.client.from("flights").select("id,object_key,track_generation,deleted_at,storage_provider")
       .eq("user_id", userId).eq("id", flightId).maybeSingle();
     if (error) throw new Error(`TRACK_CLEANUP_READ:${error.code ?? "UNKNOWN"}`);
     if (!data || !data.object_key) return;
     if (!data.deleted_at) throw new Error("TRACK_CLEANUP_BEFORE_TOMBSTONE");
-    const expectedKey = safeFlightTrackObjectKey(userId, flightId, Number(data.track_generation ?? 1));
-    if (data.object_key !== expectedKey) throw new Error("INVALID_REMOTE_OBJECT_KEY");
-    const { error: removeError } = await this.client.storage.from(FLIGHT_TRACK_BUCKET).remove([expectedKey]);
-    if (removeError) throw new Error(`TRACK_CLEANUP:${removeError.message}`);
+    const generation = Number(data.track_generation ?? 1);
+    const providerName = data.storage_provider === "R2" ? "R2" : "SUPABASE_STORAGE";
+    if (providerName === "SUPABASE_STORAGE" && data.object_key !== safeFlightTrackObjectKey(userId, flightId, generation)) throw new Error("INVALID_REMOTE_OBJECT_KEY");
+    await (providerName === "R2" ? this.r2Provider : this.legacyProvider).delete({ flightId, generation, objectKey: data.object_key });
     this.userId();
     const { error: updateError } = await this.client.from("flights").update({ object_key: null, checksum: null, blob_size: null, blob_status: "LOCAL_ONLY", storage_provider: null, format_version: null })
       .eq("user_id", userId).eq("id", flightId).not("deleted_at", "is", null);

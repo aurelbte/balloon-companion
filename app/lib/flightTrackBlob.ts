@@ -18,6 +18,11 @@ export function safeFlightTrackObjectKey(userId: string, flightId: string, gener
   return `${userId}/flights/${flightId}/track-v${generation}.json`;
 }
 
+export function safeR2FlightTrackObjectKey(userId: string, flightId: string, generation = 1): string {
+  const legacy = safeFlightTrackObjectKey(userId, flightId, generation);
+  return `users/${legacy}`;
+}
+
 function finiteOrNull(value: unknown): boolean {
   return value === null || (typeof value === "number" && Number.isFinite(value));
 }
