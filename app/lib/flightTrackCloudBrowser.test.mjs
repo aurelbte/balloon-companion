@@ -197,3 +197,18 @@ test("upload R2 ciblé remplace seulement les métadonnées transport et conserv
   assert.equal(cloud.remote.track_generation, 1);
   assert.equal(cloud.remote.storage_provider, "R2");
 });
+
+test("restore R2 ciblé refuse le legacy puis importe sans doublon via le chemin normal", async () => {
+  user();
+  const cloud = fakeCloud();
+  const source = localStorageWith(recorded(4));
+  await service(cloud, source).upload("flight-a");
+  const target = localStorageWith(recorded(0));
+  const restored = await service(cloud, target).restoreFromR2Targeted("flight-a");
+  assert.equal(restored.provider, "R2");
+  assert.equal(target.value().points.length, 4);
+  await service(cloud, target).restoreFromR2Targeted("flight-a");
+  assert.equal(target.value().points.length, 4);
+  cloud.remote.storage_provider = "SUPABASE_STORAGE";
+  await assert.rejects(service(cloud, localStorageWith(recorded(0))).restoreFromR2Targeted("flight-a"), /R2_PROVIDER_REQUIRED/);
+});

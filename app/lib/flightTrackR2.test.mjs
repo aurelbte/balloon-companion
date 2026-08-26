@@ -100,6 +100,8 @@ test("helpers R2 ciblés restent dans l'API DEV contrôlée et l'inspection est 
   assert.match(runtime, /inspectFlightTrackR2TargetedState:/);
   assert.match(runtime, /migrateFlightTrackSupabaseToR2Targeted:/);
   assert.match(runtime, /replayFlightTrackSupabaseToR2Targeted:/);
+  assert.match(runtime, /restoreFlightTrackFromR2Targeted:/);
+  assert.match(runtime, /inspectFlightTrackR2RestoreState:/);
   const inspector = runtime.match(/inspectFlightTrackR2TargetedState:[\s\S]*?migrateLegacyFlightTrackToR2Targeted:/)?.[0] ?? "";
   assert.match(inspector, /\.inspect\(flightId\)/);
   assert.match(inspector, /\.list\(\)/);

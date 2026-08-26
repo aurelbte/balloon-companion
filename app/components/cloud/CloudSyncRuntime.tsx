@@ -119,6 +119,8 @@ declare global {
       drainFlightTrackQueueTargeted(): Promise<unknown>;
       uploadFlightTrackToR2Targeted(flightId: string): Promise<unknown>;
       inspectFlightTrackR2TargetedState(flightId: string): Promise<unknown>;
+      restoreFlightTrackFromR2Targeted(flightId: string): Promise<unknown>;
+      inspectFlightTrackR2RestoreState(flightId: string): Promise<unknown>;
       migrateFlightTrackSupabaseToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
       replayFlightTrackSupabaseToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
       migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
@@ -1389,6 +1391,23 @@ export default function CloudSyncRuntime(): null {
           new IndexedDbFlightTrackQueueStorage(scope).list(),
         ]);
         return { ...state, pendingJobs: jobs.filter((job) => job.flightId === flightId) } as const;
+      },
+      restoreFlightTrackFromR2Targeted: (flightId: string) => new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope).restoreFromR2Targeted(flightId),
+      inspectFlightTrackR2RestoreState: async (flightId: string) => {
+        const [state, recordedFlight, jobs] = await Promise.all([
+          new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope).inspect(flightId),
+          new IndexedDbRecordedFlightStorage().getFlight(flightId),
+          new IndexedDbFlightTrackQueueStorage(scope).list(),
+        ]);
+        const journalFlight = loadFlightCompletionState().journalFlights.find((item) => (item.sourceFlightId ?? item.id) === flightId) ?? null;
+        return {
+          ...state,
+          recordedFlightPresent: recordedFlight !== null,
+          recordedPoints: recordedFlight?.points.length ?? 0,
+          journalFlightPresent: journalFlight !== null,
+          journalStatistics: journalFlight?.statistics ?? null,
+          pendingJobs: jobs.filter((job) => job.flightId === flightId),
+        } as const;
       },
       migrateFlightTrackSupabaseToR2Targeted: (flightId: string, generation = 1) => migrateFlightTrackSupabaseToR2Targeted(flightId, generation),
       replayFlightTrackSupabaseToR2Targeted: (flightId: string, generation = 1) => replayFlightTrackSupabaseToR2Targeted(flightId, generation),

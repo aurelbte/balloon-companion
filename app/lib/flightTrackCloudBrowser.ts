@@ -168,6 +168,12 @@ export class BrowserFlightTrackCloudService {
     return this.inspect(flightId);
   }
 
+  async restoreFromR2Targeted(flightId: string): Promise<FlightTrackSyncState> {
+    const state = await this.inspect(flightId);
+    if (state.provider !== "R2") throw new Error("R2_PROVIDER_REQUIRED");
+    return this.download(flightId);
+  }
+
   async uploadPendingTracks(): Promise<number> {
     let uploaded = 0;
     for (const flight of await this.storage.listFlights()) {
