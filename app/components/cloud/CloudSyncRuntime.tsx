@@ -28,7 +28,7 @@ import { createRecordedFlight, finalizeRecordedFlight } from "../../lib/recorded
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.ts";
 import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
 import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
-import { migrateFlightTrackSupabaseToR2Targeted, migrateLegacyFlightTrackToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
+import { migrateFlightTrackSupabaseToR2Targeted, migrateLegacyFlightTrackToR2Targeted, replayFlightTrackSupabaseToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
 import { drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import {
   loadFlightCompletionState,
@@ -120,6 +120,7 @@ declare global {
       uploadFlightTrackToR2Targeted(flightId: string): Promise<unknown>;
       inspectFlightTrackR2TargetedState(flightId: string): Promise<unknown>;
       migrateFlightTrackSupabaseToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
+      replayFlightTrackSupabaseToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
       migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
     }>;
   }
@@ -1359,8 +1360,28 @@ export default function CloudSyncRuntime(): null {
           remove: (jobId: string) => queue.remove(jobId),
           removeMany: (jobIds: readonly string[]) => queue.removeMany(jobIds),
         };
-        const result = await drainFlightTrackQueue({ scope, storage: targetedQueue, transport: { upload: (id) => tracks.uploadToR2Targeted(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
-        return { jobId: job.jobId, result, state: await tracks.inspect(flightId) } as const;
+        let uploadError: Readonly<{ message: string; name: string; httpStatus: number | null; requestId: string | null; bucket: string | null; endpoint: string | null; objectKey: string | null }> | null = null;
+        const result = await drainFlightTrackQueue({ scope, storage: targetedQueue, transport: {
+          upload: async (id) => {
+            try { return await tracks.uploadToR2Targeted(id); }
+            catch (error) {
+              const details = error as Partial<{ name: string; httpStatus: number; requestId: string; bucket: string; endpoint: string; objectKey: string }>;
+              uploadError = {
+                message: error instanceof Error ? error.message.replace(/(secret|token|credential|signature)(=|:)[^&\s]+/gi, "$1$2[REDACTED]") : "UNKNOWN_UPLOAD_ERROR",
+                name: error instanceof Error ? error.name : "Error",
+                httpStatus: typeof details.httpStatus === "number" ? details.httpStatus : Number(error instanceof Error ? error.message.match(/R2_(?:UPLOAD|ENDPOINT)_(\d{3})/)?.[1] ?? NaN : NaN) || null,
+                requestId: typeof details.requestId === "string" ? details.requestId : null,
+                bucket: typeof details.bucket === "string" ? details.bucket : null,
+                endpoint: typeof details.endpoint === "string" ? details.endpoint : null,
+                objectKey: typeof details.objectKey === "string" ? details.objectKey : stateBefore.objectKey,
+              };
+              throw error;
+            }
+          },
+          download: (id) => tracks.download(id),
+          cleanup: (id) => tracks.cleanup(id),
+        } });
+        return { jobId: job.jobId, result, error: uploadError, state: await tracks.inspect(flightId) } as const;
       },
       inspectFlightTrackR2TargetedState: async (flightId: string) => {
         const [state, jobs] = await Promise.all([
@@ -1370,6 +1391,7 @@ export default function CloudSyncRuntime(): null {
         return { ...state, pendingJobs: jobs.filter((job) => job.flightId === flightId) } as const;
       },
       migrateFlightTrackSupabaseToR2Targeted: (flightId: string, generation = 1) => migrateFlightTrackSupabaseToR2Targeted(flightId, generation),
+      replayFlightTrackSupabaseToR2Targeted: (flightId: string, generation = 1) => replayFlightTrackSupabaseToR2Targeted(flightId, generation),
       migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;

@@ -2,12 +2,33 @@ export type FlightTrackProviderName = "R2" | "SUPABASE_STORAGE";
 
 export interface FlightTrackBlobProvider {
   readonly name: FlightTrackProviderName;
-  upload(input: Readonly<{ flightId: string; generation: number; bytes: Uint8Array; checksum: string }>): Promise<Readonly<{ objectKey: string }>>;
+  upload(input: Readonly<{ flightId: string; generation: number; bytes: Uint8Array; checksum: string; diagnostics?: boolean }>): Promise<Readonly<{ objectKey: string }>>;
   download(input: Readonly<{ flightId: string; generation: number; objectKey: string }>): Promise<Uint8Array>;
   delete(input: Readonly<{ flightId: string; generation: number; objectKey: string }>): Promise<void>;
 }
 
-type SignedResponse = Readonly<{ url: string; objectKey: string; expiresInSeconds: number }>;
+type SignedResponse = Readonly<{ url: string; objectKey: string; expiresInSeconds: number; bucket?: string; endpoint?: string }>;
+
+export class FlightTrackProviderError extends Error {
+  readonly httpStatus: number | null;
+  readonly requestId: string | null;
+  readonly bucket: string | null;
+  readonly endpoint: string | null;
+  readonly objectKey: string | null;
+  constructor(message: string, details: Readonly<{ httpStatus?: number; requestId?: string; bucket?: string; endpoint?: string; objectKey?: string }> = {}) {
+    super(message);
+    this.name = "FlightTrackProviderError";
+    this.httpStatus = details.httpStatus ?? null;
+    this.requestId = details.requestId ?? null;
+    this.bucket = details.bucket ?? null;
+    this.endpoint = details.endpoint ?? null;
+    this.objectKey = details.objectKey ?? null;
+  }
+}
+
+function xmlValue(xml: string, tag: string): string | undefined {
+  return xml.match(new RegExp(`<${tag}>([^<]+)</${tag}>`, "i"))?.[1];
+}
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
@@ -33,12 +54,26 @@ export async function migrateFlightTrackSupabaseToR2Targeted(flightId: string, g
 
 export const migrateLegacyFlightTrackToR2Targeted = migrateFlightTrackSupabaseToR2Targeted;
 
+export async function replayFlightTrackSupabaseToR2Targeted(flightId: string, generation = 1): Promise<unknown> {
+  return endpoint("REPLAY_LEGACY", { flightId, generation });
+}
+
 export class R2FlightTrackBlobProvider implements FlightTrackBlobProvider {
   readonly name = "R2" as const;
-  async upload(input: Readonly<{ flightId: string; generation: number; bytes: Uint8Array; checksum: string }>) {
-    const signed = await endpoint("UPLOAD_URL", { flightId: input.flightId, generation: input.generation, sizeBytes: input.bytes.byteLength, checksum: input.checksum });
+  async upload(input: Readonly<{ flightId: string; generation: number; bytes: Uint8Array; checksum: string; diagnostics?: boolean }>) {
+    const signed = await endpoint("UPLOAD_URL", { flightId: input.flightId, generation: input.generation, sizeBytes: input.bytes.byteLength, checksum: input.checksum, diagnostics: input.diagnostics === true });
     const response = await fetchWithTimeout(signed.url, { method: "PUT", headers: { "content-type": "application/json", "x-amz-meta-sha256": input.checksum }, body: input.bytes.slice().buffer }, 60_000);
-    if (!response.ok) throw new Error(`R2_UPLOAD_${response.status}`);
+    if (!response.ok) {
+      const responseBody = await response.text();
+      const code = xmlValue(responseBody, "Code");
+      throw new FlightTrackProviderError(code ? `R2_UPLOAD_${response.status}:${code}` : `R2_UPLOAD_${response.status}`, {
+        httpStatus: response.status,
+        requestId: xmlValue(responseBody, "RequestId"),
+        bucket: signed.bucket,
+        endpoint: signed.endpoint,
+        objectKey: signed.objectKey,
+      });
+    }
     return { objectKey: signed.objectKey };
   }
   async download(input: Readonly<{ flightId: string; generation: number; objectKey: string }>) {

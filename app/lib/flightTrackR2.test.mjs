@@ -48,6 +48,24 @@ test("provider R2 expose les erreurs endpoint 5xx au retry existant", async () =
   await assert.rejects(new R2FlightTrackBlobProvider().upload({ flightId: "flight-a", generation: 1, bytes: new Uint8Array([1]), checksum: "a".repeat(64) }), /R2_ENDPOINT_503/);
 });
 
+test("provider R2 expose un diagnostic PUT sûr sans URL signée ni credentials", async () => {
+  globalThis.fetch = async (url) => url === "/api/cloud/flight-tracks"
+    ? new Response(JSON.stringify({ url: "https://signed.example/private?X-Amz-Signature=secret", objectKey: "users/user-a/flights/flight-a/track-v1.json", expiresInSeconds: 300, bucket: "flight-tracks", endpoint: "https://account.r2.cloudflarestorage.com" }), { status: 200 })
+    : new Response("<Error><Code>AccessDenied</Code><RequestId>request-safe</RequestId></Error>", { status: 403 });
+  await assert.rejects(
+    new R2FlightTrackBlobProvider().upload({ flightId: "flight-a", generation: 1, bytes: new Uint8Array([1]), checksum: "a".repeat(64) }),
+    (error) => {
+      assert.equal(error.message, "R2_UPLOAD_403:AccessDenied");
+      assert.equal(error.httpStatus, 403);
+      assert.equal(error.requestId, "request-safe");
+      assert.equal(error.bucket, "flight-tracks");
+      assert.equal(error.endpoint, "https://account.r2.cloudflarestorage.com");
+      assert.equal(JSON.stringify(error).includes("X-Amz-Signature"), false);
+      return true;
+    },
+  );
+});
+
 test("provider R2 conserve une erreur d'URL expirée comme erreur retryable du transport", async () => {
   globalThis.fetch = async (url) => url === "/api/cloud/flight-tracks"
     ? new Response(JSON.stringify({ url: "https://signed.example/expired", objectKey: "users/user-a/flights/flight-a/track-v1.json", expiresInSeconds: 300 }), { status: 200 })
@@ -67,6 +85,10 @@ test("configuration et route R2 restent server-only avec URLs cinq minutes et mi
   assert.match(server, /alreadyMigrated: true/);
   assert.match(server, /row\.storage_provider === "R2" && row\.object_key === target\.objectKey/);
   assert.doesNotMatch(server, /\.remove\(/);
+  assert.match(server, /replayLegacyFlightTrackToR2/);
+  assert.match(server, /safeFlightTrackObjectKey\(target\.userId, target\.flightId, target\.generation\)/);
+  assert.match(server, /HeadObjectCommand/);
+  assert.match(server, /R2_TRACK_VERIFICATION_FAILED/);
   assert.match(route, /authorizeFlightTrack/);
   assert.doesNotMatch(env, /NEXT_PUBLIC_R2/);
 });
@@ -77,6 +99,7 @@ test("helpers R2 ciblés restent dans l'API DEV contrôlée et l'inspection est 
   assert.match(runtime, /uploadFlightTrackToR2Targeted:/);
   assert.match(runtime, /inspectFlightTrackR2TargetedState:/);
   assert.match(runtime, /migrateFlightTrackSupabaseToR2Targeted:/);
+  assert.match(runtime, /replayFlightTrackSupabaseToR2Targeted:/);
   const inspector = runtime.match(/inspectFlightTrackR2TargetedState:[\s\S]*?migrateLegacyFlightTrackToR2Targeted:/)?.[0] ?? "";
   assert.match(inspector, /\.inspect\(flightId\)/);
   assert.match(inspector, /\.list\(\)/);

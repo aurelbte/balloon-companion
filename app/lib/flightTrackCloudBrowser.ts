@@ -116,7 +116,7 @@ export class BrowserFlightTrackCloudService {
     const bytes = encodeFlightTrackBlob(createFlightTrackBlob(flight));
     const checksum = await sha256Hex(bytes);
     this.userId();
-    const { objectKey } = await this.r2Provider.upload({ flightId, generation, bytes, checksum });
+    const { objectKey } = await this.r2Provider.upload({ flightId, generation, bytes, checksum, diagnostics: forceR2 });
     this.userId();
     const { error: updateError } = await this.client.from("flights").update({
       storage_provider: "R2",
