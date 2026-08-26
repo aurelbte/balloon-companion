@@ -156,6 +156,58 @@ export type CloudFlightJournalMetadata = Readonly<{
   recovered: boolean;
 }>;
 
+export type FlightJournalApplyOrigin = "CLOUD_METADATA" | "TRACK_RECONSTRUCTION";
+
+function finiteDerived(next: number | null | undefined, previous: number | null): number | null {
+  return typeof next === "number" && Number.isFinite(next) ? next : previous;
+}
+
+/** A technical trace hydration may enrich derived fields, never erase richer business state. */
+export function mergeJournalFlightFromTrackReconstruction(
+  existing: CompletionJournalFlight,
+  reconstructed: CompletionJournalFlight,
+): CompletionJournalFlight {
+  return {
+    ...reconstructed,
+    ...existing,
+    startedAt: reconstructed.startedAt ?? existing.startedAt,
+    durationMinutes: finiteDerived(reconstructed.durationMinutes, existing.durationMinutes)!,
+    distanceKm: finiteDerived(reconstructed.distanceKm, existing.distanceKm)!,
+    maxAltitudeM: finiteDerived(reconstructed.maxAltitudeM, existing.maxAltitudeM),
+    maxSpeedKmh: finiteDerived(reconstructed.maxSpeedKmh, existing.maxSpeedKmh),
+    statistics: {
+      takeoffAltitudeAmslM: finiteDerived(reconstructed.statistics?.takeoffAltitudeAmslM, existing.statistics.takeoffAltitudeAmslM),
+      landingAltitudeAmslM: finiteDerived(reconstructed.statistics?.landingAltitudeAmslM, existing.statistics.landingAltitudeAmslM),
+      averageAltitudeAmslM: finiteDerived(reconstructed.statistics?.averageAltitudeAmslM, existing.statistics.averageAltitudeAmslM),
+      averageSpeedKmh: finiteDerived(reconstructed.statistics?.averageSpeedKmh, existing.statistics.averageSpeedKmh),
+      minimumInFlightSpeedKmh: finiteDerived(reconstructed.statistics?.minimumInFlightSpeedKmh, existing.statistics.minimumInFlightSpeedKmh),
+      maximumClimbRateMps: finiteDerived(reconstructed.statistics?.maximumClimbRateMps, existing.statistics.maximumClimbRateMps),
+      maximumDescentRateMps: finiteDerived(reconstructed.statistics?.maximumDescentRateMps, existing.statistics.maximumDescentRateMps),
+      averageHeadingDeg: finiteDerived(reconstructed.statistics?.averageHeadingDeg, existing.statistics.averageHeadingDeg),
+      directDistanceKm: finiteDerived(reconstructed.statistics?.directDistanceKm, existing.statistics.directDistanceKm)!,
+    },
+    // The durable full trace remains exclusively in RecordedFlight IndexedDB.
+    points: [],
+  };
+}
+
+export function mergeJournalFlightFromCloudMetadataWithoutTrace(
+  existing: CompletionJournalFlight,
+  cloud: CompletionJournalFlight,
+): CompletionJournalFlight {
+  const derived = mergeJournalFlightFromTrackReconstruction(existing, cloud);
+  return {
+    ...existing,
+    ...cloud,
+    durationMinutes: derived.durationMinutes,
+    distanceKm: derived.distanceKm,
+    maxAltitudeM: derived.maxAltitudeM,
+    maxSpeedKmh: derived.maxSpeedKmh,
+    statistics: derived.statistics,
+    points: [],
+  };
+}
+
 /** Pull-only Journal projection; it preserves official ascensions and never enqueues. */
 export function applyRecordedFlightToJournalFromCloudWithoutEnqueue(
   scope: `USER:${string}`,
@@ -163,6 +215,7 @@ export function applyRecordedFlightToJournalFromCloudWithoutEnqueue(
   flight: RecordedFlight | null,
   metadata: CloudFlightJournalMetadata | null,
   storage: Storage = window.localStorage,
+  origin: FlightJournalApplyOrigin = "CLOUD_METADATA",
 ): boolean {
   if (typeof window === "undefined" || getRuntimeDataScope() !== scope) return false;
   const current = loadFlightCompletionState();
@@ -170,13 +223,19 @@ export function applyRecordedFlightToJournalFromCloudWithoutEnqueue(
   let journalFlights = retained;
   if (flight && metadata) {
     const projected = recordedFlightToJournalFlight(flight);
-    journalFlights = [...retained, {
+    const candidate: CompletionJournalFlight = {
       ...projected,
       ...(metadata.customTitle ? { customTitle: metadata.customTitle } : {}),
       origin: metadata.origin,
       logbookStatus: metadata.logbookStatus,
       ...(metadata.recovered ? { recovered: true } : {}),
-    }];
+    };
+    const existing = current.journalFlights.find(({ sourceFlightId, id: localId }) => (sourceFlightId ?? localId) === id);
+    journalFlights = [...retained, existing && origin === "TRACK_RECONSTRUCTION"
+      ? mergeJournalFlightFromTrackReconstruction(existing, candidate)
+      : existing && flight.points.length === 0
+        ? mergeJournalFlightFromCloudMetadataWithoutTrace(existing, candidate)
+        : candidate];
   }
   const next: FlightCompletionState = { ...current, journalFlights };
   if (!writeScopedBusinessValue(storage, STORAGE_KEY, JSON.stringify(next))) return false;

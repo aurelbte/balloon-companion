@@ -48,6 +48,19 @@ export class BrowserFlightTrackCloudService {
     return this.scope.slice(5);
   }
 
+  private async rebuildJournalFromLocalTrace(flightId: string): Promise<boolean> {
+    const flight = await this.storage.getFlight(flightId);
+    if (!flight?.points.length || typeof window === "undefined") return false;
+    const journal = loadFlightCompletionState().journalFlights.find((item) => (item.sourceFlightId ?? item.id) === flightId);
+    if (!journal) return false;
+    return applyRecordedFlightToJournalFromCloudWithoutEnqueue(this.scope, flightId, flight, {
+      customTitle: journal.customTitle ?? null,
+      origin: journal.origin,
+      logbookStatus: journal.logbookStatus,
+      recovered: journal.recovered ?? false,
+    }, window.localStorage, "TRACK_RECONSTRUCTION");
+  }
+
   private async remote(flightId: string): Promise<RemoteTrack | null> {
     const userId = this.userId();
     const { data, error } = await this.client.from("flights")
@@ -113,7 +126,7 @@ export class BrowserFlightTrackCloudService {
   async download(flightId: string): Promise<FlightTrackSyncState> {
     const local = await this.storage.getFlight(flightId);
     if (!local) throw new Error("LOCAL_FLIGHT_METADATA_NOT_FOUND");
-    if (local.points.length > 0) return this.inspect(flightId);
+    if (local.points.length > 0) { await this.rebuildJournalFromLocalTrace(flightId); return this.inspect(flightId); }
     const remote = await this.remote(flightId);
     if (!remote || remote.deletedAt || remote.status !== "READY" || !remote.objectKey || !remote.checksum) throw new Error("REMOTE_TRACK_NOT_AVAILABLE");
     const expectedKey = safeFlightTrackObjectKey(this.userId(), flightId, remote.generation);
@@ -133,7 +146,7 @@ export class BrowserFlightTrackCloudService {
       origin: journal.origin,
       logbookStatus: journal.logbookStatus,
       recovered: journal.recovered ?? false,
-    })) throw new Error("TRACK_JOURNAL_REBUILD_REFUSED");
+    }, window.localStorage, "TRACK_RECONSTRUCTION")) throw new Error("TRACK_JOURNAL_REBUILD_REFUSED");
     return this.inspect(flightId);
   }
 
@@ -191,6 +204,7 @@ export class BrowserFlightTrackCloudService {
     let created = 0;
     for (const flight of await this.storage.listFlights()) {
       if (flight.status !== "COMPLETED" || flight.points.length === 0) continue;
+      await this.rebuildJournalFromLocalTrace(flight.id);
       const state = await this.inspect(flight.id);
       if (!state.uploadPending) continue;
       await enqueueFlightTrackJob(queue, { scope: this.scope, flightId: flight.id, operation: "UPLOAD", generation: state.generation ?? 1 });

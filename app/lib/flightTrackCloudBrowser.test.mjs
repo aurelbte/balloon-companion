@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 
-import { setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
+import { scopedBusinessStorageKey, setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
 import { BrowserFlightTrackCloudService } from "./flightTrackCloudBrowser.ts";
+import { FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
 
 const user = (id = "user-a") => setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id, email: `${id}@example.test`, firstName: "", lastName: "" } });
 afterEach(() => setRuntimeAuthSnapshot({ state: "UNKNOWN", user: null }));
@@ -87,6 +88,43 @@ test("transport simulé download importe silencieusement les points complets", a
   const state = await new BrowserFlightTrackCloudService(cloud.client, "USER:user-a", target).download("flight-a");
   assert.equal(target.value().points.length, 3323);
   assert.equal(state.localPoints, 3323);
+});
+
+test("download reconstruit le Journal riche sans événement enqueue", async () => {
+  user();
+  const cloud = fakeCloud();
+  const sourceFlight = recorded(4);
+  await new BrowserFlightTrackCloudService(cloud.client, "USER:user-a", localStorageWith(sourceFlight)).upload("flight-a");
+  const target = localStorageWith(recorded(0));
+  const values = new Map(), events = [];
+  const browserStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  globalThis.window = { localStorage: browserStorage, dispatchEvent: (event) => { events.push(event.type); return true; } };
+  const key = scopedBusinessStorageKey("USER:user-a", FLIGHT_COMPLETION_STORAGE_KEY);
+  values.set(key, JSON.stringify({ version: 4, openingBalance: { confirmed: false, ascensions: null, officialDurationMinutes: null }, journalFlights: [{ id: "flight-a", sourceFlightId: "flight-a", startedAt: 1000, departure: "A", arrival: "B", date: "date", dateIso: "2026-08-26", balloonRegistration: "F-X", durationMinutes: 1, distanceKm: 1, takeoffTime: "10:00", landingTime: "10:01", maxAltitudeM: 999, maxSpeedKmh: 99, notes: "protected", statistics: { takeoffAltitudeAmslM: null, landingAltitudeAmslM: null, averageAltitudeAmslM: null, averageSpeedKmh: null, minimumInFlightSpeedKmh: null, maximumClimbRateMps: null, maximumDescentRateMps: null, averageHeadingDeg: null, directDistanceKm: 0 }, points: [], logbookStatus: "CARNET_VALIDATED", origin: "REAL_GPS" }], officialAscensions: [] }));
+  await new BrowserFlightTrackCloudService(cloud.client, "USER:user-a", target).download("flight-a");
+  const journal = JSON.parse(values.get(key)).journalFlights[0];
+  assert.equal(journal.notes, "protected");
+  assert.equal(journal.statistics.takeoffAltitudeAmslM, 100);
+  assert.equal(journal.statistics.landingAltitudeAmslM, 103);
+  assert.equal(events.includes("balloon-companion:sync-mutation-enqueued"), false);
+  delete globalThis.window;
+});
+
+test("une trace déjà locale répare un Journal historique dégradé sans re-download", async () => {
+  user();
+  const local = localStorageWith(recorded(4));
+  const values = new Map(), events = [];
+  const browserStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  globalThis.window = { localStorage: browserStorage, dispatchEvent: (event) => { events.push(event.type); return true; } };
+  const key = scopedBusinessStorageKey("USER:user-a", FLIGHT_COMPLETION_STORAGE_KEY);
+  values.set(key, JSON.stringify({ version: 4, openingBalance: { confirmed: false, ascensions: null, officialDurationMinutes: null }, journalFlights: [{ id: "flight-a", sourceFlightId: "flight-a", startedAt: 1000, departure: "A", arrival: "B", date: "date", dateIso: "2026-08-26", balloonRegistration: "F-X", durationMinutes: 1, distanceKm: 1, takeoffTime: "10:00", landingTime: "10:01", maxAltitudeM: 999, maxSpeedKmh: 99, notes: "protected", statistics: { takeoffAltitudeAmslM: null, landingAltitudeAmslM: null, averageAltitudeAmslM: null, averageSpeedKmh: null, minimumInFlightSpeedKmh: null, maximumClimbRateMps: null, maximumDescentRateMps: null, averageHeadingDeg: null, directDistanceKm: 0 }, points: [], logbookStatus: "CARNET_VALIDATED", origin: "REAL_GPS" }], officialAscensions: [] }));
+  await new BrowserFlightTrackCloudService(fakeCloud().client, "USER:user-a", local).download("flight-a");
+  const repaired = JSON.parse(values.get(key)).journalFlights[0];
+  assert.equal(repaired.statistics.takeoffAltitudeAmslM, 100);
+  assert.equal(repaired.statistics.landingAltitudeAmslM, 103);
+  assert.equal(repaired.notes, "protected");
+  assert.equal(events.includes("balloon-companion:sync-mutation-enqueued"), false);
+  delete globalThis.window;
 });
 
 test("transport simulé protège USER switch pendant upload et cleanup absent est idempotent", async () => {

@@ -610,7 +610,8 @@ export function createBrowserFlightPullService(input: Readonly<{
         const local = row.value as CloudFlightLocalValue;
         const flight = row.deletedAt ? null : local.flight;
         if (!await flights.applyFromCloudWithoutEnqueue(input.scope, row.entityId, flight)) return false;
-        return applyRecordedFlightToJournalFromCloudWithoutEnqueue(input.scope, row.entityId, flight, row.deletedAt ? null : local.journal, input.storage);
+        const mergedFlight = row.deletedAt ? null : await flights.getFlight(row.entityId);
+        return applyRecordedFlightToJournalFromCloudWithoutEnqueue(input.scope, row.entityId, mergedFlight, row.deletedAt ? null : local.journal, input.storage);
       },
     },
     recordConflict: async (_conflict, mutation, row) => {

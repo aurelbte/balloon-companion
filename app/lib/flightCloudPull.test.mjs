@@ -6,7 +6,7 @@ import { CloudPullService } from "./cloudPullService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { mergeRecordedFlightFromCloud } from "./recordedFlightStorage.ts";
 import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
-import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, FLIGHT_COMPLETION_STORAGE_KEY, mergeJournalFlightFromCloudMetadataWithoutTrace, mergeJournalFlightFromTrackReconstruction } from "./flightCompletionStorage.ts";
 import { parseFlightCloudRow } from "./cloudPullBrowser.ts";
 
 const scope = "USER:user-1";
@@ -79,6 +79,73 @@ test("metadata-only conserve le résumé Cloud sans inventer de point et une UPD
   const localPoint = { timestamp: cloud.startedAt, latitude: 1, longitude: 2, altitudeMeters: 3, speedMetersPerSecond: null, headingDegrees: null, horizontalAccuracyMeters: null, verticalAccuracyMeters: null };
   assert.deepEqual(mergeRecordedFlightFromCloud(flight({ points: [localPoint] }), flight({ notes: "updated" })).points, [localPoint]);
   assert.deepEqual(mergeRecordedFlightFromCloud(null, cloud).points, []);
+});
+
+function completeTraceFlight() {
+  const startedAt = Date.parse(now);
+  const points = [
+    { timestamp: startedAt, latitude: 50.80, longitude: 2.60, altitudeMeters: 88, speedMetersPerSecond: 0, headingDegrees: 210, horizontalAccuracyMeters: 4, verticalAccuracyMeters: 6, quality: "VALID", segmentId: "one" },
+    { timestamp: startedAt + 5_000, latitude: 50.81, longitude: 2.61, altitudeMeters: 326, speedMetersPerSecond: 3.5, headingDegrees: 220, horizontalAccuracyMeters: 4, verticalAccuracyMeters: 6, quality: "VALID", segmentId: "one" },
+    { timestamp: startedAt + 10_000, latitude: 50.82, longitude: 2.62, altitudeMeters: 1025, speedMetersPerSecond: 7.89, headingDegrees: 228.5, horizontalAccuracyMeters: 4, verticalAccuracyMeters: 6, quality: "VALID", segmentId: "one" },
+    { timestamp: startedAt + 15_000, latitude: 50.83, longitude: 2.63, altitudeMeters: 18, speedMetersPerSecond: 1, headingDegrees: 219.5, horizontalAccuracyMeters: 4, verticalAccuracyMeters: 6, quality: "VALID", segmentId: "one" },
+  ];
+  return flight({ points, startedAt, endedAt: startedAt + 15_000 });
+}
+
+test("TRACK_RECONSTRUCTION enrichit toutes les statistiques sans effacer metadata métier", () => {
+  const rich = recordedFlightToJournalFlight(completeTraceFlight());
+  const existing = { ...rich, customTitle: "Titre utilisateur", notes: "Note utilisateur", balloonRegistration: "F-USER", statistics: { ...rich.statistics, averageHeadingDeg: 219.5 } };
+  const reconstructed = recordedFlightToJournalFlight(completeTraceFlight());
+  const merged = mergeJournalFlightFromTrackReconstruction(existing, reconstructed);
+  assert.equal(merged.statistics.takeoffAltitudeAmslM, 88);
+  assert.equal(merged.statistics.landingAltitudeAmslM, 18);
+  assert.equal(merged.statistics.averageAltitudeAmslM, 364);
+  assert.ok(Math.abs(merged.statistics.averageSpeedKmh - 11.151) < 1e-9);
+  assert.equal(merged.statistics.minimumInFlightSpeedKmh, 0);
+  assert.equal(merged.statistics.averageHeadingDeg, 219.5);
+  assert.ok(merged.statistics.directDistanceKm > 0);
+  assert.equal(merged.customTitle, "Titre utilisateur");
+  assert.equal(merged.notes, "Note utilisateur");
+  assert.equal(merged.balloonRegistration, "F-USER");
+});
+
+test("undefined/null d'une reconstruction partielle ne dégradent aucune valeur valide", () => {
+  const existing = recordedFlightToJournalFlight(completeTraceFlight());
+  const partial = { ...existing, maxAltitudeM: null, maxSpeedKmh: null, statistics: Object.fromEntries(Object.keys(existing.statistics).map((key) => [key, null])) };
+  const merged = mergeJournalFlightFromTrackReconstruction(existing, partial);
+  assert.equal(merged.maxAltitudeM, existing.maxAltitudeM);
+  assert.equal(merged.maxSpeedKmh, existing.maxSpeedKmh);
+  assert.deepEqual(merged.statistics, existing.statistics);
+});
+
+test("metadata Cloud sans trace applique le métier sans effacer les statistiques riches", () => {
+  const existing = { ...recordedFlightToJournalFlight(completeTraceFlight()), notes: "ancienne note", customTitle: "ancien titre" };
+  const cloud = { ...recordedFlightToJournalFlight({ ...completeTraceFlight(), points: [] }), notes: "note Cloud", customTitle: "titre Cloud", maxAltitudeM: null, statistics: { ...existing.statistics, takeoffAltitudeAmslM: null, averageHeadingDeg: null } };
+  const merged = mergeJournalFlightFromCloudMetadataWithoutTrace(existing, cloud);
+  assert.equal(merged.notes, "note Cloud");
+  assert.equal(merged.customTitle, "titre Cloud");
+  assert.equal(merged.maxAltitudeM, existing.maxAltitudeM);
+  assert.equal(merged.statistics.takeoffAltitudeAmslM, existing.statistics.takeoffAltitudeAmslM);
+  assert.equal(merged.statistics.averageHeadingDeg, existing.statistics.averageHeadingDeg);
+});
+
+test("round-trip A → Cloud metadata → B + trace → Cloud → A conserve les statistiques", () => {
+  const recordedA = completeTraceFlight();
+  const journalA = recordedFlightToJournalFlight(recordedA);
+  const metadataOnlyB = recordedFlightToJournalFlight({ ...recordedA, points: [] });
+  const journalB = mergeJournalFlightFromTrackReconstruction(metadataOnlyB, recordedFlightToJournalFlight(recordedA));
+  assert.deepEqual(journalB.statistics, journalA.statistics);
+  assert.equal(journalB.maxAltitudeM, journalA.maxAltitudeM);
+  assert.equal(journalB.maxSpeedKmh, journalA.maxSpeedKmh);
+  const recordedAfterB = mergeRecordedFlightFromCloud(recordedA, { ...recordedA, points: [], notes: "metadata B" });
+  const journalAAfterRoundTrip = recordedFlightToJournalFlight(recordedAfterB);
+  assert.deepEqual(journalAAfterRoundTrip.statistics, journalA.statistics);
+});
+
+test("adaptateur browser relit le RecordedFlight fusionné avant projection Journal", () => {
+  const source = readFileSync(new URL("./cloudPullBrowser.ts", import.meta.url), "utf8");
+  assert.match(source, /const mergedFlight = row\.deletedAt \? null : await flights\.getFlight\(row\.entityId\)/);
+  assert.match(source, /applyRecordedFlightToJournalFromCloudWithoutEnqueue\(input\.scope, row\.entityId, mergedFlight/);
 });
 
 test("projection Journal silencieuse insère, met à jour et tombstone sans toucher l'ascension officielle", () => {
