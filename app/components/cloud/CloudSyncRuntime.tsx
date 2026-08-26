@@ -26,13 +26,15 @@ import {
 import { removeOfficialAscension } from "../../lib/flightCompletion.ts";
 import { createRecordedFlight, finalizeRecordedFlight } from "../../lib/recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.ts";
+import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
 import {
   loadFlightCompletionState,
+  persistJournalFlight,
   persistManualOfficialAscension,
   persistOfficialAscensionUpdate,
   saveFlightCompletionState,
 } from "../../lib/flightCompletionStorage.ts";
-import { IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
+import { enqueueLocalSyncMutation, IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import { nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPilotProfilePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
@@ -105,6 +107,8 @@ declare global {
       inspectFlightLogbookAutoPushTestState(): Promise<unknown>;
       resolveCrudConflictLocalWins(entityType: string, entityId: string): Promise<unknown>;
       resolveCrudConflictServerWins(entityType: string, entityId: string): Promise<unknown>;
+      restoreRecordedFlightBackupTargeted(backup: unknown): Promise<unknown>;
+      inspectRecordedFlightBackupRestoreState(flightId: string): Promise<unknown>;
     }>;
   }
 }
@@ -1268,6 +1272,36 @@ export default function CloudSyncRuntime(): null {
       inspectFlightLogbookAutoPushTestState: () => inspectFlightLogbookAutoPushTestState(scope),
       resolveCrudConflictLocalWins: (entityType: string, entityId: string) => createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).resolveLocalWins(entityType, entityId),
       resolveCrudConflictServerWins: (entityType: string, entityId: string) => createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).resolveServerWins(entityType, entityId),
+      restoreRecordedFlightBackupTargeted: (backup: unknown) => restoreRecordedFlightBackupTargeted(backup, {
+        scope,
+        getCurrentScope: getRuntimeDataScope,
+        getRecordedFlight: (id) => new IndexedDbRecordedFlightStorage().getFlight(id),
+        getJournalFlights: () => loadFlightCompletionState().journalFlights,
+        persistRecordedFlight: (flight) => new IndexedDbRecordedFlightStorage().completeFlight(flight),
+        persistJournalFlight: (flight) => {
+          const before = loadFlightCompletionState().journalFlights.some((item) => item.id === flight.id || item.sourceFlightId === flight.id);
+          persistJournalFlight(flight);
+          return before || loadFlightCompletionState().journalFlights.some((item) => item.id === flight.id || item.sourceFlightId === flight.id);
+        },
+        enqueueFlightUpsert: (id) => enqueueLocalSyncMutation("flight", id),
+      }),
+      inspectRecordedFlightBackupRestoreState: async (flightId: string) => {
+        const outbox = new IndexedDbSyncOutboxStorage(scope);
+        const [recordedFlight, mutations, sidecar] = await Promise.all([
+          new IndexedDbRecordedFlightStorage().getFlight(flightId),
+          outbox.list(),
+          outbox.getMetadata("flight", flightId),
+        ]);
+        const journalFlight = loadFlightCompletionState().journalFlights.find((item) => item.id === flightId || item.sourceFlightId === flightId) ?? null;
+        return {
+          flightId,
+          recordedFlightPresent: recordedFlight !== null,
+          pointsCount: recordedFlight?.points.length ?? 0,
+          journalFlightPresent: journalFlight !== null,
+          sidecar,
+          pendingFlightMutations: mutations.filter((mutation) => mutation.entityType === "flight" && mutation.entityId === flightId),
+        } as const;
+      },
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };
