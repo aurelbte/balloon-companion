@@ -347,8 +347,9 @@ test("syncMutationById protège le scope lors d un USER switch", async () => {
   assert.equal((await value.outbox.getMetadata(target.entityType, target.entityId)).revision, 0);
 });
 
-test("la protection de test bloque l auto-sync uniquement en développement", () => {
+test("la protection ciblée est explicite par URL en développement comme en production", () => {
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("development", "?cloudSyncTest=targeted"), true);
-  assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "?cloudSyncTest=targeted"), false);
+  assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "?cloudSyncTest=targeted"), true);
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("development", ""), false);
+  assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", ""), false);
 });

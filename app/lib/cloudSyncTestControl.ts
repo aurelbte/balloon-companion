@@ -1,9 +1,9 @@
 export const CONTROLLED_CLOUD_SYNC_QUERY = "cloudSyncTest=targeted";
 
-/** Non-persistent guard. Production builds can never activate this test mode. */
+/** Explicit, non-persistent URL guard. Targeted mode also disables automatic sync in production. */
 export function isAutomaticCloudSyncBlockedForControlledTest(
-  nodeEnv: string | undefined,
+  _nodeEnv: string | undefined,
   search: string,
 ): boolean {
-  return nodeEnv === "development" && new URLSearchParams(search).get("cloudSyncTest") === "targeted";
+  return new URLSearchParams(search).get("cloudSyncTest") === "targeted";
 }
