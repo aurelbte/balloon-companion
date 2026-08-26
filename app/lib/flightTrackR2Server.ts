@@ -47,7 +47,11 @@ export async function deleteR2Track(target: AuthorizedFlightTrack, environment?:
 /** One-shot, owner-scoped migration. The legacy object is deliberately retained. */
 export async function migrateLegacyFlightTrackToR2(supabase: SupabaseClient, target: AuthorizedFlightTrack, environment?: NodeJS.ProcessEnv) {
   const { data: row, error: rowError } = await supabase.from("flights").select("object_key,checksum,blob_size,storage_provider").eq("id", target.flightId).eq("user_id", target.userId).maybeSingle();
-  if (rowError || !row || row.storage_provider !== "SUPABASE_STORAGE" || typeof row.object_key !== "string" || typeof row.checksum !== "string") throw new Error("LEGACY_TRACK_NOT_MIGRATABLE");
+  if (rowError || !row) throw new Error("LEGACY_TRACK_NOT_MIGRATABLE");
+  if (row.storage_provider === "R2" && row.object_key === target.objectKey && typeof row.checksum === "string") {
+    return { migrated: false, alreadyMigrated: true, objectKey: target.objectKey, checksum: row.checksum, sizeBytes: row.blob_size == null ? null : Number(row.blob_size), legacyObjectRetained: true } as const;
+  }
+  if (row.storage_provider !== "SUPABASE_STORAGE" || typeof row.object_key !== "string" || typeof row.checksum !== "string") throw new Error("LEGACY_TRACK_NOT_MIGRATABLE");
   const { data: legacy, error: downloadError } = await supabase.storage.from("flight-tracks").download(row.object_key);
   if (downloadError || !legacy) throw new Error("LEGACY_TRACK_DOWNLOAD_FAILED");
   const bytes = new Uint8Array(await legacy.arrayBuffer());

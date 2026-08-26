@@ -28,7 +28,7 @@ import { createRecordedFlight, finalizeRecordedFlight } from "../../lib/recorded
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.ts";
 import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
 import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
-import { migrateLegacyFlightTrackToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
+import { migrateFlightTrackSupabaseToR2Targeted, migrateLegacyFlightTrackToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
 import { drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import {
   loadFlightCompletionState,
@@ -119,6 +119,7 @@ declare global {
       drainFlightTrackQueueTargeted(): Promise<unknown>;
       uploadFlightTrackToR2Targeted(flightId: string): Promise<unknown>;
       inspectFlightTrackR2TargetedState(flightId: string): Promise<unknown>;
+      migrateFlightTrackSupabaseToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
       migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
     }>;
   }
@@ -1368,6 +1369,7 @@ export default function CloudSyncRuntime(): null {
         ]);
         return { ...state, pendingJobs: jobs.filter((job) => job.flightId === flightId) } as const;
       },
+      migrateFlightTrackSupabaseToR2Targeted: (flightId: string, generation = 1) => migrateFlightTrackSupabaseToR2Targeted(flightId, generation),
       migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;

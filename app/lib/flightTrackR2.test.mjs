@@ -64,6 +64,8 @@ test("configuration et route R2 restent server-only avec URLs cinq minutes et mi
   assert.match(server, /SIGNED_URL_TTL_SECONDS = 300/);
   assert.match(server, /getSignedUrl/);
   assert.match(server, /legacyObjectRetained: true/);
+  assert.match(server, /alreadyMigrated: true/);
+  assert.match(server, /row\.storage_provider === "R2" && row\.object_key === target\.objectKey/);
   assert.doesNotMatch(server, /\.remove\(/);
   assert.match(route, /authorizeFlightTrack/);
   assert.doesNotMatch(env, /NEXT_PUBLIC_R2/);
@@ -74,6 +76,7 @@ test("helpers R2 ciblés restent dans l'API DEV contrôlée et l'inspection est 
   assert.match(runtime, /controlledTestMode/);
   assert.match(runtime, /uploadFlightTrackToR2Targeted:/);
   assert.match(runtime, /inspectFlightTrackR2TargetedState:/);
+  assert.match(runtime, /migrateFlightTrackSupabaseToR2Targeted:/);
   const inspector = runtime.match(/inspectFlightTrackR2TargetedState:[\s\S]*?migrateLegacyFlightTrackToR2Targeted:/)?.[0] ?? "";
   assert.match(inspector, /\.inspect\(flightId\)/);
   assert.match(inspector, /\.list\(\)/);

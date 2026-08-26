@@ -27,9 +27,11 @@ async function endpoint(action: string, body: Record<string, unknown>): Promise<
   return response.json() as Promise<SignedResponse>;
 }
 
-export async function migrateLegacyFlightTrackToR2Targeted(flightId: string, generation: number): Promise<unknown> {
+export async function migrateFlightTrackSupabaseToR2Targeted(flightId: string, generation = 1): Promise<unknown> {
   return endpoint("MIGRATE_LEGACY", { flightId, generation });
 }
+
+export const migrateLegacyFlightTrackToR2Targeted = migrateFlightTrackSupabaseToR2Targeted;
 
 export class R2FlightTrackBlobProvider implements FlightTrackBlobProvider {
   readonly name = "R2" as const;
