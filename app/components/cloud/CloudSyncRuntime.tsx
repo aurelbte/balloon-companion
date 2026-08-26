@@ -27,6 +27,8 @@ import { removeOfficialAscension } from "../../lib/flightCompletion.ts";
 import { createRecordedFlight, finalizeRecordedFlight } from "../../lib/recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.ts";
 import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
+import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
+import { drainFlightTrackQueue, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import {
   loadFlightCompletionState,
   persistJournalFlight,
@@ -109,6 +111,11 @@ declare global {
       resolveCrudConflictServerWins(entityType: string, entityId: string): Promise<unknown>;
       restoreRecordedFlightBackupTargeted(backup: unknown): Promise<unknown>;
       inspectRecordedFlightBackupRestoreState(flightId: string): Promise<unknown>;
+      inspectFlightTrackSyncState(flightId: string): Promise<unknown>;
+      uploadFlightTrackTargeted(flightId: string): Promise<unknown>;
+      downloadFlightTrackTargeted(flightId: string): Promise<unknown>;
+      inspectFlightTrackQueueState(): Promise<unknown>;
+      drainFlightTrackQueueTargeted(): Promise<unknown>;
     }>;
   }
 }
@@ -127,9 +134,23 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
   },
   push: async (userId) => {
     const scope = `USER:${userId}` as const;
-    await createBrowserCloudSyncService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
+    const client = createBrowserSupabaseClient();
+    const report = await createBrowserCloudSyncService({ client, storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
+    if (report.state !== "COMPLETED" || report.conflicts > 0) return;
+    const tracks = new BrowserFlightTrackCloudService(client, scope);
+    const queue = new IndexedDbFlightTrackQueueStorage(scope);
+    try { await tracks.discoverPendingJobs(queue); }
+    catch (error) { if (process.env.NODE_ENV === "development") console.error("[Cloud Sync] Découverte trace différée", error); }
+    await drainFlightTrackQueue({ scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
   },
-  getNextEligibleRetryAt: async (userId) => nextEligibleRetryAt(await new IndexedDbSyncOutboxStorage(`USER:${userId}`).list()),
+  getNextEligibleRetryAt: async (userId) => {
+    const scope = `USER:${userId}` as const;
+    const [mutationRetry, trackRetry] = await Promise.all([
+      nextEligibleRetryAt(await new IndexedDbSyncOutboxStorage(scope).list()),
+      nextFlightTrackRetryAt(new IndexedDbFlightTrackQueueStorage(scope)),
+    ]);
+    return [mutationRetry, trackRetry].filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+  },
   onDiagnosticChange: (snapshot) => {
     if (process.env.NODE_ENV === "development" && !suppressRuntimeDiagnosticPersistence && typeof sessionStorage !== "undefined") {
       sessionStorage.setItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY, JSON.stringify(snapshot));
@@ -1302,6 +1323,18 @@ export default function CloudSyncRuntime(): null {
           pendingFlightMutations: mutations.filter((mutation) => mutation.entityType === "flight" && mutation.entityId === flightId),
         } as const;
       },
+      inspectFlightTrackSyncState: (flightId: string) => new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope).inspect(flightId),
+      uploadFlightTrackTargeted: (flightId: string) => new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope).upload(flightId),
+      downloadFlightTrackTargeted: (flightId: string) => new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope).download(flightId),
+      inspectFlightTrackQueueState: async () => {
+        const queue = new IndexedDbFlightTrackQueueStorage(scope);
+        const jobs = await queue.list();
+        return { activeUser: scope.slice(5), running: isFlightTrackQueueRunning(scope), pendingJobs: jobs.length, nextEligibleRetryAt: await nextFlightTrackRetryAt(queue), jobs } as const;
+      },
+      drainFlightTrackQueueTargeted: () => {
+        const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), scope);
+        return drainFlightTrackQueue({ scope, storage: new IndexedDbFlightTrackQueueStorage(scope), transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
+      },
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };
@@ -1309,10 +1342,12 @@ export default function CloudSyncRuntime(): null {
     const visibility = () => { if (!controlled && document.visibilityState === "visible") void automaticCloudSyncController.notifyVisible(); };
     window.addEventListener("online", online);
     window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
+    window.addEventListener(FLIGHT_TRACK_QUEUE_CHANGED_EVENT, mutation);
     document.addEventListener("visibilitychange", visibility);
     return () => {
       window.removeEventListener("online", online);
       window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
+      window.removeEventListener(FLIGHT_TRACK_QUEUE_CHANGED_EVENT, mutation);
       document.removeEventListener("visibilitychange", visibility);
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
       releaseRuntimeMount();

@@ -5,7 +5,7 @@ import type { JournalFlight } from "../../lib/journalMockData";
 import NavigationBar from "../NavigationBar";
 import styles from "../../journal/Journal.module.css";
 import JournalChart from "./JournalChart";
-import { useRecordedFlightJournalPoints } from "../../hooks/useRecordedFlightJournalPoints";
+import { useRecordedFlightJournalPointsState } from "../../hooks/useRecordedFlightJournalPoints";
 import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 import { kmhToKnots, metresToFeet } from "../../lib/unitPreferences";
 import { journalChartDurationMinutes } from "../../lib/journalChart";
@@ -19,7 +19,7 @@ export default function JournalFlightGraphs({ flightId, initialFlight }: { fligh
 
 function HydratedGraphs({ flight }: { flight: JournalFlight }) {
   const units = useUnitPreferences();
-  const points = useRecordedFlightJournalPoints(flight);
+  const { points } = useRecordedFlightJournalPointsState(flight, true);
   const altitude = points.map((point) => ({ x: point.elapsedMinutes, y: point.altitudeM === null ? null : units.flightInstruments.altitudeUnit === "ft" ? metresToFeet(point.altitudeM) : point.altitudeM }));
   const speed = points.map((point) => ({ x: point.elapsedMinutes, y: point.speedKmh === null ? null : units.flightInstruments.speedUnit === "kt" ? kmhToKnots(point.speedKmh) : point.speedKmh }));
   const availableAltitudes = altitude.flatMap(({ y }) => y === null ? [] : [y]);

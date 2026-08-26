@@ -6,7 +6,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { JournalFlight } from "../../lib/journalMockData";
 import { TWO_DIMENSIONAL_MAP_OPTIONS } from "../../lib/mapInteraction";
-import { useRecordedFlightJournalPoints } from "../../hooks/useRecordedFlightJournalPoints";
+import { useRecordedFlightJournalPointsState } from "../../hooks/useRecordedFlightJournalPoints";
 
 type JournalFlightMapProps = {
   flight: JournalFlight;
@@ -71,7 +71,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const points = useRecordedFlightJournalPoints(flight);
+  const { points, trackState } = useRecordedFlightJournalPointsState(flight, true);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || points.length === 0) {
@@ -206,6 +206,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       aria-label={expanded ? `Trace du vol ${flight.departure} vers ${flight.arrival}` : undefined}
     >
       <div ref={containerRef} className="h-full w-full" />
+      {points.length === 0 && <p className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-[var(--bc-text-secondary)]">{trackState === "LOADING_CLOUD" ? "Chargement de la trace…" : trackState === "CLOUD_OFFLINE" ? "Trace disponible dans le Cloud — connexion requise" : "Trace indisponible"}</p>}
       {expanded ? (
         <button
           type="button"

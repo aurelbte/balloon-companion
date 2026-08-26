@@ -5,6 +5,14 @@ import {
 import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
+import { enqueueFlightTrackJob, IndexedDbFlightTrackQueueStorage } from "./flightTrackQueue.ts";
+
+async function enqueueTrackJobForCurrentUser(flightId: string, operation: "UPLOAD" | "DELETE"): Promise<void> {
+  const scope = getRuntimeDataScope();
+  if (!scope?.startsWith("USER:")) return;
+  const userScope = scope as `USER:${string}`;
+  await enqueueFlightTrackJob(new IndexedDbFlightTrackQueueStorage(userScope), { scope: userScope, flightId, operation });
+}
 
 export const RECORDED_FLIGHT_DB_NAME = "balloon-companion-flights";
 const DATABASE_VERSION = 1;
@@ -208,6 +216,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       });
       throw new Error("Mutation flight UPSERT non persistée");
     }
+    if (flight.status === "COMPLETED" && flight.points.length > 0) await enqueueTrackJobForCurrentUser(flight.id, "UPLOAD");
   }
 
   async getFlight(id: string): Promise<RecordedFlight | null> {
@@ -248,6 +257,23 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
       if (value) transaction.objectStore(FLIGHTS_STORE).put(value);
       else transaction.objectStore(FLIGHTS_STORE).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    return true;
+  }
+
+  /** Track-download-only hydration. Never overwrites a non-empty device trace and never enqueues. */
+  async hydrateTrackFromCloudWithoutEnqueue(scope: `USER:${string}`, id: string, points: RecordedFlight["points"]): Promise<boolean> {
+    if (getRuntimeDataScope() !== scope || points.length === 0) return false;
+    const database = await this.database();
+    const existing = await this.getFlight(id);
+    if (!existing) return false;
+    if (existing.points.length > 0) return true;
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+      transaction.objectStore(FLIGHTS_STORE).put({ ...existing, points: points.map((point) => ({ ...point })) });
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
@@ -311,5 +337,6 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       }),
       enqueueDelete: () => enqueueLocalSyncMutation("flight", id, "DELETE"),
     });
+    await enqueueTrackJobForCurrentUser(id, "DELETE");
   }
 }
