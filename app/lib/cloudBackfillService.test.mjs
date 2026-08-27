@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { CloudBackfillService, cloudBackfillKey } from "./cloudBackfillService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
+import { CloudSyncService, MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 
 const scope = "USER:user-a";
 const logbook = { entityType: "logbook-entry", entityId: "entry-old" };
@@ -57,6 +58,32 @@ test("un favori météo vérifié présent dans Cloud n'est jamais dupliqué", a
   const report = await ctx.service.run();
   assert.equal(report.cloudExistingPreserved, 1);
   assert.equal((await ctx.outbox.list()).length, 0);
+});
+
+test("Bondues local absent du Cloud est backfillé puis poussé une seule fois", async () => {
+  const candidate = { entityType: "favorite-weather-place", entityId: "bondues", verifyCloudPresence: true };
+  const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => "mutation-bondues", now: () => "2026-08-27T10:00:00.000Z" } });
+  const cloud = new Map();
+  const backfill = fixture({ candidates: [candidate], outbox });
+
+  assert.equal((await backfill.service.run()).enqueued, 1);
+  assert.deepEqual((await outbox.list()).map(({ entityType, entityId, operation }) => ({ entityType, entityId, operation })), [{ entityType: "favorite-weather-place", entityId: "bondues", operation: "UPSERT" }]);
+
+  const push = new CloudSyncService({
+    outbox,
+    issues: new MemoryCloudSyncIssueRepository(),
+    getScope: () => scope,
+    getOnlineUserId: async () => "user-a",
+    buildPayload: async (mutation) => ({ serverEntityType: "favorite_weather_place", serverEntityId: mutation.entityId, payload: { name: "Bondues", latitude: 50.7, longitude: 3.1 } }),
+    applyMutation: async (request) => {
+      cloud.set(request.entityId, request.payload);
+      return { status: "APPLIED", entityId: request.entityId, revision: 0, serverUpdatedAt: "2026-08-27T10:00:01.000Z", deletedAt: null };
+    },
+    now: () => new Date("2026-08-27T10:00:01.000Z"),
+  });
+  assert.equal((await push.syncPendingMutations()).applied, 1);
+  assert.deepEqual(cloud.get("bondues"), { name: "Bondues", latitude: 50.7, longitude: 3.1 });
+  assert.equal((await outbox.list()).length, 0);
 });
 
 test("offline ne crée rien et un passage online peut reprendre", async () => {
