@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { getRuntimeDataScope, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "../../lib/cloudSyncBrowser.ts";
@@ -135,7 +134,11 @@ declare global {
 }
 
 function controlledTestMode(search = typeof window !== "undefined" ? window.location.search : ""): boolean {
-  return isAutomaticCloudSyncBlockedForControlledTest(process.env.NODE_ENV, search);
+  return isAutomaticCloudSyncBlockedForControlledTest(
+    process.env.NODE_ENV,
+    search,
+    typeof window !== "undefined" ? window.sessionStorage : null,
+  );
 }
 
 const automaticCloudSyncController = new CloudSyncRuntimeController({
@@ -1320,12 +1323,10 @@ async function inspectCloudBootstrapState(scope: `USER:${string}`) {
 
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
-  const searchParams = useSearchParams();
-  const currentSearch = searchParams.toString();
 
   useEffect(() => {
     const releaseRuntimeMount = acquireRuntimeMount();
-    const controlled = controlledTestMode(currentSearch ? `?${currentSearch}` : "");
+    const controlled = controlledTestMode();
     const unavailableControlledApi = controlled
       ? createScopeUnavailableControlledApi<NonNullable<Window["__BC_CLOUD_SYNC_CONTROLLED_TEST__"]>>()
       : null;
@@ -1547,7 +1548,7 @@ export default function CloudSyncRuntime(): null {
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
       releaseRuntimeMount();
     };
-  }, [auth.state, auth.user, auth.localDataMigrationState, auth.localDataMigrationCollisions, currentSearch]);
+  }, [auth.state, auth.user, auth.localDataMigrationState, auth.localDataMigrationCollisions]);
 
   return null;
 }

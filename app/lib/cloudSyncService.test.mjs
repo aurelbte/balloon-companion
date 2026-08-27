@@ -14,7 +14,7 @@ import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import { FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { BALLOON_REGISTRY_STORAGE_KEY } from "./balloonStorage.ts";
 import { PILOT_QUALIFICATIONS_STORAGE_KEY } from "./pilotQualificationsStorage.ts";
-import { createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestControl.ts";
+import { CONTROLLED_CLOUD_SYNC_SESSION_KEY, createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestControl.ts";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -368,6 +368,16 @@ test("la protection ciblée est explicite par URL en développement comme en pro
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "?cloudSyncTest=targeted"), true);
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("development", ""), false);
   assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", ""), false);
+});
+
+test("la PWA peut activer targeted explicitement pour la session seulement", () => {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null };
+  assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "", storage), false);
+  values.set(CONTROLLED_CLOUD_SYNC_SESSION_KEY, "targeted");
+  assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "", storage), true);
+  values.set(CONTROLLED_CLOUD_SYNC_SESSION_KEY, "anything-else");
+  assert.equal(isAutomaticCloudSyncBlockedForControlledTest("production", "", storage), false);
 });
 
 test("l API ciblée d attente existe mais refuse proprement tant que le scope est indisponible", async () => {

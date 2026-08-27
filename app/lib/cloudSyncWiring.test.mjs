@@ -30,13 +30,14 @@ test("le runtime utilise des déclencheurs événementiels sans polling", () => 
   assert.doesNotMatch(runtime, /addEventListener\("focus"/);
   assert.match(runtime, /suppressRuntimeDiagnosticPersistence = true[\s\S]*automaticCloudSyncController\.setUser\(null\)/);
   assert.match(runtime, /__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
-  assert.match(runtime, /useSearchParams\(\)/);
-  assert.match(runtime, /\[auth\.state, auth\.user, auth\.localDataMigrationState, auth\.localDataMigrationCollisions, currentSearch\]/);
+  assert.doesNotMatch(runtime, /useSearchParams\(\)/);
+  assert.match(runtime, /\[auth\.state, auth\.user, auth\.localDataMigrationState, auth\.localDataMigrationCollisions\]/);
   assert.match(runtime, /auth\.localDataMigrationState !== "MIGRATION_COMPLETE"/);
 });
 
 test("le harness ciblé suit la query sur toutes les routes sans exposition globale", () => {
-  assert.match(runtime, /controlledTestMode\(currentSearch \? `\?\$\{currentSearch\}` : ""\)/);
+  assert.match(runtime, /const controlled = controlledTestMode\(\)/);
+  assert.match(runtime, /window\.sessionStorage/);
   assert.match(runtime, /if \(controlledApi\) window\.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi/);
   assert.match(runtime, /delete window\.__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
 });
