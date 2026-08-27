@@ -111,9 +111,12 @@ test("favoris Météo, favoris Prépa et scopes USER/GUEST restent indépendants
 
 test("le bouton Météo crée et sélectionne dans le registre dédié", () => {
   const page = readFileSync(new URL("../weather/page.tsx", import.meta.url), "utf8");
+  const manager = readFileSync(new URL("../components/weather/WeatherFavoriteManager.tsx", import.meta.url), "utf8");
   const context = readFileSync(new URL("../contexts/WeatherPreferencesContext.tsx", import.meta.url), "utf8");
-  assert.match(page, /setWeatherPlaceDialogOpen\(true\)/);
-  assert.match(page, /preferences\.addFavoriteWeatherLocation\(place\)/);
+  assert.match(page, /setWeatherFavoriteManagerOpen\(true\)/);
+  assert.match(page, /<WeatherFavoriteManager/);
+  assert.match(page, /onAdd=\{\(place\) => preferences\.addFavoriteWeatherLocation\(place\)\}/);
+  assert.match(manager, /Ajouter un favori/);
   assert.match(context, /addOrReuseFavoriteWeatherPlace\(favorites, site, new Date\(\)\.toISOString\(\), displayName\)/);
   assert.match(context, /favoriteWeatherLocationId: result\.selected\.id/);
   assert.match(context, /saveFavoriteWeatherPlaces\(result\.favorites\)/);
@@ -123,15 +126,21 @@ test("le bouton Météo crée et sélectionne dans le registre dédié", () => {
 
 test("l’UI gère renommer et supprimer avec confirmation via le pipeline existant", () => {
   const page = readFileSync(new URL("../weather/page.tsx", import.meta.url), "utf8");
+  const manager = readFileSync(new URL("../components/weather/WeatherFavoriteManager.tsx", import.meta.url), "utf8");
   const context = readFileSync(new URL("../contexts/WeatherPreferencesContext.tsx", import.meta.url), "utf8");
-  assert.match(page, /Gérer \$\{favorite\.name\}/);
-  assert.match(page, /preferences\.renameFavoriteWeatherLocation\(managedWeatherFavorite\.id, weatherFavoriteName\)/);
-  assert.match(page, /window\.confirm\(`Supprimer le favori/);
-  assert.match(page, /preferences\.removeFavoriteWeatherLocation\(managedWeatherFavorite\.id\)/);
+  assert.match(page, />Gérer<\/button>/);
+  assert.doesNotMatch(page, /MoreHorizontal|FavoriteWeatherPlaceDialog|styles\.placePanel/);
+  assert.match(page, /onRename=\{\(id, name\) => preferences\.renameFavoriteWeatherLocation\(id, name\)\}/);
+  assert.match(page, /onRemove=\{\(id\) => preferences\.removeFavoriteWeatherLocation\(id\)\}/);
+  assert.match(manager, /Gérer les favoris/);
+  assert.match(manager, /latitude\.toFixed\(5\).*longitude\.toFixed\(5\)/s);
+  assert.match(manager, /<Pencil size=\{15\} \/> Modifier/);
+  assert.match(manager, /window\.confirm\(`Supprimer le favori/);
+  assert.match(manager, /<Trash2 size=\{15\} \/> Supprimer/);
   assert.match(context, /renameFavoriteWeatherPlace\(favorites, id, name\)/);
   assert.match(context, /removeFavoriteWeatherPlace\(favorites, id\)/);
   assert.match(context, /await saveFavoriteWeatherPlacesWithDurableOutbox\(next\)/);
-  assert.match(page, /Suppression non enregistrée\. Réessayez\./);
+  assert.match(manager, /Suppression non enregistrée\. Réessayez\./);
 });
 
 test("l’autocomplétion est temporisée, concurrent-safe et sans clic loupe", () => {
