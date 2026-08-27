@@ -7,16 +7,22 @@ import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { applyUnitPreferencesFromCloudWithoutEnqueue, UNIT_PREFERENCES_STORAGE_KEY } from "./unitPreferencesStorage.ts";
 import { applyWeatherPreferencesFromCloudWithoutEnqueue, WEATHER_PREFERENCES_STORAGE_KEY } from "./weatherPreferencesStorage.ts";
 import { applyAviationPreferencesFromCloudWithoutEnqueue, AVIATION_PREFERENCES_STORAGE_KEY } from "./aviation/aviationPreferencesStorage.ts";
+import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications, PILOT_QUALIFICATIONS_STORAGE_KEY } from "./pilotQualificationsStorage.ts";
+import { applyActiveBalloonPreferenceFromCloudWithoutEnqueue, BALLOON_REGISTRY_STORAGE_KEY } from "./balloonStorage.ts";
 
 const scope = "USER:user-1";
 const now = "2026-08-23T14:00:00.000Z";
-const domains = ["unit-preferences", "weather-preferences", "aviation-preferences"];
-const cloudId = (domain) => domain === "unit-preferences" ? "units" : domain === "weather-preferences" ? "weather" : "aviation";
+const domains = ["unit-preferences", "weather-preferences", "aviation-preferences", "pilot-qualifications", "balloon-preferences"];
+const cloudId = (domain) => domain === "unit-preferences" ? "units" : domain === "weather-preferences" ? "weather" : domain === "aviation-preferences" ? "aviation" : domain === "pilot-qualifications" ? "qualifications" : "balloon";
 const value = (domain) => domain === "unit-preferences"
   ? { weather: { windSpeedUnit: "kt", temperatureUnit: "°F" }, flightInstruments: { speedUnit: "kt", altitudeUnit: "ft", distanceUnit: "NM" } }
   : domain === "weather-preferences"
     ? { favoriteWeatherLocationId: "cloud-place", weatherModel: "icon_seamless" }
-    : { airportIcao: "LFPG", favorites: [{ icao: "LFPG", name: "Paris CDG" }] };
+    : domain === "aviation-preferences"
+      ? { airportIcao: "LFPG", favorites: [{ icao: "LFPG", name: "Paris CDG" }] }
+      : domain === "pilot-qualifications"
+        ? { version: 1, profile: { configured: true, licenceType: "BPL" }, events: [] }
+        : { activeBalloonId: "balloon-cloud" };
 const row = (domain, overrides = {}) => ({ id: cloudId(domain), entityId: "singleton", userId: "user-1", revision: 0, createdAt: now, updatedAt: now, deletedAt: null, value: value(domain), ...overrides });
 
 class CursorRepository {
@@ -51,9 +57,11 @@ function context(rowsByDomain = Object.fromEntries(domains.map((domain) => [doma
 
 const pull = (service, domain) => domain === "unit-preferences" ? service.pullUnitPreferences()
   : domain === "weather-preferences" ? service.pullWeatherPreferences()
-    : service.pullAviationPreferences();
+    : domain === "aviation-preferences" ? service.pullAviationPreferences()
+      : domain === "pilot-qualifications" ? service.pullPilotQualifications()
+        : service.pullBalloonPreferences();
 
-test("les trois singletons actifs hydratent un appareil vierge sans outbox et avec sidecar exact", async () => {
+test("les cinq singletons de compte hydratent un appareil vierge sans outbox et avec sidecar exact", async () => {
   for (const domain of domains) {
     const ctx = context();
     const result = await pull(new CloudPullService(ctx.deps), domain);
@@ -65,7 +73,7 @@ test("les trois singletons actifs hydratent un appareil vierge sans outbox et av
   }
 });
 
-test("les imports silencieux remplacent puis réinitialisent les trois stockages sans enqueue", () => {
+test("les imports silencieux remplacent puis réinitialisent les stockages historiques sans enqueue", () => {
   const values = new Map();
   const events = [];
   const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, item) => values.set(key, item), removeItem: (key) => values.delete(key) };
@@ -83,10 +91,18 @@ test("les imports silencieux remplacent puis réinitialisent les trois stockages
     assert.equal(values.get(scopedBusinessStorageKey(scope, key)), undefined);
   }
   assert.equal(events.includes("balloon-companion:sync-mutation-enqueued"), false);
+  assert.equal(events.includes("balloon-companion:weather-preferences-changed"), true);
   delete globalThis.window;
 });
 
-test("les tombstones des trois singletons suppriment localement et conservent le sidecar", async () => {
+test("le PULL météo réhydrate le contexte React déjà monté", () => {
+  const contextSource = readFileSync(new URL("../contexts/WeatherPreferencesContext.tsx", import.meta.url), "utf8");
+  assert.match(contextSource, /WEATHER_PREFERENCES_EVENT/);
+  assert.match(contextSource, /addEventListener\(WEATHER_PREFERENCES_EVENT, refresh\)/);
+  assert.match(contextSource, /removeEventListener\(WEATHER_PREFERENCES_EVENT, refresh\)/);
+});
+
+test("les tombstones des cinq singletons suppriment localement et conservent le sidecar", async () => {
   for (const domain of domains) {
     const ctx = context({ [domain]: [row(domain, { revision: 3, deletedAt: now })] });
     const result = await pull(new CloudPullService(ctx.deps), domain);
@@ -96,7 +112,7 @@ test("les tombstones des trois singletons suppriment localement et conservent le
   }
 });
 
-test("un pull répété est idempotent pour chacun des trois singletons", async () => {
+test("un pull répété est idempotent pour chacun des cinq singletons", async () => {
   for (const domain of domains) {
     const ctx = context();
     const service = new CloudPullService(ctx.deps);
@@ -182,10 +198,29 @@ test("les helpers DEV et l’inspection restent ciblés sans auto-pull", () => {
 test("l’adaptateur utilise les mappings Cloud canoniques sous SELECT uniquement", () => {
   const browser = readFileSync(new URL("./cloudPullBrowser.ts", import.meta.url), "utf8");
   assert.match(browser, /"aviation_preferences" : "user_preferences"/);
-  assert.match(browser, /"aviation" : input\.domain === "unit-preferences" \? "units" : "weather"/);
+  for (const id of ["aviation", "units", "weather", "qualifications", "balloon"]) assert.match(browser, new RegExp(`"${id}"`));
   assert.match(browser, /\.select\(select\)\.eq\("id", id\)/);
   assert.match(browser, /applyUnitPreferencesFromCloudWithoutEnqueue/);
   assert.match(browser, /applyWeatherPreferencesFromCloudWithoutEnqueue/);
   assert.match(browser, /applyAviationPreferencesFromCloudWithoutEnqueue/);
+  assert.match(browser, /applyPilotQualificationsFromCloudWithoutEnqueue/);
+  assert.match(browser, /applyActiveBalloonPreferenceFromCloudWithoutEnqueue/);
   assert.doesNotMatch(browser, /\.rpc\(|\.insert\(|\.upsert\(|resolveProtectedPreferenceConflictLocalWins/);
+});
+
+test("un appareil vierge restaure qualifications et ballon actif sans mutation PUSH", () => {
+  const values = new Map();
+  const events = [];
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, item) => values.set(key, item), removeItem: (key) => values.delete(key) };
+  globalThis.window = { localStorage: storage, dispatchEvent: (event) => { events.push(event.type); return true; } };
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-1", email: "pull@example.test", firstName: "", lastName: "" } });
+  const balloon = { id: "balloon-cloud", registration: "F-GTET", manufacturer: "Test", model: "Cloud", category: "Libre à air chaud", volumeM3: 3000, configurationLimitsConfirmed: true, documents: [], weights: { fullCylinders: [] } };
+  values.set(scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY), JSON.stringify({ version: 5, balloons: [balloon], activeBalloonId: null }));
+  assert.equal(applyPilotQualificationsFromCloudWithoutEnqueue(scope, value("pilot-qualifications"), false, storage), true);
+  assert.equal(loadPilotQualifications(storage).profile.configured, true);
+  assert.equal(applyActiveBalloonPreferenceFromCloudWithoutEnqueue(scope, value("balloon-preferences"), false, storage), true);
+  assert.equal(JSON.parse(values.get(scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY))).activeBalloonId, "balloon-cloud");
+  assert.notEqual(values.get(scopedBusinessStorageKey(scope, PILOT_QUALIFICATIONS_STORAGE_KEY)), undefined);
+  assert.equal(events.includes("balloon-companion:sync-mutation-enqueued"), false);
+  delete globalThis.window;
 });

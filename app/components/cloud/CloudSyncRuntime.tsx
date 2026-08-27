@@ -896,6 +896,8 @@ async function auditCloudSyncFinalState(scope: `USER:${string}`) {
     { reportKey: "unit_preferences", localTypes: ["unit-preferences"] },
     { reportKey: "weather_preferences", localTypes: ["weather-preferences"], expectedMinimumRevision: 2 },
     { reportKey: "aviation_preferences", localTypes: ["aviation-preferences"], expectedMinimumRevision: 2 },
+    { reportKey: "pilot_qualifications", localTypes: ["pilot-qualifications"] },
+    { reportKey: "balloon_preferences", localTypes: ["balloon-preferences"] },
     { reportKey: "profile", localTypes: ["pilot-profile"] },
   ] as const;
   const inspectedMutations = await Promise.all(mutations.map(async (mutation) => {
@@ -922,7 +924,7 @@ async function auditCloudSyncFinalState(scope: `USER:${string}`) {
   const domains = Object.fromEntries(domainDefinitions.map((definition) => {
     const domainMutations = inspectedMutations.filter((mutation) => definition.localTypes.some((type) => type === mutation.entityType));
     const domainSidecars = sidecars.filter((metadata) => definition.localTypes.some((type) => type === metadata.entityType));
-    const singletonMultiplicity = definition.localTypes.some((type) => ["unit-preferences", "weather-preferences", "aviation-preferences", "pilot-profile"].includes(type))
+    const singletonMultiplicity = definition.localTypes.some((type) => ["unit-preferences", "weather-preferences", "aviation-preferences", "pilot-qualifications", "balloon-preferences", "pilot-profile"].includes(type))
       && domainMutations.length > 1;
     const staleKnownSidecars = "expectedMinimumRevision" in definition
       ? domainSidecars.filter((metadata) => metadata.revision < definition.expectedMinimumRevision)

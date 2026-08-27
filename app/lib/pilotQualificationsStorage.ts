@@ -1,4 +1,4 @@
-import { readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { createEmptyPilotProfile, normalizePilotProfile, type PilotProfile } from "./pilotProfile.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import {
@@ -10,8 +10,10 @@ import {
   PILOT_QUALIFICATIONS_VERSION,
   type PilotQualificationsState,
 } from "./pilotQualifications.ts";
+import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const PILOT_QUALIFICATIONS_STORAGE_KEY = "balloon-companion-pilot-qualifications-v1";
+export const PILOT_QUALIFICATIONS_EVENT = "balloon-companion:pilot-qualifications-changed";
 
 type StoredPilotQualifications = Pick<PilotQualificationsState, "version" | "profile" | "events">;
 type QualificationStorage = Pick<Storage, "getItem" | "setItem">;
@@ -63,5 +65,20 @@ export function savePilotQualifications(
 ): boolean {
   if (!storage) return false;
   const normalized = normalizeStored({ version: PILOT_QUALIFICATIONS_VERSION, ...state });
-  return writeScopedBusinessValue(storage as Storage, PILOT_QUALIFICATIONS_STORAGE_KEY, JSON.stringify(normalized));
+  const saved = writeScopedBusinessValue(storage as Storage, PILOT_QUALIFICATIONS_STORAGE_KEY, JSON.stringify(normalized));
+  if (saved && typeof window !== "undefined" && storage === window.localStorage) {
+    void enqueueLocalSyncMutation("pilot-qualifications", "singleton");
+    window.dispatchEvent(new Event(PILOT_QUALIFICATIONS_EVENT));
+  }
+  return saved;
+}
+
+/** Pull-only hydration primitive; never enqueues a PUSH mutation. */
+export function applyPilotQualificationsFromCloudWithoutEnqueue(scope: `USER:${string}`, value: unknown, deleted: boolean, storage: Storage = window.localStorage): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, PILOT_QUALIFICATIONS_STORAGE_KEY);
+  if (deleted) storage.removeItem(key);
+  else storage.setItem(key, JSON.stringify(normalizeStored(value)));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(PILOT_QUALIFICATIONS_EVENT));
+  return true;
 }

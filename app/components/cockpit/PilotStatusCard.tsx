@@ -11,7 +11,7 @@ import { calculatePilotOfficialTotals } from "../../lib/flightCompletion";
 import { calculateMedicalQualification } from "../../lib/medicalTrainingQualificationEngine";
 import { formatQualificationDate } from "../../lib/qualificationPresentation";
 import type { PilotQualificationsState } from "../../lib/pilotQualifications";
-import { createEmptyPilotQualificationsState, loadPilotQualifications } from "../../lib/pilotQualificationsStorage";
+import { createEmptyPilotQualificationsState, loadPilotQualifications, PILOT_QUALIFICATIONS_EVENT } from "../../lib/pilotQualificationsStorage";
 import styles from "./Cockpit.module.css";
 
 type CredentialVisualStatus = "valid" | "attention" | "expired" | "unknown";
@@ -75,8 +75,10 @@ export default function PilotStatusCard() {
   const totals = useMemo(() => calculatePilotOfficialTotals(completion), [completion]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setQualifications(loadPilotQualifications()), 0);
-    return () => window.clearTimeout(timer);
+    const refresh = () => setQualifications(loadPilotQualifications());
+    const timer = window.setTimeout(refresh, 0);
+    window.addEventListener(PILOT_QUALIFICATIONS_EVENT, refresh);
+    return () => { window.clearTimeout(timer); window.removeEventListener(PILOT_QUALIFICATIONS_EVENT, refresh); };
   }, []);
 
   useEffect(() => {

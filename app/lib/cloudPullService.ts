@@ -4,7 +4,7 @@ import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./sync
 
 export const FAVORITE_WEATHER_PLACE_PULL_DOMAIN = "favorite-weather-place";
 export const FAVORITE_LAUNCH_SITE_PULL_DOMAIN = "favorite-launch-site";
-export const PREFERENCE_PULL_DOMAINS = ["unit-preferences", "weather-preferences", "aviation-preferences"] as const;
+export const PREFERENCE_PULL_DOMAINS = ["unit-preferences", "weather-preferences", "aviation-preferences", "pilot-qualifications", "balloon-preferences"] as const;
 export type PreferencePullDomain = typeof PREFERENCE_PULL_DOMAINS[number];
 type PullDomain = typeof FAVORITE_WEATHER_PLACE_PULL_DOMAIN | typeof FAVORITE_LAUNCH_SITE_PULL_DOMAIN | PreferencePullDomain | "pilot-profile" | "balloon" | "flight" | "logbook-entry" | "balloon-document";
 
@@ -80,6 +80,8 @@ export class CloudPullService {
   pullUnitPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("unit-preferences", pageSize); }
   pullWeatherPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("weather-preferences", pageSize); }
   pullAviationPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("aviation-preferences", pageSize); }
+  pullPilotQualifications(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("pilot-qualifications", pageSize); }
+  pullBalloonPreferences(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.pullPreferenceDomain("balloon-preferences", pageSize); }
   pullBalloons(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.balloonDomain ? this.pullDomain("balloon", this.dependencies.balloonDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
   pullFlights(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.flightDomain ? this.pullDomain("flight", this.dependencies.flightDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
   pullLogbookEntries(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.logbookEntryDomain ? this.pullDomain("logbook-entry", this.dependencies.logbookEntryDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }

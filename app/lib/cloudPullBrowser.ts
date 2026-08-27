@@ -15,9 +15,9 @@ import {
   type PreferenceCloudRow,
   type PreferencePullDomain,
 } from "./cloudPullService.ts";
-import { applyBalloonFromCloudWithoutEnqueue, loadBalloonRegistry, type CloudBalloon } from "./balloonStorage.ts";
+import { applyActiveBalloonPreferenceFromCloudWithoutEnqueue, applyBalloonFromCloudWithoutEnqueue, loadBalloonRegistry, type CloudBalloon } from "./balloonStorage.ts";
 import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
-import { loadPilotQualifications } from "./pilotQualificationsStorage.ts";
+import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import { BrowserCloudPullCursorRepository, type CloudPullCursor } from "./cloudPullState.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
@@ -332,7 +332,11 @@ async function readPreferencePage(input: Readonly<{
 }>): Promise<readonly PreferenceCloudRow[]> {
   const aviation = input.domain === "aviation-preferences";
   const table = aviation ? "aviation_preferences" : "user_preferences";
-  const id = aviation ? "aviation" : input.domain === "unit-preferences" ? "units" : "weather";
+  const id = aviation ? "aviation"
+    : input.domain === "unit-preferences" ? "units"
+      : input.domain === "weather-preferences" ? "weather"
+        : input.domain === "pilot-qualifications" ? "qualifications"
+          : "balloon";
   const select = aviation
     ? "id,user_id,revision,created_at,updated_at,deleted_at,airport_icao,favorites,schema_version"
     : "id,user_id,revision,created_at,updated_at,deleted_at,preferences,schema_version";
@@ -461,7 +465,11 @@ export function createBrowserPreferencePullService(input: Readonly<{
       ? applyUnitPreferencesFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage)
       : domain === "weather-preferences"
         ? applyWeatherPreferencesFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage)
-        : applyAviationPreferencesFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage),
+        : domain === "aviation-preferences"
+          ? applyAviationPreferencesFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage)
+          : domain === "pilot-qualifications"
+            ? applyPilotQualificationsFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage)
+            : applyActiveBalloonPreferenceFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage),
   });
   return new CloudPullService({
     scope: input.scope,
@@ -479,6 +487,8 @@ export function createBrowserPreferencePullService(input: Readonly<{
       "unit-preferences": adapter("unit-preferences"),
       "weather-preferences": adapter("weather-preferences"),
       "aviation-preferences": adapter("aviation-preferences"),
+      "pilot-qualifications": adapter("pilot-qualifications"),
+      "balloon-preferences": adapter("balloon-preferences"),
     },
     recordConflict: async (_conflict, mutation, row) => {
       await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: row.revision, serverUpdatedAt: row.updatedAt, serverDeletedAt: row.deletedAt, recordedAt: new Date().toISOString() });

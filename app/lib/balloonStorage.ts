@@ -113,4 +113,19 @@ async function saveBalloonMutationDurably(registry: BalloonRegistry, entityId: s
 export async function addBalloon(input: BalloonInput, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<Balloon | null> { const result = addBalloonToRegistry(loadBalloonRegistry(), input); return await saveBalloonMutationDurably(result.registry, result.balloon.id, "UPSERT", enqueue) ? result.balloon : null; }
 export async function editBalloon(id: string, input: BalloonInput, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<boolean> { return saveBalloonMutationDurably(updateBalloonInRegistry(loadBalloonRegistry(), id, input), id, "UPSERT", enqueue); }
 export async function deleteBalloon(id: string, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<boolean> { return saveBalloonMutationDurably(removeBalloonFromRegistry(loadBalloonRegistry(), id), id, "DELETE", enqueue); }
-export function setActiveBalloon(id: string): void { saveBalloonRegistry(setActiveBalloonInRegistry(loadBalloonRegistry(), id)); }
+export function setActiveBalloon(id: string): void { saveBalloonRegistry(setActiveBalloonInRegistry(loadBalloonRegistry(), id)); void enqueueLocalSyncMutation("balloon-preferences", "singleton"); }
+
+/** Pull-only hydration primitive for the account-wide active balloon selection. */
+export function applyActiveBalloonPreferenceFromCloudWithoutEnqueue(scope: `USER:${string}`, value: unknown, deleted: boolean, storage: Storage = window.localStorage): boolean {
+  if (getRuntimeDataScope() !== scope) return false;
+  const key = scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY);
+  let registry = createEmptyBalloonRegistry();
+  try { registry = migrateBalloonRegistry(JSON.parse(storage.getItem(key) ?? "null")); } catch {}
+  const activeBalloonId = !deleted && value && typeof value === "object" && typeof (value as { activeBalloonId?: unknown }).activeBalloonId === "string"
+    && registry.balloons.some(({ id }) => id === (value as { activeBalloonId: string }).activeBalloonId)
+    ? (value as { activeBalloonId: string }).activeBalloonId
+    : null;
+  storage.setItem(key, JSON.stringify({ ...registry, activeBalloonId } satisfies BalloonRegistry));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT));
+  return true;
+}

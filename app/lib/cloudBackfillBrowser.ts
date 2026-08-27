@@ -8,6 +8,7 @@ import { FAVORITE_LAUNCH_SITES_STORAGE_KEY } from "./favoriteLaunchSites.ts";
 import { FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
+import { PILOT_QUALIFICATIONS_STORAGE_KEY } from "./pilotQualificationsStorage.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { IndexedDbSyncOutboxStorage } from "./syncOutbox.ts";
 import { UNIT_PREFERENCES_STORAGE_KEY } from "./unitPreferencesStorage.ts";
@@ -32,6 +33,8 @@ function mapping(candidate: CloudBackfillCandidate): Mapping | null {
   if (candidate.entityType === "unit-preferences") return { table: "user_preferences", cloudId: "units" };
   if (candidate.entityType === "weather-preferences") return { table: "user_preferences", cloudId: "weather" };
   if (candidate.entityType === "aviation-preferences") return { table: "aviation_preferences", cloudId: "aviation" };
+  if (candidate.entityType === "pilot-qualifications") return { table: "user_preferences", cloudId: "qualifications" };
+  if (candidate.entityType === "balloon-preferences") return { table: "user_preferences", cloudId: "balloon" };
   if (candidate.entityType === "favorite-weather-place") return { table: "favorite_weather_places", cloudId: candidate.entityId };
   if (candidate.entityType === "favorite-launch-site") return { table: "favorite_launch_sites", cloudId: candidate.entityId };
   if (candidate.entityType === "balloon") return { table: "balloons", cloudId: candidate.entityId };
@@ -49,6 +52,7 @@ export async function listBrowserCloudBackfillCandidates(storage: Storage, scope
     ["unit-preferences", UNIT_PREFERENCES_STORAGE_KEY],
     ["weather-preferences", WEATHER_PREFERENCES_STORAGE_KEY],
     ["aviation-preferences", AVIATION_PREFERENCES_STORAGE_KEY],
+    ["pilot-qualifications", PILOT_QUALIFICATIONS_STORAGE_KEY],
   ] as const) {
     const openingBalancePresent = entityType === "pilot-profile" && completion && typeof completion === "object"
       && (completion as { openingBalance?: { confirmed?: unknown } }).openingBalance?.confirmed === true;
@@ -57,6 +61,8 @@ export async function listBrowserCloudBackfillCandidates(storage: Storage, scope
   for (const id of ids(readJson(storage, scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY), "favorites")) candidates.push({ entityType: "favorite-weather-place", entityId: id });
   for (const id of ids(readJson(storage, scope, FAVORITE_LAUNCH_SITES_STORAGE_KEY), "favorites")) candidates.push({ entityType: "favorite-launch-site", entityId: id });
   for (const id of ids(readJson(storage, scope, BALLOON_REGISTRY_STORAGE_KEY), "balloons")) candidates.push({ entityType: "balloon", entityId: id });
+  const balloonRegistry = readJson(storage, scope, BALLOON_REGISTRY_STORAGE_KEY);
+  if (balloonRegistry && typeof balloonRegistry === "object" && typeof (balloonRegistry as { activeBalloonId?: unknown }).activeBalloonId === "string") candidates.push({ entityType: "balloon-preferences", entityId: "singleton" });
   for (const flight of await new IndexedDbRecordedFlightStorage().listFlights()) candidates.push({ entityType: "flight", entityId: flight.id });
   for (const id of ids(completion, "officialAscensions")) candidates.push({ entityType: "logbook-entry", entityId: id });
   for (const document of await new IndexedDbBalloonDocumentStorage().listDocuments()) candidates.push({ entityType: "balloon-document", entityId: document.id });

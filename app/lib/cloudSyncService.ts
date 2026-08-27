@@ -6,12 +6,13 @@ export const PHASE_3A_SYNC_ENTITY_TYPES = Object.freeze([
   "unit-preferences",
   "weather-preferences",
   "aviation-preferences",
+  "pilot-qualifications",
   "favorite-launch-site",
   "favorite-weather-place",
 ] as const);
 
 export type Phase3ASyncEntityType = typeof PHASE_3A_SYNC_ENTITY_TYPES[number];
-export const AUTOMATIC_SYNC_ENTITY_TYPES = Object.freeze([...PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "flight", "logbook-entry", "balloon-document"] as const);
+export const AUTOMATIC_SYNC_ENTITY_TYPES = Object.freeze([...PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "balloon-preferences", "flight", "logbook-entry", "balloon-document"] as const);
 export const PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = AUTOMATIC_SYNC_ENTITY_TYPES;
 export type CloudMutationStatus = "APPLIED" | "ALREADY_APPLIED" | "CONFLICT" | "NOT_FOUND";
 

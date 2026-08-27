@@ -2,6 +2,7 @@ import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey,
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const WEATHER_PREFERENCES_STORAGE_KEY = "balloon-companion-weather-preferences-v1";
+export const WEATHER_PREFERENCES_EVENT = "balloon-companion:weather-preferences-changed";
 export type WeatherPreferences = { favoriteWeatherLocationId: string | null; weatherModel: string | null };
 export const EMPTY_WEATHER_PREFERENCES: WeatherPreferences = { favoriteWeatherLocationId: null, weatherModel: null };
 
@@ -19,6 +20,7 @@ export function saveWeatherPreferences(value: WeatherPreferences): boolean {
   if (typeof window === "undefined") return false;
   const saved = writeScopedBusinessValue(window.localStorage, WEATHER_PREFERENCES_STORAGE_KEY, JSON.stringify(value));
   if (saved) enqueueLocalSyncMutation("weather-preferences", "singleton");
+  if (saved) window.dispatchEvent(new Event(WEATHER_PREFERENCES_EVENT));
   return saved;
 }
 
@@ -34,5 +36,6 @@ export function applyWeatherPreferencesFromCloudWithoutEnqueue(scope: `USER:${st
       weatherModel: typeof candidate.weatherModel === "string" ? candidate.weatherModel : null,
     } satisfies WeatherPreferences));
   }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(WEATHER_PREFERENCES_EVENT));
   return true;
 }

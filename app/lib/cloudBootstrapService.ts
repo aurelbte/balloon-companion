@@ -4,12 +4,14 @@ import type { SyncMutation } from "./syncOutbox.ts";
 
 export const CLOUD_BOOTSTRAP_DOMAIN_ORDER = [
   "profile",
+  "pilotQualifications",
   "unitPreferences",
   "weatherPreferences",
   "aviationPreferences",
   "favoriteWeatherPlaces",
   "favoriteLaunchSites",
   "balloons",
+  "balloonPreferences",
   "flights",
   "logbookEntries",
   "documents",

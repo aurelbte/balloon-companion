@@ -21,6 +21,8 @@ import { officialAscensionFlightNature, officialAscensionMovementCounts, type Fl
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { normalizePilotProfile } from "./pilotProfile.ts";
+import { normalizeQualificationEvent, normalizeQualificationProfile } from "./pilotQualifications.ts";
+import { PILOT_QUALIFICATIONS_STORAGE_KEY } from "./pilotQualificationsStorage.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import { IndexedDbSyncOutboxStorage, type SyncMutation, type SyncOutboxStorage } from "./syncOutbox.ts";
 import { normalizeUnitPreferences, UNIT_PREFERENCES_STORAGE_KEY } from "./unitPreferencesStorage.ts";
@@ -118,6 +120,20 @@ export class BrowserCloudSyncPayloadProvider {
         favorites: Array.isArray(value?.favorites) ? value.favorites : [],
         schema_version: 1,
       } };
+    }
+    if (mutation.entityType === "pilot-qualifications") {
+      const value = readJson(this.storage, this.scope, PILOT_QUALIFICATIONS_STORAGE_KEY) as { profile?: unknown; events?: unknown } | null;
+      return { serverEntityType: "user_preferences", serverEntityId: "qualifications", payload: { schema_version: 1, preferences: {
+        version: 1,
+        profile: normalizeQualificationProfile(value?.profile),
+        events: Array.isArray(value?.events) ? value.events.map(normalizeQualificationEvent).filter((event) => event !== null) : [],
+      } } };
+    }
+    if (mutation.entityType === "balloon-preferences") {
+      const value = readJson(this.storage, this.scope, BALLOON_REGISTRY_STORAGE_KEY) as Partial<BalloonRegistry> | null;
+      return { serverEntityType: "user_preferences", serverEntityId: "balloon", payload: { schema_version: 1, preferences: {
+        activeBalloonId: typeof value?.activeBalloonId === "string" ? value.activeBalloonId : null,
+      } } };
     }
     if (mutation.entityType === "favorite-launch-site") {
       const favorite = records<FavoriteLaunchSite>(readJson(this.storage, this.scope, FAVORITE_LAUNCH_SITES_STORAGE_KEY), "favorites")
@@ -312,6 +328,8 @@ export async function scanInitialCloudSyncInventory(input: Readonly<{
     ["unit-preferences", UNIT_PREFERENCES_STORAGE_KEY],
     ["weather-preferences", WEATHER_PREFERENCES_STORAGE_KEY],
     ["aviation-preferences", AVIATION_PREFERENCES_STORAGE_KEY],
+    ["pilot-qualifications", PILOT_QUALIFICATIONS_STORAGE_KEY],
+    ["balloon-preferences", BALLOON_REGISTRY_STORAGE_KEY],
   ] as const) {
     if (input.storage.getItem(scopedBusinessStorageKey(input.scope, key)) !== null) candidates.push({ entityType, entityId: "singleton" });
   }

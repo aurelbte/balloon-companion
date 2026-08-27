@@ -13,6 +13,7 @@ import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import { FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { BALLOON_REGISTRY_STORAGE_KEY } from "./balloonStorage.ts";
+import { PILOT_QUALIFICATIONS_STORAGE_KEY } from "./pilotQualificationsStorage.ts";
 import { createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "./cloudSyncTestControl.ts";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -160,13 +161,13 @@ test("les domaines non transportés restent ignorés sans suppression", async ()
   assert.equal((await value.outbox.list()).length, 2);
 });
 
-test("le drain automatique traite les domaines métier dans l'ordre de dépendance", async () => {
+test("le drain automatique traite les domaines métier et préférences de compte dans l'ordre de dépendance", async () => {
   const value = fixture();
-  for (const [entityType, entityId] of [["balloon-document", "document"], ["logbook-entry", "entry"], ["flight", "flight"], ["balloon", "balloon"]]) {
+  for (const [entityType, entityId] of [["balloon-document", "document"], ["logbook-entry", "entry"], ["flight", "flight"], ["balloon-preferences", "singleton"], ["balloon", "balloon"], ["pilot-qualifications", "singleton"]]) {
     await value.outbox.enqueue({ entityType, entityId, operation: "UPSERT" });
   }
-  assert.equal((await value.service.syncPendingMutations()).applied, 4);
-  assert.deepEqual(value.requests.map(({ entityType }) => entityType), ["balloon", "flight", "logbook-entry", "balloon-document"]);
+  assert.equal((await value.service.syncPendingMutations()).applied, 6);
+  assert.deepEqual(value.requests.map(({ entityType }) => entityType), ["pilot-qualifications", "balloon", "balloon-preferences", "flight", "logbook-entry", "balloon-document"]);
   assert.deepEqual(await value.outbox.list(), []);
 });
 
@@ -206,6 +207,21 @@ test("le payload balloon reste structuré et exclut documents, traces et Blob", 
   assert.equal(payload.payload.volume_m3, 2973);
   const serialized = JSON.stringify(payload);
   for (const forbidden of ["document", "trace", "blob", "points", "object_key"]) assert.doesNotMatch(serialized, new RegExp(forbidden, "i"));
+});
+
+test("qualifications et ballon actif utilisent les lignes JSON user_preferences existantes", async () => {
+  const storage = new MemoryStorage();
+  const scope = `USER:${USER_A}`;
+  storage.setItem(scopedBusinessStorageKey(scope, PILOT_QUALIFICATIONS_STORAGE_KEY), JSON.stringify({ version: 1, profile: { configured: true, licenceType: "BPL" }, events: [{ id: "11111111-1111-4111-8111-111111111111", type: "MEDICAL", dateIso: "2026-01-01", expiryDateIso: "2027-01-01", source: "MANUAL", medicalClass: "LAPL", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }] }));
+  storage.setItem(scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY), JSON.stringify({ version: 5, activeBalloonId: "balloon-cloud", balloons: [] }));
+  const provider = new BrowserCloudSyncPayloadProvider(storage, scope);
+  const qualifications = await provider.build({ mutationId: "q", entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
+  const balloon = await provider.build({ mutationId: "b", entityType: "balloon-preferences", entityId: "singleton", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
+  assert.deepEqual([qualifications.serverEntityType, qualifications.serverEntityId], ["user_preferences", "qualifications"]);
+  assert.equal(qualifications.payload.preferences.profile.configured, true);
+  assert.equal(qualifications.payload.preferences.events[0].medicalClass, "LAPL");
+  assert.deepEqual([balloon.serverEntityType, balloon.serverEntityId], ["user_preferences", "balloon"]);
+  assert.equal(balloon.payload.preferences.activeBalloonId, "balloon-cloud");
 });
 
 test("le payload flight reste structuré sans points, trace, document ni Blob", async () => {

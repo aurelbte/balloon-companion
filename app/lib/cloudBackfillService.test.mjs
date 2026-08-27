@@ -68,7 +68,7 @@ test("USER switch pendant le backfill arrête avant l'entité suivante", async (
 
 test("wiring navigateur couvre tous les domaines sans points GPS ni full scan Cloud", async () => {
   const source = await (await import("node:fs/promises")).readFile(new URL("./cloudBackfillBrowser.ts", import.meta.url), "utf8");
-  for (const entityType of ["pilot-profile", "unit-preferences", "weather-preferences", "aviation-preferences", "favorite-weather-place", "favorite-launch-site", "balloon", "flight", "logbook-entry", "balloon-document"]) assert.match(source, new RegExp(`entityType: \\"${entityType}\\"|entityType === \\"${entityType}\\"`));
+  for (const entityType of ["pilot-profile", "pilot-qualifications", "unit-preferences", "weather-preferences", "aviation-preferences", "favorite-weather-place", "favorite-launch-site", "balloon", "balloon-preferences", "flight", "logbook-entry", "balloon-document"]) assert.match(source, new RegExp(`entityType: \\"${entityType}\\"|entityType === \\"${entityType}\\"`));
   assert.match(source, /\.in\("id", batch\.map/);
   assert.doesNotMatch(source, /points|trace|syncPendingMutations|\.rpc\(/i);
 });
