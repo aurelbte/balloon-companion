@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { getRuntimeDataScope, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "../../lib/cloudSyncBrowser.ts";
-import { createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
+import { createScopeUnavailableControlledApi, inspectControlledCloudSyncSources, isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client.ts";
 import { addBalloon, deleteBalloon, editBalloon, loadBalloonRegistry } from "../../lib/balloonStorage.ts";
 import { balloonDocumentStorage } from "../../lib/balloonDocumentStorage.ts";
@@ -1027,14 +1027,18 @@ async function pullFavoriteWeatherPlacesTargetedWithVerification(scope: `USER:${
 async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`) {
   const client = createBrowserSupabaseClient();
   const outbox = new IndexedDbSyncOutboxStorage(scope);
-  const [authResult, cursor, mutations, sidecars, cloudResult] = await Promise.all([
+  const [authResult, cursor, mutations, sidecars, issues, cloudResult, allCloudResult] = await Promise.all([
     client.auth.getUser(),
     new BrowserCloudPullCursorRepository(window.localStorage).get(scope, FAVORITE_WEATHER_PLACE_PULL_DOMAIN),
     outbox.list(),
     outbox.listMetadata(),
+    new BrowserCloudSyncIssueRepository(window.localStorage, scope).list(),
     client.from("favorite_weather_places")
       .select("id,name")
       .is("deleted_at", null)
+      .order("id", { ascending: true }),
+    client.from("favorite_weather_places")
+      .select("id,name,revision,updated_at,deleted_at")
       .order("id", { ascending: true }),
   ]);
   const localStorageKey = scopedBusinessStorageKey(scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY);
@@ -1058,6 +1062,7 @@ async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`)
   const matchingMutations = mutations.filter(({ entityType }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN);
   const matchingSidecars = sidecars.filter(({ entityType }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN);
   const payloadProvider = new BrowserCloudSyncPayloadProvider(window.localStorage, scope);
+  const targetedSources = inspectControlledCloudSyncSources(window.location.search, window.sessionStorage);
   const pendingDiagnostics = await Promise.all(matchingMutations.map(async (mutation) => {
     const built = await payloadProvider.build(mutation);
     const eligibility = inspectAutomaticMutationEligibility(mutation);
@@ -1080,8 +1085,11 @@ async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`)
       },
       automaticDrain: {
         ...eligibility,
-        currentRuntimeBlockedByTargetedMode: true,
-        currentBlockReason: "CONTROLLED_TARGETED_MODE",
+        eligibilityIndependentOfTargetedMode: true,
+      },
+      controlledInspection: {
+        ...targetedSources,
+        note: "Le helper est observable uniquement pendant une inspection targeted; ce statut ne produit pas CONFLICT_BLOCKED.",
       },
       rpcCompatibility: {
         function: "apply_cloud_sync_mutation",
@@ -1089,6 +1097,7 @@ async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`)
         compatible: built?.serverEntityType === "favorite_weather_place",
       },
       sidecar: matchingSidecars.find(({ entityId }) => entityId === mutation.entityId) ?? null,
+      conflictIssue: issues.find(({ entityType, entityId }) => entityType === mutation.entityType && entityId === mutation.entityId) ?? null,
     } as const;
   }));
   return {
@@ -1110,6 +1119,8 @@ async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`)
       count: cloudFavorites.length,
       favorites: cloudFavorites,
       error: cloudResult.error ? { code: cloudResult.error.code ?? "CLOUD_READ_FAILED", message: "Lecture Cloud impossible" } : null,
+      rowsIncludingTombstones: (allCloudResult.data ?? []).map(({ id, name, revision, updated_at, deleted_at }) => ({ id, name, revision, updatedAt: updated_at, deletedAt: deleted_at })),
+      rowsIncludingTombstonesError: allCloudResult.error ? { code: allCloudResult.error.code ?? "CLOUD_READ_FAILED", message: "Lecture Cloud complète impossible" } : null,
     },
     localStorage: {
       key: localStorageKey,
