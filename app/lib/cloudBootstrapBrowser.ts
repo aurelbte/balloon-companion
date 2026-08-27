@@ -12,6 +12,7 @@ import {
   createBrowserPreferencePullService,
 } from "./cloudPullBrowser.ts";
 import { IndexedDbSyncOutboxStorage } from "./syncOutbox.ts";
+import { beginFavoriteWeatherPullDiagnostic, recordFavoriteWeatherPullResult } from "./favoriteWeatherPullDiagnostics.ts";
 
 export function createBrowserCloudBootstrapService(input: Readonly<{
   client: SupabaseClient;
@@ -43,7 +44,12 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
       unitPreferences: () => preferences.pullUnitPreferences(),
       weatherPreferences: () => preferences.pullWeatherPreferences(),
       aviationPreferences: () => preferences.pullAviationPreferences(),
-      favoriteWeatherPlaces: () => favoriteWeatherPlaces.pullFavoriteWeatherPlaces(),
+      favoriteWeatherPlaces: async () => {
+        beginFavoriteWeatherPullDiagnostic();
+        const result = await favoriteWeatherPlaces.pullFavoriteWeatherPlaces();
+        recordFavoriteWeatherPullResult(result);
+        return result;
+      },
       favoriteLaunchSites: () => favoriteLaunchSites.pullFavoriteLaunchSites(),
       balloons: () => balloons.pullBalloons(),
       balloonPreferences: () => preferences.pullBalloonPreferences(),

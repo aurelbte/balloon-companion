@@ -10,6 +10,8 @@ import { availableDays, availableTimes, closestAvailableDay, closestAvailableTim
 import { EMPTY_WEATHER_PREFERENCES, loadWeatherPreferences, saveWeatherPreferences, WEATHER_PREFERENCES_EVENT, type WeatherPreferences } from "../lib/weatherPreferencesStorage";
 import { calculateSunTimes, type SunTimes } from "../lib/weather/sunTimes";
 import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
+import { getRuntimeDataScope } from "../lib/auth/dataScopeRuntime";
+import { recordFavoriteWeatherUiHydration } from "../lib/favoriteWeatherPullDiagnostics";
 
 type WeatherPreferencesContextValue = WeatherPreferences & {
   favorites: readonly FavoriteWeatherPlace[];
@@ -51,6 +53,13 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   useEffect(() => { const refresh = () => { setPreferences(loadWeatherPreferences()); setFavorites(loadFavoriteWeatherPlaces()); setPoints([]); setForecastTimeZone(undefined); setSelectedDay(undefined); setSelectedTime(undefined); }; refresh(); window.addEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); window.addEventListener(FAVORITE_WEATHER_PLACES_EVENT, refresh); window.addEventListener(WEATHER_PREFERENCES_EVENT, refresh); return () => { window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, refresh); window.removeEventListener(FAVORITE_WEATHER_PLACES_EVENT, refresh); window.removeEventListener(WEATHER_PREFERENCES_EVENT, refresh); }; }, []);
   const update = useCallback((changes: Partial<WeatherPreferences>) => setPreferences((current) => { const next = { ...current, ...changes }; saveWeatherPreferences(next); return next; }), []);
   const activeFavorite = favorites.find(({ id }) => id === preferences.favoriteWeatherLocationId) ?? null;
+  useEffect(() => {
+    recordFavoriteWeatherUiHydration({
+      scope: getRuntimeDataScope(),
+      favorites,
+      selectedFavoriteId: preferences.favoriteWeatherLocationId,
+    });
+  }, [favorites, preferences.favoriteWeatherLocationId]);
   const coordinates = useMemo(() => activeFavorite ? { latitude: activeFavorite.latitude, longitude: activeFavorite.longitude } : null, [activeFavorite]);
 
   useEffect(() => {

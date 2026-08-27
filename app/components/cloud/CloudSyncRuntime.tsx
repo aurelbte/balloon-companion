@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
-import { getRuntimeDataScope } from "../../lib/auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "../../lib/cloudSyncBrowser.ts";
 import { createScopeUnavailableControlledApi, isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client.ts";
@@ -22,7 +22,9 @@ import {
   removeFavoriteWeatherPlace,
   renameFavoriteWeatherPlace,
   saveFavoriteWeatherPlacesWithDurableOutbox,
+  FAVORITE_WEATHER_PLACES_STORAGE_KEY,
 } from "../../lib/favoriteWeatherPlaces.ts";
+import { beginFavoriteWeatherPullDiagnostic, inspectFavoriteWeatherPullDiagnostics, recordFavoriteWeatherPullResult } from "../../lib/favoriteWeatherPullDiagnostics.ts";
 import { removeOfficialAscension } from "../../lib/flightCompletion.ts";
 import { createRecordedFlight, finalizeRecordedFlight } from "../../lib/recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.ts";
@@ -91,6 +93,7 @@ declare global {
       auditCloudSyncFinalState(): Promise<unknown>;
       pullFavoriteWeatherPlacesTargeted(): Promise<unknown>;
       inspectFavoriteWeatherPullTestState(): Promise<unknown>;
+      inspectFavoriteWeatherPlaceEndToEndState(): Promise<unknown>;
       pullFavoriteLaunchSitesTargeted(): Promise<unknown>;
       inspectFavoriteLaunchSitePullState(): Promise<unknown>;
       pullPilotProfileTargeted(): Promise<unknown>;
@@ -996,11 +999,13 @@ async function pullFavoriteWeatherPlacesTargetedWithVerification(scope: `USER:${
   const countEnqueue = () => { enqueueEvents += 1; };
   window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, countEnqueue);
   try {
+    beginFavoriteWeatherPullDiagnostic();
     const report = await createBrowserFavoriteWeatherPlacePullService({
       client: createBrowserSupabaseClient(),
       storage: window.localStorage,
       scope,
     }).pullFavoriteWeatherPlaces();
+    recordFavoriteWeatherPullResult(report);
     const after = await outbox.list();
     return {
       ...report,
@@ -1014,6 +1019,83 @@ async function pullFavoriteWeatherPlacesTargetedWithVerification(scope: `USER:${
   } finally {
     window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, countEnqueue);
   }
+}
+
+async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`) {
+  const client = createBrowserSupabaseClient();
+  const outbox = new IndexedDbSyncOutboxStorage(scope);
+  const [authResult, cursor, mutations, sidecars, cloudResult] = await Promise.all([
+    client.auth.getUser(),
+    new BrowserCloudPullCursorRepository(window.localStorage).get(scope, FAVORITE_WEATHER_PLACE_PULL_DOMAIN),
+    outbox.list(),
+    outbox.listMetadata(),
+    client.from("favorite_weather_places")
+      .select("id,name")
+      .is("deleted_at", null)
+      .order("id", { ascending: true }),
+  ]);
+  const localStorageKey = scopedBusinessStorageKey(scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY);
+  let localFavorites: Array<{ id: string; name: string }> = [];
+  try {
+    const value = JSON.parse(window.localStorage.getItem(localStorageKey) ?? "null") as { favorites?: unknown } | null;
+    if (Array.isArray(value?.favorites)) {
+      localFavorites = value.favorites.flatMap((favorite) => {
+        if (!favorite || typeof favorite !== "object") return [];
+        const candidate = favorite as { id?: unknown; name?: unknown };
+        return typeof candidate.id === "string" && typeof candidate.name === "string"
+          ? [{ id: candidate.id, name: candidate.name }]
+          : [];
+      });
+    }
+  } catch { /* Report the parsed collection as empty without changing storage. */ }
+  const cloudFavorites = (cloudResult.data ?? []).map(({ id, name }) => ({ id, name }));
+  const diagnostics = inspectFavoriteWeatherPullDiagnostics();
+  const runtime = inspectCloudSyncRuntimeControllerState();
+  const lastBootstrapReport = lastCloudBootstrapReports.get(scope) ?? null;
+  const matchingMutations = mutations.filter(({ entityType }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN);
+  const matchingSidecars = sidecars.filter(({ entityType }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN);
+  return {
+    scope,
+    userId: scope.slice("USER:".length),
+    sessionAuthReady: !authResult.error && authResult.data.user?.id === scope.slice("USER:".length),
+    authError: authResult.error ? { code: authResult.error.code ?? "AUTH_READ_FAILED", message: "Lecture de session impossible" } : null,
+    runtime: {
+      lastTrigger: runtime.lastTrigger,
+      active: runtime.active,
+      online: runtime.online,
+      bootstrapInProgress: runtime.bootstrapInProgress,
+      lastCompletedAt: runtime.lastCompletedAt,
+    },
+    bootstrapLastState: runtime.lastBootstrapState,
+    bootstrapLastReport: lastBootstrapReport,
+    cursor,
+    cloud: {
+      count: cloudFavorites.length,
+      favorites: cloudFavorites,
+      error: cloudResult.error ? { code: cloudResult.error.code ?? "CLOUD_READ_FAILED", message: "Lecture Cloud impossible" } : null,
+    },
+    localStorage: {
+      key: localStorageKey,
+      count: localFavorites.length,
+      favorites: localFavorites,
+    },
+    uiHydration: diagnostics.lastUiHydration,
+    uiFavoriteCount: diagnostics.lastUiHydration?.favoriteCount ?? null,
+    pendingOutbox: matchingMutations.map(({ mutationId, entityType, entityId, operation, baseRevision, attempts, lastErrorCode, createdAt }) => ({ mutationId, entityType, entityId, operation, baseRevision, attempts, lastErrorCode, createdAt })),
+    sidecars: matchingSidecars,
+    snapshotReplay: diagnostics.lastPullPlans[0]
+      ? {
+          executed: diagnostics.lastPullPlans[0].snapshotReplayExecuted,
+          reason: diagnostics.lastPullPlans[0].snapshotReplayReason,
+          inputCursor: diagnostics.lastPullPlans[0].inputCursor,
+          effectiveCursor: diagnostics.lastPullPlans[0].effectiveCursor,
+          localFavoriteCountAtPull: diagnostics.lastPullPlans[0].localFavoriteCount,
+          pagesObserved: diagnostics.lastPullPlans.length,
+          at: diagnostics.lastPullPlans[0].at,
+        }
+      : { executed: null, reason: "PULL_NOT_OBSERVED_IN_THIS_RUNTIME" },
+    lastPullResult: diagnostics.lastPullResult,
+  } as const;
 }
 
 async function inspectFavoriteLaunchSitePullState(scope: `USER:${string}`) {
@@ -1318,6 +1400,7 @@ export default function CloudSyncRuntime(): null {
       auditCloudSyncFinalState: () => auditCloudSyncFinalState(scope),
       pullFavoriteWeatherPlacesTargeted: () => pullFavoriteWeatherPlacesTargetedWithVerification(scope),
       inspectFavoriteWeatherPullTestState: () => inspectFavoriteWeatherPullTestState(scope),
+      inspectFavoriteWeatherPlaceEndToEndState: () => inspectFavoriteWeatherPlaceEndToEndState(scope),
       pullFavoriteLaunchSitesTargeted: () => pullFavoriteLaunchSitesTargetedWithVerification(scope),
       inspectFavoriteLaunchSitePullState: () => inspectFavoriteLaunchSitePullState(scope),
       pullPilotProfileTargeted: () => pullPilotProfileTargetedWithVerification(scope),

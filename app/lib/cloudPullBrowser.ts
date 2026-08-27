@@ -20,6 +20,7 @@ import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import { BrowserCloudPullCursorRepository, type CloudPullCursor } from "./cloudPullState.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue, FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
+import { recordFavoriteWeatherPullPlan } from "./favoriteWeatherPullDiagnostics.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { IndexedDbSyncOutboxStorage, type SyncMutation } from "./syncOutbox.ts";
 import { applyUnitPreferencesFromCloudWithoutEnqueue } from "./unitPreferencesStorage.ts";
@@ -377,7 +378,9 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
     outbox,
     cursors: new BrowserCloudPullCursorRepository(input.storage),
     readPage: async (cursor: CloudPullCursor | null, limit: number) => {
-      const effectiveCursor = favoriteWeatherPullCursorForLocalState(cursor, localFavoriteWeatherPlaceCount(input.storage, input.scope));
+      const localFavoriteCount = localFavoriteWeatherPlaceCount(input.storage, input.scope);
+      const effectiveCursor = favoriteWeatherPullCursorForLocalState(cursor, localFavoriteCount);
+      recordFavoriteWeatherPullPlan({ inputCursor: cursor, effectiveCursor, localFavoriteCount });
       let query = input.client.from("favorite_weather_places")
         .select("id,user_id,sync_id,name,latitude,longitude,revision,created_at,updated_at,deleted_at")
         .order("updated_at", { ascending: true })
