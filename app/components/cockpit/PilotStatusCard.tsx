@@ -6,18 +6,25 @@ import { useRouter } from "next/navigation";
 import { Card } from "../../design-system";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { usePilotProfile } from "../../hooks/usePilotProfile";
+import { calculateBplMaintenance, type QualificationRequirementStatus } from "../../lib/bplQualificationEngine";
 import { calculatePilotOfficialTotals } from "../../lib/flightCompletion";
-import { formatProfileDate, remainingMonthsUntil } from "../../lib/pilotProfile";
+import { calculateMedicalQualification } from "../../lib/medicalTrainingQualificationEngine";
+import { formatQualificationDate } from "../../lib/qualificationPresentation";
+import type { PilotQualificationsState } from "../../lib/pilotQualifications";
+import { createEmptyPilotQualificationsState, loadPilotQualifications } from "../../lib/pilotQualificationsStorage";
 import styles from "./Cockpit.module.css";
 
 type CredentialVisualStatus = "valid" | "attention" | "expired" | "unknown";
 
-function credentialStatus(dateIso: string, now: Date): CredentialVisualStatus {
-  if (!dateIso) return "unknown";
-  const due = new Date(`${dateIso}T23:59:59`);
-  if (!Number.isFinite(due.getTime())) return "unknown";
-  if (due.getTime() < now.getTime()) return "expired";
-  return remainingMonthsUntil(dateIso, now) === 0 ? "attention" : "valid";
+function localIsoDate(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function credentialStatus(status: QualificationRequirementStatus): CredentialVisualStatus {
+  if (status === "COMPLIANT") return "valid";
+  if (status === "UPCOMING" || status === "WARNING") return "attention";
+  if (status === "ACTION_REQUIRED") return "expired";
+  return "unknown";
 }
 
 function statusLabel(status: CredentialVisualStatus): string {
@@ -31,24 +38,46 @@ export default function PilotStatusCard() {
   const router = useRouter();
   const profile = usePilotProfile();
   const completion = useFlightCompletionState();
+  const [qualifications, setQualifications] = useState<PilotQualificationsState>(() => createEmptyPilotQualificationsState());
   const [open, setOpen] = useState(false);
-  const now = new Date();
+  const referenceDateIso = localIsoDate();
+  const bpl = useMemo(() => calculateBplMaintenance({
+    profile: qualifications.profile,
+    events: qualifications.events,
+    ascensions: completion.officialAscensions,
+    referenceDateIso,
+    ascensionHistoryComplete: true,
+    historyCoverageStartDate: qualifications.profile.historyCoverageStartDate,
+    openingBalance: completion.openingBalance,
+  }), [completion, qualifications, referenceDateIso]);
+  const medical = useMemo(() => calculateMedicalQualification({
+    events: qualifications.events,
+    legacy: { medicalDueDateIso: null },
+    referenceDateIso,
+    requiredClass: "LAPL",
+  }), [qualifications.events, referenceDateIso]);
   const rows = [
-    { label: "Vol test", dateIso: profile.flightTestDueDateIso },
-    { label: "Médical", dateIso: profile.medicalDueDateIso },
+    { label: "Vol test", result: bpl.trainingFlightFiB, medical: false },
+    { label: "Médical", result: medical.overall, medical: true },
   ];
   const credentialRows = rows.map((row) => ({
     ...row,
-    visualStatus: credentialStatus(row.dateIso, now),
+    visualStatus: credentialStatus(row.result.status),
   }));
-  const globalStatus = credentialRows.some(({ visualStatus }) => visualStatus === "expired")
+  const globalQualificationStatuses = [credentialStatus(bpl.overall.status), credentialStatus(medical.overall.status)];
+  const globalStatus = globalQualificationStatuses.some((visualStatus) => visualStatus === "expired")
     ? { label: "Non conforme", visualStatus: "danger" }
-    : credentialRows.every(({ visualStatus }) => visualStatus === "unknown")
+    : globalQualificationStatuses.every((visualStatus) => visualStatus === "unknown")
       ? { label: "Non renseigné", visualStatus: "unknown" }
-    : credentialRows.some(({ visualStatus }) => visualStatus !== "valid")
+    : globalQualificationStatuses.some((visualStatus) => visualStatus !== "valid")
       ? { label: "Attention", visualStatus: "attention" }
       : { label: "Prêt à voler", visualStatus: "valid" };
   const totals = useMemo(() => calculatePilotOfficialTotals(completion), [completion]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQualifications(loadPilotQualifications()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -133,8 +162,8 @@ export default function PilotStatusCard() {
               </dl>
             </article>
 
-            {rows.map(({ label, dateIso }) => {
-              const visualStatus = credentialStatus(dateIso, now);
+            {rows.map(({ label, result, medical: medicalRow }) => {
+              const visualStatus = credentialStatus(result.status);
               return (
                 <article className={styles.pilotStatusBlock} key={label}>
                   <div className={styles.pilotStatusBlockHeader}>
@@ -144,8 +173,8 @@ export default function PilotStatusCard() {
                     </span>
                   </div>
                   <dl className={styles.pilotStatusFacts}>
-                    <div><dt>Échéance</dt><dd>{formatProfileDate(dateIso) ?? "Non renseignée"}</dd></div>
-                    <div><dt>État</dt><dd>{statusLabel(visualStatus)}</dd></div>
+                    <div><dt>Échéance</dt><dd>{formatQualificationDate(result.dueDate)}</dd></div>
+                    <div><dt>État</dt><dd>{medicalRow && visualStatus === "valid" ? "Valide" : statusLabel(visualStatus)}</dd></div>
                   </dl>
                 </article>
               );
@@ -166,7 +195,7 @@ export default function PilotStatusCard() {
           <footer className={styles.pilotStatusDetailFooter}>
             <button
               type="button"
-              onClick={() => router.push("/more/profile/experience")}
+              onClick={() => router.push("/more/profile/qualifications")}
             >
               <Pencil size={17} aria-hidden="true" />
               Modifier

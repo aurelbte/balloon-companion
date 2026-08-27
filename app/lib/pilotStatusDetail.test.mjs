@@ -23,15 +23,29 @@ test("la carte cockpit reste une synthèse alignée sur les autres cartes", () =
   assert.doesNotMatch(component.slice(component.indexOf("pilotStatusTrigger"), component.indexOf("{open &&")), /mois restants|Échéance/);
 });
 
-test("la fiche réutilise les données pilote et les totaux officiels", () => {
+test("la fiche utilise exclusivement Qualifications et validité pour ses statuts", () => {
   assert.match(component, /usePilotProfile\(\)/);
   assert.match(component, /useFlightCompletionState\(\)/);
   assert.match(component, /calculatePilotOfficialTotals\(completion\)/);
+  assert.match(component, /loadPilotQualifications/);
+  assert.match(component, /calculateBplMaintenance/);
+  assert.match(component, /calculateMedicalQualification/);
+  assert.match(component, /bpl\.overall\.status/);
+  assert.match(component, /bpl\.trainingFlightFiB/);
+  assert.match(component, /medical\.overall/);
+  assert.doesNotMatch(component, /profile\.flightTestDueDateIso|profile\.medicalDueDateIso/);
   assert.doesNotMatch(component, /savePilotProfile|persistPilotExperience|localStorage|indexedDB/i);
 });
 
-test("Modifier ouvre directement l'éditeur existant", () => {
-  assert.match(component, /router\.push\("\/more\/profile\/experience"\)/);
+test("Modifier ouvre l'éditeur Qualifications et validité", () => {
+  assert.match(component, /router\.push\("\/more\/profile\/qualifications"\)/);
+});
+
+test("Mes informations ne présente plus les anciennes échéances", () => {
+  const informationPage = readFileSync(new URL("../more/profile/experience/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(informationPage, /<h2>Échéances<\/h2>|Prochain vol test|Validité médicale/);
+  assert.match(informationPage, /<h2>Identité<\/h2>/);
+  assert.match(informationPage, /<h2>Expérience avant Balloon Companion<\/h2>/);
 });
 
 test("la fiche plein écran respecte les safe areas sans modifier la grille dashboard", () => {
