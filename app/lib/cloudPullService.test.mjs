@@ -10,6 +10,7 @@ import { applyOpeningBalanceFromCloudWithoutEnqueue, FLIGHT_COMPLETION_STORAGE_K
 import { createEmptyFlightCompletionState } from "./flightCompletion.ts";
 import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
+import { favoriteWeatherPullCursorForLocalState } from "./cloudPullBrowser.ts";
 
 const scope = "USER:user-1";
 const timestamp = "2026-08-23T12:00:00.000Z";
@@ -25,6 +26,12 @@ const row = (overrides = {}) => ({
   updatedAt: timestamp,
   deletedAt: null,
   ...overrides,
+});
+
+test("une collection météo locale vide rejoue le snapshot malgré un ancien curseur", () => {
+  const cursor = { updatedAt: "2026-08-24T12:00:00.000Z", id: "later-row" };
+  assert.equal(favoriteWeatherPullCursorForLocalState(cursor, 0), null);
+  assert.deepEqual(favoriteWeatherPullCursorForLocalState(cursor, 2), cursor);
 });
 
 class MemoryCursorRepository {

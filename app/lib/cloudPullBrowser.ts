@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getRuntimeDataScope } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository } from "./cloudSyncBrowser.ts";
 import {
   CloudPullService,
@@ -19,7 +19,7 @@ import { applyActiveBalloonPreferenceFromCloudWithoutEnqueue, applyBalloonFromCl
 import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import { BrowserCloudPullCursorRepository, type CloudPullCursor } from "./cloudPullState.ts";
-import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
+import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue, FAVORITE_WEATHER_PLACES_STORAGE_KEY } from "./favoriteWeatherPlaces.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { IndexedDbSyncOutboxStorage, type SyncMutation } from "./syncOutbox.ts";
 import { applyUnitPreferencesFromCloudWithoutEnqueue } from "./unitPreferencesStorage.ts";
@@ -35,6 +35,17 @@ import { applyPilotProfileFromCloudWithoutEnqueue } from "./pilotProfileStorage.
 
 function quotedPostgrestValue(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+export function favoriteWeatherPullCursorForLocalState(cursor: CloudPullCursor | null, localFavoriteCount: number): CloudPullCursor | null {
+  return localFavoriteCount === 0 ? null : cursor;
+}
+
+function localFavoriteWeatherPlaceCount(storage: Storage, scope: `USER:${string}`): number {
+  try {
+    const value = JSON.parse(storage.getItem(scopedBusinessStorageKey(scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY)) ?? "null") as { favorites?: unknown } | null;
+    return Array.isArray(value?.favorites) ? value.favorites.length : 0;
+  } catch { return 0; }
 }
 
 export function parseFavoriteWeatherPlaceCloudRow(value: unknown): FavoriteWeatherPlaceCloudRow {
@@ -366,13 +377,14 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
     outbox,
     cursors: new BrowserCloudPullCursorRepository(input.storage),
     readPage: async (cursor: CloudPullCursor | null, limit: number) => {
+      const effectiveCursor = favoriteWeatherPullCursorForLocalState(cursor, localFavoriteWeatherPlaceCount(input.storage, input.scope));
       let query = input.client.from("favorite_weather_places")
         .select("id,user_id,sync_id,name,latitude,longitude,revision,created_at,updated_at,deleted_at")
         .order("updated_at", { ascending: true })
         .order("id", { ascending: true })
         .limit(limit);
-      if (cursor) {
-        query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
+      if (effectiveCursor) {
+        query = query.or(`updated_at.gt.${effectiveCursor.updatedAt},and(updated_at.eq.${effectiveCursor.updatedAt},id.gt.${quotedPostgrestValue(effectiveCursor.id)})`);
       }
       const { data, error } = await query;
       if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);

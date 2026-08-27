@@ -133,10 +133,15 @@ export class CloudSyncRuntimeController {
   }
 
   async notifyVisible(): Promise<void> {
-    if (!this.userId) return;
+    if (!this.userId || !this.dependencies.isOnline()) return;
+    if (this.bootstrapRequested || this.bootstrapInProgress) { this.deduplicatedRequests += 1; this.publish(); return; }
+    this.readyGeneration = -1;
+    this.bootstrapRequested = true;
+    this.pushRequested = true;
     this.lastTrigger = "VISIBILITY";
     this.record("TRIGGER_VISIBILITY", this.userId);
-    await this.refreshRetrySchedule();
+    this.schedule();
+    await this.whenIdle();
   }
 
   inspect(): CloudSyncRuntimeControllerSnapshot {

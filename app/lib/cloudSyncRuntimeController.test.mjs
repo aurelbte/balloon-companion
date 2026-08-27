@@ -22,6 +22,18 @@ test("un double déclenchement du même USER ne lance qu'un bootstrap et un PUSH
   assert.deepEqual(ctx.pushes, ["A"]);
 });
 
+test("une reprise visible lance un cycle unique et reste neutre offline", async () => {
+  const ctx = fixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  await Promise.all([ctx.controller.notifyVisible(), ctx.controller.notifyVisible()]);
+  assert.deepEqual(ctx.bootstraps, ["A", "A"]);
+  assert.deepEqual(ctx.pushes, ["A", "A"]);
+  ctx.setOnline(false);
+  await ctx.controller.notifyVisible();
+  assert.deepEqual(ctx.bootstraps, ["A", "A"]);
+});
+
 test("double clic manuel rejoint une seule synchronisation bootstrap puis PUSH", async () => {
   let release;
   const order = [];
