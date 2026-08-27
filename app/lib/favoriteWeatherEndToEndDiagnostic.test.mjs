@@ -33,5 +33,8 @@ test("le helper end-to-end targeted est une inspection sans déclencheur de sync
   const helper = runtime.match(/async function inspectFavoriteWeatherPlaceEndToEndState[\s\S]*?\n\}/)?.[0] ?? "";
   assert.match(helper, /outbox\.list\(\)/);
   assert.match(helper, /outbox\.listMetadata\(\)/);
+  assert.match(helper, /payloadProvider\.build\(mutation\)/);
+  assert.match(helper, /inspectAutomaticMutationEligibility\(mutation\)/);
+  assert.match(helper, /apply_cloud_sync_mutation/);
   assert.doesNotMatch(helper, /pullFavoriteWeatherPlaces|syncMutationById|syncPendingMutations|bootstrapCloudDataForCurrentUser|\.rpc\(|\.enqueue\(|\.remove\(|\.setMetadata\(|\.insert\(|\.update\(|\.delete\(|setItem\(|removeItem\(/);
 });

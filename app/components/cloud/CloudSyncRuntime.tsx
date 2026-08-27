@@ -39,7 +39,7 @@ import {
   saveFlightCompletionState,
 } from "../../lib/flightCompletionStorage.ts";
 import { enqueueLocalSyncMutation, IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
-import { nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
+import { inspectAutomaticMutationEligibility, nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPilotProfilePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
@@ -1057,6 +1057,40 @@ async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`)
   const lastBootstrapReport = lastCloudBootstrapReports.get(scope) ?? null;
   const matchingMutations = mutations.filter(({ entityType }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN);
   const matchingSidecars = sidecars.filter(({ entityType }) => entityType === FAVORITE_WEATHER_PLACE_PULL_DOMAIN);
+  const payloadProvider = new BrowserCloudSyncPayloadProvider(window.localStorage, scope);
+  const pendingDiagnostics = await Promise.all(matchingMutations.map(async (mutation) => {
+    const built = await payloadProvider.build(mutation);
+    const eligibility = inspectAutomaticMutationEligibility(mutation);
+    return {
+      mutation: { ...mutation },
+      entity: {
+        localType: mutation.entityType,
+        serverType: built?.serverEntityType ?? null,
+        table: built?.serverEntityType === "favorite_weather_place" ? "public.favorite_weather_places" : null,
+      },
+      payload: built?.payload ?? null,
+      payloadValidation: {
+        built: built !== null,
+        serverEntityTypeAccepted: built?.serverEntityType === "favorite_weather_place",
+        entityIdMatches: built?.serverEntityId === mutation.entityId,
+        requiredFieldsPresent: mutation.operation === "DELETE" || Boolean(
+          built?.payload && typeof built.payload.name === "string"
+          && typeof built.payload.latitude === "number" && typeof built.payload.longitude === "number"
+        ),
+      },
+      automaticDrain: {
+        ...eligibility,
+        currentRuntimeBlockedByTargetedMode: true,
+        currentBlockReason: "CONTROLLED_TARGETED_MODE",
+      },
+      rpcCompatibility: {
+        function: "apply_cloud_sync_mutation",
+        acceptedCanonicalType: "favorite_weather_place",
+        compatible: built?.serverEntityType === "favorite_weather_place",
+      },
+      sidecar: matchingSidecars.find(({ entityId }) => entityId === mutation.entityId) ?? null,
+    } as const;
+  }));
   return {
     scope,
     userId: scope.slice("USER:".length),
@@ -1084,7 +1118,7 @@ async function inspectFavoriteWeatherPlaceEndToEndState(scope: `USER:${string}`)
     },
     uiHydration: diagnostics.lastUiHydration,
     uiFavoriteCount: diagnostics.lastUiHydration?.favoriteCount ?? null,
-    pendingOutbox: matchingMutations.map(({ mutationId, entityType, entityId, operation, baseRevision, attempts, lastErrorCode, createdAt }) => ({ mutationId, entityType, entityId, operation, baseRevision, attempts, lastErrorCode, createdAt })),
+    pendingOutbox: pendingDiagnostics,
     sidecars: matchingSidecars,
     snapshotReplay: diagnostics.lastPullPlans[0]
       ? {

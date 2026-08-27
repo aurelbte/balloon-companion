@@ -104,9 +104,23 @@ function userIdFromScope(scope: LocalDataScope | null): string | null {
   return scope?.startsWith("USER:") ? scope.slice(5) : null;
 }
 
+export function inspectAutomaticMutationEligibility(mutation: SyncMutation, now = new Date()): Readonly<{
+  allowed: boolean;
+  eligible: boolean;
+  reason: "ELIGIBLE" | "ENTITY_TYPE_NOT_ALLOWED" | "CONFLICT_BLOCKED" | "BACKOFF_NOT_DUE" | "INVALID_NEXT_ATTEMPT_AT";
+}> {
+  if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType)) return { allowed: false, eligible: false, reason: "ENTITY_TYPE_NOT_ALLOWED" };
+  if (mutation.lastErrorCode === "CONFLICT") return { allowed: true, eligible: false, reason: "CONFLICT_BLOCKED" };
+  if (!mutation.nextAttemptAt) return { allowed: true, eligible: true, reason: "ELIGIBLE" };
+  const nextAttemptAt = Date.parse(mutation.nextAttemptAt);
+  if (!Number.isFinite(nextAttemptAt)) return { allowed: true, eligible: false, reason: "INVALID_NEXT_ATTEMPT_AT" };
+  return nextAttemptAt <= now.getTime()
+    ? { allowed: true, eligible: true, reason: "ELIGIBLE" }
+    : { allowed: true, eligible: false, reason: "BACKOFF_NOT_DUE" };
+}
+
 function isEligible(mutation: SyncMutation, now: Date): boolean {
-  if (mutation.lastErrorCode === "CONFLICT") return false;
-  return !mutation.nextAttemptAt || Date.parse(mutation.nextAttemptAt) <= now.getTime();
+  return inspectAutomaticMutationEligibility(mutation, now).eligible;
 }
 
 export function nextEligibleRetryAt(mutations: readonly SyncMutation[]): string | null {

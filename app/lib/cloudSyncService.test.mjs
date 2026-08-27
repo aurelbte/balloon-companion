@@ -5,6 +5,7 @@ import {
   CloudSyncTransportError,
   MemoryCloudSyncIssueRepository,
   cloudSyncBackoffMs,
+  inspectAutomaticMutationEligibility,
   nextEligibleRetryAt,
 } from "./cloudSyncService.ts";
 import { BrowserCloudSyncPayloadProvider, scanInitialCloudSyncInventory } from "./cloudSyncBrowser.ts";
@@ -30,6 +31,14 @@ test("nextEligibleRetryAt est read-only et ignore conflit, local-only et date in
   const snapshot = structuredClone(mutations);
   assert.equal(nextEligibleRetryAt(mutations), "2026-08-18T15:01:00.000Z");
   assert.deepEqual(mutations, snapshot);
+});
+
+test("le diagnostic d'éligibilité explique sans mutation pourquoi le drain ignore ou accepte", () => {
+  const base = { mutationId: "m", entityType: "favorite-weather-place", entityId: "103178767", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 };
+  assert.deepEqual(inspectAutomaticMutationEligibility(base, NOW), { allowed: true, eligible: true, reason: "ELIGIBLE" });
+  assert.equal(inspectAutomaticMutationEligibility({ ...base, lastErrorCode: "CONFLICT" }, NOW).reason, "CONFLICT_BLOCKED");
+  assert.equal(inspectAutomaticMutationEligibility({ ...base, nextAttemptAt: "2026-08-18T15:01:00.000Z" }, NOW).reason, "BACKOFF_NOT_DUE");
+  assert.equal(inspectAutomaticMutationEligibility({ ...base, entityType: "unknown" }, NOW).reason, "ENTITY_TYPE_NOT_ALLOWED");
 });
 
 class MemoryStorage {
