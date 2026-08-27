@@ -20,6 +20,14 @@
 .accountIdentity em { grid-column: 1; color: var(--bc-accent); font-size: .68rem; font-style: normal; font-weight: 650; }
 .accountIdentity button { grid-column: 2; grid-row: 1 / span 3; align-self: center; min-height: 40px; padding: 0 12px; border: 1px solid var(--bc-border); border-radius: 999px; background: transparent; color: var(--bc-text-primary); font-size: .72rem; font-weight: 650; }
 .accountIdentity button:disabled { opacity: .5; }
+.syncNow { display: grid; justify-items: center; gap: 8px; margin-top: 26px; padding: 8px 0 12px; text-align: center; }
+.syncNow button { display: inline-flex; width: min(100%, 440px); min-height: 56px; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 999px; background: var(--bc-accent); color: var(--bc-accent-foreground); box-shadow: var(--bc-shadow-xs); font-size: .9rem; font-weight: 750; }
+.syncNow button:disabled { opacity: .5; }
+.syncNow p { color: var(--bc-text-muted); font-size: .7rem; }
+.syncNow .syncError { max-width: 430px; color: var(--bc-danger); line-height: 1.4; }
+.syncingIcon { animation: sync-spin 900ms linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .syncingIcon { animation: none; } }
 .back { display: inline-flex; min-height: 44px; align-items: center; color: var(--bc-accent); font-size: .78rem; font-weight: 600; text-decoration: none; }
 .experienceCard { margin-top: 14px; padding: 16px; border: 1px solid var(--bc-border); border-radius: 22px; background: var(--bc-surface); }
 .experienceCard h2 { font-size: .78rem; font-weight: 600; color: var(--bc-text-secondary); }

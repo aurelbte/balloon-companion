@@ -186,6 +186,18 @@ export class BrowserFlightTrackCloudService {
     return uploaded;
   }
 
+  async discoverMissingDownloadJobs(queue: FlightTrackQueueStorage): Promise<number> {
+    let created = 0;
+    for (const flight of await this.storage.listFlights()) {
+      if (flight.status !== "COMPLETED" || flight.points.length > 0) continue;
+      const state = await this.inspect(flight.id);
+      if (!state.remoteAvailable || state.provider !== "R2") continue;
+      await enqueueFlightTrackJob(queue, { scope: this.scope, flightId: flight.id, operation: "DOWNLOAD", generation: state.generation ?? 1, ...(state.objectKey ? { objectKey: state.objectKey } : {}) });
+      created += 1;
+    }
+    return created;
+  }
+
   async cleanupDeletedTracks(): Promise<number> {
     const userId = this.userId();
     const { data, error } = await this.client.from("flights")

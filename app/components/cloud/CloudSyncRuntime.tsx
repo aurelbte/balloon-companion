@@ -42,6 +42,7 @@ import { nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSy
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
 import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPilotProfilePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
+import { createBrowserCloudBackfillService } from "../../lib/cloudBackfillBrowser.ts";
 import { CLOUD_BOOTSTRAP_DOMAIN_ORDER } from "../../lib/cloudBootstrapService.ts";
 import { CloudSyncRuntimeController, type CloudSyncRuntimeControllerSnapshot } from "../../lib/cloudSyncRuntimeController.ts";
 import { BrowserCloudPullCursorRepository } from "../../lib/cloudPullState.ts";
@@ -62,6 +63,8 @@ export const CLOUD_SYNC_RUNTIME_CHANGED_EVENT = "balloon-companion:cloud-sync-ru
 let runtimeMountCount = 0;
 let runtimeUnmountGeneration = 0;
 let suppressRuntimeDiagnosticPersistence = false;
+let manualCloudSyncInProgress = false;
+let manualCloudSyncOperation: Promise<CloudSyncRuntimeControllerSnapshot> | null = null;
 
 declare global {
   interface Window {
@@ -137,6 +140,18 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
   bootstrap: async (userId) => {
     const scope = `USER:${userId}` as const;
     const report = await createBrowserCloudBootstrapService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).bootstrapCloudDataForCurrentUser();
+    if (report.state === "SUCCESS") {
+      const backfill = await createBrowserCloudBackfillService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).run();
+      if (backfill.state !== "COMPLETED") {
+        const partialReport = {
+        ...report,
+        state: backfill.state === "OFFLINE" ? "OFFLINE" as const : backfill.state === "SESSION_INVALID" ? "SESSION_INVALID" as const : "PARTIAL" as const,
+        resumable: true,
+        };
+        lastCloudBootstrapReports.set(scope, partialReport);
+        return partialReport;
+      }
+    }
     lastCloudBootstrapReports.set(scope, report);
     return report;
   },
@@ -180,6 +195,24 @@ export function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeContro
 
 export function retryCloudSyncThroughRuntimeController(): void {
   automaticCloudSyncController.notifyOnline();
+}
+
+export function synchronizeCloudNowThroughRuntimeController(): Promise<CloudSyncRuntimeControllerSnapshot> {
+  if (manualCloudSyncOperation) return manualCloudSyncOperation;
+  manualCloudSyncInProgress = true;
+  const operation = (async () => {
+    await automaticCloudSyncController.synchronizeNow();
+    const snapshot = automaticCloudSyncController.inspect();
+    if (!snapshot.scope || getRuntimeDataScope() !== snapshot.scope) throw new Error("SYNC_USER_SWITCH");
+    const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), snapshot.scope);
+    const queue = new IndexedDbFlightTrackQueueStorage(snapshot.scope);
+    await tracks.discoverMissingDownloadJobs(queue);
+    const trackReport = await drainFlightTrackQueue({ scope: snapshot.scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
+    if (trackReport.failed > 0 || trackReport.stoppedForUserSwitch) throw new Error("SYNC_TRACKS_INCOMPLETE");
+    return automaticCloudSyncController.inspect();
+  })().finally(() => { manualCloudSyncInProgress = false; manualCloudSyncOperation = null; });
+  manualCloudSyncOperation = operation;
+  return operation;
 }
 
 function acquireRuntimeMount(): () => void {
@@ -1415,7 +1448,7 @@ export default function CloudSyncRuntime(): null {
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };
-    const mutation = () => { if (!controlled) automaticCloudSyncController.notifyLocalMutation(); };
+    const mutation = () => { if (!controlled && !manualCloudSyncInProgress) automaticCloudSyncController.notifyLocalMutation(); };
     const visibility = () => { if (!controlled && document.visibilityState === "visible") void automaticCloudSyncController.notifyVisible(); };
     window.addEventListener("online", online);
     window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);

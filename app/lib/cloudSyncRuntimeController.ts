@@ -5,7 +5,7 @@ export type AutomaticBootstrapResult = Readonly<{
   domains?: unknown;
 }>;
 
-export type CloudSyncRuntimeTrigger = "USER_SESSION" | "ONLINE" | "LOCAL_MUTATION" | "RESUME" | "RETRY_TIMER" | "VISIBILITY";
+export type CloudSyncRuntimeTrigger = "USER_SESSION" | "ONLINE" | "LOCAL_MUTATION" | "RESUME" | "RETRY_TIMER" | "VISIBILITY" | "MANUAL";
 export type CloudSyncRuntimeDiagnosticEvent = Readonly<{ at: string; type: string; userId: string | null; result?: string }>;
 export type CloudSyncRuntimeControllerSnapshot = Readonly<{
   scope: `USER:${string}` | null;
@@ -55,6 +55,7 @@ export class CloudSyncRuntimeController {
   private bootstrapRequested = false;
   private pushRequested = false;
   private running: Promise<void> | null = null;
+  private manualSynchronization: Promise<void> | null = null;
   private readyGeneration = -1;
   private bootstrapInProgress = false;
   private pushInProgress = false;
@@ -166,6 +167,27 @@ export class CloudSyncRuntimeController {
 
   async whenIdle(): Promise<void> {
     while (this.running) await this.running;
+  }
+
+  async synchronizeNow(): Promise<void> {
+    if (!this.userId) throw new Error("SYNC_USER_REQUIRED");
+    if (!this.dependencies.isOnline()) throw new Error("SYNC_OFFLINE");
+    if (this.manualSynchronization) { this.deduplicatedRequests += 1; this.publish(); return this.manualSynchronization; }
+    const requestedUserId = this.userId;
+    const operation = (async () => {
+      if (this.running) await this.whenIdle();
+      if (this.userId !== requestedUserId) throw new Error("SYNC_USER_SWITCH");
+      if (!this.dependencies.isOnline()) throw new Error("SYNC_OFFLINE");
+      this.readyGeneration = -1;
+      this.bootstrapRequested = true;
+      this.pushRequested = true;
+      this.lastTrigger = "MANUAL";
+      this.record("TRIGGER_MANUAL", requestedUserId);
+      this.schedule();
+      await this.whenIdle();
+    })().finally(() => { this.manualSynchronization = null; });
+    this.manualSynchronization = operation;
+    return operation;
   }
 
   private schedule(): void {

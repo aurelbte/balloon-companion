@@ -4,6 +4,7 @@ import test, { afterEach } from "node:test";
 import { scopedBusinessStorageKey, setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
 import { BrowserFlightTrackCloudService } from "./flightTrackCloudBrowser.ts";
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+import { MemoryFlightTrackQueueStorage } from "./flightTrackQueue.ts";
 
 const user = (id = "user-a") => setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id, email: `${id}@example.test`, firstName: "", lastName: "" } });
 afterEach(() => setRuntimeAuthSnapshot({ state: "UNKNOWN", user: null }));
@@ -211,4 +212,17 @@ test("restore R2 ciblé refuse le legacy puis importe sans doublon via le chemin
   assert.equal(target.value().points.length, 4);
   cloud.remote.storage_provider = "SUPABASE_STORAGE";
   await assert.rejects(service(cloud, localStorageWith(recorded(0))).restoreFromR2Targeted("flight-a"), /R2_PROVIDER_REQUIRED/);
+});
+
+test("sync manuelle découvre une trace R2 manquante puis la restaure sans job upload", async () => {
+  user();
+  const cloud = fakeCloud();
+  await service(cloud, localStorageWith(recorded(4))).upload("flight-a");
+  const target = localStorageWith(recorded(0));
+  const tracks = service(cloud, target);
+  const queue = new MemoryFlightTrackQueueStorage();
+  assert.equal(await tracks.discoverMissingDownloadJobs(queue), 1);
+  assert.deepEqual((await queue.list()).map(({ operation }) => operation), ["DOWNLOAD"]);
+  await tracks.download("flight-a");
+  assert.equal(target.value().points.length, 4);
 });

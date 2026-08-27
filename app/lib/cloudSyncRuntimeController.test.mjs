@@ -22,6 +22,46 @@ test("un double déclenchement du même USER ne lance qu'un bootstrap et un PUSH
   assert.deepEqual(ctx.pushes, ["A"]);
 });
 
+test("double clic manuel rejoint une seule synchronisation bootstrap puis PUSH", async () => {
+  let release;
+  const order = [];
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => { order.push("bootstrap"); await new Promise((resolve) => { release = resolve; }); return { state: "SUCCESS", resumable: false }; },
+    push: async () => { order.push("push"); },
+  });
+  controller.setUser("A");
+  await Promise.resolve();
+  release();
+  await controller.whenIdle();
+  order.length = 0;
+  const first = controller.synchronizeNow();
+  const second = controller.synchronizeNow();
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, ["bootstrap", "push"]);
+  assert.equal(controller.inspect().lastTrigger, "MANUAL");
+});
+
+test("le bouton attend une sync automatique active puis lance un seul cycle manuel", async () => {
+  let release;
+  const order = [];
+  let bootstrapCount = 0;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => { bootstrapCount += 1; order.push(`bootstrap-${bootstrapCount}`); if (bootstrapCount === 1) await new Promise((resolve) => { release = resolve; }); return { state: "SUCCESS", resumable: false }; },
+    push: async () => { order.push(`push-${bootstrapCount}`); },
+  });
+  controller.setUser("A");
+  await Promise.resolve();
+  const first = controller.synchronizeNow();
+  const second = controller.synchronizeNow();
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, ["bootstrap-1", "push-1", "bootstrap-2", "push-2"]);
+});
+
 test("USER A vers USER B invalide la cible précédente avant tout PUSH", async () => {
   let release;
   const bootstraps = [], pushes = [];
