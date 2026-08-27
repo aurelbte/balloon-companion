@@ -9,6 +9,7 @@ export const FAVORITE_LAUNCH_SITES_EVENT = "balloon-companion:favorite-launch-si
 export type FavoriteLaunchSite = GeocodingResult & {
   /** Identité interne future ; absente des données historiques et jamais régénérée à la lecture. */
   syncId?: string;
+  sourceId?: string;
   icaoCode?: string;
   altitudeAmslM?: number;
   /** Libellé technique d'origine, indépendant du nom personnalisé. */
@@ -48,7 +49,7 @@ export function sameLaunchSite(
   left: Pick<GeocodingResult, "id" | "latitude" | "longitude"> | null,
   right: Pick<GeocodingResult, "id" | "latitude" | "longitude"> | null,
 ): boolean {
-  return Boolean(left && right && (left.id === right.id || coordinateKey(left) === coordinateKey(right)));
+  return Boolean(left && right && (left.id === right.id || ("sourceId" in left && left.sourceId === right.id) || coordinateKey(left) === coordinateKey(right)));
 }
 
 export function addFavoriteLaunchSite(
@@ -59,10 +60,12 @@ export function addFavoriteLaunchSite(
 ): FavoriteLaunchSite[] {
   if (favorites.some((favorite) => sameLaunchSite(favorite, site))) return [...favorites];
   const syncId = createInternalFavoriteId();
+  if (!syncId) throw new Error("Secure favorite identity generation is unavailable");
   return [...favorites, {
     ...site,
-    id: site.id.trim() || `launch-${coordinateKey(site)}`,
-    ...(syncId ? { syncId } : {}),
+    id: syncId,
+    syncId,
+    ...(site.id.trim() ? { sourceId: site.id.trim() } : {}),
     name: displayName.trim() || "Nouveau terrain",
     sourceName: site.name,
     createdAt: addedAt,
@@ -209,13 +212,13 @@ export function loadFavoriteLaunchSites(): FavoriteLaunchSite[] {
           ? site.sourceName
           : site.name,
       };
-      const next = addFavoriteLaunchSite(unique, migrated, createdAt, site.name);
-      const current = next.at(-1);
-      if (current) {
-        current.updatedAt = typeof site.updatedAt === "string" ? site.updatedAt : createdAt;
-        if (typeof site.syncId === "string") current.syncId = site.syncId;
-      }
-      return next;
+      if (unique.some((current) => sameLaunchSite(current, migrated))) return unique;
+      return [...unique, {
+        ...migrated,
+        id: site.id,
+        createdAt,
+        updatedAt: typeof site.updatedAt === "string" ? site.updatedAt : createdAt,
+      }];
     }, []);
   } catch {
     return [];

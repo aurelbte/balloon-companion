@@ -8,6 +8,7 @@ const VERSION = 1 as const;
 
 export type FavoriteWeatherPlace = Readonly<{
   id: string;
+  sourceId?: string;
   /** Identité interne future ; optionnelle pour préserver les favoris historiques. */
   syncId?: string;
   name: string;
@@ -26,14 +27,15 @@ function valid(place: Partial<FavoriteWeatherPlace>): place is FavoriteWeatherPl
 }
 
 function samePlace(left: Pick<FavoriteWeatherPlace, "id" | "latitude" | "longitude">, right: Pick<GeocodingResult, "id" | "latitude" | "longitude">): boolean {
-  return left.id === right.id || (Math.abs(left.latitude - right.latitude) < 0.000001 && Math.abs(left.longitude - right.longitude) < 0.000001);
+  return left.id === right.id || ("sourceId" in left && left.sourceId === right.id) || (Math.abs(left.latitude - right.latitude) < 0.000001 && Math.abs(left.longitude - right.longitude) < 0.000001);
 }
 
 export function addOrReuseFavoriteWeatherPlace(favorites: readonly FavoriteWeatherPlace[], place: GeocodingResult, addedAt = new Date().toISOString(), displayName?: string): { favorites: FavoriteWeatherPlace[]; selected: FavoriteWeatherPlace } {
   const existing = favorites.find((favorite) => samePlace(favorite, place));
   if (existing) return { favorites: [...favorites], selected: existing };
-  const syncId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : undefined;
-  const favorite: FavoriteWeatherPlace = { id: place.id.trim() || `weather-${place.latitude.toFixed(6)}:${place.longitude.toFixed(6)}`, ...(syncId ? { syncId } : {}), name: displayName?.trim() || place.name.split(",")[0]?.trim() || place.name.trim(), latitude: place.latitude, longitude: place.longitude, createdAt: addedAt, updatedAt: addedAt };
+  if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") throw new Error("Secure favorite identity generation is unavailable");
+  const entityId = crypto.randomUUID();
+  const favorite: FavoriteWeatherPlace = { id: entityId, syncId: entityId, ...(place.id.trim() ? { sourceId: place.id.trim() } : {}), name: displayName?.trim() || place.name.split(",")[0]?.trim() || place.name.trim(), latitude: place.latitude, longitude: place.longitude, createdAt: addedAt, updatedAt: addedAt };
   return { favorites: [...favorites, favorite], selected: favorite };
 }
 

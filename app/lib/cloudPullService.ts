@@ -33,7 +33,7 @@ export class CloudPullTechnicalError extends Error {
   }
 }
 
-type PullDomainAdapter<Row extends CloudPullRow> = Readonly<{ readPage(cursor: CloudPullCursor | null, limit: number): Promise<readonly Row[]>; applyLocally(row: Row): Promise<boolean> | boolean; hasBlockingLocalDependency?(row: Row): Promise<boolean> | boolean; localAnomaly?(row: Row): Promise<FavoriteWeatherPlacePullAnomaly["reason"] | null> | FavoriteWeatherPlacePullAnomaly["reason"] | null }>;
+type PullDomainAdapter<Row extends CloudPullRow> = Readonly<{ readPage(cursor: CloudPullCursor | null, limit: number): Promise<readonly Row[]>; applyLocally(row: Row): Promise<boolean> | boolean; repairIdentityCollision?(row: Row, pending: readonly SyncMutation[]): Promise<boolean> | boolean; hasBlockingLocalDependency?(row: Row): Promise<boolean> | boolean; localAnomaly?(row: Row): Promise<FavoriteWeatherPlacePullAnomaly["reason"] | null> | FavoriteWeatherPlacePullAnomaly["reason"] | null }>;
 export type FavoriteWeatherPlacePullDependencies = Readonly<{
   scope: LocalDataScope | null;
   getScope(): LocalDataScope | null;
@@ -42,6 +42,8 @@ export type FavoriteWeatherPlacePullDependencies = Readonly<{
   cursors: CloudPullCursorRepository;
   readPage(cursor: CloudPullCursor | null, limit: number): Promise<readonly FavoriteWeatherPlaceCloudRow[]>;
   applyLocally(row: FavoriteWeatherPlaceCloudRow): Promise<boolean> | boolean;
+  repairIdentityCollision?(row: FavoriteWeatherPlaceCloudRow, pending: readonly SyncMutation[]): Promise<boolean> | boolean;
+  prepareIdentityRepairs?(): Promise<void>;
   favoriteLaunchSiteDomain?: PullDomainAdapter<FavoriteLaunchSiteCloudRow>;
   profileDomain?: PullDomainAdapter<PilotProfileCloudRow>;
   preferenceDomains?: Partial<Record<PreferencePullDomain, PullDomainAdapter<PreferenceCloudRow>>>;
@@ -69,10 +71,12 @@ export class CloudPullService {
   private readonly dependencies: FavoriteWeatherPlacePullDependencies;
   constructor(dependencies: FavoriteWeatherPlacePullDependencies) { this.dependencies = dependencies; }
 
-  pullFavoriteWeatherPlaces(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> {
-    return this.pullDomain(FAVORITE_WEATHER_PLACE_PULL_DOMAIN, {
+  async pullFavoriteWeatherPlaces(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> {
+    await this.dependencies.prepareIdentityRepairs?.();
+    return this.pullDomain<FavoriteWeatherPlaceCloudRow & { entityId: string }>(FAVORITE_WEATHER_PLACE_PULL_DOMAIN, {
       readPage: async (cursor, limit) => (await this.dependencies.readPage(cursor, limit)).map((row) => ({ ...row, entityId: row.id })),
       applyLocally: (row) => this.dependencies.applyLocally(row),
+      repairIdentityCollision: this.dependencies.repairIdentityCollision,
     }, pageSize);
   }
   pullFavoriteLaunchSites(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> { return this.dependencies.favoriteLaunchSiteDomain ? this.pullDomain(FAVORITE_LAUNCH_SITE_PULL_DOMAIN, this.dependencies.favoriteLaunchSiteDomain, pageSize) : Promise.resolve(emptyReport("STOPPED_ERROR")); }
@@ -113,7 +117,10 @@ export class CloudPullService {
         for (const row of rows) {
           fetched += 1;
           if (!await this.onlineUserIs(expectedUserId) || row.userId !== expectedUserId) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
-          const pending = (await this.dependencies.outbox.list()).filter(({ entityType, entityId }) => entityType === domain && entityId === row.entityId);
+          let pending = (await this.dependencies.outbox.list()).filter(({ entityType, entityId }) => entityType === domain && entityId === row.entityId);
+          if (pending.length > 0 && await adapter.repairIdentityCollision?.(row, pending)) {
+            pending = (await this.dependencies.outbox.list()).filter(({ entityType, entityId }) => entityType === domain && entityId === row.entityId);
+          }
           const sidecar = await this.dependencies.outbox.getMetadata(domain, row.entityId);
           const anomaly = this.anomaly(row, sidecar, pending);
           if (anomaly) { anomalies.push(anomaly); return { state: "BLOCKED_ANOMALY", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor }; }

@@ -259,6 +259,38 @@ test("un tombstone absent localement applique seulement le sidecar", async () =>
   assert.equal((await context.outbox.list()).length, 0);
 });
 
+test("une collision d'identité tombstonée réparée avant conflit conserve le nouvel UPSERT", async () => {
+  const context = dependencies([row({ id: "103178767", syncId: "22222222-2222-4222-8222-222222222222", name: "BC CLOUD TEST", deletedAt: timestamp, revision: 1 })]);
+  const old = await context.outbox.enqueue({ entityType: "favorite-weather-place", entityId: "103178767", operation: "UPSERT", baseRevision: 1 });
+  context.deps.repairIdentityCollision = async (_cloud, pending) => {
+    assert.deepEqual(pending.map(({ mutationId }) => mutationId), [old.mutationId]);
+    await context.outbox.enqueueFresh({ entityType: "favorite-weather-place", entityId: "33333333-3333-4333-8333-333333333333", operation: "UPSERT", baseRevision: 0 });
+    await context.outbox.remove(old.mutationId);
+    return true;
+  };
+  const result = await new CloudPullService(context.deps).pullFavoriteWeatherPlaces();
+  assert.equal(result.conflicts.length, 0);
+  assert.equal(result.tombstonesApplied, 1);
+  assert.deepEqual((await context.outbox.list()).map(({ entityId }) => entityId), ["33333333-3333-4333-8333-333333333333"]);
+});
+
+test("la préparation répare un conflit historique même si le curseur a dépassé le tombstone", async () => {
+  const context = dependencies([]);
+  const old = await context.outbox.enqueue({ entityType: "favorite-weather-place", entityId: "103178767", operation: "UPSERT", baseRevision: 1 });
+  await context.outbox.updateMutation(old.mutationId, { lastErrorCode: "CONFLICT" });
+  let prepared = 0;
+  context.deps.prepareIdentityRepairs = async () => {
+    prepared += 1;
+    await context.outbox.enqueueFresh({ entityType: "favorite-weather-place", entityId: "33333333-3333-4333-8333-333333333333", operation: "UPSERT", baseRevision: 0 });
+    await context.outbox.remove(old.mutationId);
+  };
+  const result = await new CloudPullService(context.deps).pullFavoriteWeatherPlaces();
+  assert.equal(result.state, "COMPLETED");
+  assert.equal(result.fetched, 0);
+  assert.equal(prepared, 1);
+  assert.deepEqual((await context.outbox.list()).map(({ entityId }) => entityId), ["33333333-3333-4333-8333-333333333333"]);
+});
+
 test("la pagination lexicographique conserve plusieurs IDs au même timestamp", async () => {
   const rows = [row({ id: "a" }), row({ id: "b" }), row({ id: "c" }), row({ id: "d", updatedAt: "2026-08-23T12:01:00.000Z" })];
   const context = dependencies(rows);

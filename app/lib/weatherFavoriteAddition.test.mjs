@@ -15,9 +15,12 @@ test("le registre Météo évite les doublons sans écrire dans Prépa", () => {
   const first = addOrReuseFavoriteWeatherPlace([], bailleul, "2026-08-18T08:00:00.000Z");
   assert.equal(first.favorites.length, 1);
   assert.equal(first.selected.name, "Bailleul");
+  assert.match(first.selected.id, /^[0-9a-f-]{36}$/i);
+  assert.equal(first.selected.syncId, first.selected.id);
   const second = addOrReuseFavoriteWeatherPlace(first.favorites, { ...bailleul, id: "autre-id" }, "2026-08-18T09:00:00.000Z");
   assert.equal(second.favorites.length, 1);
-  assert.equal(second.selected.id, bailleul.id);
+  assert.equal(second.selected.id, first.selected.id);
+  assert.equal(first.selected.sourceId, bailleul.id);
 });
 
 test("la création accepte un nom personnalisé puis le renommage conserve l’ID sans duplication", () => {
@@ -56,7 +59,7 @@ test("le DELETE USER 103178767 est durable avant de finaliser la suppression", a
   globalThis.window = { localStorage, dispatchEvent() {} };
   setRuntimeGuestModeActive(false);
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("cloud-delete") });
-  const favorite = addOrReuseFavoriteWeatherPlace([], { ...bailleul, id: "103178767" }, "2026-08-21T08:00:00.000Z", "BC CLOUD TEST").selected;
+  const favorite = { id: "103178767", syncId: "11111111-1111-4111-8111-111111111111", name: "BC CLOUD TEST", latitude: bailleul.latitude, longitude: bailleul.longitude, createdAt: "2026-08-21T08:00:00.000Z", updatedAt: "2026-08-21T08:00:00.000Z" };
   saveFavoriteWeatherPlaces([favorite]);
   const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => "delete-mutation", now: () => "2026-08-21T09:00:00.000Z" } });
   const saved = await saveFavoriteWeatherPlacesWithDurableOutbox([], async (entityType, entityId, operation) => { await outbox.enqueue({ entityType, entityId, operation }); return true; });
@@ -69,7 +72,7 @@ test("le DELETE USER 103178767 est durable avant de finaliser la suppression", a
 test("un échec d’enqueue USER restaure le favori et GUEST reste local", async () => {
   const localStorage = storage();
   globalThis.window = { localStorage, dispatchEvent() {} };
-  const favorite = addOrReuseFavoriteWeatherPlace([], { ...bailleul, id: "103178767" }, "2026-08-21T08:00:00.000Z", "BC CLOUD TEST").selected;
+  const favorite = { id: "103178767", syncId: "11111111-1111-4111-8111-111111111111", name: "BC CLOUD TEST", latitude: bailleul.latitude, longitude: bailleul.longitude, createdAt: "2026-08-21T08:00:00.000Z", updatedAt: "2026-08-21T08:00:00.000Z" };
   setRuntimeGuestModeActive(false);
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("cloud-failure") });
   saveFavoriteWeatherPlaces([favorite]);
@@ -94,7 +97,7 @@ test("favoris Météo, favoris Prépa et scopes USER/GUEST restent indépendants
   saveFavoriteWeatherPlaces(weatherA.favorites);
   assert.deepEqual(loadFavoriteLaunchSites(), []);
   saveFavoriteLaunchSites([launchSite]);
-  assert.deepEqual(loadFavoriteWeatherPlaces().map(({ id }) => id), [bailleul.id]);
+  assert.deepEqual(loadFavoriteWeatherPlaces().map(({ sourceId }) => sourceId), [bailleul.id]);
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("B") });
   assert.deepEqual(loadFavoriteWeatherPlaces(), []);
   assert.deepEqual(loadFavoriteLaunchSites(), []);
@@ -104,7 +107,7 @@ test("favoris Météo, favoris Prépa et scopes USER/GUEST restent indépendants
   saveFavoriteWeatherPlaces(addOrReuseFavoriteWeatherPlace([], { ...bailleul, id: "guest-place" }).favorites);
   setRuntimeGuestModeActive(false);
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: user("A") });
-  assert.deepEqual(loadFavoriteWeatherPlaces().map(({ id }) => id), [bailleul.id]);
+  assert.deepEqual(loadFavoriteWeatherPlaces().map(({ sourceId }) => sourceId), [bailleul.id]);
   assert.deepEqual(loadFavoriteLaunchSites().map(({ id }) => id), [launchSite.id]);
   delete globalThis.window;
 });
