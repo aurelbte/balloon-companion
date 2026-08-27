@@ -383,21 +383,7 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
     },
     outbox,
     cursors: new BrowserCloudPullCursorRepository(input.storage),
-    prepareIdentityRepairs: async () => {
-      const conflicts = (await outbox.list()).filter(({ entityType, operation, lastErrorCode }) => entityType === "favorite-weather-place" && operation === "UPSERT" && lastErrorCode === "CONFLICT");
-      if (conflicts.length === 0) return;
-      if (getRuntimeDataScope() !== input.scope) throw new Error("USER_SWITCH");
-      const { data, error } = await input.client.from("favorite_weather_places")
-        .select("id,user_id,sync_id,name,latitude,longitude,revision,created_at,updated_at,deleted_at")
-        .in("id", [...new Set(conflicts.map(({ entityId }) => entityId))])
-        .not("deleted_at", "is", null);
-      if (error) throw new CloudPullTechnicalError("READ_PAGE", error.code ?? "UNKNOWN", "Favorite identity collision read failed");
-      for (const raw of data ?? []) {
-        if (getRuntimeDataScope() !== input.scope) throw new Error("USER_SWITCH");
-        const row = parseFavoriteWeatherPlaceCloudRow(raw);
-        await repairCollision(row, conflicts.filter(({ entityId }) => entityId === row.id));
-      }
-    },
+    prepareIdentityRepairs: async () => { await repairBrowserFavoriteWeatherIdentityCollisions(input, outbox, issues); },
     readPage: async (cursor: CloudPullCursor | null, limit: number) => {
       const localFavoriteCount = localFavoriteWeatherPlaceCount(input.storage, input.scope);
       const effectiveCursor = favoriteWeatherPullCursorForLocalState(cursor, localFavoriteCount);
@@ -438,6 +424,29 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
       });
     },
   });
+}
+
+export async function repairBrowserFavoriteWeatherIdentityCollisions(
+  input: Readonly<{ client: SupabaseClient; storage: Storage; scope: `USER:${string}` }>,
+  outbox = new IndexedDbSyncOutboxStorage(input.scope),
+  issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope),
+): Promise<number> {
+  const pending = (await outbox.list()).filter(({ entityType, operation }) => entityType === "favorite-weather-place" && operation === "UPSERT");
+  if (pending.length === 0) return 0;
+  if (getRuntimeDataScope() !== input.scope) throw new Error("USER_SWITCH");
+  const { data, error } = await input.client.from("favorite_weather_places")
+    .select("id,user_id,sync_id,name,latitude,longitude,revision,created_at,updated_at,deleted_at")
+    .in("id", [...new Set(pending.map(({ entityId }) => entityId))])
+    .not("deleted_at", "is", null);
+  if (error) throw new CloudPullTechnicalError("READ_PAGE", error.code ?? "UNKNOWN", "Favorite identity collision read failed");
+  let repaired = 0;
+  for (const raw of data ?? []) {
+    if (getRuntimeDataScope() !== input.scope) throw new Error("USER_SWITCH");
+    const row = parseFavoriteWeatherPlaceCloudRow(raw);
+    const result = await repairFavoriteWeatherTombstoneIdentityCollision({ scope: input.scope, storage: input.storage, outbox, row, pending: pending.filter(({ entityId }) => entityId === row.id) });
+    if (result.repaired) { repaired += 1; await issues.remove("favorite-weather-place", row.id); }
+  }
+  return repaired;
 }
 
 export function createBrowserFavoriteLaunchSitePullService(input: Readonly<{

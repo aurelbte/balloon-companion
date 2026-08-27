@@ -126,6 +126,7 @@ test("runtime et page Plus réutilisent le contrôleur pour backfill, PUSH, PULL
   const runtime = await fs.readFile(new URL("../components/cloud/CloudSyncRuntime.tsx", import.meta.url), "utf8");
   const more = await fs.readFile(new URL("../more/page.tsx", import.meta.url), "utf8");
   assert.match(runtime, /createBrowserCloudBackfillService[\s\S]*report\.state === "SUCCESS"/);
+  assert.match(runtime, /backfill\.state !== "COMPLETED"[\s\S]*repairBrowserFavoriteWeatherIdentityCollisions/);
   assert.match(runtime, /synchronizeCloudNowThroughRuntimeController/);
   assert.match(runtime, /discoverPendingJobs[\s\S]*drainFlightTrackQueue/);
   assert.match(runtime, /discoverMissingDownloadJobs[\s\S]*drainFlightTrackQueue/);

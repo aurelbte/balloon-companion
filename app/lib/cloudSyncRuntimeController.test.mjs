@@ -22,6 +22,31 @@ test("un double déclenchement du même USER ne lance qu'un bootstrap et un PUSH
   assert.deepEqual(ctx.pushes, ["A"]);
 });
 
+test("backfill puis réparation historique créent un nouvel UPSERT drainé dans le même cycle sans renommage", async () => {
+  const order = [];
+  let outbox = [];
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => {
+      order.push("pull");
+      outbox.push({ entityId: "103178767", lastErrorCode: null });
+      order.push("backfill-old-id");
+      outbox = [{ entityId: "33333333-3333-4333-8333-333333333333", lastErrorCode: null }];
+      order.push("repair-new-id");
+      return { state: "SUCCESS", resumable: false };
+    },
+    push: async () => {
+      order.push(`push-${outbox[0]?.entityId}`);
+      outbox = [];
+    },
+  });
+  controller.setUser("A");
+  await controller.whenIdle();
+  assert.deepEqual(order, ["pull", "backfill-old-id", "repair-new-id", "push-33333333-3333-4333-8333-333333333333"]);
+  assert.deepEqual(outbox, []);
+  assert.equal(controller.inspect().lastPushExecuted, true);
+});
+
 test("une reprise visible lance un cycle unique et reste neutre offline", async () => {
   const ctx = fixture();
   ctx.controller.setUser("A");

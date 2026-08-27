@@ -41,7 +41,7 @@ import {
 import { enqueueLocalSyncMutation, IndexedDbSyncOutboxStorage, SYNC_MUTATION_ENQUEUED_EVENT, type SyncMutation } from "../../lib/syncOutbox.ts";
 import { inspectAutomaticMutationEligibility, nextEligibleRetryAt, type CloudSyncPassResult } from "../../lib/cloudSyncService.ts";
 import { classifyFinalAuditMutations, isLegacyLocalOnlyMutation } from "../../lib/cloudSyncFinalAudit.ts";
-import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPilotProfilePullService, createBrowserPreferencePullService } from "../../lib/cloudPullBrowser.ts";
+import { createBrowserBalloonPullService, createBrowserDocumentPullService, createBrowserFavoriteLaunchSitePullService, createBrowserFavoriteWeatherPlacePullService, createBrowserFlightPullService, createBrowserLogbookEntryPullService, createBrowserPilotProfilePullService, createBrowserPreferencePullService, repairBrowserFavoriteWeatherIdentityCollisions } from "../../lib/cloudPullBrowser.ts";
 import { createBrowserCloudBootstrapService } from "../../lib/cloudBootstrapBrowser.ts";
 import { createBrowserCloudBackfillService } from "../../lib/cloudBackfillBrowser.ts";
 import { CLOUD_BOOTSTRAP_DOMAIN_ORDER } from "../../lib/cloudBootstrapService.ts";
@@ -157,6 +157,7 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
         lastCloudBootstrapReports.set(scope, partialReport);
         return partialReport;
       }
+      await repairBrowserFavoriteWeatherIdentityCollisions({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope });
     }
     lastCloudBootstrapReports.set(scope, report);
     return report;
