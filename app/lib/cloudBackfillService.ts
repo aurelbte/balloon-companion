@@ -1,7 +1,7 @@
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import type { SyncMutation, SyncOutboxStorage } from "./syncOutbox.ts";
 
-export type CloudBackfillCandidate = Readonly<{ entityType: string; entityId: string }>;
+export type CloudBackfillCandidate = Readonly<{ entityType: string; entityId: string; verifyCloudPresence?: boolean }>;
 export type CloudBackfillState = "COMPLETED" | "OFFLINE" | "SESSION_INVALID" | "STOPPED_ERROR";
 export type CloudBackfillReport = Readonly<{
   state: CloudBackfillState;
@@ -45,7 +45,7 @@ export class CloudBackfillService {
       const unknown: CloudBackfillCandidate[] = [];
       for (const candidate of candidates) {
         if (pending.has(cloudBackfillKey(candidate))) { pendingPreserved += 1; continue; }
-        if (await this.dependencies.outbox.getMetadata(candidate.entityType, candidate.entityId)) { knownPreserved += 1; continue; }
+        if (await this.dependencies.outbox.getMetadata(candidate.entityType, candidate.entityId) && !candidate.verifyCloudPresence) { knownPreserved += 1; continue; }
         unknown.push(candidate);
       }
       const existingCloud = await this.dependencies.findExistingCloud(unknown);

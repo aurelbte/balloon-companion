@@ -58,7 +58,7 @@ export async function listBrowserCloudBackfillCandidates(storage: Storage, scope
       && (completion as { openingBalance?: { confirmed?: unknown } }).openingBalance?.confirmed === true;
     if (storage.getItem(scopedBusinessStorageKey(scope, key)) !== null || openingBalancePresent) candidates.push({ entityType, entityId: "singleton" });
   }
-  for (const id of ids(readJson(storage, scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY), "favorites")) candidates.push({ entityType: "favorite-weather-place", entityId: id });
+  for (const id of ids(readJson(storage, scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY), "favorites")) candidates.push({ entityType: "favorite-weather-place", entityId: id, verifyCloudPresence: true });
   for (const id of ids(readJson(storage, scope, FAVORITE_LAUNCH_SITES_STORAGE_KEY), "favorites")) candidates.push({ entityType: "favorite-launch-site", entityId: id });
   for (const id of ids(readJson(storage, scope, BALLOON_REGISTRY_STORAGE_KEY), "balloons")) candidates.push({ entityType: "balloon", entityId: id });
   const balloonRegistry = readJson(storage, scope, BALLOON_REGISTRY_STORAGE_KEY);

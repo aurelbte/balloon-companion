@@ -205,6 +205,30 @@ test("appareil vierge importe un favori actif, pose le sidecar et ne crée aucun
   });
 });
 
+test("appareil A avec plusieurs favoris vers appareil B vierge conserve liste, noms et coordonnées", async () => {
+  const cloudRows = [
+    row({ id: "bailleul", name: "Bailleul", latitude: 50.7359, longitude: 2.7359 }),
+    row({ id: "bondues", name: "Bondues", latitude: 50.7047, longitude: 3.0943 }),
+  ];
+  const context = dependencies(cloudRows);
+  const values = new Map();
+  const events = [];
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  globalThis.window = { localStorage: storage, dispatchEvent: (event) => { events.push(event.type); return true; } };
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-1", email: "test@example.test", firstName: "", lastName: "" } });
+  context.deps.applyLocally = (cloud) => applyFavoriteWeatherPlaceFromCloudWithoutEnqueue(scope, cloud, storage);
+  const result = await new CloudPullService(context.deps).pullFavoriteWeatherPlaces();
+  assert.equal(result.applied, 2);
+  const stored = JSON.parse(values.get(scopedBusinessStorageKey(scope, FAVORITE_WEATHER_PLACES_STORAGE_KEY)));
+  assert.deepEqual(stored.favorites.map(({ id, name, latitude, longitude }) => ({ id, name, latitude, longitude })), [
+    { id: "bailleul", name: "Bailleul", latitude: 50.7359, longitude: 2.7359 },
+    { id: "bondues", name: "Bondues", latitude: 50.7047, longitude: 3.0943 },
+  ]);
+  assert.equal((await context.outbox.list()).length, 0);
+  assert.equal(events.filter((type) => type === "balloon-companion:favorite-weather-places-changed").length, 2);
+  delete globalThis.window;
+});
+
 test("l’import local silencieux crée, remplace et supprime sans événement d’enqueue", () => {
   const values = new Map();
   const events = [];

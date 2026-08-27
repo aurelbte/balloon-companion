@@ -38,6 +38,27 @@ test("une ligne Cloud existante, même plus récente, est préservée sans mutat
   assert.deepEqual(await ctx.outbox.list(), []);
 });
 
+test("un sidecar historique de favori météo ne masque pas une ligne Cloud réellement absente", async () => {
+  const candidate = { entityType: "favorite-weather-place", entityId: "bondues", verifyCloudPresence: true };
+  const ctx = fixture({ candidates: [candidate] });
+  await ctx.outbox.setMetadata({ entityType: candidate.entityType, entityId: candidate.entityId, revision: 2, updatedAt: "2026-08-20T10:00:00.000Z" });
+  const report = await ctx.service.run();
+  assert.equal(report.enqueued, 1);
+  const [mutation] = await ctx.outbox.list();
+  assert.equal(mutation.entityType, "favorite-weather-place");
+  assert.equal(mutation.entityId, "bondues");
+  assert.equal(mutation.baseRevision, 0);
+});
+
+test("un favori météo vérifié présent dans Cloud n'est jamais dupliqué", async () => {
+  const candidate = { entityType: "favorite-weather-place", entityId: "bondues", verifyCloudPresence: true };
+  const ctx = fixture({ candidates: [candidate], existing: [candidate] });
+  await ctx.outbox.setMetadata({ entityType: candidate.entityType, entityId: candidate.entityId, revision: 1, updatedAt: "2026-08-20T10:00:00.000Z" });
+  const report = await ctx.service.run();
+  assert.equal(report.cloudExistingPreserved, 1);
+  assert.equal((await ctx.outbox.list()).length, 0);
+});
+
 test("offline ne crée rien et un passage online peut reprendre", async () => {
   const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => "mutation-resume" } });
   assert.equal((await fixture({ online: false, outbox }).service.run()).state, "OFFLINE");
