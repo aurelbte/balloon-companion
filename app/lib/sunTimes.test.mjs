@@ -13,3 +13,8 @@ test("le fuseau du lieu pilote le formatage et les cas indisponibles restent neu
   assert.notDeepEqual(paris, utc);
   assert.equal(calculateSunTimes(undefined, 43.6293, 1.3638, "Europe/Paris"), null);
 });
+
+test("le formatage Europe/Paris applique automatiquement heure d’hiver et heure d’été", () => {
+  assert.deepEqual(calculateSunTimes("2026-01-15", 50.686341, 3.079865, "Europe/Paris"), { sunrise: "08:43", sunset: "17:11" });
+  assert.deepEqual(calculateSunTimes("2026-07-15", 50.686341, 3.079865, "Europe/Paris"), { sunrise: "05:51", sunset: "21:55" });
+});

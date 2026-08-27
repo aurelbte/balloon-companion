@@ -218,6 +218,16 @@ test("Prépa affiche deux steppers facultatifs en m\/s sans clavier", () => {
   assert.match(source, /mt-2 flex min-h-14 w-full/);
 });
 
+test("Prépa calcule lever et coucher avec la date et les coordonnées exactes du terrain", () => {
+  const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /calculateSunTimes\(/);
+  assert.match(source, /form\.launchSite\.latitude/);
+  assert.match(source, /form\.launchSite\.longitude/);
+  assert.match(source, /resolvedOptions\(\)\.timeZone/);
+  assert.match(source, /Lever \{sunTimes\.sunrise\}/);
+  assert.match(source, /Coucher \{sunTimes\.sunset\}/);
+});
+
 test("l'Analyse transmet les deux taux convertis au moteur existant", () => {
   const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
   assert.match(source, /config\.request\.climbRateMps/);

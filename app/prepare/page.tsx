@@ -7,6 +7,8 @@ import {
   CalendarDays,
   ChevronRight,
   Clock3,
+  Moon,
+  Sunrise,
   Timer,
   X,
 } from "lucide-react";
@@ -44,6 +46,7 @@ import {
   stepVerticalRateMps,
   validDurationMinutes,
 } from "../lib/preparationInputs";
+import { calculateSunTimes } from "../lib/weather/sunTimes";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
 function localDateParts(value: string | null): { date: string; time: string } {
@@ -253,6 +256,16 @@ export default function PreparePage() {
       ),
     [form.durationMinutes],
   );
+
+  const sunTimes = useMemo(() => {
+    if (!form.launchSite || !form.date) return null;
+    return calculateSunTimes(
+      form.date,
+      form.launchSite.latitude,
+      form.launchSite.longitude,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
+  }, [form.date, form.launchSite]);
 
   const updateTimeDigits = (value: string) => {
     const normalized = normalizeTimeInput(value);
@@ -627,6 +640,23 @@ export default function PreparePage() {
               </span>
             </button>
           </div>
+          {sunTimes && (
+            <p
+              className="mt-2 flex items-center justify-center gap-2 text-xs font-semibold tabular-nums"
+              style={{ color: "var(--bc-color-text-secondary)" }}
+              aria-label={`Lever du soleil ${sunTimes.sunrise}, coucher du soleil ${sunTimes.sunset}`}
+            >
+              <span className="inline-flex items-center gap-1">
+                <Sunrise size={15} style={{ color: "var(--bc-accent)" }} aria-hidden="true" />
+                Lever {sunTimes.sunrise}
+              </span>
+              <span aria-hidden="true" style={{ color: "var(--bc-color-text-muted)" }}>·</span>
+              <span className="inline-flex items-center gap-1">
+                <Moon size={14} style={{ color: "var(--bc-accent)" }} aria-hidden="true" />
+                Coucher {sunTimes.sunset}
+              </span>
+            </p>
+          )}
           {timeError && (
             <p
               id="time-error"
