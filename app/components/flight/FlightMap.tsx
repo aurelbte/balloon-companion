@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -57,6 +57,13 @@ import {
   powerLineBoundsKey,
   type PowerLineBounds,
 } from "../../lib/powerLines";
+import {
+  interpolateLiveCoordinate,
+  relativeLiveAltitudeMeters,
+  sharedPilotInitials,
+  sharedPilotVisibility,
+  type SharedPilotMapEntry,
+} from "../../lib/liveFlightMap.ts";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
@@ -86,6 +93,17 @@ interface ProjectionTimeMarker {
   minutes: number;
   marker: maplibregl.Marker;
 }
+
+interface SharedPilotMarker {
+  marker: maplibregl.Marker;
+  element: HTMLButtonElement;
+  rendered: { latitude: number; longitude: number; heading: number | null };
+  animationFrame: number | null;
+  staleTimer: number | null;
+  expiryTimer: number | null;
+}
+
+const SHARED_PILOT_INTERPOLATION_MS = 2_000;
 
 function getMapViewportSize(map: maplibregl.Map) {
   const canvas = map.getCanvas();
@@ -193,6 +211,7 @@ interface FlightMapProps {
   gpsProjection: readonly ProjectionPoint[];
   weatherProjection: readonly ProjectionPoint[];
   plannedTrajectories: readonly ExportedPlannedTrajectory[];
+  sharedPilots?: readonly SharedPilotMapEntry[];
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
   showPowerLines: boolean;
@@ -261,6 +280,7 @@ export default function FlightMap({
   gpsProjection,
   weatherProjection,
   plannedTrajectories,
+  sharedPilots = [],
   airspaces,
   showAirspaces,
   showPowerLines,
@@ -279,6 +299,9 @@ export default function FlightMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const sharedPilotMarkersRef = useRef(new Map<string, SharedPilotMarker>());
+  const [selectedSharedPilotId, setSelectedSharedPilotId] = useState<string | null>(null);
+  const [selectedPilotNow, setSelectedPilotNow] = useState(() => Date.now());
   const lastMarkerHeadingRef = useRef<number | null>(null);
   const projectionTimeMarkersRef = useRef<ProjectionTimeMarker[]>([]);
   const sourceRef = useRef<boolean>(false);
@@ -484,6 +507,7 @@ export default function FlightMap({
       return;
     }
     const projectionTimeMarkers = projectionTimeMarkersRef.current;
+    const sharedPilotMarkers = sharedPilotMarkersRef.current;
 
     const baseSources: Record<string, SourceSpecification> = {
       "osm-tiles": {
@@ -1102,6 +1126,13 @@ export default function FlightMap({
 
     // Cleanup au démontage
     return () => {
+      for (const sharedMarker of sharedPilotMarkers.values()) {
+        if (sharedMarker.animationFrame !== null) window.cancelAnimationFrame(sharedMarker.animationFrame);
+        if (sharedMarker.staleTimer !== null) window.clearTimeout(sharedMarker.staleTimer);
+        if (sharedMarker.expiryTimer !== null) window.clearTimeout(sharedMarker.expiryTimer);
+        sharedMarker.marker.remove();
+      }
+      sharedPilotMarkers.clear();
       if (map.current) {
         clearProjectionTimeMarkers(projectionTimeMarkers);
         map.current.remove();
@@ -1280,6 +1311,107 @@ export default function FlightMap({
       followMapPosition(map.current, currentPosition, duration);
     }
   }, [currentPosition]);
+
+  useEffect(() => {
+    if (!map.current) return;
+    const activeIds = new Set(sharedPilots.map((pilot) => pilot.pilotId));
+
+    const removeMarker = (pilotId: string) => {
+      const item = sharedPilotMarkersRef.current.get(pilotId);
+      if (!item) return;
+      if (item.animationFrame !== null) window.cancelAnimationFrame(item.animationFrame);
+      if (item.staleTimer !== null) window.clearTimeout(item.staleTimer);
+      if (item.expiryTimer !== null) window.clearTimeout(item.expiryTimer);
+      item.marker.remove();
+      sharedPilotMarkersRef.current.delete(pilotId);
+      setSelectedSharedPilotId((selected) => selected === pilotId ? null : selected);
+    };
+
+    for (const pilotId of sharedPilotMarkersRef.current.keys()) {
+      if (!activeIds.has(pilotId)) removeMarker(pilotId);
+    }
+
+    for (const pilot of sharedPilots) {
+      const visibility = sharedPilotVisibility(pilot.current);
+      if (!visibility.visible) {
+        removeMarker(pilot.pilotId);
+        continue;
+      }
+
+      let item = sharedPilotMarkersRef.current.get(pilot.pilotId);
+      if (!item) {
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = "shared-pilot-marker";
+        element.textContent = sharedPilotInitials(pilot.displayName);
+        element.setAttribute("aria-label", `Position partagée de ${pilot.displayName}`);
+        element.addEventListener("click", (event) => {
+          event.stopPropagation();
+          setSelectedPilotNow(Date.now());
+          setSelectedSharedPilotId(pilot.pilotId);
+        });
+        const rendered = {
+          latitude: pilot.previous?.latitude ?? pilot.current.latitude,
+          longitude: pilot.previous?.longitude ?? pilot.current.longitude,
+          heading: pilot.previous?.heading ?? pilot.current.heading,
+        };
+        item = {
+          element,
+          rendered,
+          marker: new maplibregl.Marker({ element, anchor: "center" })
+            .setLngLat([rendered.longitude, rendered.latitude])
+            .addTo(map.current),
+          animationFrame: null,
+          staleTimer: null,
+          expiryTimer: null,
+        };
+        sharedPilotMarkersRef.current.set(pilot.pilotId, item);
+      }
+
+      item.element.textContent = sharedPilotInitials(pilot.displayName);
+      item.element.dataset.freshness = visibility.freshness;
+      item.element.style.opacity = visibility.dimmed ? "0.52" : "1";
+      if (item.animationFrame !== null) window.cancelAnimationFrame(item.animationFrame);
+      if (item.staleTimer !== null) window.clearTimeout(item.staleTimer);
+      if (item.expiryTimer !== null) window.clearTimeout(item.expiryTimer);
+
+      const from = { ...item.rendered };
+      const startedAt = performance.now();
+      const animate = (frameAt: number) => {
+        const coordinate = interpolateLiveCoordinate(from, pilot.current, (frameAt - startedAt) / SHARED_PILOT_INTERPOLATION_MS);
+        item!.rendered = coordinate;
+        item!.marker.setLngLat([coordinate.longitude, coordinate.latitude]);
+        if (frameAt - startedAt < SHARED_PILOT_INTERPOLATION_MS) item!.animationFrame = window.requestAnimationFrame(animate);
+        else item!.animationFrame = null;
+      };
+      item.animationFrame = window.requestAnimationFrame(animate);
+
+      const age = Math.max(0, Date.now() - pilot.current.gpsTimestamp);
+      item.staleTimer = window.setTimeout(() => {
+        const current = sharedPilotMarkersRef.current.get(pilot.pilotId);
+        if (current) {
+          current.element.dataset.freshness = "STALE";
+          current.element.style.opacity = "0.52";
+          setSelectedPilotNow(Date.now());
+        }
+      }, Math.max(0, 15_000 - age + 1));
+      item.expiryTimer = window.setTimeout(() => removeMarker(pilot.pilotId), Math.max(0, 30_000 - age + 1));
+    }
+  }, [sharedPilots]);
+
+  useEffect(() => {
+    if (!selectedSharedPilotId) return;
+    const timer = window.setInterval(() => setSelectedPilotNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [selectedSharedPilotId]);
+
+  const selectedSharedPilot = sharedPilots.find((pilot) => pilot.pilotId === selectedSharedPilotId) ?? null;
+  const selectedSharedPilotVisibility = selectedSharedPilot
+    ? sharedPilotVisibility(selectedSharedPilot.current, selectedPilotNow)
+    : null;
+  const selectedRelativeAltitude = selectedSharedPilot
+    ? relativeLiveAltitudeMeters(selectedSharedPilot.current, currentPosition?.altitude, Boolean(currentPosition), selectedPilotNow)
+    : null;
 
   useEffect(() => {
     if (!map.current || recenterRequest === lastRecenterRequestRef.current) {
@@ -1549,6 +1681,23 @@ export default function FlightMap({
           text-align: center;
           white-space: nowrap;
         }
+        .shared-pilot-marker {
+          width: 34px;
+          height: 34px;
+          padding: 0;
+          border: 3px solid #ffffff;
+          border-radius: 50%;
+          background: #075985;
+          color: #ffffff;
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, .78), 0 5px 15px rgba(6, 17, 31, .62);
+          font-size: 12px;
+          font-weight: 950;
+          line-height: 1;
+          letter-spacing: .02em;
+          cursor: pointer;
+          transition: opacity .25s ease, filter .25s ease;
+        }
+        .shared-pilot-marker[data-freshness="STALE"] { filter: saturate(.45); }
         @media (max-width: 380px) {
           .flight-map .maplibregl-ctrl-attrib { max-width: 185px; }
           .flight-projection-time-marker {
@@ -1563,6 +1712,21 @@ export default function FlightMap({
         className="flight-map"
         style={{ width: "100%", height: "100%" }}
       />
+      {selectedSharedPilot && selectedSharedPilotVisibility?.visible && (
+        <div role="dialog" aria-label={`Position partagée de ${selectedSharedPilot.displayName}`} style={{ position: "absolute", left: "50%", bottom: "calc(max(8px, env(safe-area-inset-bottom)) + 156px)", zIndex: 12, width: "min(292px, calc(100vw - 28px))", transform: "translateX(-50%)", padding: "12px 14px", border: "1px solid rgba(125,211,252,.48)", borderRadius: 14, background: "rgba(7,17,31,.95)", color: "#f3f7fb", boxShadow: "0 10px 28px rgba(6,17,31,.55)" }}>
+          <button type="button" aria-label="Fermer la fiche pilote" onClick={() => setSelectedSharedPilotId(null)} style={{ position: "absolute", top: 7, right: 8, width: 32, height: 32, border: 0, background: "transparent", color: "#f3f7fb", fontSize: 21 }}>×</button>
+          <strong style={{ display: "block", paddingRight: 28, fontSize: 15 }}>{selectedSharedPilot.displayName}</strong>
+          {selectedSharedPilotVisibility.freshness === "STALE" && <p style={{ margin: "4px 0 8px", color: "#fbbf24", fontSize: 11, fontWeight: 750 }}>Position ancienne · {Math.ceil((selectedPilotNow - selectedSharedPilot.current.gpsTimestamp) / 1_000)} s</p>}
+          <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", margin: "9px 0 0", fontSize: 12 }}>
+            <div><dt style={{ color: "#9fb0c2" }}>Altitude</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.altitude === null ? "—" : `${Math.round(selectedSharedPilot.current.altitude)} m`}</dd></div>
+            {selectedRelativeAltitude !== null && <div><dt style={{ color: "#9fb0c2" }}>Par rapport à moi</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedRelativeAltitude > 0 ? "+" : ""}{selectedRelativeAltitude} m</dd></div>}
+            <div><dt style={{ color: "#9fb0c2" }}>Vitesse sol</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.groundSpeed === null ? "—" : `${Math.round(selectedSharedPilot.current.groundSpeed * 3.6)} km/h`}</dd></div>
+            <div><dt style={{ color: "#9fb0c2" }}>Cap</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.heading === null ? "—" : `${Math.round(selectedSharedPilot.current.heading)}°`}</dd></div>
+            <div><dt style={{ color: "#9fb0c2" }}>Vol</dt><dd style={{ margin: 0, fontWeight: 800 }}>{String(Math.floor(selectedSharedPilot.current.durationSeconds / 3600)).padStart(2, "0")}:{String(Math.floor((selectedSharedPilot.current.durationSeconds % 3600) / 60)).padStart(2, "0")}</dd></div>
+            <div><dt style={{ color: "#9fb0c2" }}>Distance</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</dd></div>
+          </dl>
+        </div>
+      )}
       {baseMap === "satellite" && mapTilerKey && (
         <a
           href="https://www.maptiler.com/"

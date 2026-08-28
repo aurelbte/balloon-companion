@@ -60,9 +60,13 @@ import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
 import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
 import { qnhHpaFromMetar } from "../weather/aviationPresentation";
+import { useBalloonAuth } from "../contexts/AuthContext";
+import LiveFlightSimulatorPanel from "../components/flight/LiveFlightSimulatorPanel";
+import type { SharedPilotMapEntry } from "../lib/liveFlightMap.ts";
 
 export default function FlightPage() {
   const router = useRouter();
+  const auth = useBalloonAuth();
   const completionPath = () => `/flight/complete${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
@@ -100,6 +104,7 @@ export default function FlightPage() {
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
+  const [sharedPilots, setSharedPilots] = useState<SharedPilotMapEntry[]>([]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPlannedTrajectories(loadExportedPlannedTrajectories());
@@ -565,6 +570,7 @@ export default function FlightPage() {
           gpsProjection={flightSession.projections.gps}
           weatherProjection={flightSession.projections.weather}
           plannedTrajectories={flightSession.projections.planned}
+          sharedPilots={sharedPilots}
           airspaces={airspaces}
           showAirspaces={layerSettings.airspaces}
           showPowerLines={layerSettings.powerLines}
@@ -585,6 +591,11 @@ export default function FlightPage() {
           onViewportChange={handleViewportChange}
         />
       </div>
+
+      <LiveFlightSimulatorPanel
+        scopeKey={auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null}
+        onPilotsChange={setSharedPilots}
+      />
 
       {/* Panneau d'instruments */}
       <WindProfilePanel
