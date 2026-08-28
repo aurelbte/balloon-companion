@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { friendOnboardingDefaults, normalizeFriendHandle, proposeFriendHandle, saveFriendProfile, sendFriendRequest, validateFriendHandle } from "./friends.ts";
+import { friendOnboardingDefaults, normalizeFriendHandle, prefillFriendIdentityField, proposeFriendHandle, saveFriendProfile, sendFriendRequest, validateFriendHandle } from "./friends.ts";
 
 const migration = readFileSync(new URL("../../supabase/migrations/20260828120000_friends_foundation.sql", import.meta.url), "utf8");
 const page = readFileSync(new URL("../more/friends/page.tsx", import.meta.url), "utf8");
@@ -25,7 +25,24 @@ test("le nom connu préremplit le nom affiché et propose un identifiant modifia
     handle: "charles.grelin",
   });
   assert.match(page, /value=\{handle\}/);
-  assert.match(page, /onChange=\{\(event\) => setHandle/);
+  assert.match(page, /handleEditedRef\.current = true; setHandle/);
+});
+
+test("une identité arrivée après le premier rendu remplit seulement les champs intacts", () => {
+  let displayName = prefillFriendIdentityField("", "", false);
+  let handle = prefillFriendIdentityField("", "", false);
+  assert.deepEqual({ displayName, handle }, { displayName: "", handle: "" });
+
+  const hydrated = friendOnboardingDefaults({ authFirstName: "", authLastName: "", profileFirstName: "Aurélien", profileLastName: "Boitte" });
+  displayName = prefillFriendIdentityField(displayName, hydrated.displayName, false);
+  handle = prefillFriendIdentityField(handle, hydrated.handle, false);
+  assert.deepEqual({ displayName, handle }, { displayName: "Aurélien Boitte", handle: "aurelien.boitte" });
+
+  assert.equal(prefillFriendIdentityField("Nom saisi", "Charles Grelin", true), "Nom saisi");
+  assert.equal(prefillFriendIdentityField("identifiant.saisi", "charles.grelin", true), "identifiant.saisi");
+  assert.match(page, /usePilotProfile\(\)/);
+  assert.match(page, /displayNameEditedRef\.current/);
+  assert.match(page, /handleEditedRef\.current/);
 });
 
 test("la proposition nettoie accents, casse, espaces et caractères spéciaux", () => {

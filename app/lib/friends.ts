@@ -41,6 +41,10 @@ export function friendOnboardingDefaults(input: {
   };
 }
 
+export function prefillFriendIdentityField(current: string, proposed: string, userEdited: boolean): string {
+  return userEdited || current.trim() ? current : proposed;
+}
+
 export function validateFriendHandle(value: string): string | null {
   const handle = normalizeFriendHandle(value);
   if (!FRIEND_HANDLE_PATTERN.test(handle)) return "Utilisez 3 à 30 caractères : lettres, chiffres, point ou tiret bas.";
