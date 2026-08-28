@@ -1,0 +1,100 @@
+"use client";
+
+import { ChevronLeft } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import NavigationBar from "../../components/NavigationBar";
+import { useBalloonAuth } from "../../contexts/AuthContext";
+import {
+  acceptFriendRequest,
+  declineFriendRequest,
+  loadFriendsSnapshot,
+  normalizeFriendHandle,
+  removeFriend,
+  saveFriendProfile,
+  searchFriendProfiles,
+  sendFriendRequest,
+  validateFriendHandle,
+  type FriendProfile,
+  type FriendsSnapshot,
+} from "../../lib/friends";
+import { createBrowserSupabaseClient } from "../../lib/supabase/client";
+import styles from "./Friends.module.css";
+
+const EMPTY_SNAPSHOT: FriendsSnapshot = { ownProfile: null, friends: [], receivedRequests: [] };
+
+export default function FriendsPage() {
+  const auth = useBalloonAuth();
+  const userId = auth.user?.id ?? null;
+  const [snapshot, setSnapshot] = useState<FriendsSnapshot>(EMPTY_SNAPSHOT);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [searchEnabled, setSearchEnabled] = useState(true);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<FriendProfile[]>([]);
+
+  const refresh = useCallback(async (expectedUserId: string) => {
+    const next = await loadFriendsSnapshot(createBrowserSupabaseClient(), expectedUserId);
+    if (auth.user?.id === expectedUserId) setSnapshot(next);
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    setSnapshot(EMPTY_SNAPSHOT);
+    setResults([]);
+    setError(null);
+    if (auth.state !== "SIGNED_IN" || !userId) return;
+    let active = true;
+    setLoading(true);
+    void loadFriendsSnapshot(createBrowserSupabaseClient(), userId)
+      .then((next) => {
+        if (!active || auth.user?.id !== userId) return;
+        setSnapshot(next);
+        if (!next.ownProfile) setDisplayName([auth.user?.firstName, auth.user?.lastName].filter(Boolean).join(" "));
+      })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "Chargement indisponible."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [auth.state, auth.user?.firstName, auth.user?.id, auth.user?.lastName, userId]);
+
+  async function run(id: string, action: () => Promise<void>) {
+    if (!userId || busyId) return;
+    setBusyId(id); setError(null);
+    try { await action(); await refresh(userId); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Action impossible."); }
+    finally { setBusyId(null); }
+  }
+
+  async function createProfile(event: FormEvent) {
+    event.preventDefault();
+    if (!userId) return;
+    const validation = validateFriendHandle(handle);
+    if (validation) { setError(validation); return; }
+    await run("profile", () => saveFriendProfile(createBrowserSupabaseClient(), { userId, displayName, handle, searchEnabled }));
+  }
+
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    if (!userId) return;
+    setBusyId("search"); setError(null);
+    try { setResults(await searchFriendProfiles(createBrowserSupabaseClient(), userId, query)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Recherche indisponible."); }
+    finally { setBusyId(null); }
+  }
+
+  if (auth.state !== "SIGNED_IN" || !userId) return <main className={styles.screen}><div className={styles.layout}><Link href="/more" className={styles.back}><ChevronLeft size={18} /> Plus</Link><header><p className={styles.eyebrow}>Balloon Companion</p><h1 className={styles.title}>Amis</h1></header><section className={styles.section}><p className={styles.empty}>Connectez-vous pour utiliser les amis Balloon Companion.</p></section></div><NavigationBar activeItem="Plus" /></main>;
+
+  return <main className={styles.screen}><div className={styles.layout}>
+    <Link href="/more" className={styles.back}><ChevronLeft size={18} /> Plus</Link>
+    <header><p className={styles.eyebrow}>Balloon Companion</p><h1 className={styles.title}>Amis</h1><p className={styles.intro}>Retrouvez d’autres pilotes sans partager votre adresse email.</p></header>
+    {loading ? <section className={styles.section}><p className={styles.status}>Chargement…</p></section> : !snapshot.ownProfile ? <section className={styles.section}><h2>Choisir mon identifiant</h2><p className={styles.hint}>Votre handle public permettra à vos amis de vous retrouver.</p><form className={styles.form} onSubmit={(event) => void createProfile(event)}><label><span>Nom affiché</span><input value={displayName} maxLength={80} required onChange={(event) => setDisplayName(event.target.value)} /></label><label><span>Handle</span><input value={handle} minLength={3} maxLength={30} autoCapitalize="none" autoCorrect="off" placeholder="charles.grelin" required onChange={(event) => setHandle(normalizeFriendHandle(event.target.value))} /></label><label className={styles.check}><input type="checkbox" checked={searchEnabled} onChange={(event) => setSearchEnabled(event.target.checked)} /> Autoriser la recherche par handle</label><button className={styles.primary} disabled={busyId !== null} type="submit">Créer mon profil Amis</button></form></section> : <>
+      <section className={styles.section}><h2>Ajouter un ami</h2><p className={styles.hint}>Recherchez uniquement son handle Balloon Companion.</p><form className={styles.search} onSubmit={(event) => void search(event)}><input aria-label="Handle à rechercher" value={query} autoCapitalize="none" autoCorrect="off" placeholder="@handle" onChange={(event) => setQuery(event.target.value)} /><button disabled={busyId !== null || query.trim().length < 2} type="submit">Rechercher</button></form>{results.length > 0 && <div className={styles.list}>{results.map((profile) => <div className={styles.row} key={profile.userId}><div className={styles.identity}><strong>{profile.displayName}</strong><span>@{profile.handle}</span></div><button className={styles.action} disabled={busyId !== null} type="button" onClick={() => void run(profile.userId, () => sendFriendRequest(createBrowserSupabaseClient(), userId, profile.userId))}>Ajouter</button></div>)}</div>}</section>
+      <section className={styles.section}><h2>Demandes reçues</h2>{snapshot.receivedRequests.length === 0 ? <p className={styles.empty}>Aucune demande en attente.</p> : <div className={styles.list}>{snapshot.receivedRequests.map((request) => <div className={styles.row} key={request.id}><div className={styles.identity}><strong>{request.sender.displayName}</strong><span>@{request.sender.handle}</span></div><div className={styles.actions}><button className={styles.action} disabled={busyId !== null} type="button" onClick={() => void run(request.id, () => acceptFriendRequest(createBrowserSupabaseClient(), request.id))}>Accepter</button><button className={`${styles.action} ${styles.danger}`} disabled={busyId !== null} type="button" onClick={() => void run(request.id, () => declineFriendRequest(createBrowserSupabaseClient(), request.id))}>Refuser</button></div></div>)}</div>}</section>
+      <section className={styles.section}><h2>Mes amis</h2>{snapshot.friends.length === 0 ? <p className={styles.empty}>Aucun ami pour le moment.</p> : <div className={styles.list}>{snapshot.friends.map((friendship) => <div className={styles.row} key={friendship.id}><div className={styles.identity}><strong>{friendship.friend.displayName}</strong><span>@{friendship.friend.handle}</span></div><button className={`${styles.action} ${styles.danger}`} disabled={busyId !== null} type="button" onClick={() => void run(friendship.id, () => removeFriend(createBrowserSupabaseClient(), friendship.id))}>Supprimer</button></div>)}</div>}</section>
+    </>}
+    {error && <p className={styles.error} role="alert">{error}</p>}
+    <section className={`${styles.section} ${styles.comingSoon}`}><h2>Partage de vol en direct</h2><span>Bientôt disponible</span></section>
+  </div><NavigationBar activeItem="Plus" /></main>;
+}
