@@ -68,3 +68,12 @@ export function createDevelopmentLiveFlightSimulator(environment = process.env.N
   if (environment !== "development" && environment !== "test") throw new Error("LIVE_SIMULATOR_DISABLED");
   return { run: simulateLiveFlightScenario };
 }
+
+export function isTargetedLiveFlightSimulator(search: string): boolean {
+  return new URLSearchParams(search).get("liveFlightTest") === "targeted";
+}
+
+export function createTargetedLiveFlightSimulator(search: string) {
+  if (!isTargetedLiveFlightSimulator(search)) throw new Error("LIVE_SIMULATOR_TARGETED_MODE_REQUIRED");
+  return { run: simulateLiveFlightScenario };
+}

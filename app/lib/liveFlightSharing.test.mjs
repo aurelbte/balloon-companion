@@ -11,7 +11,7 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { createDevelopmentLiveFlightSimulator, simulateLiveFlightScenario } from "./liveFlightSimulator.ts";
+import { createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, simulateLiveFlightScenario } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -186,6 +186,14 @@ test("les douze scénarios DEV sont déterministes et couvrent les anomalies", (
 test("le simulateur refuse toute activation Production", () => {
   assert.throws(() => createDevelopmentLiveFlightSimulator("production"), /LIVE_SIMULATOR_DISABLED/);
   assert.equal(typeof createDevelopmentLiveFlightSimulator("test").run, "function");
+});
+
+test("le simulateur ciblé est absent sur une URL normale et activable avec le paramètre explicite", () => {
+  assert.equal(isTargetedLiveFlightSimulator(""), false);
+  assert.equal(isTargetedLiveFlightSimulator("?cloudSyncTest=targeted"), false);
+  assert.throws(() => createTargetedLiveFlightSimulator(""), /LIVE_SIMULATOR_TARGETED_MODE_REQUIRED/);
+  assert.equal(isTargetedLiveFlightSimulator("?liveFlightTest=targeted"), true);
+  assert.equal(typeof createTargetedLiveFlightSimulator("?liveFlightTest=targeted").run, "function");
 });
 
 test("le socle ne référence ni Cloud Sync, ni R2, ni FlightMap, ni stockage GPS", () => {

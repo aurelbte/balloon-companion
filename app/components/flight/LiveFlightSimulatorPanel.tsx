@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SharedPilotMapStore, type SharedPilotIdentity, type SharedPilotMapEntry } from "../../lib/liveFlightMap.ts";
-import { createDevelopmentLiveFlightSimulator, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
+import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
 
 const CHARLES: SharedPilotIdentity = {
   pilotId: "dev-charles-grelin",
@@ -34,9 +34,7 @@ export default function LiveFlightSimulatorPanel({
   const storeRef = useRef(new SharedPilotMapStore());
   const timersRef = useRef<number[]>([]);
   const [scenario, setScenario] = useState<LiveSimulationScenario>("NORMAL_FLIGHT");
-  const enabled = process.env.NODE_ENV === "development" &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("liveFlightTest") === "targeted";
+  const [enabled, setEnabled] = useState(false);
 
   const clear = () => {
     for (const timer of timersRef.current) window.clearTimeout(timer);
@@ -52,10 +50,17 @@ export default function LiveFlightSimulatorPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setEnabled(isTargetedLiveFlightSimulator(window.location.search));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   if (!enabled) return null;
 
   const play = (identity: SharedPilotIdentity, selectedScenario: LiveSimulationScenario, coordinateOffset = 0) => {
-    const simulator = createDevelopmentLiveFlightSimulator();
+    const simulator = createTargetedLiveFlightSimulator(window.location.search);
     const startedAt = Date.now();
     const events = simulator.run(selectedScenario, identity.sessionId, startedAt);
     for (const event of events) {
@@ -76,12 +81,12 @@ export default function LiveFlightSimulatorPanel({
 
   return (
     <div aria-label="Simulateur de partage live" style={{ position: "fixed", right: 12, top: "max(154px, calc(env(safe-area-inset-top) + 138px))", zIndex: 25, display: "grid", gap: 6, width: 174, padding: 8, border: "1px solid rgba(253,230,138,.35)", borderRadius: 12, background: "rgba(7,17,31,.92)", color: "#f3f7fb", fontSize: 10 }}>
-      <strong style={{ color: "#fde68a", letterSpacing: ".08em" }}>LIVE TEST DEV</strong>
+      <strong style={{ color: "#fde68a", letterSpacing: ".08em" }}>LIVE TEST CIBLÉ</strong>
       <select aria-label="Scénario live" value={scenario} onChange={(event) => setScenario(event.target.value as LiveSimulationScenario)} style={{ minHeight: 32, borderRadius: 7, background: "#102238", color: "#f3f7fb" }}>
         {SCENARIOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
       </select>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-        <button type="button" onClick={() => { clear(); play(CHARLES, scenario); }}>Charles</button>
+        <button type="button" onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
         <button type="button" onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
       </div>
       <button type="button" onClick={clear}>Arrêter</button>
