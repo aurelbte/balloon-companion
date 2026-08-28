@@ -1,8 +1,5 @@
 import type { AltitudeOption, MultiAltitudeProjectionRequest } from "./integration.ts";
 
-export const MAX_ANALYSIS_MODELS = 3;
-export const MAX_ANALYSIS_ALTITUDES = 5;
-
 export function createTrajectoryAnalysisKey(
   request: MultiAltitudeProjectionRequest,
   models: readonly string[],
@@ -22,23 +19,19 @@ export function createTrajectoryAnalysisKey(
   });
 }
 
-export function toggleLimitedSelection<T>({
+export function toggleSelection<T>({
   current,
   value,
-  maximum,
   minimum = 1,
 }: {
   current: readonly T[];
   value: T;
-  maximum: number;
   minimum?: number;
-}): { values: T[]; limitReached: boolean } {
+}): T[] {
   if (current.includes(value)) {
     return current.length <= minimum
-      ? { values: [...current], limitReached: false }
-      : { values: current.filter((item) => item !== value), limitReached: false };
+      ? [...current]
+      : current.filter((item) => item !== value);
   }
-  return current.length >= maximum
-    ? { values: [...current], limitReached: true }
-    : { values: [...current, value], limitReached: false };
+  return [...current, value];
 }

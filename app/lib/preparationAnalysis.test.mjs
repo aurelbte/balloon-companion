@@ -22,8 +22,12 @@ import {
 } from "./preparationInputs.ts";
 import {
   createTrajectoryAnalysisKey,
-  toggleLimitedSelection,
+  toggleSelection,
 } from "./trajectory/analysisState.ts";
+import {
+  ALTITUDE_OPTIONS,
+  WEATHER_MODEL_REGISTRY,
+} from "./trajectory/integration.ts";
 import {
   analysisFitPadding,
   analysisFitMaxZoom,
@@ -110,10 +114,14 @@ test("la clé d'analyse change avec chaque entrée métier", () => {
   assert.notEqual(first, createTrajectoryAnalysisKey({ ...request, climbRateMps: 10, descentRateMps: 10 }, ["arome"], ["ground", 300]));
 });
 
-test("les limites de sélection autorisent une analyse vierge", () => {
-  assert.deepEqual(toggleLimitedSelection({ current: ["a"], value: "a", maximum: 3, minimum: 0 }), { values: [], limitReached: false });
-  assert.deepEqual(toggleLimitedSelection({ current: ["a", "b", "c"], value: "d", maximum: 3 }), { values: ["a", "b", "c"], limitReached: true });
-  assert.deepEqual(toggleLimitedSelection({ current: [100, 300], value: 100, maximum: 5 }), { values: [300], limitReached: false });
+test("la sélection accepte tous les modèles et toutes les altitudes sans limite", () => {
+  assert.deepEqual(toggleSelection({ current: ["a"], value: "a", minimum: 0 }), []);
+  assert.deepEqual(toggleSelection({ current: ["a", "b", "c"], value: "d" }), ["a", "b", "c", "d"]);
+  assert.deepEqual(toggleSelection({ current: [100, 300], value: 100 }), [300]);
+  const allModels = WEATHER_MODEL_REGISTRY.filter((model) => model.supported).map((model) => model.id);
+  assert.deepEqual(allModels.reduce((selected, model) => toggleSelection({ current: selected, value: model, minimum: 0 }), []), allModels);
+  const allAltitudes = [...ALTITUDE_OPTIONS];
+  assert.deepEqual(allAltitudes.reduce((selected, altitude) => toggleSelection({ current: selected, value: altitude, minimum: 0 }), []), allAltitudes);
 });
 
 test("le cadrage inclut le départ, tous les points et gère l'antiméridien", () => {
@@ -193,6 +201,20 @@ test("l'Analyse démarre sans sélection ni restauration visuelle du cache", () 
   assert.match(source, /setVisibleTraceIds\(\[\]\)/);
   assert.match(source, /Sélectionnez un modèle et une altitude\./);
   assert.doesNotMatch(source, /loadWeatherAnalysis/);
+});
+
+test("l'Analyse n'impose plus de maximum aux modèles ni aux altitudes", () => {
+  const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /MAX_ANALYSIS_(?:MODELS|ALTITUDES)/);
+  assert.doesNotMatch(source, /Maximum \d+ (?:modèles|altitudes)/);
+  assert.match(source, /selectedModels\.map/);
+  assert.match(source, /altitudesAmslM: selectedAltitudes/);
+});
+
+test("la section NOTAM reste visible et annonce son état temporaire", () => {
+  const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
+  assert.match(source, />\s*NOTAM\s*</);
+  assert.match(source, /Fonctionnalité en cours de développement/);
 });
 
 test("le cadrage final attend MapLibre idle et partage une seule fonction de fit", () => {

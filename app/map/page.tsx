@@ -68,7 +68,7 @@ import {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { WEATHER_MODEL_REGISTRY } from "../lib/weather/models";
 import type { BaseMap } from "../types/flight";
-import { createTrajectoryAnalysisKey, MAX_ANALYSIS_ALTITUDES, MAX_ANALYSIS_MODELS, toggleLimitedSelection } from "../lib/trajectory/analysisState";
+import { createTrajectoryAnalysisKey, toggleSelection } from "../lib/trajectory/analysisState";
 import { metersPerSecondToMetersPerMinute } from "../lib/preparationInputs";
 import { useUnitPreferences } from "../contexts/UnitPreferencesContext";
 import { formatWeatherTemperature } from "../lib/unitPreferences";
@@ -489,10 +489,9 @@ export default function MapPage() {
   };
 
   const toggleModel = (modelId: string) => {
-    const result = toggleLimitedSelection({ current: selectedModels, value: modelId, maximum: MAX_ANALYSIS_MODELS, minimum: 0 });
-    if (result.limitReached) setNotice("Maximum 3 modèles simultanés.");
-    setSelectedModels(result.values);
-    if (result.values.length === 0 || selectedAltitudes.length === 0) {
+    const values = toggleSelection({ current: selectedModels, value: modelId, minimum: 0 });
+    setSelectedModels(values);
+    if (values.length === 0 || selectedAltitudes.length === 0) {
       requestAbortRef.current?.abort();
       setTraces([]);
       setVisibleTraceIds([]);
@@ -502,9 +501,8 @@ export default function MapPage() {
     }
   };
   const toggleAltitude = (altitude: AltitudeOption) => {
-    const result = toggleLimitedSelection({ current: selectedAltitudes, value: altitude, maximum: MAX_ANALYSIS_ALTITUDES, minimum: 0 });
-    if (result.limitReached) setNotice("Maximum 5 altitudes simultanées.");
-    const values = ALTITUDE_OPTIONS.filter((option) => result.values.includes(option));
+    const toggled = toggleSelection({ current: selectedAltitudes, value: altitude, minimum: 0 });
+    const values = ALTITUDE_OPTIONS.filter((option) => toggled.includes(option));
     setSelectedAltitudes(values);
     if (values.length === 0 || selectedModels.length === 0) {
       requestAbortRef.current?.abort();
@@ -698,7 +696,6 @@ export default function MapPage() {
                     key={model.id}
                     selected={selected}
                     onClick={() => toggleModel(model.id)}
-                    disabled={!selected && selectedModels.length >= MAX_ANALYSIS_MODELS}
                     className="!min-h-[22px] w-fit max-w-[68px] !justify-start !px-1.5 !py-0 text-[8px] font-bold"
                     style={{
                       borderStyle:
@@ -731,7 +728,6 @@ export default function MapPage() {
                   key={String(altitude)}
                   selected={selected}
                   onClick={() => toggleAltitude(altitude)}
-                  disabled={!selected && selectedAltitudes.length >= MAX_ANALYSIS_ALTITUDES}
                   className="!min-h-[22px] w-[52px] !px-0.5 !py-0 text-[9px] font-bold"
                   style={{
                     borderColor: selected
@@ -951,11 +947,10 @@ export default function MapPage() {
                 NOTAM
               </h2>
               <p
-                className="mt-4 text-2xl font-semibold tracking-tight"
+                className="mt-3 text-[11px] font-medium leading-snug"
                 style={{ color: "var(--bc-color-text-muted)" }}
-                aria-label="Nombre de NOTAM indisponible"
               >
-                —
+                Fonctionnalité en cours de développement
               </p>
             </button>
           </div>
