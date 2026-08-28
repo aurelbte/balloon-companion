@@ -1,18 +1,45 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { normalizeFriendHandle, sendFriendRequest, validateFriendHandle } from "./friends.ts";
+import { friendOnboardingDefaults, normalizeFriendHandle, proposeFriendHandle, saveFriendProfile, sendFriendRequest, validateFriendHandle } from "./friends.ts";
 
 const migration = readFileSync(new URL("../../supabase/migrations/20260828120000_friends_foundation.sql", import.meta.url), "utf8");
 const page = readFileSync(new URL("../more/friends/page.tsx", import.meta.url), "utf8");
 const morePage = readFileSync(new URL("../more/page.tsx", import.meta.url), "utf8");
 
-test("les handles sont normalisés et validés sans adresse email", () => {
+test("les identifiants sont normalisés et validés sans adresse email", () => {
   assert.equal(normalizeFriendHandle(" Charles.Grelin "), "charles.grelin");
   assert.equal(validateFriendHandle("charles.grelin"), null);
   assert.notEqual(validateFriendHandle("ab"), null);
   assert.notEqual(validateFriendHandle("avec espace"), null);
   assert.notEqual(validateFriendHandle("pilot@example.com"), null);
+});
+
+test("le nom connu préremplit le nom affiché et propose un identifiant modifiable", () => {
+  assert.deepEqual(friendOnboardingDefaults({ authFirstName: "Aurélien", authLastName: "Boitte" }), {
+    displayName: "Aurélien Boitte",
+    handle: "aurelien.boitte",
+  });
+  assert.deepEqual(friendOnboardingDefaults({ authFirstName: "Auth", authLastName: "User", profileFirstName: "Charles", profileLastName: "Grelin" }), {
+    displayName: "Charles Grelin",
+    handle: "charles.grelin",
+  });
+  assert.match(page, /value=\{handle\}/);
+  assert.match(page, /onChange=\{\(event\) => setHandle/);
+});
+
+test("la proposition nettoie accents, casse, espaces et caractères spéciaux", () => {
+  assert.equal(proposeFriendHandle("  ÉLÉONORE  ", "  D'Ángelo!! "), "eleonore.dangelo");
+  assert.equal(proposeFriendHandle("Jean   Pierre", ". Dupont ."), "jean.pierre.dupont");
+  assert.equal(proposeFriendHandle("Charles", "Grelin"), "charles.grelin");
+});
+
+test("un conflit d'unicité produit un message clair sans suffixe automatique", async () => {
+  const client = { from: () => ({ upsert: async () => ({ error: { code: "23505", message: "duplicate key" } }) }) };
+  await assert.rejects(
+    () => saveFriendProfile(client, { userId: "user-a", displayName: "Aurélien Boitte", handle: "aurelien.boitte", searchEnabled: true }),
+    /Cet identifiant est déjà utilisé\. Choisissez-en un autre\./,
+  );
 });
 
 test("le client refuse une demande vers soi-même avant tout accès Supabase", async () => {

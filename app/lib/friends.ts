@@ -13,6 +13,34 @@ export function normalizeFriendHandle(value: string): string {
   return value.trim().toLocaleLowerCase("en-US");
 }
 
+export function proposeFriendHandle(firstName: string, lastName: string): string {
+  return `${firstName} ${lastName}`
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("en-US")
+    .trim()
+    .replace(/\s+/g, ".")
+    .replace(/[^a-z0-9._]/g, "")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 30)
+    .replace(/\.+$/g, "");
+}
+
+export function friendOnboardingDefaults(input: {
+  authFirstName: string;
+  authLastName: string;
+  profileFirstName?: string;
+  profileLastName?: string;
+}): { displayName: string; handle: string } {
+  const firstName = input.profileFirstName?.trim() || input.authFirstName.trim();
+  const lastName = input.profileLastName?.trim() || input.authLastName.trim();
+  return {
+    displayName: [firstName, lastName].filter(Boolean).join(" "),
+    handle: proposeFriendHandle(firstName, lastName),
+  };
+}
+
 export function validateFriendHandle(value: string): string | null {
   const handle = normalizeFriendHandle(value);
   if (!FRIEND_HANDLE_PATTERN.test(handle)) return "Utilisez 3 à 30 caractères : lettres, chiffres, point ou tiret bas.";
@@ -57,6 +85,7 @@ export async function saveFriendProfile(client: SupabaseClient, input: { userId:
   const validation = validateFriendHandle(handle);
   if (validation) throw new Error(validation);
   const result = await client.from("friend_profiles").upsert({ user_id: input.userId, display_name: input.displayName.trim(), handle, search_enabled: input.searchEnabled }, { onConflict: "user_id" });
+  if (result.error?.code === "23505") throw new Error("Cet identifiant est déjà utilisé. Choisissez-en un autre.");
   fail(result.error);
 }
 
