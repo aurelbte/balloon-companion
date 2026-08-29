@@ -63,10 +63,15 @@ import { qnhHpaFromMetar } from "../weather/aviationPresentation";
 import { useBalloonAuth } from "../contexts/AuthContext";
 import LiveFlightSimulatorPanel from "../components/flight/LiveFlightSimulatorPanel";
 import type { SharedPilotMapEntry } from "../lib/liveFlightMap.ts";
+import LiveSharingPanel from "../components/flight/LiveSharingPanel";
+import { loadFriendsSnapshot, type FriendProfile } from "../lib/friends.ts";
+import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
+import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, toggleLiveRecipient, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 
 export default function FlightPage() {
   const router = useRouter();
   const auth = useBalloonAuth();
+  const currentUserId = auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null;
   const completionPath = () => `/flight/complete${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
@@ -80,6 +85,11 @@ export default function FlightPage() {
 
   const [isMapOptionsOpen, setIsMapOptionsOpen] = useState(false);
   const [isWindProfileOpen, setIsWindProfileOpen] = useState(false);
+  const [isLiveSharingOpen, setIsLiveSharingOpen] = useState(false);
+  const [friends, setFriends] = useState<FriendProfile[]>([]);
+  const [friendsUserId, setFriendsUserId] = useState<string | null>(null);
+  const [liveSharingUi, setLiveSharingUi] = useState<LiveSharingUiState>(EMPTY_LIVE_SHARING_UI_STATE);
+  const [liveSharingUserId, setLiveSharingUserId] = useState<string | null>(null);
   const [followPosition, setFollowPosition] = useState(true);
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [fitProjectionRequest, setFitProjectionRequest] = useState(0);
@@ -105,6 +115,26 @@ export default function FlightPage() {
     string | null
   >(null);
   const [sharedPilots, setSharedPilots] = useState<SharedPilotMapEntry[]>([]);
+  useEffect(() => {
+    const userId = currentUserId;
+    let active = true;
+    if (!userId) {
+      const timer = window.setTimeout(() => { setFriends([]); setFriendsUserId(null); setLiveSharingUi(stopLiveSharingUi()); setLiveSharingUserId(null); setIsLiveSharingOpen(false); }, 0);
+      return () => { active = false; window.clearTimeout(timer); };
+    }
+    void loadFriendsSnapshot(createBrowserSupabaseClient(), userId)
+      .then((snapshot) => { if (active && auth.user?.id === userId) { setFriends(snapshot.friends.map(({ friend }) => friend)); setFriendsUserId(userId); } })
+      .catch(() => { if (active) setFriends([]); });
+    return () => { active = false; };
+  }, [auth.state, auth.user?.id, currentUserId]);
+
+  useEffect(() => {
+    const offline = () => setLiveSharingUi((state) => ({ ...state, connection: "OFFLINE" }));
+    const online = () => setLiveSharingUi((state) => ({ ...state, connection: state.recipientIds.length ? "RECONNECTING" : "IDLE" }));
+    window.addEventListener("offline", offline);
+    window.addEventListener("online", online);
+    return () => { window.removeEventListener("offline", offline); window.removeEventListener("online", online); };
+  }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPlannedTrajectories(loadExportedPlannedTrajectories());
@@ -293,6 +323,8 @@ export default function FlightPage() {
 
   const handleConfirmStopTracking = useCallback(async () => {
     setFlightActionBusy(true);
+    setLiveSharingUi(stopLiveSharingUi());
+    setIsLiveSharingOpen(false);
     const completed = await stopTracking();
     setFlightActionBusy(false);
     if (completed) {
@@ -347,6 +379,8 @@ export default function FlightPage() {
       return;
     }
     setFlightActionBusy(true);
+    setLiveSharingUi(stopLiveSharingUi());
+    setIsLiveSharingOpen(false);
     const completed = await stopTracking();
     if (completed) {
       dismissCompletedFlight();
@@ -404,6 +438,7 @@ export default function FlightPage() {
     setIsMapOptionsOpen((isOpen) =>
       getMapOptionsOpenAfterAction(isOpen, "MAP_PRESS"),
     );
+    setIsLiveSharingOpen(false);
   }, []);
 
   const displayedMetrics = useMemo(
@@ -486,6 +521,13 @@ export default function FlightPage() {
     airspaces: layerSettings.airspaces,
     highContrast: layerSettings.highContrast,
   });
+  const liveSharingForCurrentUser = liveSharingUserId === currentUserId ? liveSharingUi : EMPTY_LIVE_SHARING_UI_STATE;
+  const liveFriends = useMemo(() => {
+    const byId = new Map((friendsUserId === currentUserId ? friends : []).map((friend) => [friend.userId, friend]));
+    for (const pilot of sharedPilots) if (!byId.has(pilot.pilotId)) byId.set(pilot.pilotId, { userId: pilot.pilotId, displayName: pilot.displayName, handle: pilot.displayName.toLocaleLowerCase("fr-FR").replaceAll(" ", "."), searchEnabled: false });
+    return [...byId.values()];
+  }, [currentUserId, friends, friendsUserId, sharedPilots]);
+  const displayedLiveSharingUi = useMemo<LiveSharingUiState>(() => ({ ...liveSharingForCurrentUser, incomingPilotIds: sharedPilots.map((pilot) => pilot.pilotId) }), [liveSharingForCurrentUser, sharedPilots]);
   const flightSession = useMemo(
     () =>
       createFlightSession({
@@ -594,7 +636,18 @@ export default function FlightPage() {
 
       <LiveFlightSimulatorPanel
         scopeKey={auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null}
+        trackingActive={flightSession.state.isRecording}
         onPilotsChange={setSharedPilots}
+        onConnectionStateChange={(connection) => { setLiveSharingUserId(currentUserId); setLiveSharingUi((state) => ({ ...state, connection })); }}
+      />
+
+      <LiveSharingPanel
+        open={isLiveSharingOpen}
+        friends={liveFriends}
+        state={displayedLiveSharingUi}
+        trackingActive={flightSession.state.isRecording}
+        onClose={() => setIsLiveSharingOpen(false)}
+        onToggleRecipient={(friendId) => { setLiveSharingUserId(currentUserId); setLiveSharingUi((state) => toggleLiveRecipient(liveSharingUserId === currentUserId ? state : EMPTY_LIVE_SHARING_UI_STATE, friendId)); }}
       />
 
       {/* Panneau d'instruments */}
@@ -603,7 +656,7 @@ export default function FlightPage() {
         observed={observedWindProfile}
         predicted={predictedWinds}
         predictedModelLabel={predictedModelLabel}
-        onToggle={() => setIsWindProfileOpen((open) => !open)}
+        onToggle={() => { setIsLiveSharingOpen(false); setIsMapOptionsOpen(false); setIsWindProfileOpen((open) => !open); }}
         onClose={() => setIsWindProfileOpen(false)}
       />
       <FlightInstruments
@@ -683,14 +736,20 @@ export default function FlightPage() {
         followPosition={followPosition}
         mapOptionsOpen={isMapOptionsOpen}
         mapDisplayCustomized={mapDisplayCustomized}
+        liveSharingOpen={isLiveSharingOpen}
+        liveRecipientCount={liveSharingForCurrentUser.recipientIds.length}
+        liveConnectionState={liveSharingForCurrentUser.connection}
         withNavigation
         onRecenterMap={handleRecenterMap}
         onFitProjection={handleFitProjection}
-        onToggleMapOptions={() =>
+        onToggleLiveSharing={() => { setIsMapOptionsOpen(false); setIsWindProfileOpen(false); setIsLiveSharingOpen((open) => !open); }}
+        onToggleMapOptions={() => {
+          setIsLiveSharingOpen(false);
+          setIsWindProfileOpen(false);
           setIsMapOptionsOpen((isOpen) =>
             getMapOptionsOpenAfterAction(isOpen, "TOGGLE"),
-          )
-        }
+          );
+        }}
         onStartTracking={handleStartTracking}
         onStopTracking={() => setStopConfirmationOpen(true)}
       />

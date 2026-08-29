@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SharedPilotMapStore, type SharedPilotIdentity, type SharedPilotMapEntry } from "../../lib/liveFlightMap.ts";
 import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
+import type { LiveSharingConnectionState } from "../../lib/liveFlightUi.ts";
 
 const CHARLES: SharedPilotIdentity = {
   pilotId: "dev-charles-grelin",
@@ -30,7 +31,9 @@ const SCENARIOS: ReadonlyArray<Readonly<{ value: LiveSimulationScenario; label: 
 export default function LiveFlightSimulatorPanel({
   scopeKey,
   onPilotsChange,
-}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void }>) {
+  onConnectionStateChange,
+  trackingActive,
+}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; trackingActive: boolean }>) {
   const storeRef = useRef(new SharedPilotMapStore());
   const timersRef = useRef<number[]>([]);
   const [scenario, setScenario] = useState<LiveSimulationScenario>("NORMAL_FLIGHT");
@@ -49,7 +52,7 @@ export default function LiveFlightSimulatorPanel({
     return clear;
     // Le changement de scope doit vider immédiatement les positions distantes en mémoire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey]);
+  }, [scopeKey, trackingActive]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -73,9 +76,14 @@ export default function LiveFlightSimulatorPanel({
             : event.payload;
           storeRef.current.accept(identity, payload, Date.now());
           onPilotsChange(storeRef.current.list(Date.now()));
+          onConnectionStateChange?.("ACTIVE");
         } else if (event.kind === "END") {
           storeRef.current.removeSession(identity.sessionId);
           onPilotsChange(storeRef.current.list(Date.now()));
+        } else if (event.kind === "NETWORK_OFFLINE") {
+          onConnectionStateChange?.("OFFLINE");
+        } else if (event.kind === "NETWORK_ONLINE") {
+          onConnectionStateChange?.("RECONNECTING");
         }
       }, Math.max(0, event.at - startedAt)));
     }
@@ -93,8 +101,8 @@ export default function LiveFlightSimulatorPanel({
             {SCENARIOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-            <button type="button" onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
-            <button type="button" onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
+            <button type="button" disabled={!trackingActive} onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
+            <button type="button" disabled={!trackingActive} onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
           </div>
           <button type="button" onClick={clear}>Arrêter</button>
         </div>

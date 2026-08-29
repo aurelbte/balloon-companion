@@ -1,6 +1,7 @@
 "use client";
 
-import { LocateFixed, Map, Maximize2, Play, Square } from "lucide-react";
+import { LocateFixed, Map, Maximize2, Play, Square, UsersRound } from "lucide-react";
+import type { LiveSharingConnectionState } from "../../lib/liveFlightUi.ts";
 import { FLIGHT_BOTTOM_LAYOUT } from "../../lib/flightMapPresentation";
 import { Button, FloatingAction } from "../../design-system";
 
@@ -9,10 +10,14 @@ interface FlightControlsProps {
   followPosition: boolean;
   mapOptionsOpen: boolean;
   mapDisplayCustomized: boolean;
+  liveSharingOpen: boolean;
+  liveRecipientCount: number;
+  liveConnectionState: LiveSharingConnectionState;
   withNavigation?: boolean;
   onRecenterMap: () => void;
   onFitProjection: () => void;
   onToggleMapOptions: () => void;
+  onToggleLiveSharing: () => void;
   onStartTracking: () => void;
   onStopTracking: () => void;
 }
@@ -22,10 +27,14 @@ export default function FlightControls({
   followPosition,
   mapOptionsOpen,
   mapDisplayCustomized,
+  liveSharingOpen,
+  liveRecipientCount,
+  liveConnectionState,
   withNavigation = false,
   onRecenterMap,
   onFitProjection,
   onToggleMapOptions,
+  onToggleLiveSharing,
   onStartTracking,
   onStopTracking,
 }: FlightControlsProps) {
@@ -84,6 +93,18 @@ export default function FlightControls({
           aria-label="Afficher une vue élargie de la trajectoire projetée"
         >
           <Maximize2 size={20} />
+        </FloatingAction>
+
+        <FloatingAction
+          onClick={onToggleLiveSharing}
+          title="Amis et partage du vol"
+          aria-label="Amis et partage du vol"
+          aria-expanded={liveSharingOpen}
+          style={liveSharingOpen || liveRecipientCount > 0 ? { position: "relative", borderColor: "var(--bc-color-action)", color: "var(--bc-color-action)" } : { position: "relative" }}
+        >
+          <UsersRound size={20} />
+          {liveRecipientCount > 0 && <span aria-label={`${liveRecipientCount} destinataire${liveRecipientCount > 1 ? "s" : ""}`} style={{ position: "absolute", top: 1, right: 1, display: "grid", placeItems: "center", minWidth: 16, height: 16, paddingInline: 3, borderRadius: 999, background: "var(--bc-color-action)", color: "#07111f", fontSize: 9, fontWeight: 950 }}>{liveRecipientCount}</span>}
+          {liveConnectionState === "RECONNECTING" && <span aria-label="Reconnexion" style={{ position: "absolute", bottom: 3, right: 3, width: 7, height: 7, borderRadius: "50%", background: "#f59e0b" }} />}
         </FloatingAction>
 
         <FloatingAction
