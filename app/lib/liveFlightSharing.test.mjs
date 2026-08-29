@@ -11,7 +11,7 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, simulateLiveFlightScenario } from "./liveFlightSimulator.ts";
+import { createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -194,6 +194,9 @@ test("le simulateur ciblé est absent sur une URL normale et activable avec le p
   assert.throws(() => createTargetedLiveFlightSimulator(""), /LIVE_SIMULATOR_TARGETED_MODE_REQUIRED/);
   assert.equal(isTargetedLiveFlightSimulator("?liveFlightTest=targeted"), true);
   assert.equal(typeof createTargetedLiveFlightSimulator("?liveFlightTest=targeted").run, "function");
+  assert.deepEqual(targetedLiveSimulatorUi("", false), { controlVisible: false, panelVisible: false });
+  assert.deepEqual(targetedLiveSimulatorUi("?liveFlightTest=targeted", false), { controlVisible: true, panelVisible: false });
+  assert.deepEqual(targetedLiveSimulatorUi("?liveFlightTest=targeted", true), { controlVisible: true, panelVisible: true });
 });
 
 test("le socle ne référence ni Cloud Sync, ni R2, ni FlightMap, ni stockage GPS", () => {

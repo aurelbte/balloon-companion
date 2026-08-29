@@ -3,6 +3,7 @@ import test from "node:test";
 import { buildLiveFlightPayload } from "./liveFlightSharing.ts";
 import {
   SharedPilotMapStore,
+  getSharedPilotSelectionAfterAction,
   interpolateLiveCoordinate,
   relativeLiveAltitudeMeters,
   sharedPilotInitials,
@@ -18,6 +19,13 @@ test("les initiales utilisent le prénom puis le nom", () => {
   assert.equal(sharedPilotInitials("Charles Grelin"), "CG");
   assert.equal(sharedPilotInitials("Jean Dupont"), "JD");
   assert.equal(sharedPilotInitials("  Élodie   du Pont  "), "ÉP");
+});
+
+test("une seule fiche pilote est ouverte et fermeture/carte la ferment immédiatement", () => {
+  assert.equal(getSharedPilotSelectionAfterAction(null, "OPEN", "charles"), "charles");
+  assert.equal(getSharedPilotSelectionAfterAction("charles", "OPEN", "jean"), "jean");
+  assert.equal(getSharedPilotSelectionAfterAction("jean", "CLOSE"), null);
+  assert.equal(getSharedPilotSelectionAfterAction("charles", "MAP_PRESS"), null);
 });
 
 test("l'interpolation est bornée et suit le plus court changement de cap", () => {

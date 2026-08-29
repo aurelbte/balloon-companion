@@ -23,6 +23,15 @@ export type InterpolatedLiveCoordinate = Readonly<{
   heading: number | null;
 }>;
 
+export function getSharedPilotSelectionAfterAction(
+  currentPilotId: string | null,
+  action: "OPEN" | "CLOSE" | "MAP_PRESS",
+  pilotId?: string,
+): string | null {
+  if (action === "OPEN") return pilotId ?? currentPilotId;
+  return null;
+}
+
 export function sharedPilotInitials(displayName: string): string {
   const parts = displayName.trim().split(/\s+/u).filter(Boolean);
   if (parts.length === 0) return "?";

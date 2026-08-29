@@ -35,6 +35,14 @@ export const FLIGHT_BOTTOM_LAYOUT = {
   popoverBottomClearance: 194,
 } as const;
 
+export const SHARED_PILOT_CARD_LAYOUT = {
+  gapAboveInstruments: 8,
+  bottomClearance:
+    FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset +
+    FLIGHT_BOTTOM_LAYOUT.instrumentsHeight +
+    8,
+} as const;
+
 export const MAP_OPTIONS_POPOVER_LAYOUT = {
   right: 76,
   topSafeClearance: 54,

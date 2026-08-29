@@ -29,6 +29,7 @@ import {
   CURRENT_POSITION_MARKER_STYLE,
   FLIGHT_TRACK_STYLE,
   GPS_PROJECTION_STYLE,
+  SHARED_PILOT_CARD_LAYOUT,
   getFollowCameraOffset,
   getFollowPositionAfterAction,
   getMapCameraInsets,
@@ -59,6 +60,7 @@ import {
 } from "../../lib/powerLines";
 import {
   interpolateLiveCoordinate,
+  getSharedPilotSelectionAfterAction,
   relativeLiveAltitudeMeters,
   sharedPilotInitials,
   sharedPilotVisibility,
@@ -635,6 +637,7 @@ export default function FlightMap({
     });
 
     map.current.on("click", (event) => {
+      setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "MAP_PRESS"));
       onMapPressRef.current?.();
       if (
         !map.current ||
@@ -1348,7 +1351,7 @@ export default function FlightMap({
         element.addEventListener("click", (event) => {
           event.stopPropagation();
           setSelectedPilotNow(Date.now());
-          setSelectedSharedPilotId(pilot.pilotId);
+          setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "OPEN", pilot.pilotId));
         });
         const rendered = {
           latitude: pilot.previous?.latitude ?? pilot.current.latitude,
@@ -1713,8 +1716,24 @@ export default function FlightMap({
         style={{ width: "100%", height: "100%" }}
       />
       {selectedSharedPilot && selectedSharedPilotVisibility?.visible && (
-        <div role="dialog" aria-label={`Position partagée de ${selectedSharedPilot.displayName}`} style={{ position: "absolute", left: "50%", bottom: "calc(max(8px, env(safe-area-inset-bottom)) + 156px)", zIndex: 12, width: "min(292px, calc(100vw - 28px))", transform: "translateX(-50%)", padding: "12px 14px", border: "1px solid rgba(125,211,252,.48)", borderRadius: 14, background: "rgba(7,17,31,.95)", color: "#f3f7fb", boxShadow: "0 10px 28px rgba(6,17,31,.55)" }}>
-          <button type="button" aria-label="Fermer la fiche pilote" onClick={() => setSelectedSharedPilotId(null)} style={{ position: "absolute", top: 7, right: 8, width: 32, height: 32, border: 0, background: "transparent", color: "#f3f7fb", fontSize: 21 }}>×</button>
+        <div
+          role="dialog"
+          aria-label={`Position partagée de ${selectedSharedPilot.displayName}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          style={{ position: "absolute", left: "50%", bottom: `calc(max(var(--bc-space-4), env(safe-area-inset-bottom)) + ${SHARED_PILOT_CARD_LAYOUT.bottomClearance}px)`, zIndex: 30, width: "min(292px, calc(100vw - 28px))", maxHeight: `calc(100dvh - max(var(--bc-space-4), env(safe-area-inset-top)) - max(var(--bc-space-4), env(safe-area-inset-bottom)) - ${SHARED_PILOT_CARD_LAYOUT.bottomClearance}px - 8px)`, overflowY: "auto", transform: "translateX(-50%)", padding: "12px 14px", border: "1px solid rgba(125,211,252,.48)", borderRadius: 14, background: "rgba(7,17,31,.95)", color: "#f3f7fb", boxShadow: "0 10px 28px rgba(6,17,31,.55)" }}
+        >
+          <button
+            type="button"
+            aria-label="Fermer la fiche pilote"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "CLOSE"));
+            }}
+            style={{ position: "absolute", top: 7, right: 8, zIndex: 1, width: 36, height: 36, border: 0, background: "transparent", color: "#f3f7fb", fontSize: 21, touchAction: "manipulation" }}
+          >×</button>
           <strong style={{ display: "block", paddingRight: 28, fontSize: 15 }}>{selectedSharedPilot.displayName}</strong>
           {selectedSharedPilotVisibility.freshness === "STALE" && <p style={{ margin: "4px 0 8px", color: "#fbbf24", fontSize: 11, fontWeight: 750 }}>Position ancienne · {Math.ceil((selectedPilotNow - selectedSharedPilot.current.gpsTimestamp) / 1_000)} s</p>}
           <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", margin: "9px 0 0", fontSize: 12 }}>

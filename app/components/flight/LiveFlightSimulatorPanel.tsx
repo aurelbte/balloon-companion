@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SharedPilotMapStore, type SharedPilotIdentity, type SharedPilotMapEntry } from "../../lib/liveFlightMap.ts";
-import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
+import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
 
 const CHARLES: SharedPilotIdentity = {
   pilotId: "dev-charles-grelin",
@@ -35,6 +35,7 @@ export default function LiveFlightSimulatorPanel({
   const timersRef = useRef<number[]>([]);
   const [scenario, setScenario] = useState<LiveSimulationScenario>("NORMAL_FLIGHT");
   const [enabled, setEnabled] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const clear = () => {
     for (const timer of timersRef.current) window.clearTimeout(timer);
@@ -57,7 +58,8 @@ export default function LiveFlightSimulatorPanel({
     return () => window.clearTimeout(timer);
   }, []);
 
-  if (!enabled) return null;
+  const visibility = targetedLiveSimulatorUi(enabled ? "?liveFlightTest=targeted" : "", expanded);
+  if (!visibility.controlVisible) return null;
 
   const play = (identity: SharedPilotIdentity, selectedScenario: LiveSimulationScenario, coordinateOffset = 0) => {
     const simulator = createTargetedLiveFlightSimulator(window.location.search);
@@ -80,16 +82,23 @@ export default function LiveFlightSimulatorPanel({
   };
 
   return (
-    <div aria-label="Simulateur de partage live" style={{ position: "fixed", right: 12, top: "max(154px, calc(env(safe-area-inset-top) + 138px))", zIndex: 25, display: "grid", gap: 6, width: 174, padding: 8, border: "1px solid rgba(253,230,138,.35)", borderRadius: 12, background: "rgba(7,17,31,.92)", color: "#f3f7fb", fontSize: 10 }}>
-      <strong style={{ color: "#fde68a", letterSpacing: ".08em" }}>LIVE TEST CIBLÉ</strong>
-      <select aria-label="Scénario live" value={scenario} onChange={(event) => setScenario(event.target.value as LiveSimulationScenario)} style={{ minHeight: 32, borderRadius: 7, background: "#102238", color: "#f3f7fb" }}>
-        {SCENARIOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-      </select>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-        <button type="button" onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
-        <button type="button" onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
-      </div>
-      <button type="button" onClick={clear}>Arrêter</button>
+    <div style={{ position: "fixed", right: 10, top: "max(104px, calc(env(safe-area-inset-top) + 88px))", zIndex: 35 }}>
+      {!visibility.panelVisible ? (
+        <button type="button" aria-label="Ouvrir le simulateur Live" onClick={() => setExpanded(true)} style={{ width: 42, minHeight: 32, padding: "0 8px", border: "1px solid rgba(253,230,138,.34)", borderRadius: 999, background: "rgba(7,17,31,.76)", color: "rgba(253,230,138,.82)", fontSize: 9, fontWeight: 850, letterSpacing: ".08em" }}>DEV</button>
+      ) : (
+        <div aria-label="Simulateur de partage live" style={{ position: "relative", display: "grid", gap: 6, width: 184, padding: "10px 8px 8px", border: "1px solid rgba(253,230,138,.35)", borderRadius: 12, background: "rgba(7,17,31,.92)", color: "#f3f7fb", fontSize: 10 }}>
+          <button type="button" aria-label="Fermer le simulateur Live" onClick={() => setExpanded(false)} style={{ position: "absolute", top: 2, right: 3, width: 30, height: 30, border: 0, background: "transparent", color: "#f3f7fb", fontSize: 18 }}>×</button>
+          <strong style={{ paddingRight: 28, color: "#fde68a", letterSpacing: ".08em" }}>LIVE TEST CIBLÉ</strong>
+          <select aria-label="Scénario live" value={scenario} onChange={(event) => setScenario(event.target.value as LiveSimulationScenario)} style={{ minHeight: 32, borderRadius: 7, background: "#102238", color: "#f3f7fb" }}>
+            {SCENARIOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+            <button type="button" onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
+            <button type="button" onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
+          </div>
+          <button type="button" onClick={clear}>Arrêter</button>
+        </div>
+      )}
     </div>
   );
 }

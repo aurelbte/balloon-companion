@@ -73,6 +73,14 @@ export function isTargetedLiveFlightSimulator(search: string): boolean {
   return new URLSearchParams(search).get("liveFlightTest") === "targeted";
 }
 
+export function targetedLiveSimulatorUi(search: string, expanded: boolean): Readonly<{
+  controlVisible: boolean;
+  panelVisible: boolean;
+}> {
+  const controlVisible = isTargetedLiveFlightSimulator(search);
+  return { controlVisible, panelVisible: controlVisible && expanded };
+}
+
 export function createTargetedLiveFlightSimulator(search: string) {
   if (!isTargetedLiveFlightSimulator(search)) throw new Error("LIVE_SIMULATOR_TARGETED_MODE_REQUIRED");
   return { run: simulateLiveFlightScenario };
