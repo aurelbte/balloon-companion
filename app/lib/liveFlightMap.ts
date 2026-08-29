@@ -23,6 +23,19 @@ export type InterpolatedLiveCoordinate = Readonly<{
   heading: number | null;
 }>;
 
+export const SHARED_PILOT_MODAL_LAYOUT = {
+  zIndex: 1_000,
+  closeTouchTargetPx: 44,
+  horizontalMarginPx: 14,
+  centered: true,
+} as const;
+
+export const SHARED_PILOT_REOPEN_GUARD_MS = 350;
+
+export function canOpenSharedPilot(suppressedUntil: number, now = Date.now()): boolean {
+  return now >= suppressedUntil;
+}
+
 export function getSharedPilotSelectionAfterAction(
   currentPilotId: string | null,
   action: "OPEN" | "CLOSE" | "MAP_PRESS",

@@ -3,6 +3,9 @@ import test from "node:test";
 import { buildLiveFlightPayload } from "./liveFlightSharing.ts";
 import {
   SharedPilotMapStore,
+  SHARED_PILOT_MODAL_LAYOUT,
+  SHARED_PILOT_REOPEN_GUARD_MS,
+  canOpenSharedPilot,
   getSharedPilotSelectionAfterAction,
   interpolateLiveCoordinate,
   relativeLiveAltitudeMeters,
@@ -26,6 +29,21 @@ test("une seule fiche pilote est ouverte et fermeture/carte la ferment immédiat
   assert.equal(getSharedPilotSelectionAfterAction("charles", "OPEN", "jean"), "jean");
   assert.equal(getSharedPilotSelectionAfterAction("jean", "CLOSE"), null);
   assert.equal(getSharedPilotSelectionAfterAction("charles", "MAP_PRESS"), null);
+});
+
+test("la modal est centrée au-dessus de MapLibre avec une cible tactile iPhone", () => {
+  assert.equal(SHARED_PILOT_MODAL_LAYOUT.centered, true);
+  assert.ok(SHARED_PILOT_MODAL_LAYOUT.zIndex >= 1_000);
+  assert.ok(SHARED_PILOT_MODAL_LAYOUT.closeTouchTargetPx >= 44);
+  assert.ok(SHARED_PILOT_MODAL_LAYOUT.horizontalMarginPx > 0);
+});
+
+test("le geste Safari de fermeture ne peut pas rouvrir immédiatement le marqueur dessous", () => {
+  const dismissedAt = NOW;
+  const suppressedUntil = dismissedAt + SHARED_PILOT_REOPEN_GUARD_MS;
+  assert.equal(canOpenSharedPilot(suppressedUntil, dismissedAt), false);
+  assert.equal(canOpenSharedPilot(suppressedUntil, suppressedUntil - 1), false);
+  assert.equal(canOpenSharedPilot(suppressedUntil, suppressedUntil), true);
 });
 
 test("l'interpolation est bornée et suit le plus court changement de cap", () => {

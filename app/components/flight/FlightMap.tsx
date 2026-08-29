@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
 import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -29,7 +30,6 @@ import {
   CURRENT_POSITION_MARKER_STYLE,
   FLIGHT_TRACK_STYLE,
   GPS_PROJECTION_STYLE,
-  SHARED_PILOT_CARD_LAYOUT,
   getFollowCameraOffset,
   getFollowPositionAfterAction,
   getMapCameraInsets,
@@ -60,8 +60,11 @@ import {
 } from "../../lib/powerLines";
 import {
   interpolateLiveCoordinate,
+  canOpenSharedPilot,
   getSharedPilotSelectionAfterAction,
   relativeLiveAltitudeMeters,
+  SHARED_PILOT_MODAL_LAYOUT,
+  SHARED_PILOT_REOPEN_GUARD_MS,
   sharedPilotInitials,
   sharedPilotVisibility,
   type SharedPilotMapEntry,
@@ -304,6 +307,7 @@ export default function FlightMap({
   const sharedPilotMarkersRef = useRef(new Map<string, SharedPilotMarker>());
   const [selectedSharedPilotId, setSelectedSharedPilotId] = useState<string | null>(null);
   const [selectedPilotNow, setSelectedPilotNow] = useState(() => Date.now());
+  const suppressSharedPilotOpenUntilRef = useRef(0);
   const lastMarkerHeadingRef = useRef<number | null>(null);
   const projectionTimeMarkersRef = useRef<ProjectionTimeMarker[]>([]);
   const sourceRef = useRef<boolean>(false);
@@ -637,6 +641,7 @@ export default function FlightMap({
     });
 
     map.current.on("click", (event) => {
+      suppressSharedPilotOpenUntilRef.current = Date.now() + SHARED_PILOT_REOPEN_GUARD_MS;
       setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "MAP_PRESS"));
       onMapPressRef.current?.();
       if (
@@ -1350,6 +1355,7 @@ export default function FlightMap({
         element.setAttribute("aria-label", `Position partagée de ${pilot.displayName}`);
         element.addEventListener("click", (event) => {
           event.stopPropagation();
+          if (!canOpenSharedPilot(suppressSharedPilotOpenUntilRef.current)) return;
           setSelectedPilotNow(Date.now());
           setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "OPEN", pilot.pilotId));
         });
@@ -1415,6 +1421,10 @@ export default function FlightMap({
   const selectedRelativeAltitude = selectedSharedPilot
     ? relativeLiveAltitudeMeters(selectedSharedPilot.current, currentPosition?.altitude, Boolean(currentPosition), selectedPilotNow)
     : null;
+  const dismissSharedPilot = () => {
+    suppressSharedPilotOpenUntilRef.current = Date.now() + SHARED_PILOT_REOPEN_GUARD_MS;
+    setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "CLOSE"));
+  };
 
   useEffect(() => {
     if (!map.current || recenterRequest === lastRecenterRequestRef.current) {
@@ -1715,25 +1725,22 @@ export default function FlightMap({
         className="flight-map"
         style={{ width: "100%", height: "100%" }}
       />
-      {selectedSharedPilot && selectedSharedPilotVisibility?.visible && (
+      {selectedSharedPilot && selectedSharedPilotVisibility?.visible && createPortal(
         <div
-          role="dialog"
-          aria-label={`Position partagée de ${selectedSharedPilot.displayName}`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          style={{ position: "absolute", left: "50%", bottom: `calc(max(var(--bc-space-4), env(safe-area-inset-bottom)) + ${SHARED_PILOT_CARD_LAYOUT.bottomClearance}px)`, zIndex: 30, width: "min(292px, calc(100vw - 28px))", maxHeight: `calc(100dvh - max(var(--bc-space-4), env(safe-area-inset-top)) - max(var(--bc-space-4), env(safe-area-inset-bottom)) - ${SHARED_PILOT_CARD_LAYOUT.bottomClearance}px - 8px)`, overflowY: "auto", transform: "translateX(-50%)", padding: "12px 14px", border: "1px solid rgba(125,211,252,.48)", borderRadius: 14, background: "rgba(7,17,31,.95)", color: "#f3f7fb", boxShadow: "0 10px 28px rgba(6,17,31,.55)" }}
+          data-shared-pilot-modal-overlay
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.target === event.currentTarget) dismissSharedPilot();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          style={{ position: "fixed", inset: 0, zIndex: SHARED_PILOT_MODAL_LAYOUT.zIndex, display: "grid", placeItems: "center", padding: `max(16px, env(safe-area-inset-top)) ${SHARED_PILOT_MODAL_LAYOUT.horizontalMarginPx}px max(16px, env(safe-area-inset-bottom))`, background: "rgba(6,17,31,.12)", pointerEvents: "auto", touchAction: "manipulation" }}
         >
-          <button
-            type="button"
-            aria-label="Fermer la fiche pilote"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "CLOSE"));
-            }}
-            style={{ position: "absolute", top: 7, right: 8, zIndex: 1, width: 36, height: 36, border: 0, background: "transparent", color: "#f3f7fb", fontSize: 21, touchAction: "manipulation" }}
-          >×</button>
+          <div role="dialog" aria-modal="true" aria-label={`Position partagée de ${selectedSharedPilot.displayName}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} style={{ position: "relative", zIndex: 1, width: "min(292px, calc(100vw - 28px))", maxHeight: "calc(100dvh - max(32px, env(safe-area-inset-top)) - max(32px, env(safe-area-inset-bottom)))", overflowY: "auto", padding: "12px 14px", border: "1px solid rgba(125,211,252,.48)", borderRadius: 14, background: "rgba(7,17,31,.95)", color: "#f3f7fb", boxShadow: "0 10px 28px rgba(6,17,31,.55)" }}>
+          <button type="button" aria-label="Fermer la fiche pilote" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); dismissSharedPilot(); }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); }} style={{ position: "absolute", top: 4, right: 4, zIndex: 2, display: "grid", placeItems: "center", width: SHARED_PILOT_MODAL_LAYOUT.closeTouchTargetPx, height: SHARED_PILOT_MODAL_LAYOUT.closeTouchTargetPx, padding: 0, border: 0, background: "transparent", color: "#f3f7fb", fontSize: 23, lineHeight: 1, touchAction: "manipulation" }}>×</button>
           <strong style={{ display: "block", paddingRight: 28, fontSize: 15 }}>{selectedSharedPilot.displayName}</strong>
           {selectedSharedPilotVisibility.freshness === "STALE" && <p style={{ margin: "4px 0 8px", color: "#fbbf24", fontSize: 11, fontWeight: 750 }}>Position ancienne · {Math.ceil((selectedPilotNow - selectedSharedPilot.current.gpsTimestamp) / 1_000)} s</p>}
           <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", margin: "9px 0 0", fontSize: 12 }}>
@@ -1744,8 +1751,9 @@ export default function FlightMap({
             <div><dt style={{ color: "#9fb0c2" }}>Vol</dt><dd style={{ margin: 0, fontWeight: 800 }}>{String(Math.floor(selectedSharedPilot.current.durationSeconds / 3600)).padStart(2, "0")}:{String(Math.floor((selectedSharedPilot.current.durationSeconds % 3600) / 60)).padStart(2, "0")}</dd></div>
             <div><dt style={{ color: "#9fb0c2" }}>Distance</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</dd></div>
           </dl>
+          </div>
         </div>
-      )}
+      , document.body)}
       {baseMap === "satellite" && mapTilerKey && (
         <a
           href="https://www.maptiler.com/"

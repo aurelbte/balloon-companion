@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   CURRENT_POSITION_MARKER_STYLE,
   FLIGHT_BOTTOM_LAYOUT,
-  SHARED_PILOT_CARD_LAYOUT,
   FLIGHT_TRACK_STYLE,
   GPS_PROJECTION_STYLE,
   getFollowCameraOffset,
@@ -172,14 +171,4 @@ test("la barre d'instruments laisse exactement 10 px de carte", () => {
       FLIGHT_BOTTOM_LAYOUT.instrumentsHeight +
       12,
   );
-});
-
-test("la fiche pilote reste au-dessus des instruments avec une marge dédiée", () => {
-  assert.equal(
-    SHARED_PILOT_CARD_LAYOUT.bottomClearance,
-    FLIGHT_BOTTOM_LAYOUT.instrumentsBottomOffset +
-      FLIGHT_BOTTOM_LAYOUT.instrumentsHeight +
-      SHARED_PILOT_CARD_LAYOUT.gapAboveInstruments,
-  );
-  assert.ok(SHARED_PILOT_CARD_LAYOUT.gapAboveInstruments > 0);
 });
