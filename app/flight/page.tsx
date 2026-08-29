@@ -68,11 +68,15 @@ import { loadFriendsSnapshot, type FriendProfile } from "../lib/friends.ts";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
 import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
+import { shouldRequestLocalFlightGeolocationOnMount } from "../lib/liveFlightSimulator.ts";
 
 export default function FlightPage() {
   const router = useRouter();
   const auth = useBalloonAuth();
   const currentUserId = auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null;
+  const shouldRequestLocalGeolocation = typeof window === "undefined"
+    ? true
+    : shouldRequestLocalFlightGeolocationOnMount(window.location.search);
   const completionPath = () => `/flight/complete${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
@@ -287,9 +291,10 @@ export default function FlightPage() {
   }, [currentPosition, gpsProjection.length, layerSettings.weatherProjection]);
 
   useEffect(() => {
+    if (!shouldRequestLocalGeolocation) return;
     markAcquiring();
     requestPermission();
-  }, [markAcquiring, requestPermission]);
+  }, [markAcquiring, requestPermission, shouldRequestLocalGeolocation]);
 
   useEffect(() => {
     if ((geoState === "active" || geoState === "simulation") && !isStale) {

@@ -23,7 +23,7 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 
 select throws_ok(
   $$ insert into public.friend_requests (sender_id, recipient_id) values ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111') $$,
-  '23514', null, 'impossible de se demander soi-même'
+  '42501', null, 'impossible de se demander soi-même'
 );
 select throws_ok(
   $$ insert into public.friend_requests (sender_id, recipient_id) values ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222') $$,

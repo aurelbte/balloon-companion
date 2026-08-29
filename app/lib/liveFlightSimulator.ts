@@ -73,6 +73,10 @@ export function isTargetedLiveFlightSimulator(search: string): boolean {
   return new URLSearchParams(search).get("liveFlightTest") === "targeted";
 }
 
+export function shouldRequestLocalFlightGeolocationOnMount(search: string): boolean {
+  return !isTargetedLiveFlightSimulator(search);
+}
+
 export function targetedLiveSimulatorUi(search: string, expanded: boolean): Readonly<{
   controlVisible: boolean;
   panelVisible: boolean;

@@ -48,7 +48,7 @@ function backend() {
 
 const source = () => ({ latitude: 50.6, longitude: 3.1, altitude: 620, groundSpeed: 4, heading: 245, durationSeconds: 120, distanceKm: 1.2, accuracy: 5, gpsTimestamp: Date.now(), fresh: true });
 
-test("A partage réellement avec B, B découvre le canal et reçoit le payload validé", async () => {
+test("A partage réellement avec B, B sans source GPS locale découvre le canal et reçoit le payload validé", async () => {
   const server = backend();
   let pilotsB = [];
   const noop = { onOutgoing() {}, onIncomingPilots() {}, onIncomingOwners() {} };
@@ -57,6 +57,7 @@ test("A partage réellement avec B, B découvre le canal et reçoit le payload v
   await runtimeA.start(A); await runtimeB.start(B);
   await runtimeA.addRecipient(B, "flight-a");
   await runtimeB.refreshIncoming();
+  assert.equal(server.calls.some(({ userId, name }) => userId === B && name === "start_live_share_session"), false);
   assert.equal(await runtimeA.publishSource(source(), true), true);
   assert.equal(pilotsB.length, 1);
   assert.equal(pilotsB[0].pilotId, A);

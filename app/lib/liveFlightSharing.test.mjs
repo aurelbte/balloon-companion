@@ -11,7 +11,7 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
+import { createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, shouldRequestLocalFlightGeolocationOnMount, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -197,6 +197,13 @@ test("le simulateur ciblé est absent sur une URL normale et activable avec le p
   assert.deepEqual(targetedLiveSimulatorUi("", false), { controlVisible: false, panelVisible: false });
   assert.deepEqual(targetedLiveSimulatorUi("?liveFlightTest=targeted", false), { controlVisible: true, panelVisible: false });
   assert.deepEqual(targetedLiveSimulatorUi("?liveFlightTest=targeted", true), { controlVisible: true, panelVisible: true });
+});
+
+test("le récepteur ciblé n'exige pas le GPS local tandis que le mode normal conserve la demande", () => {
+  assert.equal(shouldRequestLocalFlightGeolocationOnMount("?liveFlightTest=targeted"), false);
+  assert.equal(shouldRequestLocalFlightGeolocationOnMount(""), true);
+  assert.equal(shouldRequestLocalFlightGeolocationOnMount("?cloudSyncTest=targeted"), true);
+  assert.equal(shouldRequestLocalFlightGeolocationOnMount("?liveFlightTest=other"), true);
 });
 
 test("le socle ne référence ni Cloud Sync, ni R2, ni FlightMap, ni stockage GPS", () => {
