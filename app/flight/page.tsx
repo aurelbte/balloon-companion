@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useFlightRuntime } from "../contexts/FlightRuntimeContext";
 import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
@@ -66,7 +66,8 @@ import type { SharedPilotMapEntry } from "../lib/liveFlightMap.ts";
 import LiveSharingPanel from "../components/flight/LiveSharingPanel";
 import { loadFriendsSnapshot, type FriendProfile } from "../lib/friends.ts";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
-import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, toggleLiveRecipient, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
+import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
+import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -114,7 +115,10 @@ export default function FlightPage() {
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
-  const [sharedPilots, setSharedPilots] = useState<SharedPilotMapEntry[]>([]);
+  const [realSharedPilots, setRealSharedPilots] = useState<SharedPilotMapEntry[]>([]);
+  const [simulatedSharedPilots, setSimulatedSharedPilots] = useState<SharedPilotMapEntry[]>([]);
+  const [incomingOwnerIds, setIncomingOwnerIds] = useState<string[]>([]);
+  const liveRuntimeRef = useRef<LiveFlightRuntime | null>(null);
   useEffect(() => {
     const userId = currentUserId;
     let active = true;
@@ -135,6 +139,33 @@ export default function FlightPage() {
     window.addEventListener("online", online);
     return () => { window.removeEventListener("offline", offline); window.removeEventListener("online", online); };
   }, []);
+
+  useEffect(() => {
+    const userId = currentUserId;
+    if (!userId) {
+      const previous = liveRuntimeRef.current;
+      liveRuntimeRef.current = null;
+      if (previous) void previous.close();
+      return;
+    }
+    const runtime = new LiveFlightRuntime(createBrowserSupabaseClient(), {
+      onOutgoing: (snapshot) => {
+        if (liveRuntimeRef.current !== runtime) return;
+        setLiveSharingUserId(userId);
+        setLiveSharingUi((state) => ({
+          ...state,
+          recipientIds: snapshot.recipientIds,
+          pendingRecipientIds: snapshot.pendingRecipientIds,
+          connection: snapshot.channelState === "SUBSCRIBED" ? "ACTIVE" : snapshot.channelState === "OFFLINE" ? "OFFLINE" : snapshot.recipientIds.length ? "RECONNECTING" : "IDLE",
+        }));
+      },
+      onIncomingPilots: (pilots) => { if (liveRuntimeRef.current === runtime) setRealSharedPilots(pilots); },
+      onIncomingOwners: (ownerIds) => { if (liveRuntimeRef.current === runtime) setIncomingOwnerIds([...ownerIds]); },
+    });
+    liveRuntimeRef.current = runtime;
+    void runtime.start(userId);
+    return () => { if (liveRuntimeRef.current === runtime) liveRuntimeRef.current = null; void runtime.close(); };
+  }, [currentUserId]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPlannedTrajectories(loadExportedPlannedTrajectories());
@@ -323,6 +354,7 @@ export default function FlightPage() {
 
   const handleConfirmStopTracking = useCallback(async () => {
     setFlightActionBusy(true);
+    liveRuntimeRef.current?.stopOutgoingBestEffort();
     setLiveSharingUi(stopLiveSharingUi());
     setIsLiveSharingOpen(false);
     const completed = await stopTracking();
@@ -379,6 +411,7 @@ export default function FlightPage() {
       return;
     }
     setFlightActionBusy(true);
+    liveRuntimeRef.current?.stopOutgoingBestEffort();
     setLiveSharingUi(stopLiveSharingUi());
     setIsLiveSharingOpen(false);
     const completed = await stopTracking();
@@ -522,12 +555,17 @@ export default function FlightPage() {
     highContrast: layerSettings.highContrast,
   });
   const liveSharingForCurrentUser = liveSharingUserId === currentUserId ? liveSharingUi : EMPTY_LIVE_SHARING_UI_STATE;
+  const sharedPilots = useMemo(() => {
+    const byId = new Map(realSharedPilots.map((pilot) => [pilot.pilotId, pilot]));
+    for (const pilot of simulatedSharedPilots) byId.set(pilot.pilotId, pilot);
+    return [...byId.values()];
+  }, [realSharedPilots, simulatedSharedPilots]);
   const liveFriends = useMemo(() => {
     const byId = new Map((friendsUserId === currentUserId ? friends : []).map((friend) => [friend.userId, friend]));
     for (const pilot of sharedPilots) if (!byId.has(pilot.pilotId)) byId.set(pilot.pilotId, { userId: pilot.pilotId, displayName: pilot.displayName, handle: pilot.displayName.toLocaleLowerCase("fr-FR").replaceAll(" ", "."), searchEnabled: false });
     return [...byId.values()];
   }, [currentUserId, friends, friendsUserId, sharedPilots]);
-  const displayedLiveSharingUi = useMemo<LiveSharingUiState>(() => ({ ...liveSharingForCurrentUser, incomingPilotIds: sharedPilots.map((pilot) => pilot.pilotId) }), [liveSharingForCurrentUser, sharedPilots]);
+  const displayedLiveSharingUi = useMemo<LiveSharingUiState>(() => ({ ...liveSharingForCurrentUser, incomingPilotIds: [...new Set([...incomingOwnerIds, ...simulatedSharedPilots.map((pilot) => pilot.pilotId)])] }), [incomingOwnerIds, liveSharingForCurrentUser, simulatedSharedPilots]);
   const flightSession = useMemo(
     () =>
       createFlightSession({
@@ -567,6 +605,23 @@ export default function FlightPage() {
       weatherProjection,
     ],
   );
+  useEffect(() => {
+    if (!flightSession.state.isRecording || !flightSession.position.current) return;
+    const position = flightSession.position.current;
+    const source: LivePositionSource = {
+      latitude: position.latitude,
+      longitude: position.longitude,
+      altitude: position.altitude,
+      groundSpeed: position.speed,
+      heading: position.heading,
+      durationSeconds: flightSession.statistics.metrics.durationSeconds,
+      distanceKm: flightSession.statistics.metrics.distanceKm ?? 0,
+      accuracy: position.accuracy,
+      gpsTimestamp: position.gpsTimestamp ?? position.timestamp,
+      fresh: !flightSession.position.isStale,
+    };
+    void liveRuntimeRef.current?.publishSource(source);
+  }, [flightSession]);
   const observedWindProfile = useMemo(
     () => aggregateObservedWind(flightSession.trajectory.points),
     [flightSession.trajectory.points],
@@ -637,8 +692,9 @@ export default function FlightPage() {
       <LiveFlightSimulatorPanel
         scopeKey={auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null}
         trackingActive={flightSession.state.isRecording}
-        onPilotsChange={setSharedPilots}
+        onPilotsChange={setSimulatedSharedPilots}
         onConnectionStateChange={(connection) => { setLiveSharingUserId(currentUserId); setLiveSharingUi((state) => ({ ...state, connection })); }}
+        onPublisherSource={(source) => { void liveRuntimeRef.current?.publishSource(source, true); }}
       />
 
       <LiveSharingPanel
@@ -647,7 +703,12 @@ export default function FlightPage() {
         state={displayedLiveSharingUi}
         trackingActive={flightSession.state.isRecording}
         onClose={() => setIsLiveSharingOpen(false)}
-        onToggleRecipient={(friendId) => { setLiveSharingUserId(currentUserId); setLiveSharingUi((state) => toggleLiveRecipient(liveSharingUserId === currentUserId ? state : EMPTY_LIVE_SHARING_UI_STATE, friendId)); }}
+        onToggleRecipient={(friendId) => {
+          const runtime = liveRuntimeRef.current;
+          if (!runtime) return;
+          if (liveSharingForCurrentUser.recipientIds.includes(friendId)) void runtime.removeRecipient(friendId).catch(() => undefined);
+          else void runtime.addRecipient(friendId, activeFlight?.id ?? null).catch(() => undefined);
+        }}
       />
 
       {/* Panneau d'instruments */}

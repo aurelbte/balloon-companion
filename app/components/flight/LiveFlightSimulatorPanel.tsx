@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { SharedPilotMapStore, type SharedPilotIdentity, type SharedPilotMapEntry } from "../../lib/liveFlightMap.ts";
 import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
 import type { LiveSharingConnectionState } from "../../lib/liveFlightUi.ts";
+import type { LivePositionSource } from "../../lib/liveFlightRuntime.ts";
 
 const CHARLES: SharedPilotIdentity = {
   pilotId: "dev-charles-grelin",
@@ -33,7 +34,8 @@ export default function LiveFlightSimulatorPanel({
   onPilotsChange,
   onConnectionStateChange,
   trackingActive,
-}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; trackingActive: boolean }>) {
+  onPublisherSource,
+}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; onPublisherSource?: (source: LivePositionSource) => void; trackingActive: boolean }>) {
   const storeRef = useRef(new SharedPilotMapStore());
   const timersRef = useRef<number[]>([]);
   const [scenario, setScenario] = useState<LiveSimulationScenario>("NORMAL_FLIGHT");
@@ -89,6 +91,16 @@ export default function LiveFlightSimulatorPanel({
     }
   };
 
+  const playPublisherSource = () => {
+    const simulator = createTargetedLiveFlightSimulator(window.location.search);
+    const startedAt = Date.now();
+    for (const event of simulator.run(scenario, CHARLES.sessionId, startedAt)) timersRef.current.push(window.setTimeout(() => {
+      if (event.kind !== "POSITION" || !event.payload || typeof event.payload !== "object") return;
+      const payload = event.payload as Record<string, unknown>;
+      onPublisherSource?.({ latitude: Number(payload.latitude), longitude: Number(payload.longitude), altitude: typeof payload.altitude === "number" ? payload.altitude : null, groundSpeed: typeof payload.groundSpeed === "number" ? payload.groundSpeed : null, heading: typeof payload.heading === "number" ? payload.heading : null, durationSeconds: Number(payload.durationSeconds), distanceKm: Number(payload.distanceKm), accuracy: typeof payload.accuracy === "number" ? payload.accuracy : null, gpsTimestamp: Date.now(), fresh: true });
+    }, Math.max(0, event.at - startedAt)));
+  };
+
   return (
     <div style={{ position: "fixed", right: 10, top: "max(104px, calc(env(safe-area-inset-top) + 88px))", zIndex: 35 }}>
       {!visibility.panelVisible ? (
@@ -104,6 +116,7 @@ export default function LiveFlightSimulatorPanel({
             <button type="button" disabled={!trackingActive} onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
             <button type="button" disabled={!trackingActive} onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
           </div>
+          <button type="button" disabled={!trackingActive || !onPublisherSource} onClick={playPublisherSource}>Émettre ma trace test</button>
           <button type="button" onClick={clear}>Arrêter</button>
         </div>
       )}

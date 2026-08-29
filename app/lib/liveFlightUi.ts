@@ -2,12 +2,14 @@ export type LiveSharingConnectionState = "IDLE" | "ACTIVE" | "RECONNECTING" | "O
 
 export type LiveSharingUiState = Readonly<{
   recipientIds: readonly string[];
+  pendingRecipientIds: readonly string[];
   incomingPilotIds: readonly string[];
   connection: LiveSharingConnectionState;
 }>;
 
 export const EMPTY_LIVE_SHARING_UI_STATE: LiveSharingUiState = {
   recipientIds: [],
+  pendingRecipientIds: [],
   incomingPilotIds: [],
   connection: "IDLE",
 };

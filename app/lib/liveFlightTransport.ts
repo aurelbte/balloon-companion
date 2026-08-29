@@ -82,6 +82,7 @@ export class LiveFlightRealtimeTransport {
   private onPosition: ((payload: LiveFlightPositionPayload, freshness: LivePositionFreshness) => void) | null = null;
   private onState: ((state: LiveChannelState) => void) | null = null;
   private onReadyToPublish: (() => void) | null = null;
+  private onEnded: (() => void) | null = null;
   private lifecycleAttached = false;
 
   constructor(client: SupabaseClient, sessions = new LiveShareSessionService(client)) { this.client = client; this.sessions = sessions; }
@@ -93,6 +94,7 @@ export class LiveFlightRealtimeTransport {
     onPosition?: (payload: LiveFlightPositionPayload, freshness: LivePositionFreshness) => void;
     onState?: (state: LiveChannelState) => void;
     onReadyToPublish?: () => void;
+    onEnded?: () => void;
   }>): Promise<void> {
     await this.disconnect();
     const generation = this.guard.activate(input.userId, input.sessionId);
@@ -100,6 +102,7 @@ export class LiveFlightRealtimeTransport {
     this.onPosition = input.onPosition ?? null;
     this.onState = input.onState ?? null;
     this.onReadyToPublish = input.onReadyToPublish ?? null;
+    this.onEnded = input.onEnded ?? null;
     this.attachLifecycle();
     await this.openCurrentChannel();
     if (input.mode === "PUBLISHER") this.heartbeatTimer = setInterval(() => { void this.heartbeat(); }, LIVE_HEARTBEAT_INTERVAL_MS);
@@ -119,6 +122,9 @@ export class LiveFlightRealtimeTransport {
       if (!result.ok || !this.sequences.accept(result.payload)) return;
       this.onPosition?.(result.payload, livePositionFreshness(result.payload.gpsTimestamp));
     });
+    channel.on("broadcast", { event: "ended" }, () => {
+      if (this.guard.valid(config.userId, config.sessionId, config.generation)) this.onEnded?.();
+    });
     this.channel = channel;
     channel.subscribe((status) => {
       if (!this.guard.valid(config.userId, config.sessionId, config.generation)) return;
@@ -135,6 +141,12 @@ export class LiveFlightRealtimeTransport {
     const validation = validateLiveFlightPayload(payload, config.sessionId);
     if (!validation.ok) return false;
     return (await this.channel.send({ type: "broadcast", event: "position", payload: validation.payload })) === "ok";
+  }
+
+  async signalEnd(): Promise<void> {
+    const config = this.activeConfig;
+    if (!config || config.mode !== "PUBLISHER" || !this.channel || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+    await this.channel.send({ type: "broadcast", event: "ended", payload: { sessionId: config.sessionId } });
   }
 
   private async heartbeat(): Promise<void> {
@@ -197,6 +209,6 @@ export class LiveFlightRealtimeTransport {
     await this.dropChannel();
     this.detachLifecycle();
     this.onState?.("CLOSED");
-    this.onPosition = null; this.onState = null; this.onReadyToPublish = null;
+    this.onPosition = null; this.onState = null; this.onReadyToPublish = null; this.onEnded = null;
   }
 }
