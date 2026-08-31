@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SharedPilotMapStore, type SharedPilotIdentity, type SharedPilotMapEntry } from "../../lib/liveFlightMap.ts";
-import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
+import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, shouldInvalidatePublisherSource, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
 import type { LiveSharingConnectionState } from "../../lib/liveFlightUi.ts";
 import type { LivePositionSource } from "../../lib/liveFlightRuntime.ts";
 
@@ -44,10 +44,14 @@ export default function LiveFlightSimulatorPanel({
   const [enabled, setEnabled] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const publisherScenarioActiveRef = useRef(false);
+  const publisherGenerationRef = useRef(0);
+  const lastPublisherSourceRef = useRef<LivePositionSource | null>(null);
 
   const clear = () => {
+    publisherGenerationRef.current += 1;
     for (const timer of timersRef.current) window.clearTimeout(timer);
     timersRef.current = [];
+    lastPublisherSourceRef.current = null;
     storeRef.current.clearForUserSwitch();
     onPilotsChange([]);
   };
@@ -105,21 +109,31 @@ export default function LiveFlightSimulatorPanel({
 
   const playPublisherSource = () => {
     clear();
+    const generation = publisherGenerationRef.current;
     publisherScenarioActiveRef.current = true;
     onPublisherScenarioActiveChange?.(true);
     const simulator = createTargetedLiveFlightSimulator(window.location.search);
     const startedAt = Date.now();
     for (const event of simulator.run(scenario, CHARLES.sessionId, startedAt)) timersRef.current.push(window.setTimeout(() => {
+      if (generation !== publisherGenerationRef.current) return;
       const action = livePublisherScenarioAction(event);
       if (action === "END_EXPLICITLY") {
+        clear();
         publisherScenarioActiveRef.current = false;
         onPublisherEnd?.();
         onPublisherScenarioActiveChange?.(false);
         return;
       }
+      if (shouldInvalidatePublisherSource(event)) {
+        const lastSource = lastPublisherSourceRef.current;
+        if (lastSource) onPublisherSource?.({ ...lastSource, fresh: false });
+        return;
+      }
       if (action !== "PUBLISH_POSITION" || event.kind !== "POSITION" || !event.payload || typeof event.payload !== "object") return;
       const payload = event.payload as Record<string, unknown>;
-      onPublisherSource?.({ latitude: Number(payload.latitude), longitude: Number(payload.longitude), altitude: typeof payload.altitude === "number" ? payload.altitude : null, groundSpeed: typeof payload.groundSpeed === "number" ? payload.groundSpeed : null, heading: typeof payload.heading === "number" ? payload.heading : null, durationSeconds: Number(payload.durationSeconds), distanceKm: Number(payload.distanceKm), accuracy: typeof payload.accuracy === "number" ? payload.accuracy : null, gpsTimestamp: Date.now(), fresh: true });
+      const source = { latitude: Number(payload.latitude), longitude: Number(payload.longitude), altitude: typeof payload.altitude === "number" ? payload.altitude : null, groundSpeed: typeof payload.groundSpeed === "number" ? payload.groundSpeed : null, heading: typeof payload.heading === "number" ? payload.heading : null, durationSeconds: Number(payload.durationSeconds), distanceKm: Number(payload.distanceKm), accuracy: typeof payload.accuracy === "number" ? payload.accuracy : null, gpsTimestamp: Date.now(), fresh: true } satisfies LivePositionSource;
+      lastPublisherSourceRef.current = source;
+      onPublisherSource?.(source);
     }, Math.max(0, event.at - startedAt)));
   };
 

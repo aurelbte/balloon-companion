@@ -11,7 +11,7 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, shouldInvalidatePublisherSource, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -223,8 +223,12 @@ test("les scénarios Realtime publient les positions, terminent explicitement ou
   const normalEnd = simulateLiveFlightScenario("NORMAL_END", SESSION_A, NOW);
   assert.equal(normalEnd.every((event) => livePublisherScenarioAction(event) !== "KEEP_SILENT"), true);
   assert.equal(livePublisherScenarioAction(normalEnd.at(-1)), "END_EXPLICITLY");
+  assert.equal(normalEnd.length, 1);
+  assert.equal(normalEnd[0].at, NOW);
   const crash = simulateLiveFlightScenario("SIMULATED_CRASH", SESSION_A, NOW);
   assert.equal(livePublisherScenarioAction(crash.at(-1)), "KEEP_SILENT");
+  assert.equal(shouldInvalidatePublisherSource(crash.at(-1)), true);
+  assert.equal(shouldInvalidatePublisherSource(normalEnd[0]), false);
   assert.equal(crash.filter((event) => livePublisherScenarioAction(event) === "PUBLISH_POSITION").length, 3);
   const lastPosition = crash.filter((event) => event.kind === "POSITION").at(-1);
   assert.equal(lastPosition?.kind, "POSITION");

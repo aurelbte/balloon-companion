@@ -26,6 +26,10 @@ export function livePublisherScenarioAction(event: LiveSimulationEvent): LivePub
   return "KEEP_SILENT";
 }
 
+export function shouldInvalidatePublisherSource(event: LiveSimulationEvent): boolean {
+  return event.kind === "CRASH";
+}
+
 export function shouldPublishTrackedLiveSource(publisherScenarioActive: boolean): boolean {
   return !publisherScenarioActive;
 }
@@ -68,7 +72,7 @@ export function simulateLiveFlightScenario(scenario: LiveSimulationScenario, ses
       { kind: "POSITION", at: startedAt + 45_000, payload: point(sessionId, startedAt, 9) },
     ];
     case "RECONNECTION": return [...positions(base.slice(0, 2)), { kind: "NETWORK_OFFLINE", at: startedAt + 10_000 }, { kind: "NETWORK_ONLINE", at: startedAt + 20_000 }, ...positions(base.slice(4, 6))];
-    case "NORMAL_END": return [...positions(base), { kind: "END", at: startedAt + 30_000 }];
+    case "NORMAL_END": return [{ kind: "END", at: startedAt }];
     case "SIMULATED_CRASH": return [...positions(base.slice(0, 3)), { kind: "CRASH", at: startedAt + 15_000 }];
     case "OUT_OF_ORDER": return positions([base[0], base[2], base[1]]);
     case "DUPLICATES": return positions([base[0], base[1], { ...base[1] }]);

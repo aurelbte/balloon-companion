@@ -13,6 +13,7 @@ function backend() {
   const sessions = new Map();
   const channels = new Map();
   const calls = [];
+  const messages = [];
   let nextSession = S1;
   const client = (userId) => ({
     realtime: { setAuth: async () => undefined },
@@ -35,16 +36,17 @@ function backend() {
       const listeners = new Map();
       const channel = {
         topic,
+        statusCallback: null,
         on(_kind, filter, callback) { listeners.set(filter.event, callback); return channel; },
-        subscribe(callback) { if (!channels.has(topic)) channels.set(topic, new Set()); channels.get(topic).add(channel); callback("SUBSCRIBED"); return channel; },
-        async send(message) { for (const target of channels.get(topic) ?? []) if (target !== channel) target.emit(message.event, message.payload); return "ok"; },
+        subscribe(callback) { channel.statusCallback = callback; if (!channels.has(topic)) channels.set(topic, new Set()); channels.get(topic).add(channel); callback("SUBSCRIBED"); return channel; },
+        async send(message) { messages.push({ topic, event: message.event }); for (const target of channels.get(topic) ?? []) if (target !== channel) target.emit(message.event, message.payload); return "ok"; },
         emit(event, payload) { listeners.get(event)?.({ payload }); },
       };
       return channel;
     },
     removeChannel: async (channel) => { channels.get(channel.topic)?.delete(channel); return "ok"; },
   });
-  return { client, calls, sessions };
+  return { client, calls, sessions, channels, messages };
 }
 
 const source = () => ({ latitude: 50.6, longitude: 3.1, altitude: 620, groundSpeed: 4, heading: 245, durationSeconds: 120, distanceKm: 1.2, accuracy: 5, gpsTimestamp: Date.now(), fresh: true });
@@ -116,6 +118,8 @@ test("NORMAL_END parcourt le publisher réel puis retire immédiatement le réce
   const runtimeB = new LiveFlightRuntime(server.client(B), { ...noop, onIncomingPilots(pilots) { pilotsB = pilots; } });
   await runtimeA.start(A); await runtimeB.start(B);
   await runtimeA.addRecipient(B, null); await runtimeB.refreshIncoming();
+  await runtimeA.publishSource(source(), true);
+  assert.equal(pilotsB.length, 1);
   for (const event of simulateLiveFlightScenario("NORMAL_END", S1, Date.now())) {
     const action = livePublisherScenarioAction(event);
     if (action === "PUBLISH_POSITION" && event.kind === "POSITION") {
@@ -125,5 +129,21 @@ test("NORMAL_END parcourt le publisher réel puis retire immédiatement le réce
   }
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(pilotsB.length, 0);
+  await runtimeA.close(); await runtimeB.close();
+});
+
+test("une source invalidée après crash ne peut pas réapparaître sur reconnexion", async () => {
+  const server = backend();
+  const noop = { onOutgoing() {}, onIncomingPilots() {}, onIncomingOwners() {} };
+  const runtimeA = new LiveFlightRuntime(server.client(A), noop);
+  const runtimeB = new LiveFlightRuntime(server.client(B), noop);
+  await runtimeA.start(A); await runtimeB.start(B);
+  await runtimeA.addRecipient(B, null); await runtimeB.refreshIncoming();
+  await runtimeA.publishSource(source(), true);
+  const positionsBeforeSilence = server.messages.filter(({ event }) => event === "position").length;
+  assert.equal(await runtimeA.publishSource({ ...source(), fresh: false }, true), false);
+  for (const channel of server.channels.get(`flight-share:${S1}`) ?? []) channel.statusCallback?.("SUBSCRIBED");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(server.messages.filter(({ event }) => event === "position").length, positionsBeforeSilence);
   await runtimeA.close(); await runtimeB.close();
 });
