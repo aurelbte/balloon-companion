@@ -77,6 +77,10 @@ export function shouldRequestLocalFlightGeolocationOnMount(search: string): bool
   return !isTargetedLiveFlightSimulator(search);
 }
 
+export function canUseLiveFlightPublisherControls(search: string, trackingActive: boolean): boolean {
+  return trackingActive || isTargetedLiveFlightSimulator(search);
+}
+
 export function targetedLiveSimulatorUi(search: string, expanded: boolean): Readonly<{
   controlVisible: boolean;
   panelVisible: boolean;

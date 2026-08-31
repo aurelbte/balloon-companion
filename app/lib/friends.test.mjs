@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { friendOnboardingDefaults, normalizeFriendHandle, prefillFriendIdentityField, proposeFriendHandle, saveFriendProfile, sendFriendRequest, validateFriendHandle } from "./friends.ts";
+import { friendOnboardingDefaults, loadFriendsSnapshot, normalizeFriendHandle, prefillFriendIdentityField, proposeFriendHandle, saveFriendProfile, sendFriendRequest, validateFriendHandle } from "./friends.ts";
 
 const migration = readFileSync(new URL("../../supabase/migrations/20260828120000_friends_foundation.sql", import.meta.url), "utf8");
 const page = readFileSync(new URL("../more/friends/page.tsx", import.meta.url), "utf8");
@@ -61,6 +61,34 @@ test("un conflit d'unicité produit un message clair sans suffixe automatique", 
 
 test("le client refuse une demande vers soi-même avant tout accès Supabase", async () => {
   await assert.rejects(() => sendFriendRequest({}, "user-a", "user-a"), /vous-même/);
+});
+
+test("une demande déjà pending normalise 23505 sans exposer l'erreur SQL", async () => {
+  const client = { from: () => ({ insert: async () => ({ error: { code: "23505", message: "duplicate key value violates unique constraint" } }) }) };
+  await assert.doesNotReject(() => sendFriendRequest(client, "user-a", "user-b"));
+});
+
+test("le snapshot recharge les destinataires des demandes envoyées pending", async () => {
+  const query = (data) => {
+    const chain = { select: () => chain, eq: () => chain, is: () => chain, order: async () => ({ data, error: null }), maybeSingle: async () => ({ data: null, error: null }), in: async () => ({ data: [], error: null }), then: (resolve) => resolve({ data, error: null }) };
+    return chain;
+  };
+  const client = {
+    from(table) {
+      if (table === "friend_profiles") return query(null);
+      if (table === "friendships") return query([]);
+      let senderFilter = false;
+      const chain = query([]);
+      chain.eq = (column) => { if (column === "sender_id") senderFilter = true; return chain; };
+      chain.then = (resolve) => resolve({ data: senderFilter ? [{ recipient_id: "user-b" }] : [], error: null });
+      return chain;
+    },
+  };
+  const snapshot = await loadFriendsSnapshot(client, "user-a");
+  assert.deepEqual(snapshot.pendingSentRecipientIds, ["user-b"]);
+  assert.match(page, /En attente de réponse/);
+  assert.match(page, /busyId !== null \|\| pending/);
+  assert.match(page, /actionBusyRef\.current/);
 });
 
 test("la migration impose unicité insensible à la casse et paire canonique", () => {

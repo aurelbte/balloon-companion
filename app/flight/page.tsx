@@ -68,7 +68,7 @@ import { loadFriendsSnapshot, type FriendProfile } from "../lib/friends.ts";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
 import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
-import { shouldRequestLocalFlightGeolocationOnMount } from "../lib/liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, shouldRequestLocalFlightGeolocationOnMount } from "../lib/liveFlightSimulator.ts";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -249,6 +249,8 @@ export default function FlightPage() {
     markAcquiring,
     markReady,
   } = tracking;
+  const livePublisherControlsEnabled = typeof window !== "undefined"
+    && canUseLiveFlightPublisherControls(window.location.search, isTracking);
 
   // Une projection exige un point frais, un cap réel et une vitesse suffisante.
   // Un cap absent ne doit jamais être interprété comme un cap nord (0°).
@@ -696,7 +698,7 @@ export default function FlightPage() {
 
       <LiveFlightSimulatorPanel
         scopeKey={auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null}
-        trackingActive={flightSession.state.isRecording}
+        trackingActive={livePublisherControlsEnabled}
         onPilotsChange={setSimulatedSharedPilots}
         onConnectionStateChange={(connection) => { setLiveSharingUserId(currentUserId); setLiveSharingUi((state) => ({ ...state, connection })); }}
         onPublisherSource={(source) => { void liveRuntimeRef.current?.publishSource(source, true); }}
@@ -706,7 +708,7 @@ export default function FlightPage() {
         open={isLiveSharingOpen}
         friends={liveFriends}
         state={displayedLiveSharingUi}
-        trackingActive={flightSession.state.isRecording}
+        trackingActive={livePublisherControlsEnabled}
         onClose={() => setIsLiveSharingOpen(false)}
         onToggleRecipient={(friendId) => {
           const runtime = liveRuntimeRef.current;

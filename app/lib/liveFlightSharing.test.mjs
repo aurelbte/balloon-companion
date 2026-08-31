@@ -11,7 +11,7 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, shouldRequestLocalFlightGeolocationOnMount, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, shouldRequestLocalFlightGeolocationOnMount, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -204,6 +204,13 @@ test("le récepteur ciblé n'exige pas le GPS local tandis que le mode normal co
   assert.equal(shouldRequestLocalFlightGeolocationOnMount(""), true);
   assert.equal(shouldRequestLocalFlightGeolocationOnMount("?cloudSyncTest=targeted"), true);
   assert.equal(shouldRequestLocalFlightGeolocationOnMount("?liveFlightTest=other"), true);
+});
+
+test("seul le mode targeted autorise les commandes d'émission sans vol GPS actif", () => {
+  assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=targeted", false), true);
+  assert.equal(canUseLiveFlightPublisherControls("", false), false);
+  assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=other", false), false);
+  assert.equal(canUseLiveFlightPublisherControls("", true), true);
 });
 
 test("le socle ne référence ni Cloud Sync, ni R2, ni FlightMap, ni stockage GPS", () => {

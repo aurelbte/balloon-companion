@@ -5,7 +5,12 @@ export const FRIEND_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9._]{1,28}[a-z0-9])$/;
 export type FriendProfile = Readonly<{ userId: string; displayName: string; handle: string; searchEnabled: boolean }>;
 export type FriendRequest = Readonly<{ id: string; sender: FriendProfile; createdAt: string }>;
 export type Friendship = Readonly<{ id: string; friend: FriendProfile; createdAt: string }>;
-export type FriendsSnapshot = Readonly<{ ownProfile: FriendProfile | null; friends: Friendship[]; receivedRequests: FriendRequest[] }>;
+export type FriendsSnapshot = Readonly<{
+  ownProfile: FriendProfile | null;
+  friends: Friendship[];
+  receivedRequests: FriendRequest[];
+  pendingSentRecipientIds: string[];
+}>;
 
 type FriendProfileRow = { user_id: string; display_name: string; handle: string; search_enabled: boolean };
 
@@ -67,12 +72,13 @@ async function profilesByIds(client: SupabaseClient, ids: readonly string[]): Pr
 }
 
 export async function loadFriendsSnapshot(client: SupabaseClient, userId: string): Promise<FriendsSnapshot> {
-  const [own, relations, requests] = await Promise.all([
+  const [own, relations, requests, sentRequests] = await Promise.all([
     client.from("friend_profiles").select("user_id,display_name,handle,search_enabled").eq("user_id", userId).maybeSingle(),
     client.from("friendships").select("id,user_a,user_b,created_at").is("revoked_at", null).order("created_at", { ascending: false }),
     client.from("friend_requests").select("id,sender_id,created_at").eq("recipient_id", userId).eq("status", "pending").order("created_at", { ascending: false }),
+    client.from("friend_requests").select("recipient_id").eq("sender_id", userId).eq("status", "pending"),
   ]);
-  fail(own.error); fail(relations.error); fail(requests.error);
+  fail(own.error); fail(relations.error); fail(requests.error); fail(sentRequests.error);
   const relationRows = (relations.data ?? []) as { id: string; user_a: string; user_b: string; created_at: string }[];
   const requestRows = (requests.data ?? []) as { id: string; sender_id: string; created_at: string }[];
   const profileIds = [...relationRows.map((row) => row.user_a === userId ? row.user_b : row.user_a), ...requestRows.map((row) => row.sender_id)];
@@ -81,6 +87,7 @@ export async function loadFriendsSnapshot(client: SupabaseClient, userId: string
     ownProfile: own.data ? profileFromRow(own.data as FriendProfileRow) : null,
     friends: relationRows.flatMap((row) => { const friendId = row.user_a === userId ? row.user_b : row.user_a; const friend = profiles.get(friendId); return friend ? [{ id: row.id, friend, createdAt: row.created_at }] : []; }),
     receivedRequests: requestRows.flatMap((row) => { const sender = profiles.get(row.sender_id); return sender ? [{ id: row.id, sender, createdAt: row.created_at }] : []; }),
+    pendingSentRecipientIds: ((sentRequests.data ?? []) as { recipient_id: string }[]).map((row) => row.recipient_id),
   };
 }
 
@@ -104,6 +111,7 @@ export async function searchFriendProfiles(client: SupabaseClient, currentUserId
 export async function sendFriendRequest(client: SupabaseClient, senderId: string, recipientId: string): Promise<void> {
   if (senderId === recipientId) throw new Error("Vous ne pouvez pas vous ajouter vous-même.");
   const result = await client.from("friend_requests").insert({ sender_id: senderId, recipient_id: recipientId, status: "pending" });
+  if (result.error?.code === "23505") return;
   fail(result.error);
 }
 
