@@ -35,7 +35,8 @@ export default function LiveFlightSimulatorPanel({
   onConnectionStateChange,
   trackingActive,
   onPublisherSource,
-}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; onPublisherSource?: (source: LivePositionSource) => void; trackingActive: boolean }>) {
+  onPublisherEnd,
+}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; onPublisherSource?: (source: LivePositionSource) => void; onPublisherEnd?: () => void; trackingActive: boolean }>) {
   const storeRef = useRef(new SharedPilotMapStore());
   const timersRef = useRef<number[]>([]);
   const [scenario, setScenario] = useState<LiveSimulationScenario>("NORMAL_FLIGHT");
@@ -95,6 +96,10 @@ export default function LiveFlightSimulatorPanel({
     const simulator = createTargetedLiveFlightSimulator(window.location.search);
     const startedAt = Date.now();
     for (const event of simulator.run(scenario, CHARLES.sessionId, startedAt)) timersRef.current.push(window.setTimeout(() => {
+      if (event.kind === "END") {
+        onPublisherEnd?.();
+        return;
+      }
       if (event.kind !== "POSITION" || !event.payload || typeof event.payload !== "object") return;
       const payload = event.payload as Record<string, unknown>;
       onPublisherSource?.({ latitude: Number(payload.latitude), longitude: Number(payload.longitude), altitude: typeof payload.altitude === "number" ? payload.altitude : null, groundSpeed: typeof payload.groundSpeed === "number" ? payload.groundSpeed : null, heading: typeof payload.heading === "number" ? payload.heading : null, durationSeconds: Number(payload.durationSeconds), distanceKm: Number(payload.distanceKm), accuracy: typeof payload.accuracy === "number" ? payload.accuracy : null, gpsTimestamp: Date.now(), fresh: true });

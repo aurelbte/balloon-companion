@@ -180,6 +180,7 @@ test("les douze scénarios DEV sont déterministes et couvrent les anomalies", (
   assert.equal(simulateLiveFlightScenario("NETWORK_LOSS_OVER_30_SECONDS", SESSION_A, NOW).some(({ kind }) => kind === "NETWORK_OFFLINE"), true);
   assert.equal(simulateLiveFlightScenario("NORMAL_END", SESSION_A, NOW).at(-1).kind, "END");
   assert.equal(simulateLiveFlightScenario("SIMULATED_CRASH", SESSION_A, NOW).at(-1).kind, "CRASH");
+  assert.equal(simulateLiveFlightScenario("SIMULATED_CRASH", SESSION_A, NOW).some(({ kind }) => kind === "END"), false);
   assert.equal(validateLiveFlightPayload(simulateLiveFlightScenario("INVALID_PAYLOAD", SESSION_A, NOW)[0].payload, SESSION_A, NOW).ok, false);
 });
 

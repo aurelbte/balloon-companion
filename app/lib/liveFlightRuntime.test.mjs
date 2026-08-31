@@ -90,3 +90,19 @@ test("fermeture USER stoppe publication, canaux et ne reprend rien au reload", a
   assert.equal(await runtime.publishSource(source(), true), false);
   await runtime.close();
 });
+
+test("la fin explicite retire immédiatement le pilote distant sans attendre le TTL", async () => {
+  const server = backend();
+  let pilotsB = [];
+  const noop = { onOutgoing() {}, onIncomingPilots() {}, onIncomingOwners() {} };
+  const runtimeA = new LiveFlightRuntime(server.client(A), noop);
+  const runtimeB = new LiveFlightRuntime(server.client(B), { ...noop, onIncomingPilots(pilots) { pilotsB = pilots; } });
+  await runtimeA.start(A); await runtimeB.start(B);
+  await runtimeA.addRecipient(B, null); await runtimeB.refreshIncoming();
+  await runtimeA.publishSource(source(), true);
+  assert.equal(pilotsB.length, 1);
+  runtimeA.stopOutgoingBestEffort();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(pilotsB.length, 0);
+  await runtimeA.close(); await runtimeB.close();
+});

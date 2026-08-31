@@ -720,6 +720,12 @@ export default function FlightPage() {
         onPilotsChange={setSimulatedSharedPilots}
         onConnectionStateChange={(connection) => { setLiveSharingUserId(currentUserId); setLiveSharingUi((state) => ({ ...state, connection })); }}
         onPublisherSource={(source) => { void liveRuntimeRef.current?.publishSource(source, true); }}
+        onPublisherEnd={() => {
+          liveRuntimeRef.current?.stopOutgoingBestEffort();
+          setLiveSharingUi(stopLiveSharingUi());
+          setIsLiveSharingOpen(false);
+          setTargetedLiveTestFlightActive(false);
+        }}
       />
 
       <LiveSharingPanel
