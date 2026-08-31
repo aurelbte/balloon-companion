@@ -11,7 +11,7 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, shouldRequestLocalFlightGeolocationOnMount, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -206,8 +206,12 @@ test("le récepteur ciblé n'exige pas le GPS local tandis que le mode normal co
   assert.equal(shouldRequestLocalFlightGeolocationOnMount("?liveFlightTest=other"), true);
 });
 
-test("seul le mode targeted autorise les commandes d'émission sans vol GPS actif", () => {
-  assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=targeted", false), true);
+test("targeted démarre un état de vol Live sans GPS avant d'autoriser l'émission", () => {
+  assert.equal(shouldStartGpslessTargetedLiveFlight("?liveFlightTest=targeted", false), true);
+  assert.equal(shouldStartGpslessTargetedLiveFlight("?liveFlightTest=targeted", true), false);
+  assert.equal(shouldStartGpslessTargetedLiveFlight("", false), false);
+  assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=targeted", false, false), false);
+  assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=targeted", false, true), true);
   assert.equal(canUseLiveFlightPublisherControls("", false), false);
   assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=other", false), false);
   assert.equal(canUseLiveFlightPublisherControls("", true), true);

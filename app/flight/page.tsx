@@ -68,7 +68,7 @@ import { loadFriendsSnapshot, type FriendProfile } from "../lib/friends.ts";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
 import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
-import { canUseLiveFlightPublisherControls, shouldRequestLocalFlightGeolocationOnMount } from "../lib/liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight } from "../lib/liveFlightSimulator.ts";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -122,6 +122,7 @@ export default function FlightPage() {
   const [realSharedPilots, setRealSharedPilots] = useState<SharedPilotMapEntry[]>([]);
   const [simulatedSharedPilots, setSimulatedSharedPilots] = useState<SharedPilotMapEntry[]>([]);
   const [incomingOwnerIds, setIncomingOwnerIds] = useState<string[]>([]);
+  const [targetedLiveTestFlightActive, setTargetedLiveTestFlightActive] = useState(false);
   const liveRuntimeRef = useRef<LiveFlightRuntime | null>(null);
   useEffect(() => {
     const userId = currentUserId;
@@ -250,7 +251,8 @@ export default function FlightPage() {
     markReady,
   } = tracking;
   const livePublisherControlsEnabled = typeof window !== "undefined"
-    && canUseLiveFlightPublisherControls(window.location.search, isTracking);
+    && canUseLiveFlightPublisherControls(window.location.search, isTracking, targetedLiveTestFlightActive);
+  const flightControlActive = isTracking || targetedLiveTestFlightActive;
 
   // Une projection exige un point frais, un cap réel et une vitesse suffisante.
   // Un cap absent ne doit jamais être interprété comme un cap nord (0°).
@@ -323,7 +325,12 @@ export default function FlightPage() {
 
   const handleStartTracking = useCallback(() => {
     if (!storageReady) return;
-    if ((geoState === "active" || geoState === "simulation") && !isStale) {
+    const hasFreshLocalPosition = (geoState === "active" || geoState === "simulation") && !isStale && currentPosition !== null;
+    if (shouldStartGpslessTargetedLiveFlight(window.location.search, hasFreshLocalPosition)) {
+      setTargetedLiveTestFlightActive(true);
+      return;
+    }
+    if (hasFreshLocalPosition) {
       const preparation = loadPreparationDraft();
       const selectedBalloonId = preparation?.balloonName;
       const weatherSnapshot = validatedWeatherSnapshot;
@@ -358,6 +365,17 @@ export default function FlightPage() {
     }
     setDemoFlightEnding(true);
   }, [router]);
+
+  const handleStopFlightControl = useCallback(() => {
+    if (!targetedLiveTestFlightActive) {
+      setStopConfirmationOpen(true);
+      return;
+    }
+    liveRuntimeRef.current?.stopOutgoingBestEffort();
+    setLiveSharingUi(stopLiveSharingUi());
+    setIsLiveSharingOpen(false);
+    setTargetedLiveTestFlightActive(false);
+  }, [targetedLiveTestFlightActive]);
 
   const handleConfirmStopTracking = useCallback(async () => {
     setFlightActionBusy(true);
@@ -800,7 +818,7 @@ export default function FlightPage() {
 
       {/* Boutons flottants */}
       <FlightControls
-        isTracking={flightSession.state.isRecording}
+        isTracking={flightControlActive}
         followPosition={followPosition}
         mapOptionsOpen={isMapOptionsOpen}
         mapDisplayCustomized={mapDisplayCustomized}
@@ -819,10 +837,10 @@ export default function FlightPage() {
           );
         }}
         onStartTracking={handleStartTracking}
-        onStopTracking={() => setStopConfirmationOpen(true)}
+        onStopTracking={handleStopFlightControl}
       />
 
-      {!isTracking && !recoverableFlight && !completedFlight && (
+      {!flightControlActive && !recoverableFlight && !completedFlight && (
         <p
           style={{
             position: "fixed",

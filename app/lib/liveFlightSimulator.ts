@@ -77,8 +77,16 @@ export function shouldRequestLocalFlightGeolocationOnMount(search: string): bool
   return !isTargetedLiveFlightSimulator(search);
 }
 
-export function canUseLiveFlightPublisherControls(search: string, trackingActive: boolean): boolean {
-  return trackingActive || isTargetedLiveFlightSimulator(search);
+export function shouldStartGpslessTargetedLiveFlight(search: string, hasFreshLocalPosition: boolean): boolean {
+  return isTargetedLiveFlightSimulator(search) && !hasFreshLocalPosition;
+}
+
+export function canUseLiveFlightPublisherControls(
+  search: string,
+  trackingActive: boolean,
+  targetedTestFlightActive = false,
+): boolean {
+  return trackingActive || (isTargetedLiveFlightSimulator(search) && targetedTestFlightActive);
 }
 
 export function targetedLiveSimulatorUi(search: string, expanded: boolean): Readonly<{
