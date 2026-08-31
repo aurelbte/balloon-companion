@@ -5,6 +5,12 @@ import {
   type LiveFlightPositionPayload,
   type LivePositionFreshness,
 } from "./liveFlightSharing.ts";
+import {
+  formatFlightAltitude,
+  formatFlightDistance,
+  formatFlightSpeed,
+  type UnitPreferences,
+} from "./unitPreferences.ts";
 
 export type SharedPilotIdentity = Readonly<{
   pilotId: string;
@@ -92,6 +98,30 @@ export function relativeLiveAltitudeMeters(
   if (remote.altitude === null || localAltitude === null || localAltitude === undefined) return null;
   if (!Number.isFinite(remote.altitude) || !Number.isFinite(localAltitude)) return null;
   return Math.round(remote.altitude - localAltitude);
+}
+
+export function formatLiveFlightPilotReadings(
+  payload: Pick<LiveFlightPositionPayload, "altitude" | "groundSpeed" | "distanceKm">,
+  relativeAltitudeMeters: number | null,
+  units: UnitPreferences["flightInstruments"],
+): Readonly<{
+  altitude: string;
+  relativeAltitude: string | null;
+  groundSpeed: string;
+  distance: string;
+}> {
+  return {
+    altitude: payload.altitude === null
+      ? "—"
+      : formatFlightAltitude(payload.altitude, units.altitudeUnit),
+    relativeAltitude: relativeAltitudeMeters === null
+      ? null
+      : `${relativeAltitudeMeters > 0 ? "+" : ""}${formatFlightAltitude(relativeAltitudeMeters, units.altitudeUnit)}`,
+    groundSpeed: payload.groundSpeed === null
+      ? "—"
+      : formatFlightSpeed(payload.groundSpeed * 3.6, units.speedUnit),
+    distance: formatFlightDistance(payload.distanceKm, units.distanceUnit),
+  };
 }
 
 export class SharedPilotMapStore {

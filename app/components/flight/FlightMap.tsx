@@ -62,6 +62,7 @@ import {
   interpolateLiveCoordinate,
   canOpenSharedPilot,
   getSharedPilotSelectionAfterAction,
+  formatLiveFlightPilotReadings,
   relativeLiveAltitudeMeters,
   SHARED_PILOT_MODAL_LAYOUT,
   SHARED_PILOT_REOPEN_GUARD_MS,
@@ -69,6 +70,7 @@ import {
   sharedPilotVisibility,
   type SharedPilotMapEntry,
 } from "../../lib/liveFlightMap.ts";
+import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 
 const SATELLITE_SOURCE_ID = "maptiler-satellite-source";
 const SATELLITE_LAYER_ID = "maptiler-satellite-layer";
@@ -301,6 +303,7 @@ export default function FlightMap({
   onMapPress,
   onViewportChange,
 }: FlightMapProps) {
+  const unitPreferences = useUnitPreferences();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -1421,6 +1424,13 @@ export default function FlightMap({
   const selectedRelativeAltitude = selectedSharedPilot
     ? relativeLiveAltitudeMeters(selectedSharedPilot.current, currentPosition?.altitude, Boolean(currentPosition), selectedPilotNow)
     : null;
+  const selectedPilotReadings = selectedSharedPilot
+    ? formatLiveFlightPilotReadings(
+        selectedSharedPilot.current,
+        selectedRelativeAltitude,
+        unitPreferences.flightInstruments,
+      )
+    : null;
   const dismissSharedPilot = () => {
     suppressSharedPilotOpenUntilRef.current = Date.now() + SHARED_PILOT_REOPEN_GUARD_MS;
     setSelectedSharedPilotId((selected) => getSharedPilotSelectionAfterAction(selected, "CLOSE"));
@@ -1744,12 +1754,12 @@ export default function FlightMap({
           <strong style={{ display: "block", paddingRight: 28, fontSize: 15 }}>{selectedSharedPilot.displayName}</strong>
           {selectedSharedPilotVisibility.freshness === "STALE" && <p style={{ margin: "4px 0 8px", color: "#fbbf24", fontSize: 11, fontWeight: 750 }}>Position ancienne · {Math.ceil((selectedPilotNow - selectedSharedPilot.current.gpsTimestamp) / 1_000)} s</p>}
           <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", margin: "9px 0 0", fontSize: 12 }}>
-            <div><dt style={{ color: "#9fb0c2" }}>Altitude</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.altitude === null ? "—" : `${Math.round(selectedSharedPilot.current.altitude)} m`}</dd></div>
-            {selectedRelativeAltitude !== null && <div><dt style={{ color: "#9fb0c2" }}>Par rapport à moi</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedRelativeAltitude > 0 ? "+" : ""}{selectedRelativeAltitude} m</dd></div>}
-            <div><dt style={{ color: "#9fb0c2" }}>Vitesse sol</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.groundSpeed === null ? "—" : `${Math.round(selectedSharedPilot.current.groundSpeed * 3.6)} km/h`}</dd></div>
+            <div><dt style={{ color: "#9fb0c2" }}>Altitude</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedPilotReadings?.altitude ?? "—"}</dd></div>
+            {selectedPilotReadings?.relativeAltitude != null && <div><dt style={{ color: "#9fb0c2" }}>Par rapport à moi</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedPilotReadings.relativeAltitude}</dd></div>}
+            <div><dt style={{ color: "#9fb0c2" }}>Vitesse sol</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedPilotReadings?.groundSpeed ?? "—"}</dd></div>
             <div><dt style={{ color: "#9fb0c2" }}>Cap</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.heading === null ? "—" : `${Math.round(selectedSharedPilot.current.heading)}°`}</dd></div>
             <div><dt style={{ color: "#9fb0c2" }}>Vol</dt><dd style={{ margin: 0, fontWeight: 800 }}>{String(Math.floor(selectedSharedPilot.current.durationSeconds / 3600)).padStart(2, "0")}:{String(Math.floor((selectedSharedPilot.current.durationSeconds % 3600) / 60)).padStart(2, "0")}</dd></div>
-            <div><dt style={{ color: "#9fb0c2" }}>Distance</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedSharedPilot.current.distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</dd></div>
+            <div><dt style={{ color: "#9fb0c2" }}>Distance</dt><dd style={{ margin: 0, fontWeight: 800 }}>{selectedPilotReadings?.distance ?? "—"}</dd></div>
           </dl>
           </div>
         </div>

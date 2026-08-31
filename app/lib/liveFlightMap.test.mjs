@@ -6,6 +6,7 @@ import {
   SHARED_PILOT_MODAL_LAYOUT,
   SHARED_PILOT_REOPEN_GUARD_MS,
   canOpenSharedPilot,
+  formatLiveFlightPilotReadings,
   getSharedPilotSelectionAfterAction,
   interpolateLiveCoordinate,
   relativeLiveAltitudeMeters,
@@ -67,6 +68,30 @@ test("l'altitude relative est factuelle, signée et réservée aux données fra�
   assert.equal(relativeLiveAltitudeMeters(payload(), 440, false, NOW), null);
   assert.equal(relativeLiveAltitudeMeters(payload(), 440, true, NOW + 15_001), null);
   assert.equal(relativeLiveAltitudeMeters(payload(CHARLES.sessionId, { altitude: null }), 440, true, NOW), null);
+});
+
+test("la fiche Live applique les unités impériales locales du récepteur", () => {
+  const readings = formatLiveFlightPilotReadings(
+    payload(CHARLES.sessionId, { altitude: 1_000, groundSpeed: 10, distanceKm: 18.52 }),
+    100,
+    { altitudeUnit: "ft", speedUnit: "kt", distanceUnit: "NM" },
+  );
+  assert.equal(readings.altitude, "3281 ft");
+  assert.equal(readings.relativeAltitude, "+328 ft");
+  assert.equal(readings.groundSpeed, "19 kt");
+  assert.equal(readings.distance, "10.0 NM");
+});
+
+test("la fiche Live conserve les unités métriques locales", () => {
+  const readings = formatLiveFlightPilotReadings(
+    payload(CHARLES.sessionId, { altitude: 1_000, groundSpeed: 10, distanceKm: 18.52 }),
+    -100,
+    { altitudeUnit: "m", speedUnit: "km/h", distanceUnit: "km" },
+  );
+  assert.equal(readings.altitude, "1000 m");
+  assert.equal(readings.relativeAltitude, "-100 m");
+  assert.equal(readings.groundSpeed, "36 km/h");
+  assert.equal(readings.distance, "18.5 km");
 });
 
 test("plusieurs pilotes restent indépendants et la mise à jour d'un pilote ne déplace pas l'autre", () => {
