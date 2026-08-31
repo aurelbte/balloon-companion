@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SharedPilotMapStore, type SharedPilotIdentity, type SharedPilotMapEntry } from "../../lib/liveFlightMap.ts";
-import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
+import { createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, targetedLiveSimulatorUi, type LiveSimulationScenario } from "../../lib/liveFlightSimulator.ts";
 import type { LiveSharingConnectionState } from "../../lib/liveFlightUi.ts";
 import type { LivePositionSource } from "../../lib/liveFlightRuntime.ts";
 
@@ -36,12 +36,14 @@ export default function LiveFlightSimulatorPanel({
   trackingActive,
   onPublisherSource,
   onPublisherEnd,
-}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; onPublisherSource?: (source: LivePositionSource) => void; onPublisherEnd?: () => void; trackingActive: boolean }>) {
+  onPublisherScenarioActiveChange,
+}: Readonly<{ scopeKey: string | null; onPilotsChange: (pilots: SharedPilotMapEntry[]) => void; onConnectionStateChange?: (state: LiveSharingConnectionState) => void; onPublisherSource?: (source: LivePositionSource) => void; onPublisherEnd?: () => void; onPublisherScenarioActiveChange?: (active: boolean) => void; trackingActive: boolean }>) {
   const storeRef = useRef(new SharedPilotMapStore());
   const timersRef = useRef<number[]>([]);
   const [scenario, setScenario] = useState<LiveSimulationScenario>("NORMAL_FLIGHT");
   const [enabled, setEnabled] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const publisherScenarioActiveRef = useRef(false);
 
   const clear = () => {
     for (const timer of timersRef.current) window.clearTimeout(timer);
@@ -50,8 +52,17 @@ export default function LiveFlightSimulatorPanel({
     onPilotsChange([]);
   };
 
+  const stopScenario = (endPublisher: boolean) => {
+    clear();
+    if (endPublisher && publisherScenarioActiveRef.current) onPublisherEnd?.();
+    publisherScenarioActiveRef.current = false;
+    onPublisherScenarioActiveChange?.(false);
+  };
+
   useEffect(() => {
     clear();
+    publisherScenarioActiveRef.current = false;
+    onPublisherScenarioActiveChange?.(false);
     return clear;
     // Le changement de scope doit vider immédiatement les positions distantes en mémoire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,14 +104,20 @@ export default function LiveFlightSimulatorPanel({
   };
 
   const playPublisherSource = () => {
+    clear();
+    publisherScenarioActiveRef.current = true;
+    onPublisherScenarioActiveChange?.(true);
     const simulator = createTargetedLiveFlightSimulator(window.location.search);
     const startedAt = Date.now();
     for (const event of simulator.run(scenario, CHARLES.sessionId, startedAt)) timersRef.current.push(window.setTimeout(() => {
-      if (event.kind === "END") {
+      const action = livePublisherScenarioAction(event);
+      if (action === "END_EXPLICITLY") {
+        publisherScenarioActiveRef.current = false;
         onPublisherEnd?.();
+        onPublisherScenarioActiveChange?.(false);
         return;
       }
-      if (event.kind !== "POSITION" || !event.payload || typeof event.payload !== "object") return;
+      if (action !== "PUBLISH_POSITION" || event.kind !== "POSITION" || !event.payload || typeof event.payload !== "object") return;
       const payload = event.payload as Record<string, unknown>;
       onPublisherSource?.({ latitude: Number(payload.latitude), longitude: Number(payload.longitude), altitude: typeof payload.altitude === "number" ? payload.altitude : null, groundSpeed: typeof payload.groundSpeed === "number" ? payload.groundSpeed : null, heading: typeof payload.heading === "number" ? payload.heading : null, durationSeconds: Number(payload.durationSeconds), distanceKm: Number(payload.distanceKm), accuracy: typeof payload.accuracy === "number" ? payload.accuracy : null, gpsTimestamp: Date.now(), fresh: true });
     }, Math.max(0, event.at - startedAt)));
@@ -118,11 +135,11 @@ export default function LiveFlightSimulatorPanel({
             {SCENARIOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-            <button type="button" disabled={!trackingActive} onClick={() => { clear(); play(CHARLES, scenario); }}>Charles Grelin (CG)</button>
-            <button type="button" disabled={!trackingActive} onClick={() => { clear(); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Charles + Jean</button>
+            <button type="button" disabled={!trackingActive} onClick={() => { stopScenario(true); play(CHARLES, scenario); }}>Aperçu local CG</button>
+            <button type="button" disabled={!trackingActive} onClick={() => { stopScenario(true); play(CHARLES, scenario); play(JEAN, scenario, 0.0012); }}>Aperçu local CG + JD</button>
           </div>
-          <button type="button" disabled={!trackingActive || !onPublisherSource} onClick={playPublisherSource}>Émettre ma trace test</button>
-          <button type="button" onClick={clear}>Arrêter</button>
+          <button type="button" disabled={!trackingActive || !onPublisherSource} onClick={playPublisherSource}>Tester ce scénario via Realtime</button>
+          <button type="button" onClick={() => stopScenario(true)}>Arrêter le scénario</button>
         </div>
       )}
     </div>

@@ -68,7 +68,7 @@ import { loadFriendsSnapshot, type FriendProfile } from "../lib/friends.ts";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
 import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
-import { canUseLiveFlightPublisherControls, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight } from "../lib/liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight } from "../lib/liveFlightSimulator.ts";
 
 export default function FlightPage() {
   const router = useRouter();
@@ -123,6 +123,7 @@ export default function FlightPage() {
   const [simulatedSharedPilots, setSimulatedSharedPilots] = useState<SharedPilotMapEntry[]>([]);
   const [incomingOwnerIds, setIncomingOwnerIds] = useState<string[]>([]);
   const [targetedLiveTestFlightActive, setTargetedLiveTestFlightActive] = useState(false);
+  const [livePublisherScenarioActive, setLivePublisherScenarioActive] = useState(false);
   const liveRuntimeRef = useRef<LiveFlightRuntime | null>(null);
   useEffect(() => {
     const userId = currentUserId;
@@ -631,7 +632,7 @@ export default function FlightPage() {
     ],
   );
   useEffect(() => {
-    if (!flightSession.state.isRecording || !flightSession.position.current) return;
+    if (!shouldPublishTrackedLiveSource(livePublisherScenarioActive) || !flightSession.state.isRecording || !flightSession.position.current) return;
     const position = flightSession.position.current;
     const source: LivePositionSource = {
       latitude: position.latitude,
@@ -646,7 +647,7 @@ export default function FlightPage() {
       fresh: !flightSession.position.isStale,
     };
     void liveRuntimeRef.current?.publishSource(source);
-  }, [flightSession]);
+  }, [flightSession, livePublisherScenarioActive]);
   const observedWindProfile = useMemo(
     () => aggregateObservedWind(flightSession.trajectory.points),
     [flightSession.trajectory.points],
@@ -726,6 +727,7 @@ export default function FlightPage() {
           setIsLiveSharingOpen(false);
           setTargetedLiveTestFlightActive(false);
         }}
+        onPublisherScenarioActiveChange={setLivePublisherScenarioActive}
       />
 
       <LiveSharingPanel

@@ -18,6 +18,18 @@ export type LiveSimulationEvent =
   | Readonly<{ kind: "POSITION"; at: number; payload: unknown }>
   | Readonly<{ kind: "NETWORK_OFFLINE" | "NETWORK_ONLINE" | "END" | "CRASH"; at: number }>;
 
+export type LivePublisherScenarioAction = "PUBLISH_POSITION" | "END_EXPLICITLY" | "KEEP_SILENT";
+
+export function livePublisherScenarioAction(event: LiveSimulationEvent): LivePublisherScenarioAction {
+  if (event.kind === "POSITION") return "PUBLISH_POSITION";
+  if (event.kind === "END") return "END_EXPLICITLY";
+  return "KEEP_SILENT";
+}
+
+export function shouldPublishTrackedLiveSource(publisherScenarioActive: boolean): boolean {
+  return !publisherScenarioActive;
+}
+
 const STEP_MS = 5_000;
 
 function point(sessionId: string, startedAt: number, index: number, overrides: Partial<LiveFlightPositionPayload> = {}): LiveFlightPositionPayload {

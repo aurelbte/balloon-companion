@@ -11,13 +11,14 @@ import {
   shouldPublishLivePosition,
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
-import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
+import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
 import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SESSION_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const NOW = 1_800_000_000_000;
 const liveMigration = readFileSync(new URL("../../supabase/migrations/20260828130000_live_flight_sharing_foundation.sql", import.meta.url), "utf8");
+const simulatorPanel = readFileSync(new URL("../components/flight/LiveFlightSimulatorPanel.tsx", import.meta.url), "utf8");
 const payload = (overrides = {}) => buildLiveFlightPayload({ sessionId: SESSION_A, sequence: 1, sentAt: NOW, gpsTimestamp: NOW, latitude: 50.68, longitude: 3.08, altitude: 140, groundSpeed: 5, heading: 45, durationSeconds: 60, distanceKm: 0.4, accuracy: 6, ...overrides });
 
 test("le payload versionné complet est accepté", () => {
@@ -216,6 +217,27 @@ test("targeted démarre un état de vol Live sans GPS avant d'autoriser l'émiss
   assert.equal(canUseLiveFlightPublisherControls("", false), false);
   assert.equal(canUseLiveFlightPublisherControls("?liveFlightTest=other", false), false);
   assert.equal(canUseLiveFlightPublisherControls("", true), true);
+});
+
+test("les scénarios Realtime publient les positions, terminent explicitement ou gardent le silence", () => {
+  const normalEnd = simulateLiveFlightScenario("NORMAL_END", SESSION_A, NOW);
+  assert.equal(normalEnd.every((event) => livePublisherScenarioAction(event) !== "KEEP_SILENT"), true);
+  assert.equal(livePublisherScenarioAction(normalEnd.at(-1)), "END_EXPLICITLY");
+  const crash = simulateLiveFlightScenario("SIMULATED_CRASH", SESSION_A, NOW);
+  assert.equal(livePublisherScenarioAction(crash.at(-1)), "KEEP_SILENT");
+  assert.equal(crash.filter((event) => livePublisherScenarioAction(event) === "PUBLISH_POSITION").length, 3);
+  const lastPosition = crash.filter((event) => event.kind === "POSITION").at(-1);
+  assert.equal(lastPosition?.kind, "POSITION");
+  if (lastPosition?.kind === "POSITION") {
+    assert.equal(livePositionFreshness(lastPosition.payload.gpsTimestamp, lastPosition.payload.gpsTimestamp), "FRESH");
+    assert.equal(livePositionFreshness(lastPosition.payload.gpsTimestamp, lastPosition.payload.gpsTimestamp + LIVE_FRESH_MAX_AGE_MS + 1), "STALE");
+    assert.equal(livePositionFreshness(lastPosition.payload.gpsTimestamp, lastPosition.payload.gpsTimestamp + LIVE_STALE_MAX_AGE_MS + 1), "EXPIRED");
+  }
+  assert.equal(shouldPublishTrackedLiveSource(true), false);
+  assert.equal(shouldPublishTrackedLiveSource(false), true);
+  assert.match(simulatorPanel, /Tester ce scénario via Realtime/);
+  assert.match(simulatorPanel, /Aperçu local CG/);
+  assert.match(simulatorPanel, /livePublisherScenarioAction\(event\)/);
 });
 
 test("le socle ne référence ni Cloud Sync, ni R2, ni FlightMap, ni stockage GPS", () => {

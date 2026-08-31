@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LiveFlightRuntime } from "./liveFlightRuntime.ts";
+import { livePublisherScenarioAction, simulateLiveFlightScenario } from "./liveFlightSimulator.ts";
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -102,6 +103,26 @@ test("la fin explicite retire immédiatement le pilote distant sans attendre le 
   await runtimeA.publishSource(source(), true);
   assert.equal(pilotsB.length, 1);
   runtimeA.stopOutgoingBestEffort();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(pilotsB.length, 0);
+  await runtimeA.close(); await runtimeB.close();
+});
+
+test("NORMAL_END parcourt le publisher réel puis retire immédiatement le récepteur", async () => {
+  const server = backend();
+  let pilotsB = [];
+  const noop = { onOutgoing() {}, onIncomingPilots() {}, onIncomingOwners() {} };
+  const runtimeA = new LiveFlightRuntime(server.client(A), noop);
+  const runtimeB = new LiveFlightRuntime(server.client(B), { ...noop, onIncomingPilots(pilots) { pilotsB = pilots; } });
+  await runtimeA.start(A); await runtimeB.start(B);
+  await runtimeA.addRecipient(B, null); await runtimeB.refreshIncoming();
+  for (const event of simulateLiveFlightScenario("NORMAL_END", S1, Date.now())) {
+    const action = livePublisherScenarioAction(event);
+    if (action === "PUBLISH_POSITION" && event.kind === "POSITION") {
+      const payload = event.payload;
+      await runtimeA.publishSource({ latitude: payload.latitude, longitude: payload.longitude, altitude: payload.altitude, groundSpeed: payload.groundSpeed, heading: payload.heading, durationSeconds: payload.durationSeconds, distanceKm: payload.distanceKm, accuracy: payload.accuracy, gpsTimestamp: Date.now(), fresh: true }, true);
+    } else if (action === "END_EXPLICITLY") runtimeA.stopOutgoingBestEffort();
+  }
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(pilotsB.length, 0);
   await runtimeA.close(); await runtimeB.close();
