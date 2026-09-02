@@ -29,6 +29,8 @@ export interface AuthProvider {
   signIn(input: AuthCredentials): Promise<BalloonUser>;
   signOut(): Promise<void>;
   restoreSession(): Promise<BalloonUser | null>;
+  requestPasswordReset(email: string): Promise<void>;
+  recoverPassword(code: string, password: string): Promise<void>;
 }
 
 export type AuthSnapshot = Readonly<{
@@ -40,4 +42,3 @@ export const UNKNOWN_AUTH_SNAPSHOT: AuthSnapshot = Object.freeze({
   state: "UNKNOWN",
   user: null,
 });
-

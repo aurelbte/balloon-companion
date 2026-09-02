@@ -6,6 +6,11 @@ type AuthResult = Promise<Readonly<{
   error: Readonly<{ message: string; code?: string; status?: number }> | null;
 }>>;
 
+type AuthOperationResult = Promise<Readonly<{
+  data: unknown;
+  error: Readonly<{ message: string; code?: string; status?: number }> | null;
+}>>;
+
 export type SupabaseAuthClient = Readonly<{
   auth: Readonly<{
     getUser(): AuthResult;
@@ -20,6 +25,8 @@ export type SupabaseAuthClient = Readonly<{
     signInWithPassword(input: AuthCredentials): AuthResult;
     signOut(options: Readonly<{ scope: "local" }>): Promise<Readonly<{ error: Readonly<{ message: string }> | null }>>;
     exchangeCodeForSession(code: string): AuthResult;
+    resetPasswordForEmail(email: string, options: Readonly<{ redirectTo: string }>): AuthOperationResult;
+    updateUser(input: Readonly<{ password: string }>): AuthResult;
   }>;
 }>;
 
@@ -102,6 +109,27 @@ export class SupabaseAuthProvider implements AuthProvider {
 
   restoreSession(): Promise<BalloonUser | null> {
     return this.getCurrentUser();
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    const { error } = await this.client.auth.resetPasswordForEmail(email, {
+      redirectTo: `${this.getOrigin()}/auth/reset-password`,
+    });
+    if (error) throw new BalloonAuthError(error);
+  }
+
+  async recoverPassword(code: string, password: string): Promise<void> {
+    const current = await this.client.auth.getUser();
+    if (!current.error && current.data.user) {
+      throw new BalloonAuthError({ message: "AUTH_SESSION_ALREADY_ACTIVE", code: "session_already_active" });
+    }
+    const exchanged = await this.client.auth.exchangeCodeForSession(code);
+    requiredUser(exchanged.data.user, exchanged.error);
+    const updated = await this.client.auth.updateUser({ password });
+    const updateError = updated.error || !toBalloonUser(updated.data.user) ? new BalloonAuthError(updated.error ?? undefined) : null;
+    const { error: signOutError } = await this.client.auth.signOut({ scope: "local" });
+    if (updateError) throw updateError;
+    if (signOutError) throw new BalloonAuthError(signOutError);
   }
 
   async confirmEmail(code?: string): Promise<BalloonUser | null> {

@@ -17,6 +17,8 @@ function fakeClient(overrides = {}) {
       signInWithPassword: async () => ({ data: { user: supabaseUser }, error: null }),
       signOut: async () => ({ error: null }),
       exchangeCodeForSession: async () => ({ data: { user: supabaseUser }, error: null }),
+      resetPasswordForEmail: async () => ({ data: {}, error: null }),
+      updateUser: async () => ({ data: { user: supabaseUser }, error: null }),
       ...overrides,
     },
   };
@@ -111,6 +113,66 @@ test("une session déjà valide évite un second échange du code", async () => 
   }));
   assert.equal((await provider.confirmEmail("already-exchanged"))?.id, "user-1");
   assert.equal(exchanges, 0);
+});
+
+test("la demande de récupération utilise la route dédiée sans révéler le compte", async () => {
+  let received;
+  const provider = new SupabaseAuthProvider(fakeClient({
+    resetPasswordForEmail: async (email, options) => { received = { email, options }; return { data: {}, error: null }; },
+  }), () => "https://balloon.example");
+  await provider.requestPasswordReset("pilot@example.com");
+  assert.deepEqual(received, {
+    email: "pilot@example.com",
+    options: { redirectTo: "https://balloon.example/auth/reset-password" },
+  });
+});
+
+test("la récupération refuse de remplacer une session existante", async () => {
+  let exchanges = 0;
+  const provider = new SupabaseAuthProvider(fakeClient({
+    exchangeCodeForSession: async () => { exchanges += 1; return { data: { user: supabaseUser }, error: null }; },
+  }));
+  await assert.rejects(() => provider.recoverPassword("recovery-code", "new-balloon-password"), /AUTH_SESSION_ALREADY_ACTIVE/);
+  assert.equal(exchanges, 0);
+});
+
+test("un code recovery valide est échangé puis immédiatement consommé et nettoyé", async () => {
+  let receivedCode;
+  let updatedPassword;
+  let signedOut = false;
+  const provider = new SupabaseAuthProvider(fakeClient({
+    getUser: async () => ({ data: { user: null }, error: { message: "no session" } }),
+    exchangeCodeForSession: async (code) => { receivedCode = code; return { data: { user: supabaseUser }, error: null }; },
+    updateUser: async ({ password }) => { updatedPassword = password; return { data: { user: supabaseUser }, error: null }; },
+    signOut: async () => { signedOut = true; return { error: null }; },
+  }));
+  await provider.recoverPassword("recovery-code", "new-balloon-password");
+  assert.equal(receivedCode, "recovery-code");
+  assert.equal(updatedPassword, "new-balloon-password");
+  assert.equal(signedOut, true);
+});
+
+test("un code recovery invalide est refusé", async () => {
+  const provider = new SupabaseAuthProvider(fakeClient({
+    getUser: async () => ({ data: { user: null }, error: { message: "no session" } }),
+    exchangeCodeForSession: async () => ({ data: { user: null }, error: { message: "expired", code: "otp_expired", status: 403 } }),
+  }));
+  await assert.rejects(() => provider.recoverPassword("expired-code", "new-balloon-password"), { name: "BalloonAuthError" });
+});
+
+test("la session recovery est fermée localement même si updateUser échoue", async () => {
+  const calls = [];
+  const provider = new SupabaseAuthProvider(fakeClient({
+    getUser: async () => ({ data: { user: null }, error: { message: "no session" } }),
+    exchangeCodeForSession: async () => ({ data: { user: supabaseUser }, error: null }),
+    updateUser: async (input) => { calls.push(["update", input]); return { data: { user: null }, error: { message: "weak password" } }; },
+    signOut: async (options) => { calls.push(["signOut", options]); return { error: null }; },
+  }));
+  await assert.rejects(() => provider.recoverPassword("recovery-code", "new-balloon-password"));
+  assert.deepEqual(calls, [
+    ["update", { password: "new-balloon-password" }],
+    ["signOut", { scope: "local" }],
+  ]);
 });
 
 test("l'intégration Supabase ne référence aucun stockage métier", () => {

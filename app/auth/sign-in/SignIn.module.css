@@ -74,6 +74,8 @@
 }
 
 .forgot {
+  display: inline-flex;
+  align-items: center;
   justify-self: end;
   min-height: 36px;
   padding: 0 2px;
@@ -82,6 +84,7 @@
   color: var(--bc-text-muted);
   font-size: .68rem;
   font-weight: 600;
+  text-decoration: none;
 }
 
 .submit {
@@ -103,6 +106,15 @@
   line-height: 1.4;
 }
 
+.copy, .success {
+  margin: 12px 2px 0;
+  color: var(--bc-text-secondary);
+  font-size: .76rem;
+  line-height: 1.45;
+}
+
+.success { color: var(--bc-success, var(--bc-text-primary)); }
+
 .signUpLink {
   display: flex;
   min-height: 46px;
@@ -121,4 +133,3 @@
   .form { margin-top: 12px; }
   .field input { min-height: 42px; }
 }
-
