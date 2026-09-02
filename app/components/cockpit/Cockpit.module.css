@@ -1203,10 +1203,10 @@
 @media (min-width: 900px) and (min-height: 650px) and (orientation: landscape) {
   .layout {
     grid-template-columns: minmax(300px, 0.85fr) minmax(500px, 1.45fr);
-    grid-template-rows: auto auto auto auto auto;
-    column-gap: 24px;
-    width: 100%;
-    max-width: 1120px;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto minmax(0, 1fr);
+    column-gap: 32px;
+    width: min(calc(100% - 48px), 1180px);
+    max-width: 1180px;
   }
 
   .header {
@@ -1216,30 +1216,30 @@
 
   .hero {
     grid-column: 1;
-    grid-row: 2 / 6;
+    grid-row: 2 / 8;
     align-self: center;
     margin-block: 0;
   }
 
   .experiencePrompt {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 3;
   }
 
   .operationalPair {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 4;
   }
 
   .summaryPair {
     grid-column: 2;
-    grid-row: 4;
+    grid-row: 5;
     align-items: start;
   }
 
   .cta {
     grid-column: 2;
-    grid-row: 5;
+    grid-row: 6;
     align-self: start;
     width: 100%;
   }
@@ -1251,6 +1251,18 @@
 
   .summaryPair .summaryCard {
     min-height: 0;
+  }
+}
+
+@media (min-width: 900px) and (min-height: 720px) and (orientation: landscape) {
+  .ringInstrument {
+    width: 342px;
+    height: 297px;
+  }
+
+  .ringDial {
+    width: 275px;
+    height: 275px;
   }
 }
 
@@ -1479,7 +1491,7 @@
 
 @media (min-width: 900px) and (min-height: 650px) and (orientation: landscape) {
   .layout {
-    grid-template-rows: auto auto auto auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto minmax(0, 1fr);
   }
 
   .summaryPair .summaryCard {

@@ -22,8 +22,17 @@ test("l'iPad paysage place cadran et cartes dans deux zones au-dessus de la navi
   assert.match(page, /styles\.summaryPair/);
   assert.match(styles, /@media \(min-width: 900px\) and \(min-height: 650px\) and \(orientation: landscape\)/);
   assert.match(styles, /grid-template-columns: minmax\(300px, 0\.85fr\) minmax\(500px, 1\.45fr\)/);
-  assert.match(styles, /\.hero\s*\{[\s\S]*?grid-column: 1;[\s\S]*?grid-row: 2 \/ 6/);
+  assert.match(styles, /width: min\(calc\(100% - 48px\), 1180px\)/);
+  assert.match(styles, /grid-template-rows: auto minmax\(0, 1fr\) auto auto auto auto minmax\(0, 1fr\)/);
+  assert.match(styles, /\.header\s*\{[\s\S]*?grid-column: 1 \/ -1/);
+  assert.match(styles, /\.hero\s*\{[\s\S]*?grid-column: 1;[\s\S]*?grid-row: 2 \/ 8/);
   assert.match(styles, /\.operationalPair\s*\{[\s\S]*?grid-column: 2/);
   assert.match(styles, /\.summaryPair\s*\{[\s\S]*?grid-column: 2/);
   assert.match(styles, /\.cta\s*\{[\s\S]*?grid-column: 2;[\s\S]*?width: 100%/);
+});
+
+test("le cadran paysage ne grandit que sur une hauteur de tablette suffisante", () => {
+  assert.match(styles, /@media \(min-width: 900px\) and \(min-height: 720px\) and \(orientation: landscape\)/);
+  assert.match(styles, /\.ringInstrument\s*\{\s*width: 342px;\s*height: 297px/);
+  assert.match(styles, /\.ringDial\s*\{\s*width: 275px;\s*height: 275px/);
 });
