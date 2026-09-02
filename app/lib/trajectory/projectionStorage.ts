@@ -3,6 +3,7 @@ import type {
   StoredTrajectoryProjectionV1,
   StoredTrajectoryProjectionV2,
 } from "./integration.ts";
+import { readScopedBusinessValue, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
 
 const STORAGE_KEY = "balloon_companion_trajectory_projection";
 const ANALYSIS_REQUEST_KEY = "balloon_companion_trajectory_analysis_request";
@@ -56,8 +57,7 @@ export function saveTrajectoryProjection(
   )
     return false;
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-    return true;
+    return writeScopedBusinessValue(sessionStorage, STORAGE_KEY, JSON.stringify(value));
   } catch {
     return false;
   }
@@ -69,7 +69,7 @@ export function getTrajectoryProjection():
   | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = readScopedBusinessValue(sessionStorage, STORAGE_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     return isStoredProjectionV1(parsed) || isStoredProjectionV2(parsed)
@@ -90,7 +90,8 @@ export function saveTrajectoryAnalysisRequest(
 ): boolean {
   if (typeof window === "undefined") return false;
   try {
-    localStorage.setItem(
+    return writeScopedBusinessValue(
+      localStorage,
       ANALYSIS_REQUEST_KEY,
       JSON.stringify({
         version: 1,
@@ -98,7 +99,6 @@ export function saveTrajectoryAnalysisRequest(
         request,
       } satisfies StoredTrajectoryAnalysisRequest),
     );
-    return true;
   } catch {
     return false;
   }
@@ -107,7 +107,7 @@ export function saveTrajectoryAnalysisRequest(
 export function getTrajectoryAnalysisRequest(): StoredTrajectoryAnalysisRequest | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(ANALYSIS_REQUEST_KEY);
+    const raw = readScopedBusinessValue(localStorage, ANALYSIS_REQUEST_KEY);
     if (!raw) return null;
     const value: unknown = JSON.parse(raw);
     if (

@@ -194,13 +194,30 @@ test("la carte de confirmation est ouverte avant l'enregistrement du favori", ()
   assert.match(mapSource, /Utiliser ma position/);
 });
 
-test("l'Analyse démarre sans sélection ni restauration visuelle du cache", () => {
+test("l'Analyse restaure les sélections valides du brouillon sans réintroduire de limite", () => {
   const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /setSelectedModels\(\[\]\)/);
-  assert.match(source, /setSelectedAltitudes\(\[\]\)/);
-  assert.match(source, /setVisibleTraceIds\(\[\]\)/);
+  assert.match(source, /weatherModelByProviderId\(preparation\?\.weatherModel \?\? stored\.request\.weatherModel\)/);
+  assert.match(source, /normalizeAltitudeOptions\(preparation\?\.selectedAltitudes \?\? stored\.request\.altitudesAmslM\)/);
+  assert.match(source, /setSelectedModels\(usableOfflineCache \? cachedModels : restoredModels\)/);
+  assert.match(source, /setSelectedAltitudes\(usableOfflineCache \? cachedAltitudes : savedAltitudes\)/);
   assert.match(source, /Sélectionnez un modèle et une altitude\./);
-  assert.doesNotMatch(source, /loadWeatherAnalysis/);
+});
+
+test("l'Analyse sauvegarde un cache signé et ne le restaure hors ligne que pour la même requête", () => {
+  const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /saveWeatherAnalysis\(\{/);
+  assert.match(source, /analysisKey: signature/);
+  assert.match(source, /isUsableWeatherAnalysisCache\(cached, signature\)/);
+  assert.match(source, /Hors ligne — analyse en cache du/);
+  assert.match(source, /Hors ligne — une nouvelle projection nécessite une connexion réseau\./);
+  assert.doesNotMatch(source, /Hors ligne — dernières trajectoires conservées/);
+});
+
+test("le mode Vol résout l'immatriculation depuis l'identifiant interne du ballon", () => {
+  const source = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /balloonRegistry\.balloons\.find\(\(\{ id \}\) => id === selectedBalloonId\)/);
+  assert.match(source, /balloonRegistration: selectedBalloon\.registration/);
+  assert.doesNotMatch(source, /balloonRegistration: selectedBalloonId/);
 });
 
 test("l'Analyse n'impose plus de maximum aux modèles ni aux altitudes", () => {

@@ -44,6 +44,7 @@ import { selectIntersectedAirspaces } from "../lib/trajectoryAirspaces";
 import {
   ALTITUDE_OPTIONS,
   altitudeKey,
+  normalizeAltitudeOptions,
   type AltitudeOption,
   type MultiAltitudeProjectionApiResponse,
   type MultiAltitudeProjectionRequest,
@@ -58,15 +59,18 @@ import {
 } from "../lib/trajectory/analysisStyles";
 import {
   extractPredictedWind,
+  isUsableWeatherAnalysisCache,
+  loadWeatherAnalysis,
   newAnalysisLayerSettings,
   saveExportedPlannedTrajectories,
   saveFlightWeatherSnapshot,
+  saveWeatherAnalysis,
   type AnalysisLayerSettings,
   type ExportedPlannedTrajectory,
   type WeatherAnalysisState,
   type WeatherAnalysisTrace,
 } from "../lib/trajectory/weatherAnalysisStorage";
-import { WEATHER_MODEL_REGISTRY } from "../lib/weather/models";
+import { WEATHER_MODEL_REGISTRY, weatherModelByProviderId } from "../lib/weather/models";
 import type { BaseMap } from "../types/flight";
 import { createTrajectoryAnalysisKey, toggleSelection } from "../lib/trajectory/analysisState";
 import { metersPerSecondToMetersPerMinute } from "../lib/preparationInputs";
@@ -157,14 +161,27 @@ export default function MapPage() {
           : String(preparation.targetAltitudeAmslM),
       );
       if (stored) {
-        setSelectedModels([]);
-        setSelectedAltitudes([]);
-        setTraces([]);
-        setFailures([]);
-        setVisibleTraceIds([]);
+        const savedModel = weatherModelByProviderId(preparation?.weatherModel ?? stored.request.weatherModel);
+        const savedAltitudes = normalizeAltitudeOptions(preparation?.selectedAltitudes ?? stored.request.altitudesAmslM);
+        const restoredModels = savedModel?.supported ? [savedModel.id] : [];
+        const cached = loadWeatherAnalysis();
+        const cachedModels = cached?.selectedModelIds.filter((modelId) => WEATHER_MODEL_REGISTRY.some((model) => model.id === modelId && model.supported)) ?? [];
+        const cachedAltitudes = normalizeAltitudeOptions(cached?.selectedAltitudes ?? []);
+        const cachedSignature = cachedModels.length > 0 && cachedAltitudes.length > 0
+          ? createTrajectoryAnalysisKey(stored.request, cachedModels, cachedAltitudes)
+          : null;
+        const usableOfflineCache = !navigator.onLine && cachedSignature !== null && isUsableWeatherAnalysisCache(cached, cachedSignature) ? cached : null;
+        setSelectedModels(usableOfflineCache ? cachedModels : restoredModels);
+        setSelectedAltitudes(usableOfflineCache ? cachedAltitudes : savedAltitudes);
+        setTraces(usableOfflineCache?.traces ?? []);
+        setFailures(usableOfflineCache?.failures ?? []);
+        setVisibleTraceIds(usableOfflineCache?.traces.map(({ traceId }) => traceId) ?? []);
         setLayers(newAnalysisLayerSettings());
-        signatureRef.current = "";
+        signatureRef.current = usableOfflineCache && cachedSignature ? cachedSignature : "";
         desiredSignatureRef.current = "";
+        if (usableOfflineCache) {
+          setNotice(`Hors ligne — analyse en cache du ${new Date(usableOfflineCache.updatedAtIso).toLocaleString("fr-FR")}.`);
+        }
       }
       setReady(true);
     }, 0);
@@ -223,6 +240,23 @@ export default function MapPage() {
     const signature = createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes);
     desiredSignatureRef.current = signature;
     if (signature === signatureRef.current) return;
+    if (!navigator.onLine) {
+      const cached = loadWeatherAnalysis();
+      if (isUsableWeatherAnalysisCache(cached, signature)) {
+        setTraces(cached.traces);
+        setFailures(cached.failures);
+        setVisibleTraceIds(cached.traces.map(({ traceId }) => traceId));
+        signatureRef.current = signature;
+        setNotice(`Hors ligne — analyse en cache du ${new Date(cached.updatedAtIso).toLocaleString("fr-FR")}.`);
+      } else {
+        setTraces([]);
+        setFailures([]);
+        setVisibleTraceIds([]);
+        setNotice("Hors ligne — une nouvelle projection nécessite une connexion réseau.");
+      }
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     requestAbortRef.current?.abort();
     requestAbortRef.current = controller;
@@ -320,6 +354,16 @@ export default function MapPage() {
           ),
         );
         signatureRef.current = signature;
+        saveWeatherAnalysis({
+          version: 1,
+          updatedAtIso: calculatedAtIso,
+          selectedModelIds: [...selectedModels],
+          selectedAltitudes: [...selectedAltitudes],
+          layers,
+          traces: nextTraces,
+          failures: nextFailures,
+          analysisKey: signature,
+        });
         const verticalProfileFailure = nextFailures.find(
           (failure) =>
             failure.code === "INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE",
@@ -337,7 +381,7 @@ export default function MapPage() {
               "INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE"
               ? "Profil vertical impossible avec cette durée."
               : nextFailures[0]?.message ?? "Aucune trajectoire exploitable pour cette sélection."
-            : "Hors ligne — dernières trajectoires conservées.",
+            : "Hors ligne — une nouvelle projection nécessite une connexion réseau.",
         );
       }
       if (desiredSignatureRef.current === signature) {

@@ -69,10 +69,12 @@ import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
 import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
 import { canUseLiveFlightPublisherControls, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight } from "../lib/liveFlightSimulator.ts";
+import { useBalloonRegistry } from "../hooks/useBalloons.ts";
 
 export default function FlightPage() {
   const router = useRouter();
   const auth = useBalloonAuth();
+  const balloonRegistry = useBalloonRegistry();
   const currentUserId = auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null;
   const shouldRequestLocalGeolocation = typeof window === "undefined"
     ? true
@@ -334,9 +336,10 @@ export default function FlightPage() {
     if (hasFreshLocalPosition) {
       const preparation = loadPreparationDraft();
       const selectedBalloonId = preparation?.balloonName;
+      const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
       const weatherSnapshot = validatedWeatherSnapshot;
       startTracking(currentPosition, {
-        ...(selectedBalloonId ? { balloonRegistration: selectedBalloonId } : {}),
+        ...(selectedBalloon?.registration ? { balloonRegistration: selectedBalloon.registration } : {}),
         ...(weatherSnapshot
           ? {
               weatherModel: weatherSnapshot.weatherModel,
@@ -357,6 +360,7 @@ export default function FlightPage() {
     startTracking,
     storageReady,
     validatedWeatherSnapshot,
+    balloonRegistry.balloons,
   ]);
 
   const handleDemoFlightEnd = useCallback(() => {

@@ -122,7 +122,7 @@ export function newAnalysisLayerSettings(): AnalysisLayerSettings {
 function readJson(key: string): unknown {
   if (typeof window === "undefined") return null;
   try {
-    const value = localStorage.getItem(key);
+    const value = readScopedBusinessValue(localStorage, key);
     return value ? JSON.parse(value) : null;
   } catch {
     return null;
@@ -152,11 +152,28 @@ export function loadWeatherAnalysis(): WeatherAnalysisState | null {
 export function saveWeatherAnalysis(value: WeatherAnalysisState): boolean {
   if (typeof window === "undefined") return false;
   try {
-    localStorage.setItem(ANALYSIS_KEY, JSON.stringify(value));
-    return true;
+    return writeScopedBusinessValue(localStorage, ANALYSIS_KEY, JSON.stringify(value));
   } catch {
     return false;
   }
+}
+
+export function isUsableWeatherAnalysisCache(
+  value: WeatherAnalysisState | null,
+  analysisKey: string,
+): value is WeatherAnalysisState {
+  return Boolean(
+    value?.analysisKey === analysisKey &&
+    Number.isFinite(Date.parse(value.updatedAtIso)) &&
+    value.traces.length > 0 &&
+    value.traces.every((trace) =>
+      Array.isArray(trace.projection?.points) &&
+      trace.projection.points.length > 1 &&
+      trace.projection.points.every((point) =>
+        Number.isFinite(point.latitude) && Number.isFinite(point.longitude),
+      ),
+    ),
+  );
 }
 
 export function loadExportedPlannedTrajectories(): ExportedPlannedTrajectory[] {

@@ -18,9 +18,12 @@ import {
 import { orchestrateTrajectoryProjection } from "./trajectory/projectionServer.ts";
 import {
   getTrajectoryProjection,
+  getTrajectoryAnalysisRequest,
+  saveTrajectoryAnalysisRequest,
   saveTrajectoryProjection,
 } from "./trajectory/projectionStorage.ts";
 import { TrajectoryDomainError } from "./trajectory/types.ts";
+import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "./auth/dataScopeRuntime.ts";
 
 function request(overrides = {}) {
   return {
@@ -328,6 +331,8 @@ test("stocke uniquement une projection réussie versionnée", async () => {
       return data.get(key) ?? null;
     },
   };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "projection-user" } });
   const result = await orchestrateTrajectoryProjection(
     request({ durationSeconds: 600 }),
     dependencies(),
@@ -351,4 +356,36 @@ test("stocke uniquement une projection réussie versionnée", async () => {
   );
   delete globalThis.window;
   delete globalThis.sessionStorage;
+});
+
+test("la requête d'analyse est strictement séparée entre USER et GUEST", () => {
+  const data = new Map();
+  const storage = {
+    setItem(key, value) { data.set(key, value); },
+    getItem(key) { return data.get(key) ?? null; },
+  };
+  globalThis.localStorage = storage;
+  globalThis.window = { localStorage: storage };
+  const analysisRequest = {
+    version: 2,
+    launchSite: { name: "Bondues", latitude: 50.631, longitude: 3.058 },
+    launchDateTimeIso: "2026-09-02T06:00:00.000Z",
+    durationSeconds: 3600,
+    weatherModel: "arome_seamless",
+    altitudesAmslM: ["ground", 300],
+  };
+  setRuntimeGuestModeActive(false);
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-a" } });
+  assert.equal(saveTrajectoryAnalysisRequest(analysisRequest), true);
+  assert.deepEqual(getTrajectoryAnalysisRequest()?.request, analysisRequest);
+
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "user-b" } });
+  assert.equal(getTrajectoryAnalysisRequest(), null);
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  assert.equal(getTrajectoryAnalysisRequest(), null);
+
+  setRuntimeGuestModeActive(false);
+  delete globalThis.localStorage;
+  delete globalThis.window;
 });

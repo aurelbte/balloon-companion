@@ -8,6 +8,7 @@ import {
   loadExportedPlannedTrajectories,
   loadFlightWeatherSnapshot,
   loadWeatherAnalysis,
+  isUsableWeatherAnalysisCache,
   saveExportedPlannedTrajectories,
   saveFlightWeatherSnapshot,
   saveWeatherAnalysis,
@@ -36,6 +37,24 @@ test("chaque modèle possède un motif stable et distinct", () => {
   assert.equal(new Set(signatures).size, signatures.length);
   assert.deepEqual(MODEL_LINE_STYLES.arome.dasharray, [1, 0]);
   assert.deepEqual(MODEL_LINE_STYLES.ecmwf.dasharray, [3, 2]);
+});
+
+test("un cache offline exige la même signature et une trajectoire réellement traçable", () => {
+  const key = "matching-analysis";
+  const valid = {
+    version: 1,
+    updatedAtIso: "2026-09-02T06:00:00.000Z",
+    selectedModelIds: ["arome"],
+    selectedAltitudes: [300],
+    layers: DEFAULT_ANALYSIS_LAYERS,
+    traces: [{ projection: { points: [{ latitude: 50.6, longitude: 3 }, { latitude: 50.7, longitude: 3.1 }] } }],
+    failures: [],
+    analysisKey: key,
+  };
+  assert.equal(isUsableWeatherAnalysisCache(valid, key), true);
+  assert.equal(isUsableWeatherAnalysisCache(valid, "other-analysis"), false);
+  assert.equal(isUsableWeatherAnalysisCache({ ...valid, traces: [] }, key), false);
+  assert.equal(isUsableWeatherAnalysisCache({ ...valid, traces: [{ projection: { points: [{ latitude: 50.6, longitude: 3 }] } }] }, key), false);
 });
 
 test("l’analyse et les exports Vol survivent au rechargement local", () => {
@@ -104,6 +123,7 @@ test("l’analyse et les exports Vol survivent au rechargement local", () => {
 
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
   setRuntimeGuestModeActive(true);
+  assert.equal(loadWeatherAnalysis(), null);
   assert.equal(loadFlightWeatherSnapshot(), null);
   setRuntimeGuestModeActive(false);
   delete globalThis.localStorage;
