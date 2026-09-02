@@ -1013,8 +1013,8 @@ export default function MapPage() {
         />
       )}
       {loadDetailOpen && !testLoadEnabled && candidateLoadResult && selectedBalloon && groundTemperature && (
-        <div className="fixed inset-0 z-[80] flex items-end bg-black/45" onClick={() => setLoadDetailOpen(false)}>
-          <section className="w-full rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge Cameron">
+        <div className="fixed inset-0 z-[80] flex items-end overflow-y-auto overscroll-contain bg-black/45 pt-[max(12px,env(safe-area-inset-top))]" onClick={() => setLoadDetailOpen(false)}>
+          <section className="max-h-[calc(100dvh-12px)] w-full overflow-y-auto overscroll-contain rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge Cameron">
             <div className="mx-auto max-w-xl">
               <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">Charge</h2><p className="text-xs text-[var(--bc-color-text-muted)]">Validation pilote</p></div><button type="button" className="min-h-11 min-w-11 rounded-full" onClick={() => setLoadDetailOpen(false)} aria-label="Fermer"><X className="mx-auto" size={20} /></button></div>
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -1039,8 +1039,8 @@ export default function MapPage() {
         </div>
       )}
       {loadDetailOpen && loadDisplay.openSyntheticDetail && loadResult.status === "AVAILABLE" && selectedBalloon && groundTemperature && (
-        <div className="fixed inset-0 z-[80] flex items-end bg-black/45" onClick={() => setLoadDetailOpen(false)}>
-          <section className="w-full rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge de démonstration">
+        <div className="fixed inset-0 z-[80] flex items-end overflow-y-auto overscroll-contain bg-black/45 pt-[max(12px,env(safe-area-inset-top))]" onClick={() => setLoadDetailOpen(false)}>
+          <section className="max-h-[calc(100dvh-12px)] w-full overflow-y-auto overscroll-contain rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge de démonstration">
             <div className="mx-auto max-w-xl">
               <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-black text-orange-400">TEST — DONNÉES SYNTHÉTIQUES</h2><button type="button" className="min-h-11 min-w-11 rounded-full" onClick={() => setLoadDetailOpen(false)} aria-label="Fermer"><X className="mx-auto" size={20} /></button></div>
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">

@@ -823,9 +823,9 @@ export default function PreparePage() {
       <NavigationBar activeItem="Prépa" />
 
       {customDurationOpen && (
-        <div className="fixed inset-0 z-[80] flex items-end bg-black/60 p-3">
+        <div className="fixed inset-0 z-[80] flex items-end overflow-y-auto overscroll-contain bg-black/60 p-3 pt-[max(12px,env(safe-area-inset-top))]">
           <section
-            className="mx-auto w-full max-w-md rounded-2xl border p-4 pb-[max(16px,env(safe-area-inset-bottom))]"
+            className="mx-auto max-h-[calc(100dvh-24px)] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border p-4 pb-[max(16px,env(safe-area-inset-bottom))]"
             style={{
               background: "var(--bc-background-elevated)",
               borderColor: "var(--bc-border)",

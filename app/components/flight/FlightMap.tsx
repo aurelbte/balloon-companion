@@ -574,6 +574,31 @@ export default function FlightMap({
       },
     });
 
+    const container = mapContainer.current;
+    let resizeFrame: number | null = null;
+    let previousSize = {
+      width: container.clientWidth,
+      height: container.clientHeight,
+    };
+    const resizeMapIfNeeded = () => {
+      const nextSize = {
+        width: container.clientWidth,
+        height: container.clientHeight,
+      };
+      if (
+        nextSize.width === previousSize.width &&
+        nextSize.height === previousSize.height
+      ) return;
+      previousSize = nextSize;
+      if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = null;
+        map.current?.resize();
+      });
+    };
+    const resizeObserver = new ResizeObserver(resizeMapIfNeeded);
+    resizeObserver.observe(container);
+
     // Ajouter les contrôles de navigation
     map.current.addControl(
       new maplibregl.NavigationControl({
@@ -1137,6 +1162,8 @@ export default function FlightMap({
 
     // Cleanup au démontage
     return () => {
+      resizeObserver.disconnect();
+      if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
       for (const sharedMarker of sharedPilotMarkers.values()) {
         if (sharedMarker.animationFrame !== null) window.cancelAnimationFrame(sharedMarker.animationFrame);
         if (sharedMarker.staleTimer !== null) window.clearTimeout(sharedMarker.staleTimer);

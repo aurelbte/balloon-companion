@@ -4,14 +4,20 @@
   inset: 0;
   display: grid;
   align-items: end;
-  padding-top: env(safe-area-inset-top);
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgb(1 7 16 / 62%);
 }
 
 .sheet {
   width: min(100%, 520px);
+  max-height: calc(100dvh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
   margin-inline: auto;
   padding: 10px 20px max(18px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--bc-border);
   border-bottom: 0;
   border-radius: 26px 26px 0 0;
@@ -32,6 +38,9 @@
 .actions button:last-child { min-height: 40px; border: 0; color: var(--bc-text-secondary); font-size: .72rem; }
 
 @media (min-width: 600px) {
-  .backdrop { place-items: center; padding: 20px; }
+  .backdrop {
+    place-items: center;
+    padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  }
   .sheet { border-bottom: 1px solid var(--bc-border); border-radius: 26px; }
 }
