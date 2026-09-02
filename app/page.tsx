@@ -63,9 +63,9 @@ export default function CockpitPage() {
         </header>
         <CockpitHeroRing />
         <CockpitExperiencePrompt />
-        <div className={styles.pair}><PilotStatusCard /><ConditionsCard href="/weather" /></div>
+        <div className={`${styles.pair} ${styles.operationalPair}`}><PilotStatusCard /><ConditionsCard href="/weather" /></div>
         <Button className={styles.cta} href="/prepare" fullWidth aria-label="Préparer mon vol"><ClipboardCheck size={19} aria-hidden="true" />Préparer mon vol</Button>
-        <div className={styles.pair}>
+        <div className={`${styles.pair} ${styles.summaryPair}`}>
           <LastFlightCard data={lastFlight ? { date: lastFlight.date, duration: `${lastFlight.durationMinutes} min`, departure: lastFlight.departure, arrival: lastFlight.arrival } : null} href={lastFlight ? `/journal/${encodeURIComponent(lastFlight.id)}` : "/journal"} />
           <MyBalloonsCard href="/more/profile/balloons" />
         </div>

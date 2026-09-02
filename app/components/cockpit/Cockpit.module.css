@@ -1181,6 +1181,79 @@
 .experiencePrompt a { display: inline-flex; align-items: center; }
 .experiencePrompt button { color: var(--bc-text-secondary); }
 
+@media (min-width: 700px) and (min-height: 700px) and (orientation: portrait) {
+  .layout {
+    max-width: 720px;
+  }
+
+  .summaryPair {
+    align-items: start;
+  }
+
+  .summaryPair .cardLink,
+  .summaryPair .summaryCard {
+    height: auto;
+  }
+
+  .summaryPair .summaryCard {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 900px) and (min-height: 650px) and (orientation: landscape) {
+  .layout {
+    grid-template-columns: minmax(300px, 0.85fr) minmax(500px, 1.45fr);
+    grid-template-rows: auto auto auto auto auto;
+    column-gap: 24px;
+    width: 100%;
+    max-width: 1120px;
+  }
+
+  .header {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .hero {
+    grid-column: 1;
+    grid-row: 2 / 6;
+    align-self: center;
+    margin-block: 0;
+  }
+
+  .experiencePrompt {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .operationalPair {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .summaryPair {
+    grid-column: 2;
+    grid-row: 4;
+    align-items: start;
+  }
+
+  .cta {
+    grid-column: 2;
+    grid-row: 5;
+    align-self: start;
+    width: 100%;
+  }
+
+  .summaryPair .cardLink,
+  .summaryPair .summaryCard {
+    height: auto;
+  }
+
+  .summaryPair .summaryCard {
+    min-height: 0;
+  }
+}
+
 @media (max-height: 880px) {
   .layout {
     gap: 5px;
@@ -1393,5 +1466,23 @@
 
   .value {
     font-size: 0.71rem;
+  }
+}
+
+/* Les ajustements de hauteur ci-dessus restent actifs, mais ne doivent pas
+   réintroduire l'étirement du layout téléphone sur tablette. */
+@media (min-width: 700px) and (min-height: 700px) and (orientation: portrait) {
+  .summaryPair .summaryCard {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 900px) and (min-height: 650px) and (orientation: landscape) {
+  .layout {
+    grid-template-rows: auto auto auto auto auto;
+  }
+
+  .summaryPair .summaryCard {
+    min-height: 0;
   }
 }
