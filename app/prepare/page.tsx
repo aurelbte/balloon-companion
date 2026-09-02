@@ -47,6 +47,7 @@ import {
   validDurationMinutes,
 } from "../lib/preparationInputs";
 import { calculateSunTimes } from "../lib/weather/sunTimes";
+import styles from "./Prepare.module.css";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
 function localDateParts(value: string | null): { date: string; time: string } {
@@ -436,7 +437,7 @@ export default function PreparePage() {
 
   return (
     <main className="min-h-dvh pb-[calc(82px+env(safe-area-inset-bottom))] pt-[max(8px,env(safe-area-inset-top))]">
-      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+      <div className={`${styles.content} mx-auto w-full max-w-3xl px-4 sm:px-6`}>
         <header className="mb-1">
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.2em]"
@@ -455,6 +456,8 @@ export default function PreparePage() {
           </p>
         </header>
 
+        <div className={styles.columns}>
+          <div className={styles.primaryColumn}>
         <section
           className="relative rounded-[24px] border p-2 sm:p-3"
           style={{
@@ -668,6 +671,9 @@ export default function PreparePage() {
           )}
 
         </section>
+          </div>
+
+          <div className={styles.secondaryColumn}>
 
         <section className="mt-1.5 rounded-[20px] border p-2" style={{ background: "var(--bc-surface)", borderColor: "var(--bc-border)" }} aria-labelledby="vertical-rates-title">
           <div className="mb-1 flex items-center justify-between">
@@ -783,6 +789,8 @@ export default function PreparePage() {
             </p>
           )}
         </section>
+          </div>
+        </div>
 
         {error && (
           <p

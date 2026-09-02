@@ -1,0 +1,28 @@
+.columns,
+.primaryColumn,
+.secondaryColumn {
+  display: contents;
+}
+
+@media (min-width: 900px) and (min-height: 650px) and (orientation: landscape) {
+  .content {
+    max-width: 1080px;
+  }
+
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+    align-items: start;
+    gap: 12px;
+  }
+
+  .primaryColumn,
+  .secondaryColumn {
+    display: block;
+    min-width: 0;
+  }
+
+  .secondaryColumn > :first-child {
+    margin-top: 0;
+  }
+}
