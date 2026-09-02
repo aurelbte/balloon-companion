@@ -71,7 +71,7 @@ export default function WeatherFavoriteManager({ favorites, onClose, onAdd, onRe
       {mode === "add" && <div className="mt-3">
         {!selected ? <>
           <label className="text-xs font-semibold" htmlFor="weather-favorite-search">Rechercher un lieu</label>
-          <input id="weather-favorite-search" autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full rounded-xl border bg-transparent px-3" style={{ borderColor: "var(--bc-border)" }} />
+          <input id="weather-favorite-search" type="search" enterKeyHint="search" autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full rounded-xl border bg-transparent px-3" style={{ borderColor: "var(--bc-border)" }} />
           <p className="mt-2 text-xs" style={{ color: "var(--bc-color-text-muted)" }}>{query.trim().length < 2 ? "Saisissez au moins deux caractères" : searching ? "Recherche…" : results.length === 0 ? "Aucun lieu trouvé" : "Sélectionnez un lieu"}</p>
           <div className="mt-2 grid gap-1">{results.map((place) => <button key={place.id} type="button" onClick={() => { setSelected(place); setName(place.name); setResults([]); }} className="min-h-11 rounded-xl px-2 text-left text-sm font-semibold">{place.name}</button>)}</div>
         </> : <>

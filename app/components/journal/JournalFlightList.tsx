@@ -371,6 +371,7 @@ export default function JournalFlightList() {
           <Search size={17} aria-hidden="true" />
           <input
             type="search"
+            enterKeyHint="search"
             value={query}
             onChange={(event) => { setOpenSwipeFlightId(null); setQuery(event.target.value); }}
             placeholder="Rechercher un vol..."

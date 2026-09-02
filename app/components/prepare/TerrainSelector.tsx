@@ -91,7 +91,7 @@ export default function TerrainSelector({
           <MapPin size={19} style={{ color: "var(--bc-accent)" }} />
           <span className="min-w-0 flex-1">
             <span className="block text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--bc-color-text-muted)" }}>Terrain</span>
-            <input value={value} onChange={(event) => onValueChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onSearch(); }} className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-base font-semibold outline-none" placeholder="Rechercher un terrain" aria-label="Rechercher un terrain" />
+            <input type="search" enterKeyHint="search" value={value} onChange={(event) => onValueChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onSearch(); }} className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-base font-semibold outline-none" placeholder="Rechercher un terrain" aria-label="Rechercher un terrain" />
           </span>
         </label>
         <button type="button" onClick={onSearch} disabled={searching} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Rechercher le terrain"><Search size={18} /></button>
@@ -159,7 +159,7 @@ export default function TerrainSelector({
                 {!editor.terrain ? (
                   <>
                     <label className="text-xs font-semibold">Rechercher un terrain</label>
-                    <div className="mt-1 flex gap-2"><input value={managerQuery} onChange={(event) => setManagerQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchFavoriteCandidate(); }} className="min-h-11 min-w-0 flex-1 rounded-xl border bg-transparent px-3" style={{ borderColor: "var(--bc-border)" }} /><button type="button" onClick={() => void searchFavoriteCandidate()} disabled={managerSearching} className="grid min-h-11 min-w-11 place-items-center rounded-xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Rechercher"><Search size={17} /></button></div>
+                    <div className="mt-1 flex gap-2"><input type="search" enterKeyHint="search" value={managerQuery} onChange={(event) => setManagerQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchFavoriteCandidate(); }} className="min-h-11 min-w-0 flex-1 rounded-xl border bg-transparent px-3" style={{ borderColor: "var(--bc-border)" }} /><button type="button" onClick={() => void searchFavoriteCandidate()} disabled={managerSearching} className="grid min-h-11 min-w-11 place-items-center rounded-xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Rechercher"><Search size={17} /></button></div>
                     <div className="mt-2 grid gap-1">{managerResults.map((suggestion) => <button key={suggestion.id} type="button" onClick={() => selectFavoriteCandidate(suggestion)} className="min-h-11 rounded-xl px-2 text-left text-sm font-semibold">{suggestion.name}</button>)}</div>
                   </>
                 ) : (

@@ -266,7 +266,7 @@ export default function AscensionLog() {
       <Link href="/journal/ascension/new" className={styles.addAscensionButton}><Plus size={17} aria-hidden="true" /> Ajouter une ascension</Link>
 
       <div className={styles.journalToolbar}>
-        <label className={styles.searchField}><Search size={17} aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher une ascension..." aria-label="Rechercher une ascension" /></label>
+        <label className={styles.searchField}><Search size={17} aria-hidden="true" /><input type="search" enterKeyHint="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher une ascension..." aria-label="Rechercher une ascension" /></label>
         <button type="button" className={styles.filterButton} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen}><SlidersHorizontal size={18} aria-hidden="true" /><span>Filtres</span>{filtersActive && <span className={styles.filterIndicator} aria-label="Filtres actifs" />}</button>
       </div>
 

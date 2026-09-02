@@ -117,7 +117,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
     <details className={styles.formSection} open={identityOpen} onToggle={(event) => setIdentityOpen(event.currentTarget.open)}>
       <summary>Identité <ChevronDown size={17} aria-hidden /></summary>
       <div className={styles.sectionGrid}>
-        <label className={styles.balloonFormWide}><span>Immatriculation</span><input autoFocus autoCapitalize="characters" value={registration} onChange={(e) => setRegistration(e.target.value.toUpperCase().replace(/\s/g, ""))} /></label>
+        <label className={styles.balloonFormWide}><span>Immatriculation</span><input autoFocus autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={registration} onChange={(e) => setRegistration(e.target.value.toUpperCase().replace(/\s/g, ""))} /></label>
         <label><span>Fabricant</span><select value={manufacturerChoice} onChange={(e) => chooseManufacturer(e.target.value)}><option value="">Choisir</option>{catalogManufacturers().map((item) => <option key={item}>{item}</option>)}<option value={OTHER}>Autre fabricant</option></select></label>
         {manufacturerChoice === OTHER && <label><span>Fabricant libre</span><input value={manualManufacturer} onChange={(e) => { setManualManufacturer(e.target.value); setConfigurationLimitsConfirmed(false); }} /></label>}
         {manufacturerChoice && manufacturerChoice !== OTHER && <label><span>Modèle / type</span><select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}><option value="">Choisir</option>{catalogModels(manufacturer).map((item) => <option key={item.model}>{item.model}</option>)}<option value={OTHER}>Autre modèle</option></select></label>}
