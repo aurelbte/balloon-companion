@@ -19,6 +19,7 @@ import {
   validateOfficialAscension,
 } from "./flightCompletion.ts";
 import { officialAscensionToEditValues } from "./officialAscensionEditing.ts";
+import { getAscensionAutomaticName } from "./ascensionMockData.ts";
 
 const manualInput = {
   ...defaultOfficialAscensionInput(),
@@ -286,7 +287,7 @@ test("supprimer une ascension liée conserve le vol GPS et tous ses points", () 
   assert.equal(removed.journalFlights[0].logbookStatus, "CARNET_PENDING");
 });
 
-test("les cartes du Carnet exposent le swipe et le menu vers les mêmes actions", () => {
+test("les cartes du Carnet exposent uniquement la suppression et conservent l’édition officielle", () => {
   const source = readFileSync(
     new URL("../components/journal/AscensionLog.tsx", import.meta.url),
     "utf8",
@@ -302,7 +303,7 @@ test("les cartes du Carnet exposent le swipe et le menu vers les mêmes actions"
   assert.match(source, /data-journal-ascension-shell/);
   assert.match(source, /closeSwipeFromOutside/);
   assert.match(source, /MoreHorizontal/);
-  assert.match(source, /Renommer<\/button>/);
+  assert.doesNotMatch(source, /Renommer<\/button>|RenameAscensionDialog|customTitles/);
   assert.match(source, /Supprimer<\/button>/);
   assert.doesNotMatch(source, /\/journal\/ascension\/\$\{ascension\.id\}\/edit/);
 
@@ -311,6 +312,27 @@ test("les cartes du Carnet exposent le swipe et le menu vers les mêmes actions"
     "utf8",
   );
   assert.match(detailSource, /\/journal\/ascension\/\$\{ascension\.id\}\/edit/);
+});
+
+test("une ancienne valeur de renommage ne peut plus influencer l’identité métier d’une ascension", () => {
+  const ascension = {
+    id: "legacy-renamed",
+    date: "1 août 2026",
+    dateIso: "2026-08-01",
+    departure: "Bondues",
+    arrival: "Mérignies",
+    registration: "F-TEST",
+    balloonModel: "Test",
+    balloonType: "Air chaud",
+    function: "Pilote",
+    flightType: "Jour",
+    maximumAltitudeM: null,
+    officialDurationMinutes: 60,
+    observations: "",
+  };
+  assert.equal(getAscensionAutomaticName(ascension), "Bondues → Mérignies");
+  const source = readFileSync(new URL("../components/journal/AscensionLog.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /balloon-companion-ascension-demo-v1|customTitles|ascensionDemoStorage/);
 });
 
 test("les flèches ajustent la durée officielle par une minute sans atteindre zéro", () => {

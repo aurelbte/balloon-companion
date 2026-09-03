@@ -9,18 +9,12 @@ import {
 import {
   ChevronRight,
   MoreHorizontal,
-  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  loadAscensionDemoState,
-  saveAscensionDemoState,
-  type AscensionDemoState,
-} from "../../lib/ascensionDemoStorage";
 import {
   formatOfficialDuration,
   getAscensionAutomaticName,
@@ -38,13 +32,10 @@ import { saveFlightCompletionState } from "../../lib/flightCompletionStorage";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { useJournalCardSwipe } from "../../hooks/useJournalCardSwipe";
 import DeleteFlightDialog from "./DeleteFlightDialog";
-import RenameAscensionDialog from "./RenameAscensionDialog";
 import styles from "../../journal/Journal.module.css";
 
 type DateFilter = "all" | "today" | "30-days" | "this-year" | "year" | "date";
 type ValueFilter<T extends string> = "all" | T;
-
-const EMPTY_STATE: AscensionDemoState = { version: 1, deletedIds: [], customTitles: {} };
 
 function normalize(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -78,7 +69,6 @@ type AscensionCardProps = {
   onSetSwipeOpen: (open: boolean) => void;
   onOpenMenu: (trigger: HTMLElement) => void;
   onCloseMenu: () => void;
-  onRename: () => void;
   onDelete: () => void;
 };
 
@@ -90,7 +80,6 @@ function AscensionCard({
   onSetSwipeOpen,
   onOpenMenu,
   onCloseMenu,
-  onRename,
   onDelete,
 }: AscensionCardProps) {
   const router = useRouter();
@@ -106,7 +95,7 @@ function AscensionCard({
 
   return (
     <article className={`${styles.flightCardShell} ${styles.ascensionCardShell}`} data-journal-ascension-shell>
-      <div className={styles.flightSwipeActions} aria-hidden={!swipeOpen}><button type="button" tabIndex={swipeOpen ? 0 : -1} onClick={onRename} aria-label={`Renommer l’ascension du ${ascension.date}`}><Pencil size={18} />Renommer</button><button type="button" tabIndex={swipeOpen ? 0 : -1} onClick={onDelete} aria-label={`Supprimer l’ascension du ${ascension.date}`}><Trash2 size={18} />Supprimer</button></div>
+      <div className={`${styles.flightSwipeActions} ${styles.ascensionSwipeActions}`} aria-hidden={!swipeOpen}><button type="button" tabIndex={swipeOpen ? 0 : -1} onClick={onDelete} aria-label={`Supprimer l’ascension du ${ascension.date}`}><Trash2 size={18} />Supprimer</button></div>
       <div
         ref={contentRef}
         role="link"
@@ -136,7 +125,6 @@ function AscensionCard({
       </div>
       {menuOpen && (
         <div className={styles.flightActionMenu} role="menu" aria-label={`Actions pour ${title}`}>
-          <button type="button" role="menuitem" onClick={onRename}><Pencil size={16} aria-hidden="true" /> Renommer</button>
           <button type="button" role="menuitem" onClick={onDelete}><Trash2 size={16} aria-hidden="true" /> Supprimer</button>
         </div>
       )}
@@ -147,7 +135,6 @@ function AscensionCard({
 
 export default function AscensionLog() {
   const completionState = useFlightCompletionState();
-  const [state, setState] = useState<AscensionDemoState>(EMPTY_STATE);
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
@@ -160,7 +147,6 @@ export default function AscensionLog() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Ascension | null>(null);
-  const [renaming, setRenaming] = useState<Ascension | null>(null);
   const [addedToast, setAddedToast] = useState(false);
 
   useEffect(() => {
@@ -174,15 +160,6 @@ export default function AscensionLog() {
     return () => document.removeEventListener("pointerdown", closeSwipeFromOutside);
   }, [openSwipeId]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setState(loadAscensionDemoState([
-        ...completionState.officialAscensions.map(({ id }) => id),
-      ])),
-      0,
-    );
-    return () => window.clearTimeout(timer);
-  }, [completionState.officialAscensions]);
   useEffect(() => {
     if (window.sessionStorage.getItem("balloon-companion-ascension-added") !== "1") return;
     window.sessionStorage.removeItem("balloon-companion-ascension-added");
@@ -222,17 +199,15 @@ export default function AscensionLog() {
   );
   const allAscensions = completionAscensions;
   const available = useMemo(
-    () => sortAscensionsNewestFirst(
-      allAscensions.filter(({ id }) => !state.deletedIds.includes(id)),
-    ),
-    [allAscensions, state.deletedIds],
+    () => sortAscensionsNewestFirst(allAscensions),
+    [allAscensions],
   );
   const registrations = [...new Set(available.map((item) => item.registration))].sort();
   const years = [...new Set(available.map((item) => item.dateIso.slice(0, 4)))].sort().reverse();
   const filtersActive = dateFilter !== "all" || registration !== "all" || functionFilter !== "all" || flightType !== "all" || balloonType !== "all";
   const normalizedQuery = normalize(query);
   const filtered = available.filter((item) => {
-    const title = state.customTitles[item.id] ?? getAscensionAutomaticName(item);
+    const title = getAscensionAutomaticName(item);
     const searchable = normalize([title, item.date, item.departure, item.arrival, item.registration, item.balloonModel, item.observations].join(" "));
     return (!normalizedQuery || searchable.includes(normalizedQuery)) &&
       matchesDate(item.dateIso, dateFilter, year, exactDate) &&
@@ -282,24 +257,13 @@ export default function AscensionLog() {
       </div>}
 
       <div className={styles.ascensionList} aria-label="Ascensions">
-        {filtered.map((ascension) => <AscensionCard key={ascension.id} ascension={ascension} title={state.customTitles[ascension.id] ?? getAscensionAutomaticName(ascension)} menuOpen={menuId === ascension.id} swipeOpen={openSwipeId === ascension.id} onSetSwipeOpen={(open) => { setOpenSwipeId(open ? ascension.id : null); if (open) setMenuId(null); }} onOpenMenu={() => { setOpenSwipeId(null); setMenuId(ascension.id); }} onCloseMenu={() => setMenuId(null)} onRename={() => { setRenaming(ascension); setOpenSwipeId(null); setMenuId(null); }} onDelete={() => { setDeleting(ascension); setOpenSwipeId(null); setMenuId(null); }} />)}
+        {filtered.map((ascension) => <AscensionCard key={ascension.id} ascension={ascension} title={getAscensionAutomaticName(ascension)} menuOpen={menuId === ascension.id} swipeOpen={openSwipeId === ascension.id} onSetSwipeOpen={(open) => { setOpenSwipeId(open ? ascension.id : null); if (open) setMenuId(null); }} onOpenMenu={() => { setOpenSwipeId(null); setMenuId(ascension.id); }} onCloseMenu={() => setMenuId(null)} onDelete={() => { setDeleting(ascension); setOpenSwipeId(null); setMenuId(null); }} />)}
         {filtered.length === 0 && <p className={styles.emptyState}>Aucune ascension trouvée.</p>}
       </div>
 
-      {deleting && <DeleteFlightDialog entityLabel="ascension" flightName={state.customTitles[deleting.id] ?? getAscensionAutomaticName(deleting)} linkedAscension={Boolean(completionState.officialAscensions.find(({ id }) => id === deleting.id)?.sourceFlightId)} returnFocusTo={null} onCancel={() => setDeleting(null)} onConfirm={() => {
-        if (completionState.officialAscensions.some(({ id }) => id === deleting.id)) {
-          saveFlightCompletionState(removeOfficialAscension(completionState, deleting.id));
-        } else {
-          const next = { ...state, deletedIds: [...new Set([...state.deletedIds, deleting.id])] };
-          saveAscensionDemoState(next); setState(next);
-        }
+      {deleting && <DeleteFlightDialog entityLabel="ascension" flightName={getAscensionAutomaticName(deleting)} linkedAscension={Boolean(completionState.officialAscensions.find(({ id }) => id === deleting.id)?.sourceFlightId)} returnFocusTo={null} onCancel={() => setDeleting(null)} onConfirm={() => {
+        saveFlightCompletionState(removeOfficialAscension(completionState, deleting.id));
         setDeleting(null);
-      }} />}
-      {renaming && <RenameAscensionDialog initialName={state.customTitles[renaming.id] ?? getAscensionAutomaticName(renaming)} onCancel={() => setRenaming(null)} onConfirm={(title) => {
-        const next = { ...state, customTitles: { ...state.customTitles, [renaming.id]: title } };
-        saveAscensionDemoState(next);
-        setState(next);
-        setRenaming(null);
       }} />}
       <p role="status" aria-live="polite" className={`${styles.toast} ${addedToast ? styles.toastVisible : ""}`}>Ascension ajoutée</p>
     </section>
