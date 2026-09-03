@@ -389,6 +389,39 @@ export async function loadRecordedFlightForJournal(
   return new IndexedDbRecordedFlightStorage().getFlight(sourceFlightId);
 }
 
+export function findJournalFlightBySourceId(
+  state: Pick<FlightCompletionState, "journalFlights">,
+  sourceFlightId: string,
+): CompletionJournalFlight | null {
+  return state.journalFlights.find((flight) => (flight.sourceFlightId ?? flight.id) === sourceFlightId) ?? null;
+}
+
+/** Répare uniquement une projection Journal absente depuis le RecordedFlight durable. */
+export async function reconcileRecordedFlightJournalProjection(
+  sourceFlightId: string,
+  storage?: Pick<IndexedDbRecordedFlightStorage, "getFlight">,
+): Promise<Readonly<{
+  status: "PRESENT" | "RECONSTRUCTED" | "NOT_FOUND" | "PERSIST_FAILED" | "SCOPE_UNAVAILABLE" | "SCOPE_CHANGED";
+  flight: CompletionJournalFlight | null;
+}>> {
+  const scope = getRuntimeDataScope();
+  if (!scope) return { status: "SCOPE_UNAVAILABLE", flight: null };
+  const current = loadFlightCompletionState();
+  const present = findJournalFlightBySourceId(current, sourceFlightId);
+  if (present) return { status: "PRESENT", flight: present };
+
+  const recordedFlight = await (storage ?? new IndexedDbRecordedFlightStorage()).getFlight(sourceFlightId);
+  if (getRuntimeDataScope() !== scope) return { status: "SCOPE_CHANGED", flight: null };
+  if (!recordedFlight || recordedFlight.status !== "COMPLETED") {
+    return { status: "NOT_FOUND", flight: null };
+  }
+  const result = persistRecordedFlightInJournal(recordedFlight);
+  const reconstructed = findJournalFlightBySourceId(result.state, sourceFlightId);
+  return result.persisted && reconstructed
+    ? { status: "RECONSTRUCTED", flight: reconstructed }
+    : { status: "PERSIST_FAILED", flight: null };
+}
+
 /** Migration additive : la source IndexedDB historique est conservée intacte. */
 export async function migrateCompletedRecordedFlightsToJournal(): Promise<number> {
   const storage = new IndexedDbRecordedFlightStorage();

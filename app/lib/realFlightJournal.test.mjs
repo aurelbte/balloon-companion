@@ -90,5 +90,13 @@ test("la feuille de fin ne s’ouvre qu’après stockage du vol et du Journal",
   const flightPage = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
   assert.ok(tracking.indexOf("await storageRef.current.completeFlight(completed)") < tracking.indexOf("persistRecordedFlightInJournal(completed)"));
   assert.ok(tracking.indexOf("persistRecordedFlightInJournal(completed)") < tracking.indexOf("return completed"));
-  assert.match(flightPage, /if \(completed\)[\s\S]*router\.push\(completionPath\(\)\)/);
+  assert.match(flightPage, /if \(completed\)[\s\S]*router\.push\(completionPath\(completed\.id\)\)/);
+});
+
+test("la feuille de fin résout et réconcilie uniquement le vol demandé par son ID", () => {
+  const completion = readFileSync(new URL("../flight/complete/page.tsx", import.meta.url), "utf8");
+  assert.match(completion, /searchParams\.get\("flightId"\)/);
+  assert.match(completion, /findJournalFlightBySourceId\(state, requestedFlightId\)/);
+  assert.match(completion, /reconcileRecordedFlightJournalProjection\(requestedFlightId\)/);
+  assert.doesNotMatch(completion, /journalFlights\.at\(-1\)/);
 });

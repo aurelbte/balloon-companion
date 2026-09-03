@@ -79,7 +79,15 @@ export default function FlightPage() {
   const shouldRequestLocalGeolocation = typeof window === "undefined"
     ? true
     : shouldRequestLocalFlightGeolocationOnMount(window.location.search);
-  const completionPath = () => `/flight/complete${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
+  const completionPath = (flightId?: string) => {
+    const current = new URLSearchParams(window.location.search);
+    const target = new URLSearchParams();
+    if (flightId) target.set("flightId", flightId);
+    if (current.get("cloudSyncTest") === "targeted") target.set("cloudSyncTest", "targeted");
+    if (current.get("demo") === "1") target.set("demo", "1");
+    const query = target.toString();
+    return `/flight/complete${query ? `?${query}` : ""}`;
+  };
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
     gpsProjection: true,
@@ -392,7 +400,7 @@ export default function FlightPage() {
     if (completed) {
       setStopConfirmationOpen(false);
       stopGeolocation();
-      router.push(completionPath());
+      router.push(completionPath(completed.id));
     }
   }, [router, stopGeolocation, stopTracking]);
 

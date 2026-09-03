@@ -1,16 +1,19 @@
 "use client";
 
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import {
   adjustOfficialDurationMinutes,
   defaultOfficialAscensionInput,
+  DEMO_COMPLETION_FLIGHT_ID,
   roundJournalAltitudeMeters,
+  type CompletionJournalFlight,
   type OfficialAscensionInput,
 } from "../../lib/flightCompletion";
-import { ensureDemoCompletionPersisted, persistJournalFlightDecision, persistOfficialAscension } from "../../lib/flightCompletionStorage";
+import { ensureDemoCompletionPersisted, findJournalFlightBySourceId, persistJournalFlightDecision, persistOfficialAscension, reconcileRecordedFlightJournalProjection } from "../../lib/flightCompletionStorage";
+import { DATA_SCOPE_CHANGED_EVENT } from "../../lib/auth/dataScopeRuntime";
 import styles from "./FlightComplete.module.css";
 
 type FlightRole = OfficialAscensionInput["pilotFunction"] | "NON_PILOT";
@@ -20,22 +23,55 @@ function formatDuration(minutes: number): string {
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
 }
 
-export default function FlightCompletePage() {
+function FlightCompleteContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const journalPath = () => `/journal${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const state = useFlightCompletionState();
   const [role, setRole] = useState<FlightRole | null>(null);
-  const activeFlight = state.journalFlights.at(-1) ?? null;
+  const demoEnabled = process.env.NODE_ENV === "development" && searchParams.get("demo") === "1";
+  const requestedFlightId = searchParams.get("flightId") ?? (demoEnabled ? DEMO_COMPLETION_FLIGHT_ID : null);
+  const [resolvedFlight, setResolvedFlight] = useState<CompletionJournalFlight | null>(null);
+  const activeFlight = requestedFlightId
+    ? findJournalFlightBySourceId(state, requestedFlightId) ??
+      ((resolvedFlight?.sourceFlightId ?? resolvedFlight?.id) === requestedFlightId ? resolvedFlight : null)
+    : null;
   const [officialDuration, setOfficialDuration] = useState<number | null>(null);
+  const [resolutionFinished, setResolutionFinished] = useState(false);
+  const [scopeVersion, setScopeVersion] = useState(0);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const demoEnabled = process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("demo") === "1";
-      if (demoEnabled) ensureDemoCompletionPersisted();
-      else if (!demoEnabled && state.journalFlights.length === 0) router.replace(journalPath());
-    }, 100);
-    return () => window.clearTimeout(timer);
-  }, [router, state.journalFlights.length]);
+    const retryForScope = () => setScopeVersion((version) => version + 1);
+    window.addEventListener(DATA_SCOPE_CHANGED_EVENT, retryForScope);
+    return () => window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, retryForScope);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolutionFinished(false);
+    setResolvedFlight(null);
+    const resolve = async () => {
+      let flight: CompletionJournalFlight | null = null;
+      if (demoEnabled) {
+        flight = findJournalFlightBySourceId(ensureDemoCompletionPersisted(), DEMO_COMPLETION_FLIGHT_ID);
+      }
+      else if (requestedFlightId) {
+        const result = await reconcileRecordedFlightJournalProjection(requestedFlightId);
+        if (result.status === "SCOPE_UNAVAILABLE" || result.status === "SCOPE_CHANGED") return;
+        flight = result.flight;
+      }
+      if (!cancelled) {
+        setResolvedFlight(flight);
+        setResolutionFinished(true);
+      }
+    };
+    void resolve().catch(() => { if (!cancelled) setResolutionFinished(true); });
+    return () => { cancelled = true; };
+  }, [demoEnabled, requestedFlightId, scopeVersion]);
+
+  useEffect(() => {
+    if (resolutionFinished && !activeFlight) router.replace(journalPath());
+  }, [activeFlight, resolutionFinished, router]);
 
   const leaveForLater = () => {
     if (activeFlight) persistJournalFlightDecision(activeFlight.id, "CARNET_PENDING");
@@ -85,4 +121,8 @@ export default function FlightCompletePage() {
       </div>
     </main>
   );
+}
+
+export default function FlightCompletePage() {
+  return <Suspense fallback={null}><FlightCompleteContent /></Suspense>;
 }
