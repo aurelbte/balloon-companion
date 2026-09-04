@@ -8,6 +8,7 @@ import type { QualificationPersonSnapshot } from "./pilotQualifications.ts";
 
 const FLIGHT_NATURE_LABELS: Readonly<Record<OfficialFlightNature, string>> = Object.freeze({
   STANDARD: "Vol standard",
+  CAPTIVE: "Vol captif",
   TRAINING_BPL: "Vol d’entraînement BPL",
   PROFICIENCY_CHECK_BPL: "Contrôle de compétences BPL",
   SKILL_TEST: "Examen pratique",

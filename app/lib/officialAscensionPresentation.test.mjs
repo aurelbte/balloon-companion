@@ -27,6 +27,7 @@ test("présente fidèlement les origines GPS et manuelle", () => {
 
 test("présente la nature et les mouvements normalisés", () => {
   assert.equal(officialAscensionFlightNatureLabel(ascension({ flightNature: "TRAINING_BPL" })), "Vol d’entraînement BPL");
+  assert.equal(officialAscensionFlightNatureLabel(ascension({ flightNature: "CAPTIVE" })), "Vol captif");
   assert.deepEqual(officialAscensionMovementLabels(ascension({ takeoffCount: 2, landingCount: 3 })), { takeoffs: "2", landings: "3" });
   assert.deepEqual(officialAscensionMovementLabels(ascension({ takeoffCount: undefined, landingCount: undefined })), { takeoffs: "1", landings: "1" });
 });

@@ -44,6 +44,14 @@ test("OfficialAscension produit un payload logbook_entry complet sans date local
   assert.equal(payload.payload.date_iso, "2026-08-23");
 });
 
+test("le payload logbook_entry conserve la nature CAPTIVE", async () => {
+  const storage = new MemoryStorage();
+  const captive = { ...ascension, id: "ascension-captive", sourceFlightId: null, source: "MANUAL", gpsDurationMinutes: null, flightNature: "CAPTIVE", instructor: undefined };
+  storage.setItem(scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY), JSON.stringify({ officialAscensions: [captive] }));
+  const payload = await new BrowserCloudSyncPayloadProvider(storage, scope).build({ mutationId: "mutation-captive", entityType: "logbook-entry", entityId: captive.id, operation: "UPSERT", baseRevision: 0, createdAt: "2026-09-04T10:00:00.000Z", attempts: 0 });
+  assert.equal(payload.payload.flight_nature, "CAPTIVE");
+});
+
 test("le diff OfficialAscension produit UPSERT et DELETE par identifiant", () => {
   assert.deepEqual(officialAscensionCloudMutations([], [ascension]), [{ entityId: "ascension-a", operation: "UPSERT" }]);
   assert.deepEqual(officialAscensionCloudMutations([ascension], [{ ...ascension, observations: "Vent faible" }]), [{ entityId: "ascension-a", operation: "UPSERT" }]);
@@ -65,4 +73,11 @@ test("la migration ajoute le schéma et le protocole logbook_entry sans être ap
   assert.match(migration, /where flight_id is not null and deleted_at is null/);
   for (const status of ["ALREADY_APPLIED", "CONFLICT", "NOT_FOUND", "APPLIED"]) assert.match(migration, new RegExp(status));
   assert.match(migration, /set deleted_at = statement_timestamp\(\)/);
+});
+
+test("la migration captive étend uniquement la contrainte flight_nature", () => {
+  const migration = readFileSync(new URL("../../supabase/migrations/20260904120000_add_captive_logbook_flight_nature.sql", import.meta.url), "utf8");
+  assert.match(migration, /drop constraint if exists logbook_entries_flight_nature_check/);
+  assert.match(migration, /add constraint logbook_entries_flight_nature_check/);
+  assert.match(migration, /'CAPTIVE'/);
 });

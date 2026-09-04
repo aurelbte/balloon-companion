@@ -77,6 +77,17 @@ test("import silencieux conserve exactement les champs réglementaires et UPDATE
   delete globalThis.window;
 });
 
+test("le PULL conserve une ascension CAPTIVE sans GPS", () => {
+  const env = browserStorage();
+  const captive = ascension({ id: "entry-captive", sourceFlightId: null, source: "MANUAL", gpsDurationMinutes: null, flightNature: "CAPTIVE", instructor: undefined, examiner: undefined });
+  assert.equal(applyOfficialAscensionFromCloudWithoutEnqueue(scope, captive.id, captive, env.storage), true);
+  const restored = JSON.parse(env.values.get(env.key)).officialAscensions[0];
+  assert.equal(restored.flightNature, "CAPTIVE");
+  assert.equal(restored.sourceFlightId, null);
+  assert.equal(restored.gpsDurationMinutes, null);
+  delete globalThis.window;
+});
+
 test("flight parent absent est conservé comme référence différée sans flight fantôme", () => {
   const env = browserStorage();
   assert.equal(applyOfficialAscensionFromCloudWithoutEnqueue(scope, "entry-a", ascension({ sourceFlightId: "missing-flight" }), env.storage), true);

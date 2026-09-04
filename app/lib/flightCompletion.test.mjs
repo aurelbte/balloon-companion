@@ -17,6 +17,7 @@ import {
   setJournalFlightLogbookStatus,
   updateOfficialAscension,
   validateOfficialAscension,
+  OFFICIAL_FLIGHT_NATURES,
 } from "./flightCompletion.ts";
 import { officialAscensionToEditValues } from "./officialAscensionEditing.ts";
 import { getAscensionAutomaticName } from "./ascensionMockData.ts";
@@ -54,6 +55,27 @@ test("ajout manuel : aucune trace ni entrée Journal n’est inventée", () => {
   assert.equal(state.officialAscensions[0].sourceFlightId, null);
   assert.equal(state.officialAscensions[0].gpsDurationMinutes, null);
   assert.equal(calculatePilotOfficialTotals(state).officialDurationMinutes, 8_255);
+});
+
+test("un vol captif manuel est une nature valide, sans GPS, et compte intégralement dans les totaux", () => {
+  assert.deepEqual(OFFICIAL_FLIGHT_NATURES, [
+    "STANDARD", "CAPTIVE", "TRAINING_BPL", "PROFICIENCY_CHECK_BPL", "SKILL_TEST",
+    "COMMERCIAL_TRAINING", "COMMERCIAL_PROFICIENCY_CHECK", "INSTRUCTION",
+  ]);
+  const state = addManualOfficialAscension(
+    createEmptyFlightCompletionState(),
+    "manual-captive",
+    { ...manualInput, flightNature: "CAPTIVE", departure: "Bondues", arrival: "Bondues", officialDurationMinutes: 180, takeoffCount: 2, landingCount: 2 },
+  );
+  const captive = state.officialAscensions[0];
+  assert.equal(captive.flightNature, "CAPTIVE");
+  assert.equal(captive.sourceFlightId, null);
+  assert.equal(captive.gpsDurationMinutes, null);
+  assert.equal(state.journalFlights.length, 0);
+  assert.equal(calculatePilotOfficialTotals(state).officialDurationMinutes, 8_195 + 180);
+  assert.equal(calculatePilotOfficialTotals(state).ascensions, 109);
+  assert.equal(captive.takeoffCount, 2);
+  assert.equal(captive.landingCount, 2);
 });
 
 test("modifier le solde initial conserve les ascensions manuelles et recalcule le total", () => {

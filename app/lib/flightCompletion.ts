@@ -24,6 +24,7 @@ export type CompletionJournalFlight = JournalFlight & {
 
 export type OfficialFlightNature =
   | "STANDARD"
+  | "CAPTIVE"
   | "TRAINING_BPL"
   | "PROFICIENCY_CHECK_BPL"
   | "SKILL_TEST"
@@ -33,6 +34,7 @@ export type OfficialFlightNature =
 
 export const OFFICIAL_FLIGHT_NATURES = Object.freeze([
   "STANDARD",
+  "CAPTIVE",
   "TRAINING_BPL",
   "PROFICIENCY_CHECK_BPL",
   "SKILL_TEST",

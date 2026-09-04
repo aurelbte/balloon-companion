@@ -32,6 +32,7 @@ test("les natures mappées conservent leurs types réglementaires exacts", () =>
   assert.equal(qualificationEventTypeForFlightNature("COMMERCIAL_PROFICIENCY_CHECK"), "COMMERCIAL_PROFICIENCY_CHECK");
   assert.equal(qualificationEventTypeForFlightNature("COMMERCIAL_TRAINING"), null);
   assert.equal(qualificationEventTypeForFlightNature("INSTRUCTION"), null);
+  assert.equal(qualificationEventTypeForFlightNature("CAPTIVE"), null);
 });
 
 test("FI(B) ou FE(B) manquant interdit la création de l’événement", () => {
@@ -87,6 +88,8 @@ test("le formulaire expose la nature et conditionne les identités FI/FE", () =>
   assert.match(source, /Vol d’entraînement BPL/);
   assert.match(source, /Contrôle de compétences BPL/);
   assert.match(source, /Examen pratique/);
+  assert.match(source, /<option value="CAPTIVE">Vol captif<\/option>/);
+  assert.doesNotMatch(source, /values\.flightNature !== "STANDARD" && [^\n]*Décollages/);
   assert.match(source, /flightNatureRequiresInstructor/);
   assert.match(source, /flightNatureRequiresExaminer/);
 });
