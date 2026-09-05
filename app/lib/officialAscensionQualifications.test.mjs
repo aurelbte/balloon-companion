@@ -64,6 +64,15 @@ test("l’édition met à jour le même événement et préserve son identité",
   assert.equal(edited.events[0].instructor.name, "FI Corrigé");
 });
 
+test("la reconciliation préserve un snapshot groupId existant et n'en invente aucun", () => {
+  const source = ascension({ flightNature: "TRAINING_BPL", instructor: { name: "FI Test" } });
+  const created = reconcileQualificationEventForAscension(source, [], options);
+  assert.equal(created.events[0].balloonClass.groupId, undefined);
+  const withGroup = { ...created.events[0], balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "C" } };
+  const updated = reconcileQualificationEventForAscension({ ...source, observations: "mise à jour" }, [withGroup], options);
+  assert.equal(updated.events[0].balloonClass.groupId, "C");
+});
+
 test("passer à une nature non mappée conserve explicitement l’événement existant", () => {
   const special = ascension({ flightNature: "TRAINING_BPL", instructor: { name: "FI Test" } });
   const created = reconcileQualificationEventForAscension(special, [], options);

@@ -36,8 +36,9 @@ export function flightNatureRequiresExaminer(nature: OfficialFlightNature): bool
   return nature === "PROFICIENCY_CHECK_BPL" || nature === "SKILL_TEST" || nature === "COMMERCIAL_PROFICIENCY_CHECK";
 }
 
-function balloonClass(ascension: OfficialAscension): Readonly<{ classId: string }> {
-  return { classId: ascension.category === "Libre à gaz" ? "GAS_BALLOON" : "HOT_AIR_BALLOON" };
+function balloonClass(ascension: OfficialAscension, existing?: QualificationEvent | null): Readonly<{ classId: string; groupId?: string }> {
+  const classId = ascension.category === "Libre à gaz" ? "GAS_BALLOON" : "HOT_AIR_BALLOON";
+  return { classId, ...(classId === "HOT_AIR_BALLOON" && existing?.balloonClass?.classId === classId && existing.balloonClass.groupId ? { groupId: existing.balloonClass.groupId } : {}) };
 }
 
 export function reconcileQualificationEventForAscension(
@@ -59,7 +60,7 @@ export function reconcileQualificationEventForAscension(
   }
   const now = (options.now ?? (() => new Date()))().toISOString();
   const { instructor: _previousInstructor, examiner: _previousExaminer, officialAscensionDeletedAt: _previousDeletion, ...existingWithoutPeople } = existing;
-  const updated: QualificationEvent = { ...existingWithoutPeople, type, dateIso: ascension.dateIso, source: "OFFICIAL_ASCENSION", officialAscensionId: ascension.id, balloonClass: balloonClass(ascension), ...(ascension.instructor ? { instructor: ascension.instructor } : {}), ...(ascension.examiner ? { examiner: ascension.examiner } : {}), updatedAt: now };
+  const updated: QualificationEvent = { ...existingWithoutPeople, type, dateIso: ascension.dateIso, source: "OFFICIAL_ASCENSION", officialAscensionId: ascension.id, balloonClass: balloonClass(ascension, existing), ...(ascension.instructor ? { instructor: ascension.instructor } : {}), ...(ascension.examiner ? { examiner: ascension.examiner } : {}), updatedAt: now };
   const comparable = normalizeQualificationEvent({ ...updated, updatedAt: existing.updatedAt });
   if (comparable && JSON.stringify(existing) === JSON.stringify(comparable)) return { status: "UNCHANGED", events, linkedEventId: existing.id, duplicateEventIds: duplicates };
   return { status: "UPDATED", events: events.map((event) => event.id === existing.id ? updated : event), linkedEventId: existing.id, duplicateEventIds: duplicates };

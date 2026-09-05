@@ -7,6 +7,7 @@ import {
   createEmptyQualificationProfile,
   createQualificationEvent,
   legacyQualificationDeadlines,
+  normalizeQualificationEvent,
   normalizeQualificationProfile,
 } from "./pilotQualifications.ts";
 import {
@@ -37,6 +38,7 @@ test("les qualifications vides n’inventent aucun privilège", () => {
     declaredCommercialInitialSituations: [],
     licenceType: null,
     bplBalloonClasses: [],
+    hotAirBalloonGroupPrivilege: null,
     commercialOperationsEnabled: false,
     fiBEnabled: false,
     feBEnabled: false,
@@ -146,6 +148,19 @@ test("les privilèges BPL sont normalisés, dédupliqués et persistés par scop
   assert.deepEqual(loadPilotQualifications(storage).profile.bplBalloonClasses, ["GAS_BALLOON"]);
   signedIn("classes-b");
   assert.deepEqual(loadPilotQualifications(storage).profile.bplBalloonClasses, []);
+});
+
+test("le privilège de groupe hot-air accepte seulement A à D sans aucune déduction", () => {
+  for (const group of ["A", "B", "C", "D"]) assert.equal(normalizeQualificationProfile({ hotAirBalloonGroupPrivilege: group }).hotAirBalloonGroupPrivilege, group);
+  assert.equal(normalizeQualificationProfile({ hotAirBalloonGroupPrivilege: "E" }).hotAirBalloonGroupPrivilege, null);
+  assert.equal(normalizeQualificationProfile({ bplBalloonClasses: ["HOT_AIR_BALLOON"] }).hotAirBalloonGroupPrivilege, null);
+});
+
+test("groupId est strictement validé pour hot-air et supprimé pour gas", () => {
+  const base = { id: "123e4567-e89b-42d3-a456-426614174099", type: "TRAINING_FLIGHT_BPL", dateIso: "2026-01-01", source: "MANUAL", instructor: { name: "FI" }, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
+  assert.equal(createQualificationEvent({ type: "TRAINING_FLIGHT_BPL", dateIso: "2026-01-01", source: "MANUAL", balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "D" }, instructor: { name: "FI" } }).balloonClass.groupId, "D");
+  assert.equal(normalizeQualificationEvent({ ...base, balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "X" } }).balloonClass.groupId, undefined);
+  assert.equal(normalizeQualificationEvent({ ...base, balloonClass: { classId: "GAS_BALLOON", groupId: "A" } }).balloonClass.groupId, undefined);
 });
 
 test("l’adaptateur legacy expose les échéances sans créer ni reclasser d’événement", () => {

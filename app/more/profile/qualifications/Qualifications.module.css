@@ -75,6 +75,7 @@
 .toggle:has(input:checked) { border-color: var(--bc-accent); }
 .privileges { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .privileges > span { grid-column: 1 / -1; color: var(--bc-text-secondary); font-size: .68rem; font-weight: 700; letter-spacing: .06em; }
+.privilegeGroup { grid-column: 1 / -1; }
 .save { position: relative; z-index: 1; display: block; width: 100%; min-height: 46px; margin-top: 10px; border: 0; border-radius: 999px; appearance: none; -webkit-appearance: none; background: var(--bc-accent); color: var(--bc-accent-foreground); cursor: pointer; font-weight: 700; pointer-events: auto; touch-action: manipulation; }
 @media (max-width: 370px) { .header { display: block; } .edit { margin-top: 5px; } .settingsGrid, .facts, .eventForm, .declarationClass { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .eventForm, .declarationClass { grid-template-columns: minmax(0, 1fr); } }

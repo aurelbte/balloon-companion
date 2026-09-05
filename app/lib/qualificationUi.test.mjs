@@ -147,6 +147,14 @@ test("la phase 7B propose les deux origines BPL avec FI/FE et un submit natif", 
   assert.match(page, /Historique — non lié au carnet/);
 });
 
+test("les privilèges et preuves hot-air exposent le groupe sans l'inventer pour gas", () => {
+  assert.match(page, /Groupe hot-air maximal détenu/);
+  assert.match(page, /settings\.bplBalloonClasses\.includes\("HOT_AIR_BALLOON"\)/);
+  assert.match(page, /Groupe du ballon utilisé/);
+  assert.match(page, /Groupe actuellement exerçable/);
+  assert.match(page, /draft\.classId === "HOT_AIR_BALLOON"/);
+});
+
 test("la phase 7B.1 distingue délivrance, maintien normal et voie alternative", () => {
   assert.match(page, /Délivrance initiale BPL/);
   assert.match(page, /Maintien périodique \/ vol d’entraînement/);

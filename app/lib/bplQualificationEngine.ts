@@ -1,6 +1,7 @@
 import { officialAscensionMovementCounts, type OfficialAscension, type PilotExperienceBalance } from "./flightCompletion.ts";
 import type { BplBalloonClass, QualificationBalloonClass, QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
 import { bplEventCredits, type BplEventCredit } from "./qualificationEventCredits.ts";
+import { HOT_AIR_BALLOON_GROUPS, type HotAirBalloonGroup } from "./hotAirBalloonGroup.ts";
 
 export const BPL_REGULATORY_RULES = Object.freeze({
   recentExperienceMonths: 24,
@@ -54,6 +55,15 @@ export type DatedExperienceResult = Readonly<{
   unqualifiedPotential: Readonly<{ officialDurationMinutes: number; takeoffs: number; landings: number }>;
 }>;
 
+export type BplHotAirGroupLimitation = Readonly<{
+  status: "DETERMINED" | "UNKNOWN" | "NON_APPLICABLE";
+  pilotPrivilegeGroup: HotAirBalloonGroup | null;
+  creditGroup: HotAirBalloonGroup | null;
+  exercisableGroup: HotAirBalloonGroup | null;
+  sourceEventIds: readonly string[];
+  reason: string;
+}>;
+
 export type BplMaintenanceResult = Readonly<{
   recentExperience: QualificationRequirementResult<
     Readonly<{ officialDurationMinutes: number; ascensions: number; takeoffs: number; landings: number }>,
@@ -64,6 +74,7 @@ export type BplMaintenanceResult = Readonly<{
   overall: QualificationRequirementResult;
   datedExperience: DatedExperienceResult;
   excludedOpeningBalance: PilotExperienceBalance | null;
+  groupLimitation: BplHotAirGroupLimitation;
 }>;
 
 export type BplAdditionalClassExperienceResult = QualificationRequirementResult<number, number> & Readonly<{
@@ -81,6 +92,7 @@ export type BplPrivilegesMaintenanceResult = Readonly<{
     balloonClass: Readonly<{ classId: BplBalloonClass }>;
     requirement: "BFCL_160_A" | "BFCL_160_B";
     result: QualificationRequirementResult;
+    groupLimitation?: BplHotAirGroupLimitation;
   }>[];
   candidates: readonly Readonly<{
     referenceClass: Readonly<{ classId: BplBalloonClass }>;
@@ -246,6 +258,23 @@ function satisfiesTimedRequirement(result: QualificationRequirementResult): bool
   return result.status === "COMPLIANT" || result.status === "UPCOMING" || result.status === "WARNING";
 }
 
+const GROUP_RANK: Readonly<Record<HotAirBalloonGroup, number>> = { A: 0, B: 1, C: 2, D: 3 };
+
+function validCredit(credit: BplEventCredit, referenceDateIso: string): boolean {
+  const dueDate = credit.requirement === "TRAINING_FLIGHT"
+    ? trainingFlightDueDate(credit.dateIso)
+    : addCalendarMonths(credit.dateIso, BPL_REGULATORY_RULES.proficiencyCheckMonths);
+  return credit.dateIso <= referenceDateIso && timedStatus(dueDate, referenceDateIso) !== "ACTION_REQUIRED";
+}
+
+function bestGroupCredit(credits: readonly BplEventCredit[]): BplEventCredit | null {
+  return [...credits].sort((left, right) => {
+    const leftRank = HOT_AIR_BALLOON_GROUPS.includes(left.balloonClass?.groupId as HotAirBalloonGroup) ? GROUP_RANK[left.balloonClass!.groupId as HotAirBalloonGroup] : -1;
+    const rightRank = HOT_AIR_BALLOON_GROUPS.includes(right.balloonClass?.groupId as HotAirBalloonGroup) ? GROUP_RANK[right.balloonClass!.groupId as HotAirBalloonGroup] : -1;
+    return rightRank - leftRank || right.dateIso.localeCompare(left.dateIso);
+  })[0] ?? null;
+}
+
 export function calculateBplMaintenance(input: Readonly<{
   profile: QualificationProfile;
   events: readonly QualificationEvent[];
@@ -342,7 +371,27 @@ export function calculateBplMaintenance(input: Readonly<{
     overall = { status: "ACTION_REQUIRED", reason: "Aucune voie de maintien BPL calculée n’est satisfaite." };
   }
 
-  return { recentExperience, trainingFlightFiB, proficiencyCheckFeB, overall, datedExperience, excludedOpeningBalance: input.openingBalance ?? null };
+  const hotAirTarget = input.balloonClass?.classId === "HOT_AIR_BALLOON";
+  const admissibleGroupCredits = overall.status === "COMPLIANT"
+    ? credits.filter((credit) => validCredit(credit, input.referenceDateIso) && (credit.requirement === "PROFICIENCY_CHECK" || recentExperience.status === "COMPLIANT"))
+    : [];
+  const retainedGroupCredit = bestGroupCredit(admissibleGroupCredits);
+  const pilotPrivilegeGroup = hotAirTarget && input.profile.bplBalloonClasses?.includes("HOT_AIR_BALLOON")
+    ? input.profile.hotAirBalloonGroupPrivilege ?? null
+    : null;
+  const creditGroup = hotAirTarget && HOT_AIR_BALLOON_GROUPS.includes(retainedGroupCredit?.balloonClass?.groupId as HotAirBalloonGroup)
+    ? retainedGroupCredit!.balloonClass!.groupId as HotAirBalloonGroup
+    : null;
+  const exercisableGroup = pilotPrivilegeGroup && creditGroup
+    ? GROUP_RANK[pilotPrivilegeGroup] <= GROUP_RANK[creditGroup] ? pilotPrivilegeGroup : creditGroup
+    : null;
+  const groupLimitation: BplMaintenanceResult["groupLimitation"] = !hotAirTarget
+    ? { status: "NON_APPLICABLE", pilotPrivilegeGroup: null, creditGroup: null, exercisableGroup: null, sourceEventIds: [], reason: "Limitation A/B/C/D non applicable à cette classe." }
+    : exercisableGroup
+      ? { status: "DETERMINED", pilotPrivilegeGroup, creditGroup, exercisableGroup, sourceEventIds: retainedGroupCredit?.sourceEventIds ?? [], reason: `Groupes actuellement exerçables : A à ${exercisableGroup}.` }
+      : { status: "UNKNOWN", pilotPrivilegeGroup, creditGroup, exercisableGroup: null, sourceEventIds: retainedGroupCredit?.sourceEventIds ?? [], reason: overall.status === "COMPLIANT" ? "Maintien BPL satisfait, mais groupe actuellement exerçable non déterminable." : "La limitation de groupe sera déterminée après satisfaction du maintien BPL." };
+
+  return { recentExperience, trainingFlightFiB, proficiencyCheckFeB, overall, datedExperience, excludedOpeningBalance: input.openingBalance ?? null, groupLimitation };
 }
 
 export function calculateBplAdditionalClassExperience(input: Readonly<{
@@ -439,8 +488,8 @@ export function calculateBplPrivilegesMaintenance(input: Readonly<{
     overall,
     referenceClass: selected.referenceClass,
     classResults: [
-      { balloonClass: selected.referenceClass, requirement: "BFCL_160_A", result: selected.fullRequirement.overall },
-      ...selected.additionalClasses.map((result) => ({ balloonClass: result.balloonClass, requirement: "BFCL_160_B" as const, result })),
+      { balloonClass: selected.referenceClass, requirement: "BFCL_160_A", result: selected.fullRequirement.overall, ...(selected.referenceClass.classId === "HOT_AIR_BALLOON" ? { groupLimitation: selected.fullRequirement.groupLimitation } : {}) },
+      ...selected.additionalClasses.map((result) => ({ balloonClass: result.balloonClass, requirement: "BFCL_160_B" as const, result, ...(result.balloonClass.classId === "HOT_AIR_BALLOON" ? { groupLimitation: { status: "UNKNOWN" as const, pilotPrivilegeGroup: input.profile.hotAirBalloonGroupPrivilege ?? null, creditGroup: null, exercisableGroup: null, sourceEventIds: [], reason: "Aucun crédit hot-air BFCL.160(a) n'est utilisé dans cette combinaison." } } : {}) })),
     ],
     candidates,
     referenceRequirement: selected.fullRequirement,

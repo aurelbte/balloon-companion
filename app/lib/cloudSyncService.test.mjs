@@ -221,14 +221,15 @@ test("le payload balloon reste structuré et exclut documents, traces et Blob", 
 test("qualifications et ballon actif utilisent les lignes JSON user_preferences existantes", async () => {
   const storage = new MemoryStorage();
   const scope = `USER:${USER_A}`;
-  storage.setItem(scopedBusinessStorageKey(scope, PILOT_QUALIFICATIONS_STORAGE_KEY), JSON.stringify({ version: 1, profile: { configured: true, licenceType: "BPL" }, events: [{ id: "11111111-1111-4111-8111-111111111111", type: "MEDICAL", dateIso: "2026-01-01", expiryDateIso: "2027-01-01", source: "MANUAL", medicalClass: "LAPL", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }] }));
+  storage.setItem(scopedBusinessStorageKey(scope, PILOT_QUALIFICATIONS_STORAGE_KEY), JSON.stringify({ version: 1, profile: { configured: true, licenceType: "BPL", bplBalloonClasses: ["HOT_AIR_BALLOON"], hotAirBalloonGroupPrivilege: "D" }, events: [{ id: "11111111-1111-4111-8111-111111111111", type: "TRAINING_FLIGHT_BPL", dateIso: "2026-01-01", source: "MANUAL", balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "C" }, instructor: { name: "FI Test" }, createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }] }));
   storage.setItem(scopedBusinessStorageKey(scope, BALLOON_REGISTRY_STORAGE_KEY), JSON.stringify({ version: 5, activeBalloonId: "balloon-cloud", balloons: [] }));
   const provider = new BrowserCloudSyncPayloadProvider(storage, scope);
   const qualifications = await provider.build({ mutationId: "q", entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
   const balloon = await provider.build({ mutationId: "b", entityType: "balloon-preferences", entityId: "singleton", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 });
   assert.deepEqual([qualifications.serverEntityType, qualifications.serverEntityId], ["user_preferences", "qualifications"]);
   assert.equal(qualifications.payload.preferences.profile.configured, true);
-  assert.equal(qualifications.payload.preferences.events[0].medicalClass, "LAPL");
+  assert.equal(qualifications.payload.preferences.profile.hotAirBalloonGroupPrivilege, "D");
+  assert.equal(qualifications.payload.preferences.events[0].balloonClass.groupId, "C");
   assert.deepEqual([balloon.serverEntityType, balloon.serverEntityId], ["user_preferences", "balloon"]);
   assert.equal(balloon.payload.preferences.activeBalloonId, "balloon-cloud");
 });

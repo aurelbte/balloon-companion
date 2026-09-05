@@ -1,4 +1,5 @@
 import type { PilotProfile } from "./pilotProfile.ts";
+import { HOT_AIR_BALLOON_GROUPS, type HotAirBalloonGroup } from "./hotAirBalloonGroup.ts";
 
 export const PILOT_QUALIFICATIONS_VERSION = 1;
 
@@ -70,6 +71,7 @@ export type QualificationProfile = Readonly<{
   declaredCommercialInitialSituations: readonly DeclaredCommercialInitialSituation[];
   licenceType: string | null;
   bplBalloonClasses: readonly BplBalloonClass[];
+  hotAirBalloonGroupPrivilege: HotAirBalloonGroup | null;
   commercialOperationsEnabled: boolean;
   fiBEnabled: boolean;
   feBEnabled: boolean;
@@ -121,6 +123,7 @@ export function createEmptyQualificationProfile(): QualificationProfile {
     declaredCommercialInitialSituations: [],
     licenceType: null,
     bplBalloonClasses: [],
+    hotAirBalloonGroupPrivilege: null,
     commercialOperationsEnabled: false,
     fiBEnabled: false,
     feBEnabled: false,
@@ -153,8 +156,12 @@ function balloonClass(value: unknown): QualificationBalloonClass | undefined {
   const candidate = value as Partial<QualificationBalloonClass>;
   const classId = optionalText(candidate.classId);
   if (!classId) return undefined;
-  const groupId = optionalText(candidate.groupId);
-  return { classId: classId.toUpperCase(), ...(groupId ? { groupId: groupId.toUpperCase() } : {}) };
+  const normalizedClassId = classId.toUpperCase();
+  const groupId = optionalText(candidate.groupId)?.toUpperCase();
+  const validHotAirGroup = normalizedClassId === "HOT_AIR_BALLOON" && HOT_AIR_BALLOON_GROUPS.includes(groupId as HotAirBalloonGroup)
+    ? groupId as HotAirBalloonGroup
+    : undefined;
+  return { classId: normalizedClassId, ...(validHotAirGroup ? { groupId: validHotAirGroup } : {}) };
 }
 
 export function normalizeQualificationProfile(value: unknown): QualificationProfile {
@@ -163,6 +170,9 @@ export function normalizeQualificationProfile(value: unknown): QualificationProf
   const bplBalloonClasses = Array.isArray(candidate.bplBalloonClasses)
     ? BPL_BALLOON_CLASSES.filter((classId) => candidate.bplBalloonClasses!.includes(classId))
     : [];
+  const hotAirBalloonGroupPrivilege = HOT_AIR_BALLOON_GROUPS.includes(candidate.hotAirBalloonGroupPrivilege as HotAirBalloonGroup)
+    ? candidate.hotAirBalloonGroupPrivilege as HotAirBalloonGroup
+    : null;
   const commercialOperationsEnabled = candidate.commercialOperationsEnabled === true;
   const fiBEnabled = candidate.fiBEnabled === true;
   const feBEnabled = candidate.feBEnabled === true;
@@ -190,12 +200,13 @@ export function normalizeQualificationProfile(value: unknown): QualificationProf
   return {
     configured: typeof candidate.configured === "boolean"
       ? candidate.configured
-      : licenceType !== null || bplBalloonClasses.length > 0 || commercialOperationsEnabled || fiBEnabled || feBEnabled || historyCoverageStartDate !== null,
+      : licenceType !== null || bplBalloonClasses.length > 0 || hotAirBalloonGroupPrivilege !== null || commercialOperationsEnabled || fiBEnabled || feBEnabled || historyCoverageStartDate !== null,
     historyCoverageStartDate,
     declaredBplInitialSituation,
     declaredCommercialInitialSituations,
     licenceType,
     bplBalloonClasses,
+    hotAirBalloonGroupPrivilege,
     commercialOperationsEnabled,
     fiBEnabled,
     feBEnabled,

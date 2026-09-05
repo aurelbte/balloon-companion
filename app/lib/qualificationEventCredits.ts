@@ -9,7 +9,8 @@ export type BplEventCredit = Readonly<{
 }>;
 
 function sameKnownClass(left: QualificationEvent, right: QualificationEvent): boolean {
-  return Boolean(left.balloonClass?.classId && left.balloonClass.classId === right.balloonClass?.classId);
+  if (!left.balloonClass?.classId || left.balloonClass.classId !== right.balloonClass?.classId) return false;
+  return left.balloonClass.classId !== "HOT_AIR_BALLOON" || !left.balloonClass.groupId || !right.balloonClass?.groupId || left.balloonClass.groupId === right.balloonClass.groupId;
 }
 
 /** Calcule des crédits sans retyper ni dupliquer les événements sources. */
@@ -30,8 +31,11 @@ export function bplEventCredits(events: readonly QualificationEvent[]): readonly
     const training = event.relatedEventIds
       ?.map((id) => byId.get(id))
       .find((candidate) => candidate?.type === "TRAINING_FLIGHT_BPL" && candidate.instructor?.name.trim() && sameKnownClass(event, candidate));
+    const provenBalloonClass = event.balloonClass.classId === "HOT_AIR_BALLOON" && event.balloonClass.groupId && event.balloonClass.groupId === training?.balloonClass?.groupId
+      ? event.balloonClass
+      : { classId: event.balloonClass.classId };
     return training
-      ? [{ requirement: "TRAINING_FLIGHT", dateIso: event.dateIso, sourceEventIds: [event.id, training.id], creditedFrom: event.type, balloonClass: event.balloonClass }]
+      ? [{ requirement: "TRAINING_FLIGHT", dateIso: event.dateIso, sourceEventIds: [event.id, training.id], creditedFrom: event.type, balloonClass: provenBalloonClass }]
       : [];
   });
 }

@@ -272,3 +272,49 @@ test("le legacy null ne rend UNKNOWN que s'il peut combler le seuil de 180 minut
   assert.equal(possible.status, "UNKNOWN");
   assert.equal(impossible.status, "ACTION_REQUIRED");
 });
+
+function maintainedHotAir(events, privilege = "D", referenceDateIso = "2026-08-20") {
+  return calculateBplPrivilegesMaintenance({
+    profile: { ...profile, bplBalloonClasses: ["HOT_AIR_BALLOON"], hotAirBalloonGroupPrivilege: privilege },
+    events,
+    ascensions: [ascension("hot-maintained", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 })],
+    referenceDateIso,
+    ascensionHistoryComplete: true,
+  }).referenceRequirement;
+}
+
+test("BFCL.160(d) limite au minimum entre privilège pilote et groupe du crédit", () => {
+  const trainingD = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "D" }, instructor: { name: "FI" } });
+  const trainingB = event("TRAINING_FLIGHT_BPL", "2026-01-02", { balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "B" }, instructor: { name: "FI" } });
+  assert.equal(maintainedHotAir([trainingD], "D").groupLimitation.exercisableGroup, "D");
+  assert.equal(maintainedHotAir([trainingB], "D").groupLimitation.exercisableGroup, "B");
+  assert.equal(maintainedHotAir([trainingD], "C").groupLimitation.exercisableGroup, "C");
+  assert.equal(maintainedHotAir([trainingD], "B").groupLimitation.exercisableGroup, "B");
+});
+
+test("le meilleur crédit valide est retenu même s'il est plus ancien", () => {
+  const checkD = event("PROFICIENCY_CHECK_BPL", "2025-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "D" }, examiner: { name: "FE" } });
+  const trainingB = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "B" }, instructor: { name: "FI" } });
+  const result = maintainedHotAir([checkD, trainingB], "D");
+  assert.equal(result.groupLimitation.exercisableGroup, "D");
+  assert.deepEqual(result.groupLimitation.sourceEventIds, [checkD.id]);
+});
+
+test("un crédit groupe D expiré n'est pas retenu face à un crédit B valide", () => {
+  const expiredD = event("PROFICIENCY_CHECK_BPL", "2024-08-19", { balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "D" }, examiner: { name: "FE" } });
+  const validB = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON", groupId: "B" }, instructor: { name: "FI" } });
+  assert.equal(maintainedHotAir([expiredD, validB], "D").groupLimitation.exercisableGroup, "B");
+});
+
+test("un groupe manquant reste UNKNOWN sans invalider le maintien BPL", () => {
+  const unknownGroup = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON" }, instructor: { name: "FI" } });
+  const result = maintainedHotAir([unknownGroup], null);
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal(result.groupLimitation.status, "UNKNOWN");
+});
+
+test("les groupes hot-air sont non applicables à la classe gaz", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "GAS_BALLOON" }, instructor: { name: "FI" } });
+  const result = calculateBplMaintenance({ profile, events: [training], ascensions: [ascension("gas", "2026-01-01", 360, { category: "Libre à gaz", takeoffCount: 10, landingCount: 10 })], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true, balloonClass: { classId: "GAS_BALLOON" } });
+  assert.equal(result.groupLimitation.status, "NON_APPLICABLE");
+});

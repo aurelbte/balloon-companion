@@ -142,8 +142,9 @@ test("les événements commerciaux produisent des crédits BPL sans changer de t
   assert.equal(bpl.proficiencyCheckFeB.status, "COMPLIANT");
   assert.deepEqual(bpl.proficiencyCheckFeB.sourceEventIds, [check.id]);
 
-  const training = event("TRAINING_FLIGHT_BPL", "2026-02-01", { balloonClass: hotAir, instructor: { name: "FI Test" } });
-  const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-02-02", { balloonClass: hotAir, theoryMinutes: 360, relatedEventIds: [training.id] });
+  const groupedHotAir = { ...hotAir, groupId: "C" };
+  const training = event("TRAINING_FLIGHT_BPL", "2026-02-01", { balloonClass: groupedHotAir, instructor: { name: "FI Test" } });
+  const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-02-02", { balloonClass: groupedHotAir, theoryMinutes: 360, relatedEventIds: [training.id] });
   const credited = calculateBplMaintenance({ profile: commercialProfile, events: [course, training], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
   assert.equal(course.type, "COMMERCIAL_REFRESHER_COURSE");
   assert.deepEqual(credited.trainingFlightFiB.sourceEventIds, [course.id, training.id]);

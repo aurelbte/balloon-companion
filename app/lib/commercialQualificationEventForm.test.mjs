@@ -12,18 +12,19 @@ const options = () => ({ uuid: () => `123e4567-e89b-42d3-a456-${String(++sequenc
 function storage() { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; }
 
 test("délivrance, contrôle et remise à niveau restent trois événements distincts", () => {
-  let result = upsertCommercialQualificationEvent([], "INITIAL_COMMERCIAL_ISSUANCE", { ...emptyCommercialEventDraft(), dateIso: "2025-01-01", classId: hotAir }, undefined, options());
+  let result = upsertCommercialQualificationEvent([], "INITIAL_COMMERCIAL_ISSUANCE", { ...emptyCommercialEventDraft(), dateIso: "2025-01-01", classId: hotAir, groupId: "B" }, undefined, options());
   assert.equal(result.ok, true);
-  const training = createQualificationEvent({ type: "TRAINING_FLIGHT_BPL", dateIso: "2026-01-02", source: "MANUAL", balloonClass: { classId: hotAir }, instructor: { name: "FI Test" } }, options());
-  result = upsertCommercialQualificationEvent([...result.events, training], "COMMERCIAL_PROFICIENCY_CHECK", { ...emptyCommercialEventDraft(), dateIso: "2026-02-01", classId: hotAir, personName: "FE Test" }, undefined, options());
+  const training = createQualificationEvent({ type: "TRAINING_FLIGHT_BPL", dateIso: "2026-01-02", source: "MANUAL", balloonClass: { classId: hotAir, groupId: "B" }, instructor: { name: "FI Test" } }, options());
+  result = upsertCommercialQualificationEvent([...result.events, training], "COMMERCIAL_PROFICIENCY_CHECK", { ...emptyCommercialEventDraft(), dateIso: "2026-02-01", classId: hotAir, groupId: "B", personName: "FE Test" }, undefined, options());
   assert.equal(result.ok, true);
-  result = upsertCommercialQualificationEvent(result.events, "COMMERCIAL_REFRESHER_COURSE", { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, theoryMinutes: "360", trainingEventId: training.id }, undefined, options());
+  result = upsertCommercialQualificationEvent(result.events, "COMMERCIAL_REFRESHER_COURSE", { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, groupId: "B", theoryMinutes: "360", trainingEventId: training.id }, undefined, options());
   assert.equal(result.ok, true);
   assert.deepEqual(result.events.map(({ type }) => type), ["INITIAL_COMMERCIAL_ISSUANCE", "TRAINING_FLIGHT_BPL", "COMMERCIAL_PROFICIENCY_CHECK", "COMMERCIAL_REFRESHER_COURSE"]);
+  assert.equal(result.event.balloonClass.groupId, "B");
 });
 
 test("la remise à niveau refuse un vol FI(B) absent ou d’une autre classe", () => {
-  const draft = { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, theoryMinutes: "360", trainingEventId: "missing" };
+  const draft = { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, groupId: "A", theoryMinutes: "360", trainingEventId: "missing" };
   const result = upsertCommercialQualificationEvent([], "COMMERCIAL_REFRESHER_COURSE", draft);
   assert.equal(result.ok, false);
   assert.match(result.error, /même classe/);
@@ -32,7 +33,7 @@ test("la remise à niveau refuse un vol FI(B) absent ou d’une autre classe", (
 test("GUEST ajoute, modifie, supprime et recharge une délivrance professionnelle", () => {
   const local = storage();
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
-  const created = upsertCommercialQualificationEvent([], "INITIAL_COMMERCIAL_ISSUANCE", { ...emptyCommercialEventDraft(), dateIso: "2025-01-01", classId: hotAir }, undefined, options());
+  const created = upsertCommercialQualificationEvent([], "INITIAL_COMMERCIAL_ISSUANCE", { ...emptyCommercialEventDraft(), dateIso: "2025-01-01", classId: hotAir, groupId: "A" }, undefined, options());
   assert.equal(created.ok, true);
   const profile = { ...createEmptyQualificationProfile(), configured: true, commercialOperationsEnabled: true };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
@@ -48,7 +49,7 @@ test("GUEST ajoute, modifie, supprime et recharge une délivrance professionnell
 test("USER conserve les événements professionnels dans son scope", () => {
   const local = storage(); setRuntimeGuestModeActive(false);
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "phase-7c", email: "pilot@example.com", firstName: "", lastName: "" } });
-  const created = upsertCommercialQualificationEvent([], "COMMERCIAL_PROFICIENCY_CHECK", { ...emptyCommercialEventDraft(), dateIso: "2026-01-01", classId: hotAir, personName: "FE Test" }, undefined, options());
+  const created = upsertCommercialQualificationEvent([], "COMMERCIAL_PROFICIENCY_CHECK", { ...emptyCommercialEventDraft(), dateIso: "2026-01-01", classId: hotAir, groupId: "D", personName: "FE Test" }, undefined, options());
   assert.equal(created.ok, true);
   const profile = { ...createEmptyQualificationProfile(), configured: true, commercialOperationsEnabled: true };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
