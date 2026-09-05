@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addCalendarMonths, calculateBplMaintenance, calculateDatedExperience } from "./bplQualificationEngine.ts";
+import { addCalendarMonths, calculateBplMaintenance, calculateDatedExperience, trainingFlightDueDate } from "./bplQualificationEngine.ts";
+import { bplEventCredits } from "./qualificationEventCredits.ts";
 import { createQualificationEvent } from "./pilotQualifications.ts";
 import { removeQualificationEvent } from "./qualificationEventForm.ts";
 
@@ -8,7 +9,7 @@ const profile = { licenceType: "BPL", commercialOperationsEnabled: false, fiBEna
 let sequence = 0;
 
 function ascension(id, dateIso, minutes = 60, movements) {
-  return { id, sourceFlightId: null, source: "MANUAL", dateIso, date: dateIso, balloonModel: "Z105", registration: "F-TEST", departure: "A", arrival: "B", category: "Libre à air chaud", pilotFunction: "Pilote", nightFlight: false, maximumAltitudeM: null, gpsDurationMinutes: null, officialDurationMinutes: minutes, observations: "", ...(movements ?? {}) };
+  return { id, sourceFlightId: null, source: "MANUAL", dateIso, date: dateIso, balloonModel: "Z105", registration: "F-TEST", departure: "A", arrival: "B", category: "Libre à air chaud", pilotFunction: "Pilote", regulatoryRole: "PIC", supervisedByFiB: false, nightFlight: false, maximumAltitudeM: null, gpsDurationMinutes: null, officialDurationMinutes: minutes, observations: "", ...(movements ?? {}) };
 }
 
 function event(type, dateIso, person = {}) {
@@ -73,14 +74,51 @@ test("les compteurs explicites supportent plusieurs mouvements", () => {
   assert.deepEqual(result.legacyMovementFallbackAscensionIds, []);
 });
 
+test("les heures PIC et mouvements suivent exclusivement regulatoryRole", () => {
+  const result = calculateDatedExperience([
+    ascension("pic", "2026-01-01", 120, { regulatoryRole: "PIC", takeoffCount: 2, landingCount: 2 }),
+    ascension("supervised", "2026-01-02", 60, { regulatoryRole: "PIC", supervisedByFiB: true, takeoffCount: 1, landingCount: 1 }),
+    ascension("dual", "2026-01-03", 300, { regulatoryRole: "DUAL", pilotFunction: "Élève", takeoffCount: 4, landingCount: 4 }),
+    ascension("fi", "2026-01-04", 90, { regulatoryRole: "FI_B", takeoffCount: 8, landingCount: 8 }),
+    ascension("fe", "2026-01-05", 90, { regulatoryRole: "FE_B", takeoffCount: 8, landingCount: 8 }),
+    ascension("legacy-pilot", "2026-01-06", 600, { regulatoryRole: null, supervisedByFiB: null, takeoffCount: 10, landingCount: 10 }),
+  ], "2026-08-20");
+  assert.equal(result.officialDurationMinutes, 360);
+  assert.equal(result.takeoffs, 7);
+  assert.equal(result.landings, 7);
+  assert.deepEqual(result.unqualifiedRegulatoryRoleAscensionIds, ["legacy-pilot"]);
+});
+
+test("DUAL utilise le fallback mouvements sans ajouter de temps PIC", () => {
+  const result = calculateDatedExperience([ascension("dual", "2026-01-01", 360, { regulatoryRole: "DUAL", pilotFunction: "Élève" })], "2026-08-20");
+  assert.equal(result.officialDurationMinutes, 0);
+  assert.equal(result.takeoffs, 1);
+  assert.equal(result.landings, 1);
+  assert.deepEqual(result.legacyMovementFallbackAscensionIds, ["dual"]);
+});
+
+test("un calcul ciblé ne mélange pas les classes et CAPTIVE reste une nature", () => {
+  const hotAir = ascension("hot", "2026-01-01", 360, { category: "Libre à air chaud", flightNature: "CAPTIVE", takeoffCount: 10, landingCount: 10 });
+  const gas = ascension("gas", "2026-01-02", 600, { category: "Libre à gaz", takeoffCount: 10, landingCount: 10 });
+  const result = calculateDatedExperience([hotAir, gas], "2026-08-20", 24, { classId: "HOT_AIR_BALLOON" });
+  assert.equal(result.officialDurationMinutes, 360);
+  assert.deepEqual(result.sourceAscensionIds, ["hot"]);
+});
+
 test("la voie FI(B) suit exactement 48 mois", () => {
   const training = event("TRAINING_FLIGHT_BPL", "2022-08-20", { instructor: { name: "FI Test" } });
   const flights = [ascension("recent", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 })];
-  const boundary = calculateBplMaintenance({ profile, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
-  assert.equal(boundary.trainingFlightFiB.dueDate, "2026-08-20");
+  const boundary = calculateBplMaintenance({ profile, events: [training], ascensions: flights, referenceDateIso: "2026-08-31", ascensionHistoryComplete: true });
+  assert.equal(boundary.trainingFlightFiB.dueDate, "2026-08-31");
   assert.equal(boundary.trainingFlightFiB.status, "WARNING");
   assert.equal(boundary.overall.status, "COMPLIANT");
-  assert.equal(calculateBplMaintenance({ profile, events: [training], ascensions: flights, referenceDateIso: "2026-08-21", ascensionHistoryComplete: true }).trainingFlightFiB.status, "ACTION_REQUIRED");
+  assert.equal(calculateBplMaintenance({ profile, events: [training], ascensions: flights, referenceDateIso: "2026-09-01", ascensionHistoryComplete: true }).trainingFlightFiB.status, "ACTION_REQUIRED");
+});
+
+test("l’échéance training part du dernier jour du mois, y compris en février", () => {
+  assert.equal(trainingFlightDueDate("2026-05-10"), "2030-05-31");
+  assert.equal(trainingFlightDueDate("2024-02-10"), "2028-02-29");
+  assert.equal(trainingFlightDueDate("2023-02-10"), "2027-02-28");
 });
 
 test("la voie normale satisfaite ne rend pas le contrôle FE(B) obligatoire", () => {
@@ -92,17 +130,33 @@ test("la voie normale satisfaite ne rend pas le contrôle FE(B) obligatoire", ()
   assert.match(result.proficiencyCheckFeB.reason, /alternative non nécessaire/);
 });
 
-test("la délivrance est la référence initiale puis un entraînement ultérieur la remplace", () => {
+test("la délivrance initiale ne fournit aucun crédit training", () => {
   const issuance = event("INITIAL_BPL_ISSUANCE", "2023-04-30");
   const flights = [ascension("recent", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 })];
   const initial = calculateBplMaintenance({ profile, events: [issuance], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
-  assert.equal(initial.trainingFlightFiB.currentValue, "2023-04-30");
-  assert.equal(initial.trainingFlightFiB.dueDate, "2027-04-30");
-  assert.deepEqual(initial.trainingFlightFiB.sourceEventIds, [issuance.id]);
+  assert.equal(initial.trainingFlightFiB.status, "UNKNOWN");
   const training = event("TRAINING_FLIGHT_BPL", "2025-06-01", { instructor: { name: "FI Test" } });
   const updated = calculateBplMaintenance({ profile, events: [issuance, training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
   assert.equal(updated.trainingFlightFiB.currentValue, "2025-06-01");
   assert.deepEqual(updated.trainingFlightFiB.sourceEventIds, [training.id]);
+});
+
+test("SKILL_TEST reste sans crédit et les événements liés supprimés sont inactifs", () => {
+  const skill = event("SKILL_TEST_BPL", "2026-01-01", { examiner: { name: "FE Test" } });
+  const deletedTraining = event("TRAINING_FLIGHT_BPL", "2026-01-02", { instructor: { name: "FI Test" }, officialAscensionId: "asc-1", officialAscensionDeletedAt: "2026-02-01T00:00:00.000Z" });
+  const deletedCheck = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-03", { examiner: { name: "FE Test" }, balloonClass: { classId: "HOT_AIR_BALLOON" }, officialAscensionId: "asc-2", officialAscensionDeletedAt: "2026-02-01T00:00:00.000Z" });
+  assert.deepEqual(bplEventCredits([skill, deletedTraining, deletedCheck]), []);
+});
+
+test("le legacy rend l’insuffisance incertaine mais ne bloque pas des preuves explicites suffisantes", () => {
+  const legacy = ascension("legacy", "2026-01-01", 600, { regulatoryRole: null, supervisedByFiB: null, takeoffCount: 10, landingCount: 10 });
+  const unknown = calculateBplMaintenance({ profile, events: [], ascensions: [legacy], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(unknown.recentExperience.status, "UNKNOWN");
+  const explicit = ascension("explicit", "2026-01-02", 360, { takeoffCount: 10, landingCount: 10 });
+  const compliant = calculateBplMaintenance({ profile, events: [], ascensions: [legacy, explicit], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(compliant.recentExperience.status, "COMPLIANT");
+  const immaterial = calculateBplMaintenance({ profile, events: [], ascensions: [ascension("small-legacy", "2026-01-03", 1, { regulatoryRole: null, supervisedByFiB: null, takeoffCount: 0, landingCount: 0 })], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(immaterial.recentExperience.status, "ACTION_REQUIRED");
 });
 
 test("la voie FE(B) alternative suit exactement 24 mois", () => {
@@ -111,6 +165,14 @@ test("la voie FE(B) alternative suit exactement 24 mois", () => {
   assert.equal(boundary.proficiencyCheckFeB.status, "WARNING");
   assert.equal(boundary.overall.status, "COMPLIANT");
   assert.equal(calculateBplMaintenance({ profile, events: [check], ascensions: [], referenceDateIso: "2026-08-21", ascensionHistoryComplete: true }).overall.status, "ACTION_REQUIRED");
+});
+
+test("les crédits événementiels respectent la classe cible", () => {
+  const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON" }, examiner: { name: "FE Test" } });
+  const hot = calculateBplMaintenance({ profile, events: [check], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true, balloonClass: { classId: "HOT_AIR_BALLOON" } });
+  const gas = calculateBplMaintenance({ profile, events: [check], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true, balloonClass: { classId: "GAS_BALLOON" } });
+  assert.equal(hot.proficiencyCheckFeB.status, "COMPLIANT");
+  assert.equal(gas.proficiencyCheckFeB.status, "UNKNOWN");
 });
 
 test("supprimer le contrôle alternatif recalcule le moteur sans toucher aux ascensions", () => {

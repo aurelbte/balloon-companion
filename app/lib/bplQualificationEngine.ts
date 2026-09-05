@@ -1,5 +1,5 @@
 import { officialAscensionMovementCounts, type OfficialAscension, type PilotExperienceBalance } from "./flightCompletion.ts";
-import type { QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
+import type { QualificationBalloonClass, QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
 import { bplEventCredits, type BplEventCredit } from "./qualificationEventCredits.ts";
 
 export const BPL_REGULATORY_RULES = Object.freeze({
@@ -50,6 +50,8 @@ export type DatedExperienceResult = Readonly<{
   byCategory: Readonly<Record<string, DatedExperienceByCategory>>;
   sourceAscensionIds: readonly string[];
   legacyMovementFallbackAscensionIds: readonly string[];
+  unqualifiedRegulatoryRoleAscensionIds: readonly string[];
+  unqualifiedPotential: Readonly<{ officialDurationMinutes: number; takeoffs: number; landings: number }>;
 }>;
 
 export type BplMaintenanceResult = Readonly<{
@@ -90,30 +92,64 @@ export function addCalendarMonths(dateIso: string, months: number): string {
   return isoFromUtc(target);
 }
 
+/** Échéance BFCL.160(a)(1)(ii), calculée depuis le dernier jour du mois du vol. */
+export function trainingFlightDueDate(dateIso: string, months: number = BPL_REGULATORY_RULES.trainingFlightMonths): string {
+  const parts = dateParts(dateIso);
+  if (!parts || !Number.isInteger(months)) throw new TypeError("Date ISO ou nombre de mois invalide.");
+  const [year, month] = parts;
+  return addCalendarMonths(isoFromUtc(new Date(Date.UTC(year, month, 0))), months);
+}
+
+function categoryForClass(balloonClass: QualificationBalloonClass | undefined): OfficialAscension["category"] | null {
+  if (!balloonClass) return null;
+  if (balloonClass.classId === "HOT_AIR_BALLOON") return "Libre à air chaud";
+  if (balloonClass.classId === "GAS_BALLOON") return "Libre à gaz";
+  return null;
+}
+
 export function calculateDatedExperience(
   ascensions: readonly DatedBplAscension[],
   referenceDateIso: string,
   windowMonths = BPL_REGULATORY_RULES.recentExperienceMonths,
+  balloonClass?: QualificationBalloonClass,
 ): DatedExperienceResult {
   if (!dateParts(referenceDateIso)) throw new TypeError("Date de référence invalide.");
   const windowStartIso = addCalendarMonths(referenceDateIso, -windowMonths);
-  const included = ascensions.filter(({ dateIso }) => dateParts(dateIso) && dateIso >= windowStartIso && dateIso <= referenceDateIso);
+  const targetCategory = categoryForClass(balloonClass);
+  const included = ascensions.filter(({ dateIso, category }) => dateParts(dateIso) && dateIso >= windowStartIso && dateIso <= referenceDateIso
+    && (!balloonClass || targetCategory !== null && category === targetCategory));
   const byCategory: Record<string, DatedExperienceByCategory> = {};
   let officialDurationMinutes = 0;
   let takeoffs = 0;
   let landings = 0;
   const fallbackIds: string[] = [];
+  const sourceIds: string[] = [];
+  const unqualifiedIds: string[] = [];
+  const unqualifiedPotential = { officialDurationMinutes: 0, takeoffs: 0, landings: 0 };
   for (const ascension of included) {
+    const durationEligible = ascension.regulatoryRole === "PIC" || ascension.regulatoryRole === "FI_B" || ascension.regulatoryRole === "FE_B";
+    const movementsEligible = ascension.regulatoryRole === "PIC" || ascension.regulatoryRole === "DUAL";
+    if (!durationEligible && !movementsEligible) {
+      if (ascension.regulatoryRole == null) {
+        const movements = officialAscensionMovementCounts(ascension);
+        unqualifiedIds.push(ascension.id);
+        unqualifiedPotential.officialDurationMinutes += ascension.officialDurationMinutes;
+        unqualifiedPotential.takeoffs += movements.takeoffs;
+        unqualifiedPotential.landings += movements.landings;
+      }
+      continue;
+    }
     const movements = officialAscensionMovementCounts(ascension);
-    const ascensionTakeoffs = movements.takeoffs;
-    const ascensionLandings = movements.landings;
-    if (movements.legacyFallback) fallbackIds.push(ascension.id);
-    officialDurationMinutes += ascension.officialDurationMinutes;
+    const ascensionTakeoffs = movementsEligible ? movements.takeoffs : 0;
+    const ascensionLandings = movementsEligible ? movements.landings : 0;
+    if (movementsEligible && movements.legacyFallback) fallbackIds.push(ascension.id);
+    if (durationEligible) officialDurationMinutes += ascension.officialDurationMinutes;
     takeoffs += ascensionTakeoffs;
     landings += ascensionLandings;
+    sourceIds.push(ascension.id);
     const current = byCategory[ascension.category] ?? { officialDurationMinutes: 0, ascensions: 0, takeoffs: 0, landings: 0 };
     byCategory[ascension.category] = {
-      officialDurationMinutes: current.officialDurationMinutes + ascension.officialDurationMinutes,
+      officialDurationMinutes: current.officialDurationMinutes + (durationEligible ? ascension.officialDurationMinutes : 0),
       ascensions: current.ascensions + 1,
       takeoffs: current.takeoffs + ascensionTakeoffs,
       landings: current.landings + ascensionLandings,
@@ -123,12 +159,14 @@ export function calculateDatedExperience(
     windowStartIso,
     windowEndIso: referenceDateIso,
     officialDurationMinutes,
-    ascensions: included.length,
+    ascensions: sourceIds.length,
     takeoffs,
     landings,
     byCategory,
-    sourceAscensionIds: included.map(({ id }) => id),
+    sourceAscensionIds: sourceIds,
     legacyMovementFallbackAscensionIds: fallbackIds,
+    unqualifiedRegulatoryRoleAscensionIds: unqualifiedIds,
+    unqualifiedPotential,
   };
 }
 
@@ -161,7 +199,9 @@ function eventRequirement(
   missingReason: string,
 ): QualificationRequirementResult {
   if (!credit) return { status: "UNKNOWN", reason: missingReason };
-  const dueDate = addCalendarMonths(credit.dateIso, months);
+  const dueDate = credit.requirement === "TRAINING_FLIGHT"
+    ? trainingFlightDueDate(credit.dateIso, months)
+    : addCalendarMonths(credit.dateIso, months);
   const status = timedStatus(dueDate, referenceDateIso);
   return {
     status,
@@ -171,6 +211,10 @@ function eventRequirement(
     dueDate,
     sourceEventIds: credit.sourceEventIds,
   };
+}
+
+function creditMatchesClass(credit: BplEventCredit, balloonClass: QualificationBalloonClass | undefined): boolean {
+  return !balloonClass || credit.balloonClass?.classId === balloonClass.classId;
 }
 
 function satisfiesTimedRequirement(result: QualificationRequirementResult): boolean {
@@ -185,8 +229,14 @@ export function calculateBplMaintenance(input: Readonly<{
   ascensionHistoryComplete: boolean;
   historyCoverageStartDate?: string | null;
   openingBalance?: PilotExperienceBalance;
+  balloonClass?: QualificationBalloonClass;
 }>): BplMaintenanceResult {
-  const datedExperience = calculateDatedExperience(input.ascensions, input.referenceDateIso);
+  const datedExperience = calculateDatedExperience(
+    input.ascensions,
+    input.referenceDateIso,
+    BPL_REGULATORY_RULES.recentExperienceMonths,
+    input.balloonClass,
+  );
   const requiredExperience = {
     officialDurationMinutes: BPL_REGULATORY_RULES.recentExperienceMinutes,
     takeoffs: BPL_REGULATORY_RULES.recentTakeoffs,
@@ -205,6 +255,10 @@ export function calculateBplMaintenance(input: Readonly<{
     currentExperience.officialDurationMinutes >= requiredExperience.officialDurationMinutes &&
     currentExperience.takeoffs >= requiredExperience.takeoffs &&
     currentExperience.landings >= requiredExperience.landings;
+  const legacyCouldMakeExperienceCompliant = !experienceCompliant &&
+    currentExperience.officialDurationMinutes + datedExperience.unqualifiedPotential.officialDurationMinutes >= requiredExperience.officialDurationMinutes &&
+    currentExperience.takeoffs + datedExperience.unqualifiedPotential.takeoffs >= requiredExperience.takeoffs &&
+    currentExperience.landings + datedExperience.unqualifiedPotential.landings >= requiredExperience.landings;
   const declaration = input.profile.declaredBplInitialSituation;
   const applicableDeclaration = !historyComplete && declaration && typeof declaration.recentExperienceSatisfied === "boolean" && Boolean(
     dateParts(declaration.referenceDateIso ?? "") && declaration.referenceDateIso! >= datedExperience.windowStartIso && declaration.referenceDateIso! <= input.referenceDateIso
@@ -220,7 +274,7 @@ export function calculateBplMaintenance(input: Readonly<{
       provenance: "DECLARED_BY_PILOT",
       declarationReferenceDateIso: applicableDeclaration.referenceDateIso!,
     }
-    : !historyComplete
+    : !historyComplete || legacyCouldMakeExperienceCompliant
     ? { status: "UNKNOWN", reason: "Historique récent à compléter pour couvrir toute la fenêtre de 24 mois.", currentValue: currentExperience, requiredValue: requiredExperience }
     : {
       status: experienceCompliant ? "COMPLIANT" : "ACTION_REQUIRED",
@@ -229,7 +283,7 @@ export function calculateBplMaintenance(input: Readonly<{
       requiredValue: requiredExperience,
     };
 
-  const credits = bplEventCredits(input.events);
+  const credits = bplEventCredits(input.events).filter((credit) => creditMatchesClass(credit, input.balloonClass));
   const trainingFlightFiB = eventRequirement(
     latestQualifiedCredit(credits, "TRAINING_FLIGHT", input.referenceDateIso),
     BPL_REGULATORY_RULES.trainingFlightMonths,
