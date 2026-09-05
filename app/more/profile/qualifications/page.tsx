@@ -10,6 +10,8 @@ import { emptyBplEventDraft, linkBplEventToAscension, updateLinkedBplEventProof,
 import { calculateCommercialQualification, OFFICIAL_ASCENSION_CLASS_IDS } from "../../../lib/commercialQualificationEngine";
 import { emptyCommercialEventDraft, upsertCommercialQualificationEvent, type CommercialEventDraft, type EditableCommercialEventType } from "../../../lib/commercialQualificationEventForm";
 import { calculateMedicalQualification, calculateProfessionalTrainingStatus } from "../../../lib/medicalTrainingQualificationEngine";
+import { evaluateFiBRecency } from "../../../lib/fiBQualificationEngine";
+import { emptyFiBEventDraft, upsertFiBQualificationEvent, type EditableFiBEventType, type FiBEventDraft } from "../../../lib/fiBQualificationEventForm";
 import { emptyQualificationEventDraft, removeQualificationEvent, upsertQualificationEvent, type EditableQualificationEventType, type QualificationEventDraft } from "../../../lib/qualificationEventForm";
 import { bplEventCredits } from "../../../lib/qualificationEventCredits";
 import { formatQualificationDate, mostRestrictiveQualificationResult, qualificationClassLabel, qualificationEventLabel, qualificationStatusLabel } from "../../../lib/qualificationPresentation";
@@ -177,6 +179,13 @@ function CommercialEventForm({ type, draft, editing, trainingEvents, error, onCh
   </form>;
 }
 
+const FI_B_EVENT_LABELS: Record<EditableFiBEventType, string> = { FI_B_REFRESHER_TRAINING: "Remise à niveau instructeur", FI_B_SUPERVISED_INSTRUCTION: "Instruction sous supervision", FI_B_ASSESSMENT_OF_COMPETENCE: "Évaluation de compétences FI(B)" };
+
+function FiBEventForm({ type, draft, editing, ascensions, error, onChange, onCancel, onDelete, onSubmit }: { type: EditableFiBEventType; draft: FiBEventDraft; editing: boolean; ascensions: PilotQualificationsPageState["completion"]["officialAscensions"]; error: string; onChange: (draft: FiBEventDraft) => void; onCancel: () => void; onDelete?: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  const refresher = type === "FI_B_REFRESHER_TRAINING";
+  return <form className={styles.eventForm} onSubmit={onSubmit}><div className={styles.eventFormHeader}><h2>{editing ? "Modifier" : "Ajouter"} — {FI_B_EVENT_LABELS[type]}</h2><button type="button" onClick={onCancel}>Fermer</button></div><label><span>Date</span><input required type="date" value={draft.dateIso} onChange={(event) => onChange({ ...draft, dateIso: event.target.value })} /></label>{!refresher && <><label><span>Ascension liée (facultative)</span><select value={draft.officialAscensionId} onChange={(event) => onChange({ ...draft, officialAscensionId: event.target.value })}><option value="">Aucune</option>{ascensions.map((ascension) => <option key={ascension.id} value={ascension.id}>{formatQualificationDate(ascension.dateIso)} · {ascension.registration}</option>)}</select></label><label><span>Classe ballon (facultative)</span><select value={draft.classId} onChange={(event) => onChange({ ...draft, classId: event.target.value })}><option value="">Non renseignée</option><option value="HOT_AIR_BALLOON">Ballon libre à air chaud</option><option value="GAS_BALLOON">Ballon libre à gaz</option></select></label><label><span>{type === "FI_B_ASSESSMENT_OF_COMPETENCE" ? "Examinateur" : "Instructeur superviseur"} (facultatif)</span><input value={draft.personName} onChange={(event) => onChange({ ...draft, personName: event.target.value })} /></label></>}<label className={styles.eventFormWide}><span>Notes (facultatif)</span><textarea value={draft.notes} onChange={(event) => onChange({ ...draft, notes: event.target.value })} /></label>{error && <p className={styles.formError} role="alert">{error}</p>}<button className={`${styles.save} ${styles.eventFormWide}`} type="submit">Enregistrer</button>{editing && onDelete && <button className={`${styles.deleteAction} ${styles.eventFormWide}`} type="button" onClick={onDelete}>Supprimer cette donnée</button>}</form>;
+}
+
 function eventClassKeys(events: readonly QualificationEvent[], ascensions: PilotQualificationsPageState["completion"]["officialAscensions"], profile: QualificationProfile): QualificationBalloonClass[] {
   const values = [
     ...events.flatMap(({ balloonClass }) => balloonClass ? [balloonClass] : []),
@@ -216,6 +225,10 @@ export default function QualificationsPage() {
   const [commercialDraft, setCommercialDraft] = useState<CommercialEventDraft>(() => emptyCommercialEventDraft());
   const [commercialEditedEventId, setCommercialEditedEventId] = useState<string | undefined>();
   const [commercialError, setCommercialError] = useState("");
+  const [fiBEditor, setFiBEditor] = useState<EditableFiBEventType | null>(null);
+  const [fiBDraft, setFiBDraft] = useState<FiBEventDraft>(() => emptyFiBEventDraft());
+  const [fiBEditedEventId, setFiBEditedEventId] = useState<string | undefined>();
+  const [fiBError, setFiBError] = useState("");
   const lastSubmittedProfile = useRef<string | null>(null);
   const eventEditorAnchor = useRef<HTMLDivElement | null>(null);
   const referenceDateIso = localIsoDate();
@@ -230,10 +243,10 @@ export default function QualificationsPage() {
   }, []);
 
   useEffect(() => {
-    if (!eventEditor && !bplEditor && !issuanceEditorOpen && !commercialEditor) return;
+    if (!eventEditor && !bplEditor && !issuanceEditorOpen && !commercialEditor && !fiBEditor) return;
     const frame = window.requestAnimationFrame(() => eventEditorAnchor.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
     return () => window.cancelAnimationFrame(frame);
-  }, [eventEditor, bplEditor, issuanceEditorOpen, commercialEditor]);
+  }, [eventEditor, bplEditor, issuanceEditorOpen, commercialEditor, fiBEditor]);
 
   const view = useMemo(() => {
     if (!qualifications || !qualifications.profile.configured) return null;
@@ -245,7 +258,8 @@ export default function QualificationsPage() {
       ? commercialClasses.map((balloonClass) => calculateCommercialQualification({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, balloonClass, ascensionHistoryComplete: true, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate }))
       : [];
     const credits = bplEventCredits(qualifications.events).filter(({ creditedFrom }) => creditedFrom === "COMMERCIAL_PROFICIENCY_CHECK" || creditedFrom === "COMMERCIAL_REFRESHER_COURSE");
-    return { bpl, bplPrivileges, medical, commercialClasses, commercial, credits };
+    const fiB = evaluateFiBRecency({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate });
+    return { bpl, bplPrivileges, medical, commercialClasses, commercial, credits, fiB };
   }, [completion, qualifications, referenceDateIso]);
 
   if (!qualifications || !settings) return null;
@@ -293,6 +307,10 @@ export default function QualificationsPage() {
     setBplEditor(null);
     setIssuanceEditorOpen(false);
   };
+
+  const openFiBEditor = (type: EditableFiBEventType, existing?: QualificationEvent) => { setFiBEditor(type); setFiBEditedEventId(existing?.id); setFiBDraft(emptyFiBEventDraft(existing)); setFiBError(""); setEventEditor(null); setBplEditor(null); setCommercialEditor(null); };
+
+  const submitFiBEvent = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!fiBEditor) return; const result = upsertFiBQualificationEvent(qualifications.events, fiBEditor, fiBDraft, fiBEditedEventId); if (!result.ok) { setFiBError(result.error); return; } if (!savePilotQualifications({ profile: qualifications.profile, events: result.events }, window.localStorage)) { setFiBError("Enregistrement local impossible."); return; } setQualifications({ ...qualifications, events: result.events }); setFiBEditor(null); };
 
   const submitEvent = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -353,6 +371,7 @@ export default function QualificationsPage() {
     setBplEditor(null);
     setIssuanceEditorOpen(false);
     setCommercialEditor(null);
+    setFiBEditor(null);
   };
 
   const submitSettings = (event: FormEvent<HTMLFormElement>) => {
@@ -460,6 +479,13 @@ export default function QualificationsPage() {
       </>}
     </section>
 
+    {qualifications.profile.fiBEnabled && <section className={styles.section} aria-labelledby="fi-b-title"><div className={styles.sectionHeader}><h2 id="fi-b-title">Maintien FI(B)</h2><StatusBadge status={view.fiB.status} /></div>
+      <CompactRequirement title="Instruction récente" result={view.fiB.instructionRequirementStatus}><p>{Math.floor(view.fiB.instructionMinutes36m / 60)} h {view.fiB.instructionMinutes36m % 60} / 6 h — 3 ans</p></CompactRequirement>
+      {(["FI_B_REFRESHER_TRAINING", "FI_B_SUPERVISED_INSTRUCTION"] as const).map((type) => { const result = type === "FI_B_REFRESHER_TRAINING" ? view.fiB.refresherRequirementStatus : view.fiB.supervisedInstructionRequirementStatus; const existing = qualifications.events.filter((event) => event.type === type).sort((a, b) => b.dateIso.localeCompare(a.dateIso))[0]; return <CompactRequirement key={type} title={type === "FI_B_REFRESHER_TRAINING" ? "Remise à niveau instructeur" : "Instruction sous supervision"} result={result}><p>{typeof result.currentValue === "string" ? formatQualificationDate(result.currentValue) : "Manquante"} — {type === "FI_B_REFRESHER_TRAINING" ? "3 ans" : "9 ans"}</p><button className={styles.inlineAction} type="button" onClick={() => openFiBEditor(type, existing)}>{existing ? "Modifier" : "Ajouter"}</button></CompactRequirement>; })}
+      <button className={styles.inlineAction} type="button" onClick={() => openFiBEditor("FI_B_ASSESSMENT_OF_COMPETENCE")}>Ajouter une évaluation de compétences</button>
+      {fiBEditor && <div ref={eventEditorAnchor}><FiBEventForm type={fiBEditor} draft={fiBDraft} editing={Boolean(fiBEditedEventId)} ascensions={completion.officialAscensions} error={fiBError} onChange={setFiBDraft} onCancel={() => setFiBEditor(null)} onDelete={fiBEditedEventId ? () => deleteEvent(fiBEditedEventId) : undefined} onSubmit={submitFiBEvent} /></div>}
+    </section>}
+
     <section className={styles.section} aria-labelledby="medical-title"><div className={styles.sectionHeader}><h2 id="medical-title">Médical</h2><StatusBadge status={view.medical.overall.status} /></div>
       <p className={styles.compactText}>{medicalEvent?.medicalClass ? `${medicalClassLabel(medicalEvent.medicalClass)} · échéance ${formatQualificationDate(view.medical.expiry.dueDate)}` : "Classe médicale à renseigner dans l’historique"}</p>
       {!medicalEvent?.medicalClass && qualifications.legacy.medicalDueDateIso && <p className={styles.legacyHint}>Échéance antérieure conservée ; classe médicale à renseigner.</p>}
@@ -481,7 +507,7 @@ export default function QualificationsPage() {
       {otherEvents.map((event) => <p className={styles.compactText} key={event.id}>{event.organization || "Autre formation"} · {formatQualificationDate(event.dateIso)}</p>)}
     </section>}
 
-    <section className={styles.section} aria-labelledby="history-title"><h2 id="history-title">Historique</h2><div className={styles.history}>{history.length ? history.map((event) => <article className={styles.historyItem} key={event.id}><h3>{qualificationEventLabel(event.type)}</h3><div className={styles.historyMeta}><span>{formatQualificationDate(event.dateIso)}</span>{event.expiryDateIso && <span>Échéance : {formatQualificationDate(event.expiryDateIso)}</span>}{event.balloonClass && <span>Classe : {qualificationClassLabel(event.balloonClass.classId)}</span>}{event.organization && <span>Organisme : {event.organization}</span>}{event.instructor && <span>FI(B) : {event.instructor.name}</span>}{event.examiner && <span>FE(B) : {event.examiner.name}</span>}</div>{event.type === "INITIAL_BPL_ISSUANCE" && <button className={styles.inlineAction} type="button" onClick={() => openIssuanceEditor(event)}>Modifier</button>}{(event.type === "TRAINING_FLIGHT_BPL" || event.type === "PROFICIENCY_CHECK_BPL") && <><p className={styles.linkKind}>{event.officialAscensionId ? "Lié au carnet" : "Historique — non lié au carnet"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor(event.type as EditableBplEventType, event)}>Modifier</button></>}{(event.type === "INITIAL_COMMERCIAL_ISSUANCE" || event.type === "COMMERCIAL_PROFICIENCY_CHECK" || event.type === "COMMERCIAL_REFRESHER_COURSE") && <button className={styles.inlineAction} type="button" onClick={() => openCommercialEditor(event.type as EditableCommercialEventType, event)}>Modifier</button>}{event.officialAscensionId && (event.officialAscensionDeletedAt ? <p className={styles.deleted}>Ascension liée supprimée — preuve réglementaire conservée</p> : <Link className={styles.historyLink} href={`/journal/ascension/${encodeURIComponent(event.officialAscensionId)}`}>Voir l’ascension liée →</Link>)}</article>) : <p className={styles.empty}>Aucun événement de qualification enregistré.</p>}</div></section>
+    <section className={styles.section} aria-labelledby="history-title"><h2 id="history-title">Historique</h2><div className={styles.history}>{history.length ? history.map((event) => <article className={styles.historyItem} key={event.id}><h3>{qualificationEventLabel(event.type)}</h3><div className={styles.historyMeta}><span>{formatQualificationDate(event.dateIso)}</span>{event.expiryDateIso && <span>Échéance : {formatQualificationDate(event.expiryDateIso)}</span>}{event.balloonClass && <span>Classe : {qualificationClassLabel(event.balloonClass.classId)}</span>}{event.organization && <span>Organisme : {event.organization}</span>}{event.instructor && <span>FI(B) : {event.instructor.name}</span>}{event.examiner && <span>FE(B) : {event.examiner.name}</span>}</div>{event.type === "INITIAL_BPL_ISSUANCE" && <button className={styles.inlineAction} type="button" onClick={() => openIssuanceEditor(event)}>Modifier</button>}{(event.type === "TRAINING_FLIGHT_BPL" || event.type === "PROFICIENCY_CHECK_BPL") && <><p className={styles.linkKind}>{event.officialAscensionId ? "Lié au carnet" : "Historique — non lié au carnet"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor(event.type as EditableBplEventType, event)}>Modifier</button></>}{(event.type === "INITIAL_COMMERCIAL_ISSUANCE" || event.type === "COMMERCIAL_PROFICIENCY_CHECK" || event.type === "COMMERCIAL_REFRESHER_COURSE") && <button className={styles.inlineAction} type="button" onClick={() => openCommercialEditor(event.type as EditableCommercialEventType, event)}>Modifier</button>}{event.type.startsWith("FI_B_") && <button className={styles.inlineAction} type="button" onClick={() => openFiBEditor(event.type as EditableFiBEventType, event)}>Modifier</button>}{event.officialAscensionId && (event.officialAscensionDeletedAt ? <p className={styles.deleted}>Ascension liée supprimée — preuve réglementaire conservée</p> : <Link className={styles.historyLink} href={`/journal/ascension/${encodeURIComponent(event.officialAscensionId)}`}>Voir l’ascension liée →</Link>)}</article>) : <p className={styles.empty}>Aucun événement de qualification enregistré.</p>}</div></section>
 
     <button className={styles.editBottom} type="button" onClick={() => { setSettings(qualifications.profile); setEditing(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Modifier ma situation</button>
   </div><NavigationBar activeItem="Plus" /></main>;

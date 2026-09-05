@@ -61,6 +61,15 @@ test("l’historique utilise les libellés aéronautiques français", () => {
   assert.match(page, /FE\(B\) :/);
 });
 
+test("le maintien FI(B) expose les trois exigences et leurs formulaires dédiés", () => {
+  assert.equal(qualificationEventLabel("FI_B_REFRESHER_TRAINING"), "Remise à niveau instructeur FI(B)");
+  assert.equal(qualificationEventLabel("FI_B_SUPERVISED_INSTRUCTION"), "Instruction FI(B) sous supervision");
+  assert.equal(qualificationEventLabel("FI_B_ASSESSMENT_OF_COMPETENCE"), "Évaluation de compétences FI(B)");
+  assert.match(page, /Maintien FI\(B\)/);
+  assert.match(page, /Instruction récente/);
+  assert.match(page, /Instruction sous supervision/);
+});
+
 test("une ascension liée supprimée est signalée sans masquer l’événement", () => {
   assert.match(page, /officialAscensionDeletedAt/);
   assert.match(page, /Ascension liée supprimée — preuve réglementaire conservée/);
