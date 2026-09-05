@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import NavigationBar from "../../../components/NavigationBar";
 import { useFlightCompletionState } from "../../../hooks/useFlightCompletionState";
-import { calculateBplMaintenance, type QualificationRequirementResult, type QualificationRequirementStatus } from "../../../lib/bplQualificationEngine";
+import { calculateBplPrivilegesMaintenance, type QualificationRequirementResult, type QualificationRequirementStatus } from "../../../lib/bplQualificationEngine";
 import { emptyBplEventDraft, linkBplEventToAscension, updateLinkedBplEventProof, upsertHistoricalBplEvent, upsertInitialBplIssuance, type BplEventDraft, type EditableBplEventType } from "../../../lib/bplQualificationEventForm";
 import { calculateCommercialQualification, OFFICIAL_ASCENSION_CLASS_IDS } from "../../../lib/commercialQualificationEngine";
 import { emptyCommercialEventDraft, upsertCommercialQualificationEvent, type CommercialEventDraft, type EditableCommercialEventType } from "../../../lib/commercialQualificationEventForm";
@@ -74,11 +74,18 @@ function QualificationSettingsForm({ priority = false, settings, onChange, onSub
   onChange: (settings: QualificationProfile) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const toggleBplClass = (classId: "HOT_AIR_BALLOON" | "GAS_BALLOON", checked: boolean) => onChange({
+    ...settings,
+    bplBalloonClasses: checked
+      ? [...settings.bplBalloonClasses, classId]
+      : settings.bplBalloonClasses.filter((value) => value !== classId),
+  });
   return <form className={`${styles.settings} ${priority ? styles.prioritySettings : ""}`} onSubmit={onSubmit}>
     <h2>{priority ? "Configurer votre profil" : "Modifier ma situation"}</h2>
     {priority && <p className={styles.priorityText}>Configurez votre profil pour calculer vos qualifications et validités.</p>}
     <div className={styles.settingsGrid}>
       <label htmlFor="qualification-licence-type"><span>Type de licence</span><select id="qualification-licence-type" value={settings.licenceType ?? ""} onChange={(event) => onChange({ ...settings, licenceType: event.target.value || null })}><option value="">Non renseigné</option><option value="BPL">BPL</option><option value="OTHER">Autre</option></select></label>
+      <div className={styles.privileges}><span>PRIVILÈGES BPL</span><label className={styles.toggle}><input type="checkbox" checked={settings.bplBalloonClasses.includes("HOT_AIR_BALLOON")} onChange={(event) => toggleBplClass("HOT_AIR_BALLOON", event.target.checked)} /><span>Ballon libre à air chaud</span></label><label className={styles.toggle}><input type="checkbox" checked={settings.bplBalloonClasses.includes("GAS_BALLOON")} onChange={(event) => toggleBplClass("GAS_BALLOON", event.target.checked)} /><span>Ballon libre à gaz</span></label></div>
       <label htmlFor="qualification-history-coverage"><span>Historique complet depuis</span><input id="qualification-history-coverage" type="date" value={settings.historyCoverageStartDate ?? ""} onChange={(event) => onChange({ ...settings, historyCoverageStartDate: event.target.value || null })} /></label>
       <label className={styles.toggle} htmlFor="qualification-commercial"><input id="qualification-commercial" type="checkbox" checked={settings.commercialOperationsEnabled} onChange={(event) => onChange({ ...settings, commercialOperationsEnabled: event.target.checked })} /><span>Activité commerciale</span></label>
       <label className={styles.toggle} htmlFor="qualification-fi-b"><input id="qualification-fi-b" type="checkbox" checked={settings.fiBEnabled} onChange={(event) => onChange({ ...settings, fiBEnabled: event.target.checked })} /><span>Qualification FI(B)</span></label>
@@ -137,7 +144,7 @@ function BplEventForm({ type, mode, draft, ascensionId, ascensions, linkedEditin
   return <form className={styles.eventForm} onSubmit={onSubmit}>
     <div className={styles.eventFormHeader}><h2>{training ? "Vol d’entraînement BPL" : "Contrôle de compétences BPL"}</h2><button type="button" onClick={onCancel}>Fermer</button></div>
     {!linkedEditing && <fieldset className={`${styles.originChoice} ${styles.eventFormWide}`}><legend>Origine</legend><label><input type="radio" name="bpl-origin" checked={mode === "LINKED"} onChange={() => onModeChange("LINKED")} /> Associer un vol du carnet</label><label><input type="radio" name="bpl-origin" checked={mode === "HISTORICAL"} onChange={() => onModeChange("HISTORICAL")} /> {training ? "Ajouter un vol historique" : "Ajouter un contrôle historique"}</label></fieldset>}
-    {mode === "LINKED" ? <label className={styles.eventFormWide}><span>Ascension du carnet</span><select required disabled={linkedEditing} value={ascensionId} onChange={(event) => onAscensionChange(event.target.value)}><option value="">Choisir une ascension</option>{ascensions.map((ascension) => <option key={ascension.id} value={ascension.id}>{formatQualificationDate(ascension.dateIso)} · {ascension.registration} · {ascension.departure} → {ascension.arrival}</option>)}</select></label> : <label><span>{training ? "Date du vol" : "Date du contrôle"}</span><input required type="date" value={draft.dateIso} onChange={(event) => onDraftChange({ ...draft, dateIso: event.target.value })} /></label>}
+    {mode === "LINKED" ? <label className={styles.eventFormWide}><span>Ascension du carnet</span><select required disabled={linkedEditing} value={ascensionId} onChange={(event) => onAscensionChange(event.target.value)}><option value="">Choisir une ascension</option>{ascensions.map((ascension) => <option key={ascension.id} value={ascension.id}>{formatQualificationDate(ascension.dateIso)} · {ascension.registration} · {ascension.departure} → {ascension.arrival}</option>)}</select></label> : <><label><span>{training ? "Date du vol" : "Date du contrôle"}</span><input required type="date" value={draft.dateIso} onChange={(event) => onDraftChange({ ...draft, dateIso: event.target.value })} /></label><label><span>Classe ballon</span><select required value={draft.classId} onChange={(event) => onDraftChange({ ...draft, classId: event.target.value })}><option value="">Choisir</option><option value="HOT_AIR_BALLOON">Ballon libre à air chaud</option><option value="GAS_BALLOON">Ballon libre à gaz</option></select></label></>}
     <label className={mode === "LINKED" ? styles.eventFormWide : undefined}><span>{training ? "Instructeur FI(B)" : "Examinateur FE(B)"}</span><input required value={draft.personName} onChange={(event) => onDraftChange({ ...draft, personName: event.target.value })} /></label>
     <label className={styles.eventFormWide}><span>Notes (facultatif)</span><textarea value={draft.notes} onChange={(event) => onDraftChange({ ...draft, notes: event.target.value })} /></label>
     {error && <p className={styles.formError} role="alert">{error}</p>}
@@ -217,14 +224,15 @@ export default function QualificationsPage() {
 
   const view = useMemo(() => {
     if (!qualifications || !qualifications.profile.configured) return null;
-    const bpl = calculateBplMaintenance({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, ascensionHistoryComplete: true, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate, openingBalance: completion.openingBalance });
+    const bplPrivileges = calculateBplPrivilegesMaintenance({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, ascensionHistoryComplete: true, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate, openingBalance: completion.openingBalance });
+    const bpl = bplPrivileges.referenceRequirement;
     const medical = calculateMedicalQualification({ events: qualifications.events, legacy: qualifications.legacy, referenceDateIso, requiredClass: "LAPL" });
     const commercialClasses = eventClassKeys(qualifications.events, completion.officialAscensions, qualifications.profile);
     const commercial = qualifications.profile.commercialOperationsEnabled
       ? commercialClasses.map((balloonClass) => calculateCommercialQualification({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, balloonClass, ascensionHistoryComplete: true, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate }))
       : [];
     const credits = bplEventCredits(qualifications.events).filter(({ creditedFrom }) => creditedFrom === "COMMERCIAL_PROFICIENCY_CHECK" || creditedFrom === "COMMERCIAL_REFRESHER_COURSE");
-    return { bpl, medical, commercialClasses, commercial, credits };
+    return { bpl, bplPrivileges, medical, commercialClasses, commercial, credits };
   }, [completion, qualifications, referenceDateIso]);
 
   if (!qualifications || !settings) return null;
@@ -381,7 +389,7 @@ export default function QualificationsPage() {
   </div><NavigationBar activeItem="Plus" /></main>;
 
   if (!view) return null;
-  const experience = view.bpl.recentExperience.currentValue ?? { officialDurationMinutes: 0, ascensions: 0, takeoffs: 0, landings: 0 };
+  const experience = view.bpl?.recentExperience.currentValue ?? { officialDurationMinutes: 0, ascensions: 0, takeoffs: 0, landings: 0 };
   const medicalEvent = latestEvent("MEDICAL");
   const firstAidEvent = latestEvent("FIRST_AID");
   const fireEvent = latestEvent("FIRE_TRAINING");
@@ -389,7 +397,7 @@ export default function QualificationsPage() {
   const proficiencyEvent = [...qualifications.events].filter(({ type }) => type === "PROFICIENCY_CHECK_BPL").sort((left, right) => right.dateIso.localeCompare(left.dateIso))[0];
   const commercialIssuances = qualifications.events.filter(({ type }) => type === "INITIAL_COMMERCIAL_ISSUANCE");
   const commercialTrainingEvents = qualifications.events.filter(({ type, instructor }) => type === "TRAINING_FLIGHT_BPL" && instructor?.name);
-  const trainingReferenceEvent = qualifications.events.find(({ id }) => view.bpl.trainingFlightFiB.sourceEventIds?.includes(id));
+  const trainingReferenceEvent = qualifications.events.find(({ id }) => view.bpl?.trainingFlightFiB.sourceEventIds?.includes(id));
   const firstAid = calculateProfessionalTrainingStatus({ profile: qualifications.profile, events: qualifications.events, type: "FIRST_AID", referenceDateIso });
   const fire = calculateProfessionalTrainingStatus({ profile: qualifications.profile, events: qualifications.events, type: "FIRE_TRAINING", referenceDateIso });
   const otherEvents = qualifications.events.filter(({ type }) => type === "OTHER_TRAINING").sort((a, b) => b.dateIso.localeCompare(a.dateIso));
@@ -397,17 +405,17 @@ export default function QualificationsPage() {
   const unknownCommercial: QualificationRequirementResult = { status: "UNKNOWN", reason: "Classe commerciale inconnue." };
   const commercialSummary = view.commercial.length ? mostRestrictiveQualificationResult(view.commercial.map(({ overall }) => overall)) : unknownCommercial;
   const missingCommercialAccess = view.commercial.filter(({ initialAccess }) => initialAccess.status === "UNKNOWN");
-  const needsInitialSituation = view.bpl.recentExperience.status === "UNKNOWN" || view.commercial.some(({ recency }) => recency.status === "UNKNOWN");
+  const needsInitialSituation = Boolean(view.bpl && view.bpl.recentExperience.status === "UNKNOWN") || view.commercial.some(({ recency }) => recency.status === "UNKNOWN");
   const summary: Array<readonly [string, QualificationRequirementResult]> = [
-    ["BPL", view.bpl.overall],
+    ["BPL", view.bplPrivileges.overall],
     ["Médical", view.medical.overall],
     ...(qualifications.profile.commercialOperationsEnabled ? [["Activité professionnelle", commercialSummary] as const] : []),
   ];
   const actionItems: Array<Readonly<{ text: string; href?: string; initialSituation?: boolean; editor?: EditableQualificationEventType; bplType?: EditableBplEventType; commercialType?: EditableCommercialEventType; commercialClassId?: string; buttonLabel?: string }>> = [
     ...(["UNKNOWN", "ACTION_REQUIRED"].includes(view.medical.overall.status) ? [{ text: medicalEvent ? "Mettre à jour votre médical" : "Renseigner votre classe médicale", editor: "MEDICAL" as const, buttonLabel: medicalEvent ? "Modifier" : "Renseigner" }] : []),
     ...(needsInitialSituation ? [{ text: "Renseigner ma situation initiale", initialSituation: true, buttonLabel: "Renseigner" }] : []),
-    ...(view.bpl.recentExperience.status !== "UNKNOWN" && ["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.trainingFlightFiB.status) ? [{ text: issuanceEvent ? "Enregistrer un nouveau vol d’entraînement" : "Renseigner votre délivrance BPL ou un vol d’entraînement", bplType: "TRAINING_FLIGHT_BPL" as const, buttonLabel: "Ajouter" }] : []),
-    ...(view.bpl.recentExperience.status !== "UNKNOWN" && ["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.proficiencyCheckFeB.status) ? [{ text: "Utiliser la voie alternative par contrôle de compétences", bplType: "PROFICIENCY_CHECK_BPL" as const, buttonLabel: proficiencyEvent ? "Modifier" : "Ajouter" }] : []),
+    ...(view.bpl && view.bpl.recentExperience.status !== "UNKNOWN" && ["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.trainingFlightFiB.status) ? [{ text: issuanceEvent ? "Enregistrer un nouveau vol d’entraînement" : "Renseigner votre délivrance BPL ou un vol d’entraînement", bplType: "TRAINING_FLIGHT_BPL" as const, buttonLabel: "Ajouter" }] : []),
+    ...(view.bpl && view.bpl.recentExperience.status !== "UNKNOWN" && ["UNKNOWN", "ACTION_REQUIRED"].includes(view.bpl.proficiencyCheckFeB.status) ? [{ text: "Utiliser la voie alternative par contrôle de compétences", bplType: "PROFICIENCY_CHECK_BPL" as const, buttonLabel: proficiencyEvent ? "Modifier" : "Ajouter" }] : []),
     ...(qualifications.profile.commercialOperationsEnabled && view.commercial.length === 0 ? [{ text: "Renseigner votre accès initial à l’activité professionnelle", commercialType: "INITIAL_COMMERCIAL_ISSUANCE" as const, buttonLabel: "Ajouter" }] : []),
     ...missingCommercialAccess.map(({ balloonClass }) => ({ text: `Renseigner l’accès initial — ${qualificationClassLabel(balloonClass.classId)}`, commercialType: "INITIAL_COMMERCIAL_ISSUANCE" as const, commercialClassId: balloonClass.classId, buttonLabel: "Ajouter" })),
     ...(qualifications.profile.commercialOperationsEnabled && ["UNKNOWN", "ACTION_REQUIRED"].includes(firstAid.status) ? [{ text: firstAidEvent ? "Compléter ou renouveler votre PSC1" : "Renseigner votre formation PSC1", editor: "FIRST_AID" as const, buttonLabel: firstAidEvent ? "Modifier" : "Ajouter" }] : []),
@@ -427,12 +435,16 @@ export default function QualificationsPage() {
     {actionItems.length > 0 && <section className={`${styles.section} ${styles.todo}`} aria-labelledby="todo-title"><h2 id="todo-title">À faire</h2><ul>{actionItems.map((item) => <li key={item.text}><span>{item.text}</span>{item.href && <Link href={item.href}>{item.buttonLabel}</Link>}{item.initialSituation && <button type="button" onClick={openInitialSituation}>{item.buttonLabel}</button>}{item.editor && <button type="button" onClick={() => openEventEditor(item.editor!)}>{item.buttonLabel}</button>}{item.bplType && <button type="button" onClick={() => openBplEditor(item.bplType!)}>{item.buttonLabel}</button>}{item.commercialType && <button type="button" onClick={() => openCommercialEditor(item.commercialType!, undefined, item.commercialClassId)}>{item.buttonLabel}</button>}</li>)}</ul></section>}
     {initialSituationEditor && initialSituationDraft && <InitialSituationForm profile={initialSituationDraft} onChange={setInitialSituationDraft} onCancel={() => setInitialSituationEditor(false)} onSubmit={submitInitialSituation} onDeleteBpl={deleteBplDeclaration} onDeleteCommercial={deleteCommercialDeclaration} />}
 
-    <section className={styles.section} aria-labelledby="bpl-title"><div className={styles.sectionHeader}><h2 id="bpl-title">Maintien BPL</h2><StatusBadge status={view.bpl.overall.status} /></div>
+    <section className={styles.section} aria-labelledby="bpl-title"><div className={styles.sectionHeader}><h2 id="bpl-title">Maintien BPL</h2><StatusBadge status={view.bplPrivileges.overall.status} /></div>
+      {view.bplPrivileges.classResults.map(({ balloonClass, requirement, result }) => <CompactRequirement key={balloonClass.classId} title={qualificationClassLabel(balloonClass.classId)} result={result}><p>{requirement === "BFCL_160_A" ? "Classe de référence · BFCL.160(a)" : `${Number(result.currentValue ?? 0)} / 180 min sur 24 mois · BFCL.160(b)`}</p></CompactRequirement>)}
+      {!view.bpl && <p className={styles.compactText}>Renseignez vos privilèges BPL pour évaluer le maintien par classe.</p>}
+      {view.bpl && <>
       <CompactRequirement title="Expérience récente — 24 mois" result={view.bpl.recentExperience}><p>{Math.floor(experience.officialDurationMinutes / 60)} h {experience.officialDurationMinutes % 60} / 6 h · {experience.takeoffs} / 10 décollages · {experience.landings} / 10 atterrissages</p>{view.bpl.recentExperience.status === "UNKNOWN" && <Link className={styles.historyLink} href="/journal/ascension/new">Compléter mon historique récent →</Link>}</CompactRequirement>
       <CompactRequirement title="Maintien périodique / vol d’entraînement" result={view.bpl.trainingFlightFiB}><p>{trainingReferenceEvent?.type === "INITIAL_BPL_ISSUANCE" ? `Référence actuelle : délivrance BPL du ${formatQualificationDate(trainingReferenceEvent.dateIso)} · prochain vol d’entraînement ${formatQualificationDate(view.bpl.trainingFlightFiB.dueDate)}` : typeof view.bpl.trainingFlightFiB.currentValue === "string" ? `Dernier vol d’entraînement : ${formatQualificationDate(view.bpl.trainingFlightFiB.currentValue)} · échéance ${formatQualificationDate(view.bpl.trainingFlightFiB.dueDate)}` : "Aucune référence de maintien périodique"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor("TRAINING_FLIGHT_BPL", trainingEvent)}>{trainingEvent ? "Modifier" : "Ajouter un vol"}</button><button className={styles.inlineAction} type="button" onClick={() => openIssuanceEditor(issuanceEvent)}>{issuanceEvent ? "Modifier la délivrance" : "Renseigner la délivrance"}</button></CompactRequirement>
       {view.bpl.proficiencyCheckFeB.status !== "NON_APPLICABLE" && <CompactRequirement title="Voie alternative par contrôle de compétences" result={view.bpl.proficiencyCheckFeB}><p>{typeof view.bpl.proficiencyCheckFeB.currentValue === "string" ? `Dernier contrôle : ${formatQualificationDate(view.bpl.proficiencyCheckFeB.currentValue)} · échéance ${formatQualificationDate(view.bpl.proficiencyCheckFeB.dueDate)}` : "À utiliser si la voie normale n’est pas satisfaite"}</p><button className={styles.inlineAction} type="button" onClick={() => openBplEditor("PROFICIENCY_CHECK_BPL", proficiencyEvent)}>{proficiencyEvent ? "Modifier" : "Ajouter"}</button></CompactRequirement>}
       {issuanceEditorOpen && <div ref={eventEditorAnchor}><InitialBplIssuanceForm draft={issuanceDraft} editing={Boolean(issuanceEditedEventId)} error={issuanceError} onChange={setIssuanceDraft} onCancel={() => setIssuanceEditorOpen(false)} onDelete={issuanceEditedEventId ? () => deleteEvent(issuanceEditedEventId) : undefined} onSubmit={submitIssuance} /></div>}
       {bplEditor && <div ref={eventEditorAnchor}><BplEventForm type={bplEditor} mode={bplMode} draft={bplDraft} ascensionId={bplAscensionId} ascensions={[...completion.officialAscensions].filter((ascension) => ascension.flightNature === (bplEditor === "TRAINING_FLIGHT_BPL" ? "TRAINING_BPL" : "PROFICIENCY_CHECK_BPL")).sort((left, right) => right.dateIso.localeCompare(left.dateIso))} linkedEditing={Boolean(bplEditedEventId && bplMode === "LINKED")} error={bplError} onModeChange={setBplMode} onDraftChange={setBplDraft} onAscensionChange={setBplAscensionId} onCancel={() => setBplEditor(null)} onDelete={bplEditedEventId ? () => deleteEvent(bplEditedEventId) : undefined} onSubmit={submitBplEvent} /></div>}
+      </>}
     </section>
 
     <section className={styles.section} aria-labelledby="medical-title"><div className={styles.sectionHeader}><h2 id="medical-title">Médical</h2><StatusBadge status={view.medical.overall.status} /></div>

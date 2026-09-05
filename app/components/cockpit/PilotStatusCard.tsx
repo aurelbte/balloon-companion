@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Card } from "../../design-system";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { usePilotProfile } from "../../hooks/usePilotProfile";
-import { calculateBplMaintenance, type QualificationRequirementStatus } from "../../lib/bplQualificationEngine";
+import { calculateBplPrivilegesMaintenance, type QualificationRequirementResult, type QualificationRequirementStatus } from "../../lib/bplQualificationEngine";
 import { calculatePilotOfficialTotals } from "../../lib/flightCompletion";
 import { calculateMedicalQualification } from "../../lib/medicalTrainingQualificationEngine";
 import { formatQualificationDate } from "../../lib/qualificationPresentation";
@@ -41,7 +41,7 @@ export default function PilotStatusCard() {
   const [qualifications, setQualifications] = useState<PilotQualificationsState>(() => createEmptyPilotQualificationsState());
   const [open, setOpen] = useState(false);
   const referenceDateIso = localIsoDate();
-  const bpl = useMemo(() => calculateBplMaintenance({
+  const bpl = useMemo(() => calculateBplPrivilegesMaintenance({
     profile: qualifications.profile,
     events: qualifications.events,
     ascensions: completion.officialAscensions,
@@ -56,8 +56,9 @@ export default function PilotStatusCard() {
     referenceDateIso,
     requiredClass: "LAPL",
   }), [qualifications.events, referenceDateIso]);
+  const unknownBpl: QualificationRequirementResult = { status: "UNKNOWN", reason: "Privilèges BPL non renseignés." };
   const rows = [
-    { label: "Vol test", result: bpl.trainingFlightFiB, medical: false },
+    { label: "Vol test", result: bpl.referenceRequirement?.trainingFlightFiB ?? unknownBpl, medical: false },
     { label: "Médical", result: medical.overall, medical: true },
   ];
   const credentialRows = rows.map((row) => ({

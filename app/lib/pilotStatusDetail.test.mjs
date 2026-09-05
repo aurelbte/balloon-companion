@@ -28,10 +28,10 @@ test("la fiche utilise exclusivement Qualifications et validité pour ses statut
   assert.match(component, /useFlightCompletionState\(\)/);
   assert.match(component, /calculatePilotOfficialTotals\(completion\)/);
   assert.match(component, /loadPilotQualifications/);
-  assert.match(component, /calculateBplMaintenance/);
+  assert.match(component, /calculateBplPrivilegesMaintenance/);
   assert.match(component, /calculateMedicalQualification/);
   assert.match(component, /bpl\.overall\.status/);
-  assert.match(component, /bpl\.trainingFlightFiB/);
+  assert.match(component, /bpl\.referenceRequirement\?\.trainingFlightFiB/);
   assert.match(component, /medical\.overall/);
   assert.doesNotMatch(component, /profile\.flightTestDueDateIso|profile\.medicalDueDateIso/);
   assert.doesNotMatch(component, /savePilotProfile|persistPilotExperience|localStorage|indexedDB/i);

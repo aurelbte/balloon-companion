@@ -1,5 +1,5 @@
 import { officialAscensionMovementCounts, type OfficialAscension, type PilotExperienceBalance } from "./flightCompletion.ts";
-import type { QualificationBalloonClass, QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
+import type { BplBalloonClass, QualificationBalloonClass, QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
 import { bplEventCredits, type BplEventCredit } from "./qualificationEventCredits.ts";
 
 export const BPL_REGULATORY_RULES = Object.freeze({
@@ -64,6 +64,31 @@ export type BplMaintenanceResult = Readonly<{
   overall: QualificationRequirementResult;
   datedExperience: DatedExperienceResult;
   excludedOpeningBalance: PilotExperienceBalance | null;
+}>;
+
+export type BplAdditionalClassExperienceResult = QualificationRequirementResult<number, number> & Readonly<{
+  balloonClass: Readonly<{ classId: BplBalloonClass }>;
+  explicitMinutes: number;
+  legacyPotentialMinutes: number;
+  sourceAscensionIds: readonly string[];
+  unqualifiedRegulatoryRoleAscensionIds: readonly string[];
+}>;
+
+export type BplPrivilegesMaintenanceResult = Readonly<{
+  overall: QualificationRequirementResult;
+  referenceClass: Readonly<{ classId: BplBalloonClass }> | null;
+  classResults: readonly Readonly<{
+    balloonClass: Readonly<{ classId: BplBalloonClass }>;
+    requirement: "BFCL_160_A" | "BFCL_160_B";
+    result: QualificationRequirementResult;
+  }>[];
+  candidates: readonly Readonly<{
+    referenceClass: Readonly<{ classId: BplBalloonClass }>;
+    fullRequirement: BplMaintenanceResult;
+    additionalClasses: readonly BplAdditionalClassExperienceResult[];
+    status: "COMPLIANT" | "ACTION_REQUIRED" | "UNKNOWN";
+  }>[];
+  referenceRequirement: BplMaintenanceResult | null;
 }>;
 
 const DAY_MS = 86_400_000;
@@ -318,4 +343,106 @@ export function calculateBplMaintenance(input: Readonly<{
   }
 
   return { recentExperience, trainingFlightFiB, proficiencyCheckFeB, overall, datedExperience, excludedOpeningBalance: input.openingBalance ?? null };
+}
+
+export function calculateBplAdditionalClassExperience(input: Readonly<{
+  ascensions: readonly DatedBplAscension[];
+  referenceDateIso: string;
+  balloonClass: Readonly<{ classId: BplBalloonClass }>;
+  historyComplete: boolean;
+}>): BplAdditionalClassExperienceResult {
+  const windowStartIso = addCalendarMonths(input.referenceDateIso, -BPL_REGULATORY_RULES.recentExperienceMonths);
+  const targetCategory = categoryForClass(input.balloonClass);
+  let explicitMinutes = 0;
+  let legacyPotentialMinutes = 0;
+  const sourceAscensionIds: string[] = [];
+  const unqualifiedRegulatoryRoleAscensionIds: string[] = [];
+  for (const ascension of input.ascensions) {
+    if (!dateParts(ascension.dateIso) || ascension.dateIso < windowStartIso || ascension.dateIso > input.referenceDateIso || ascension.category !== targetCategory) continue;
+    if (["PIC", "DUAL", "FI_B", "FE_B"].includes(String(ascension.regulatoryRole))) {
+      explicitMinutes += ascension.officialDurationMinutes;
+      sourceAscensionIds.push(ascension.id);
+    } else if (ascension.regulatoryRole == null) {
+      legacyPotentialMinutes += ascension.officialDurationMinutes;
+      unqualifiedRegulatoryRoleAscensionIds.push(ascension.id);
+    }
+  }
+  const requiredMinutes = 180;
+  const status = explicitMinutes >= requiredMinutes
+    ? "COMPLIANT"
+    : !input.historyComplete || explicitMinutes + legacyPotentialMinutes >= requiredMinutes
+      ? "UNKNOWN"
+      : "ACTION_REQUIRED";
+  return {
+    status,
+    reason: status === "COMPLIANT"
+      ? "Au moins 3 heures admissibles sont enregistrées dans cette classe sur 24 mois."
+      : status === "UNKNOWN"
+        ? "Les données disponibles ne permettent pas de conclure sur les 3 heures requises dans cette classe."
+        : "Moins de 3 heures admissibles sont enregistrées dans cette classe sur 24 mois.",
+    currentValue: explicitMinutes,
+    requiredValue: requiredMinutes,
+    balloonClass: input.balloonClass,
+    explicitMinutes,
+    legacyPotentialMinutes,
+    sourceAscensionIds,
+    unqualifiedRegulatoryRoleAscensionIds,
+  };
+}
+
+export function calculateBplPrivilegesMaintenance(input: Readonly<{
+  profile: QualificationProfile;
+  events: readonly QualificationEvent[];
+  ascensions: readonly DatedBplAscension[];
+  referenceDateIso: string;
+  ascensionHistoryComplete: boolean;
+  historyCoverageStartDate?: string | null;
+  openingBalance?: PilotExperienceBalance;
+}>): BplPrivilegesMaintenanceResult {
+  const classes = input.profile.bplBalloonClasses ?? [];
+  if (classes.length === 0) {
+    return {
+      overall: { status: "UNKNOWN", reason: "Privilèges BPL à renseigner avant d’évaluer le maintien par classe." },
+      referenceClass: null,
+      classResults: [],
+      candidates: [],
+      referenceRequirement: null,
+    };
+  }
+  const windowStartIso = addCalendarMonths(input.referenceDateIso, -BPL_REGULATORY_RULES.recentExperienceMonths);
+  const historyComplete = input.historyCoverageStartDate === undefined
+    ? input.ascensionHistoryComplete
+    : Boolean(dateParts(input.historyCoverageStartDate ?? "") && input.historyCoverageStartDate! <= windowStartIso);
+  const candidates = classes.map((classId) => {
+    const referenceClass = { classId } as const;
+    const fullRequirement = calculateBplMaintenance({ ...input, balloonClass: referenceClass });
+    const additionalClasses = classes
+      .filter((otherClassId) => otherClassId !== classId)
+      .map((otherClassId) => calculateBplAdditionalClassExperience({ ascensions: input.ascensions, referenceDateIso: input.referenceDateIso, balloonClass: { classId: otherClassId }, historyComplete }));
+    const allAdditionalCompliant = additionalClasses.every(({ status }) => status === "COMPLIANT");
+    const status = fullRequirement.overall.status === "COMPLIANT" && allAdditionalCompliant
+      ? "COMPLIANT"
+      : fullRequirement.overall.status === "UNKNOWN" || additionalClasses.some(({ status: additionalStatus }) => additionalStatus === "UNKNOWN")
+        ? "UNKNOWN"
+        : "ACTION_REQUIRED";
+    return { referenceClass, fullRequirement, additionalClasses, status } as const;
+  });
+  const selected = candidates.find(({ status }) => status === "COMPLIANT")
+    ?? candidates.find(({ status }) => status === "UNKNOWN")
+    ?? candidates[0]!;
+  const overall: QualificationRequirementResult = selected.status === "COMPLIANT"
+    ? { status: "COMPLIANT", reason: "Maintien BPL satisfait pour toutes les classes déclarées.", ...(selected.fullRequirement.overall.sourceEventIds ? { sourceEventIds: selected.fullRequirement.overall.sourceEventIds } : {}) }
+    : selected.status === "UNKNOWN"
+      ? { status: "UNKNOWN", reason: "Les données disponibles ne permettent pas de conclure pour toutes les classes BPL déclarées." }
+      : { status: "ACTION_REQUIRED", reason: "Aucune combinaison ne satisfait le maintien pour toutes les classes BPL déclarées." };
+  return {
+    overall,
+    referenceClass: selected.referenceClass,
+    classResults: [
+      { balloonClass: selected.referenceClass, requirement: "BFCL_160_A", result: selected.fullRequirement.overall },
+      ...selected.additionalClasses.map((result) => ({ balloonClass: result.balloonClass, requirement: "BFCL_160_B" as const, result })),
+    ],
+    candidates,
+    referenceRequirement: selected.fullRequirement,
+  };
 }

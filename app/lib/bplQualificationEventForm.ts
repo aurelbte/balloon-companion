@@ -3,7 +3,7 @@ import { reconcileQualificationEventForAscension } from "./officialAscensionQual
 import { createQualificationEvent, normalizeQualificationEvent, type QualificationEvent } from "./pilotQualifications.ts";
 
 export type EditableBplEventType = "TRAINING_FLIGHT_BPL" | "PROFICIENCY_CHECK_BPL";
-export type BplEventDraft = Readonly<{ dateIso: string; personName: string; notes: string }>;
+export type BplEventDraft = Readonly<{ dateIso: string; personName: string; notes: string; classId: string }>;
 export type BplEventUpsertResult =
   | Readonly<{ ok: true; event: QualificationEvent; events: readonly QualificationEvent[] }>
   | Readonly<{ ok: false; error: string }>;
@@ -13,6 +13,7 @@ export function emptyBplEventDraft(event?: QualificationEvent): BplEventDraft {
     dateIso: event?.dateIso ?? "",
     personName: event?.instructor?.name ?? event?.examiner?.name ?? "",
     notes: event?.notes ?? "",
+    classId: event?.balloonClass?.classId ?? "",
   };
 }
 
@@ -34,6 +35,7 @@ export function upsertInitialBplIssuance(
 
 function validate(type: EditableBplEventType, draft: BplEventDraft, linked: boolean): string | null {
   if (!linked && !draft.dateIso) return type === "TRAINING_FLIGHT_BPL" ? "Renseignez la date du vol." : "Renseignez la date du contrôle.";
+  if (!linked && draft.classId !== "HOT_AIR_BALLOON" && draft.classId !== "GAS_BALLOON") return { TRAINING_FLIGHT_BPL: "Renseignez la classe ballon du vol.", PROFICIENCY_CHECK_BPL: "Renseignez la classe ballon du contrôle." }[type];
   if (!draft.personName.trim()) return type === "TRAINING_FLIGHT_BPL" ? "Renseignez l’instructeur FI(B)." : "Renseignez l’examinateur FE(B).";
   return null;
 }
@@ -49,7 +51,7 @@ export function upsertHistoricalBplEvent(
   if (error) return { ok: false, error };
   const existing = existingId ? events.find(({ id, type: eventType, officialAscensionId }) => id === existingId && eventType === type && !officialAscensionId) : undefined;
   const person = { name: draft.personName.trim() };
-  const input = { type, dateIso: draft.dateIso, source: "MANUAL" as const, ...(type === "TRAINING_FLIGHT_BPL" ? { instructor: person } : { examiner: person }), ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}) };
+  const input = { type, dateIso: draft.dateIso, source: "MANUAL" as const, balloonClass: { classId: draft.classId }, ...(type === "TRAINING_FLIGHT_BPL" ? { instructor: person } : { examiner: person }), ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}) };
   const event = existing
     ? normalizeQualificationEvent({ ...input, id: existing.id, createdAt: existing.createdAt, updatedAt: (options.now ?? (() => new Date()))().toISOString() })
     : createQualificationEvent(input, options);

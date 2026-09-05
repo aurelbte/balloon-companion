@@ -191,7 +191,7 @@ test("la phase 7C.2 permet de déclarer, modifier et supprimer la situation init
 });
 
 test("la phase 7C.3 masque À faire sans obligation et ignore une déclaration valide comme alerte", () => {
-  assert.match(page, /const needsInitialSituation = view\.bpl\.recentExperience\.status === "UNKNOWN" \|\| view\.commercial\.some\(\(\{ recency \}\) => recency\.status === "UNKNOWN"\)/);
+  assert.match(page, /const needsInitialSituation = Boolean\(view\.bpl && view\.bpl\.recentExperience\.status === "UNKNOWN"\) \|\| view\.commercial\.some\(\(\{ recency \}\) => recency\.status === "UNKNOWN"\)/);
   assert.doesNotMatch(page, /historyIncomplete/);
   assert.match(page, /\{actionItems\.length > 0 && <section className=\{`\$\{styles\.section\} \$\{styles\.todo\}`\}/);
   assert.doesNotMatch(page, /text: "Compléter mon historique récent"/);

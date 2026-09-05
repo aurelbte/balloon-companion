@@ -44,6 +44,12 @@ export type QualificationBalloonClass = Readonly<{
   groupId?: string;
 }>;
 
+export type BplBalloonClass = "HOT_AIR_BALLOON" | "GAS_BALLOON";
+export const BPL_BALLOON_CLASSES = Object.freeze([
+  "HOT_AIR_BALLOON",
+  "GAS_BALLOON",
+] as const satisfies readonly BplBalloonClass[]);
+
 export type QualificationMedicalClass = "LAPL" | "CLASS_2" | (string & {});
 
 export type DeclaredBplInitialSituation = Readonly<{
@@ -63,6 +69,7 @@ export type QualificationProfile = Readonly<{
   declaredBplInitialSituation: DeclaredBplInitialSituation;
   declaredCommercialInitialSituations: readonly DeclaredCommercialInitialSituation[];
   licenceType: string | null;
+  bplBalloonClasses: readonly BplBalloonClass[];
   commercialOperationsEnabled: boolean;
   fiBEnabled: boolean;
   feBEnabled: boolean;
@@ -113,6 +120,7 @@ export function createEmptyQualificationProfile(): QualificationProfile {
     declaredBplInitialSituation: { referenceDateIso: null, recentExperienceSatisfied: null },
     declaredCommercialInitialSituations: [],
     licenceType: null,
+    bplBalloonClasses: [],
     commercialOperationsEnabled: false,
     fiBEnabled: false,
     feBEnabled: false,
@@ -152,6 +160,9 @@ function balloonClass(value: unknown): QualificationBalloonClass | undefined {
 export function normalizeQualificationProfile(value: unknown): QualificationProfile {
   const candidate = value && typeof value === "object" ? value as Partial<QualificationProfile> : {};
   const licenceType = optionalText(candidate.licenceType)?.toUpperCase() ?? null;
+  const bplBalloonClasses = Array.isArray(candidate.bplBalloonClasses)
+    ? BPL_BALLOON_CLASSES.filter((classId) => candidate.bplBalloonClasses!.includes(classId))
+    : [];
   const commercialOperationsEnabled = candidate.commercialOperationsEnabled === true;
   const fiBEnabled = candidate.fiBEnabled === true;
   const feBEnabled = candidate.feBEnabled === true;
@@ -179,11 +190,12 @@ export function normalizeQualificationProfile(value: unknown): QualificationProf
   return {
     configured: typeof candidate.configured === "boolean"
       ? candidate.configured
-      : licenceType !== null || commercialOperationsEnabled || fiBEnabled || feBEnabled || historyCoverageStartDate !== null,
+      : licenceType !== null || bplBalloonClasses.length > 0 || commercialOperationsEnabled || fiBEnabled || feBEnabled || historyCoverageStartDate !== null,
     historyCoverageStartDate,
     declaredBplInitialSituation,
     declaredCommercialInitialSituations,
     licenceType,
+    bplBalloonClasses,
     commercialOperationsEnabled,
     fiBEnabled,
     feBEnabled,

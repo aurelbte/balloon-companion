@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addCalendarMonths, calculateBplMaintenance, calculateDatedExperience, trainingFlightDueDate } from "./bplQualificationEngine.ts";
+import { addCalendarMonths, calculateBplAdditionalClassExperience, calculateBplMaintenance, calculateBplPrivilegesMaintenance, calculateDatedExperience, trainingFlightDueDate } from "./bplQualificationEngine.ts";
 import { bplEventCredits } from "./qualificationEventCredits.ts";
 import { createQualificationEvent } from "./pilotQualifications.ts";
 import { removeQualificationEvent } from "./qualificationEventForm.ts";
@@ -204,4 +204,71 @@ test("LEGACY_FLIGHT_TEST_DUE_DATE ne satisfait aucune voie BPL", () => {
 test("les mois calendaires conservent correctement les fins de mois", () => {
   assert.equal(addCalendarMonths("2024-02-29", 24), "2026-02-28");
   assert.equal(addCalendarMonths("2026-08-31", -24), "2024-08-31");
+});
+
+test("sans classe BPL déclarée le résultat demande une configuration", () => {
+  const result = calculateBplPrivilegesMaintenance({ profile: { ...profile, bplBalloonClasses: [] }, events: [], ascensions: [], referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.overall.status, "UNKNOWN");
+  assert.equal(result.referenceClass, null);
+});
+
+test("une seule classe applique BFCL.160(a) à cette classe", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON" }, instructor: { name: "FI" } });
+  const flights = [ascension("hot", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 })];
+  const result = calculateBplPrivilegesMaintenance({ profile: { ...profile, bplBalloonClasses: ["HOT_AIR_BALLOON"] }, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal(result.classResults[0].requirement, "BFCL_160_A");
+});
+
+test("la classe gaz seule applique BFCL.160(a) sans mélanger l'air chaud", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "GAS_BALLOON" }, instructor: { name: "FI" } });
+  const flights = [ascension("gas", "2026-01-01", 360, { category: "Libre à gaz", takeoffCount: 10, landingCount: 10 }), ascension("hot", "2026-01-02", 600, { takeoffCount: 10, landingCount: 10 })];
+  const result = calculateBplPrivilegesMaintenance({ profile: { ...profile, bplBalloonClasses: ["GAS_BALLOON"] }, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal(result.referenceRequirement.datedExperience.officialDurationMinutes, 360);
+});
+
+test("deux classes choisissent la combinaison conforme et appliquent 180 minutes à l'autre classe", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON" }, instructor: { name: "FI" } });
+  const flights = [
+    ascension("hot", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 }),
+    ascension("gas", "2026-01-02", 180, { category: "Libre à gaz", regulatoryRole: "DUAL", takeoffCount: 0, landingCount: 0 }),
+  ];
+  const result = calculateBplPrivilegesMaintenance({ profile: { ...profile, bplBalloonClasses: ["HOT_AIR_BALLOON", "GAS_BALLOON"] }, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal(result.referenceClass.classId, "HOT_AIR_BALLOON");
+  assert.deepEqual(result.classResults.map(({ requirement }) => requirement), ["BFCL_160_A", "BFCL_160_B"]);
+});
+
+test("le moteur peut choisir gaz comme classe de référence sans la persister", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "GAS_BALLOON" }, instructor: { name: "FI" } });
+  const flights = [ascension("gas", "2026-01-01", 360, { category: "Libre à gaz", takeoffCount: 10, landingCount: 10 }), ascension("hot", "2026-01-02", 180)];
+  const declared = { ...profile, bplBalloonClasses: ["HOT_AIR_BALLOON", "GAS_BALLOON"] };
+  const result = calculateBplPrivilegesMaintenance({ profile: declared, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.referenceClass.classId, "GAS_BALLOON");
+  assert.equal(result.overall.status, "COMPLIANT");
+  assert.equal("referenceClass" in declared, false);
+});
+
+test("une classe supplémentaire sous 180 minutes rend la combinaison insuffisante", () => {
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-01", { balloonClass: { classId: "HOT_AIR_BALLOON" }, instructor: { name: "FI" } });
+  const flights = [ascension("hot", "2026-01-01", 360, { takeoffCount: 10, landingCount: 10 }), ascension("gas", "2026-01-02", 179, { category: "Libre à gaz" })];
+  const result = calculateBplPrivilegesMaintenance({ profile: { ...profile, bplBalloonClasses: ["HOT_AIR_BALLOON", "GAS_BALLOON"] }, events: [training], ascensions: flights, referenceDateIso: "2026-08-20", ascensionHistoryComplete: true });
+  assert.equal(result.overall.status, "ACTION_REQUIRED");
+});
+
+test("BFCL.160(b) compte PIC, PIC supervisé, DUAL, FI(B) et FE(B)", () => {
+  const roles = ["PIC", "PIC", "DUAL", "FI_B", "FE_B"];
+  const flights = roles.map((regulatoryRole, index) => ascension(`role-${index}`, "2026-01-01", 36, { category: "Libre à gaz", regulatoryRole, supervisedByFiB: index === 1 }));
+  const result = calculateBplAdditionalClassExperience({ ascensions: flights, referenceDateIso: "2026-08-20", balloonClass: { classId: "GAS_BALLOON" }, historyComplete: true });
+  assert.equal(result.explicitMinutes, 180);
+  assert.equal(result.status, "COMPLIANT");
+});
+
+test("le legacy null ne rend UNKNOWN que s'il peut combler le seuil de 180 minutes", () => {
+  const base = [ascension("known", "2026-01-01", 120, { category: "Libre à gaz" })];
+  const possible = calculateBplAdditionalClassExperience({ ascensions: [...base, ascension("legacy", "2026-01-02", 60, { category: "Libre à gaz", regulatoryRole: null })], referenceDateIso: "2026-08-20", balloonClass: { classId: "GAS_BALLOON" }, historyComplete: true });
+  const impossible = calculateBplAdditionalClassExperience({ ascensions: [...base, ascension("legacy-small", "2026-01-02", 59, { category: "Libre à gaz", regulatoryRole: null })], referenceDateIso: "2026-08-20", balloonClass: { classId: "GAS_BALLOON" }, historyComplete: true });
+  assert.equal(possible.status, "UNKNOWN");
+  assert.equal(impossible.status, "ACTION_REQUIRED");
 });

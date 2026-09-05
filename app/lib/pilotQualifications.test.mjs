@@ -36,6 +36,7 @@ test("les qualifications vides n’inventent aucun privilège", () => {
     declaredBplInitialSituation: { referenceDateIso: null, recentExperienceSatisfied: null },
     declaredCommercialInitialSituations: [],
     licenceType: null,
+    bplBalloonClasses: [],
     commercialOperationsEnabled: false,
     fiBEnabled: false,
     feBEnabled: false,
@@ -134,6 +135,17 @@ test("les scopes USER et GUEST restent isolés", () => {
   assert.equal(loadPilotQualifications(storage).profile.licenceType, "BPL");
   signedIn("user-b");
   assert.equal(loadPilotQualifications(storage).profile.licenceType, null);
+});
+
+test("les privilèges BPL sont normalisés, dédupliqués et persistés par scope", () => {
+  assert.deepEqual(normalizeQualificationProfile({ bplBalloonClasses: ["GAS_BALLOON", "MIXED", "HOT_AIR_BALLOON", "GAS_BALLOON"] }).bplBalloonClasses, ["HOT_AIR_BALLOON", "GAS_BALLOON"]);
+  assert.deepEqual(normalizeQualificationProfile({}).bplBalloonClasses, []);
+  const storage = memoryStorage();
+  signedIn("classes-a");
+  savePilotQualifications({ profile: { ...createEmptyQualificationProfile(), bplBalloonClasses: ["GAS_BALLOON"] }, events: [] }, storage);
+  assert.deepEqual(loadPilotQualifications(storage).profile.bplBalloonClasses, ["GAS_BALLOON"]);
+  signedIn("classes-b");
+  assert.deepEqual(loadPilotQualifications(storage).profile.bplBalloonClasses, []);
 });
 
 test("l’adaptateur legacy expose les échéances sans créer ni reclasser d’événement", () => {

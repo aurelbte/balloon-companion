@@ -38,10 +38,10 @@ test("associer un contrôle crée la preuve FE(B) correspondante", () => {
 });
 
 test("les événements historiques ne créent ni ascension ni lien carnet", () => {
-  const training = upsertHistoricalBplEvent([], "TRAINING_FLIGHT_BPL", { dateIso: "2025-06-12", personName: "FI Historique", notes: "" }, undefined, options);
+  const training = upsertHistoricalBplEvent([], "TRAINING_FLIGHT_BPL", { dateIso: "2025-06-12", personName: "FI Historique", notes: "", classId: "HOT_AIR_BALLOON" }, undefined, options);
   assert.equal(training.ok, true);
   assert.equal(training.event.officialAscensionId, undefined);
-  const check = upsertHistoricalBplEvent(training.events, "PROFICIENCY_CHECK_BPL", { dateIso: "2025-07-01", personName: "FE Historique", notes: "" }, undefined, { ...options, uuid: () => "123e4567-e89b-42d3-a456-426614174202" });
+  const check = upsertHistoricalBplEvent(training.events, "PROFICIENCY_CHECK_BPL", { dateIso: "2025-07-01", personName: "FE Historique", notes: "", classId: "GAS_BALLOON" }, undefined, { ...options, uuid: () => "123e4567-e89b-42d3-a456-426614174202" });
   assert.equal(check.ok, true);
   assert.equal(check.event.examiner.name, "FE Historique");
   assert.equal(check.events.length, 2);
@@ -64,12 +64,12 @@ test("GUEST conserve et modifie un événement historique après rechargement", 
   const local = storage();
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
   setRuntimeGuestModeActive(true);
-  const created = upsertHistoricalBplEvent([], "PROFICIENCY_CHECK_BPL", { dateIso: "2025-07-01", personName: "FE Un", notes: "" }, undefined, options);
+  const created = upsertHistoricalBplEvent([], "PROFICIENCY_CHECK_BPL", { dateIso: "2025-07-01", personName: "FE Un", notes: "", classId: "HOT_AIR_BALLOON" }, undefined, options);
   assert.equal(created.ok, true);
   const profile = { ...createEmptyQualificationProfile(), configured: true, licenceType: "BPL" };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
   const reloaded = loadPilotQualifications(local);
-  const edited = upsertHistoricalBplEvent(reloaded.events, "PROFICIENCY_CHECK_BPL", { dateIso: "2025-07-02", personName: "FE Deux", notes: "" }, created.event.id, { now: () => new Date("2026-08-22T10:00:00Z") });
+  const edited = upsertHistoricalBplEvent(reloaded.events, "PROFICIENCY_CHECK_BPL", { dateIso: "2025-07-02", personName: "FE Deux", notes: "", classId: "HOT_AIR_BALLOON" }, created.event.id, { now: () => new Date("2026-08-22T10:00:00Z") });
   assert.equal(edited.ok, true);
   assert.equal(edited.events.length, 1);
   assert.equal(savePilotQualifications({ profile, events: edited.events }, local), true);
@@ -80,7 +80,7 @@ test("USER conserve localement une preuve BPL", () => {
   const local = storage();
   setRuntimeGuestModeActive(false);
   setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: "phase-7b", email: "pilot@example.com", firstName: "", lastName: "" } });
-  const created = upsertHistoricalBplEvent([], "TRAINING_FLIGHT_BPL", { dateIso: "2025-06-12", personName: "FI Local", notes: "" }, undefined, options);
+  const created = upsertHistoricalBplEvent([], "TRAINING_FLIGHT_BPL", { dateIso: "2025-06-12", personName: "FI Local", notes: "", classId: "HOT_AIR_BALLOON" }, undefined, options);
   assert.equal(created.ok, true);
   const profile = { ...createEmptyQualificationProfile(), configured: true, licenceType: "BPL" };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
