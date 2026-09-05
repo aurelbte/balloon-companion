@@ -219,6 +219,8 @@ export class BrowserCloudSyncPayloadProvider {
         arrival: ascension.arrival,
         category: ascension.category,
         pilot_function: ascension.pilotFunction,
+        regulatory_role: ascension.regulatoryRole ?? null,
+        supervised_by_fi_b: ascension.supervisedByFiB ?? null,
         night_flight: ascension.nightFlight,
         maximum_altitude_m: ascension.maximumAltitudeM,
         gps_duration_minutes: ascension.gpsDurationMinutes,

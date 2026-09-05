@@ -21,6 +21,16 @@ export function officialAscensionOriginLabel(source: OfficialAscension["source"]
   return source === "MANUAL" ? "Saisie manuelle" : "GPS · Balloon Companion";
 }
 
+export function officialAscensionRegulatoryRoleLabel(
+  ascension: Pick<OfficialAscension, "pilotFunction" | "regulatoryRole">,
+): OfficialAscension["pilotFunction"] | "Commandant de bord (PIC)" | "Double commande" | "Instructeur FI(B)" | "Examinateur FE(B)" {
+  if (ascension.regulatoryRole === "PIC") return "Commandant de bord (PIC)";
+  if (ascension.regulatoryRole === "DUAL") return "Double commande";
+  if (ascension.regulatoryRole === "FI_B") return "Instructeur FI(B)";
+  if (ascension.regulatoryRole === "FE_B") return "Examinateur FE(B)";
+  return ascension.pilotFunction;
+}
+
 export function officialAscensionFlightNatureLabel(
   ascension: Pick<OfficialAscension, "flightNature">,
 ): string {

@@ -43,6 +43,15 @@ export const OFFICIAL_FLIGHT_NATURES = Object.freeze([
   "INSTRUCTION",
 ] as const satisfies readonly OfficialFlightNature[]);
 
+export type OfficialRegulatoryRole = "PIC" | "DUAL" | "FI_B" | "FE_B";
+
+export const OFFICIAL_REGULATORY_ROLES = Object.freeze([
+  "PIC",
+  "DUAL",
+  "FI_B",
+  "FE_B",
+] as const satisfies readonly OfficialRegulatoryRole[]);
+
 export type OfficialAscension = {
   id: string;
   sourceFlightId: string | null;
@@ -56,6 +65,8 @@ export type OfficialAscension = {
   arrival: string;
   category: "Libre à air chaud" | "Libre à gaz";
   pilotFunction: "Pilote" | "Élève";
+  regulatoryRole: OfficialRegulatoryRole | null;
+  supervisedByFiB: boolean | null;
   nightFlight: boolean;
   maximumAltitudeM: number | null;
   gpsDurationMinutes: number | null;
@@ -73,12 +84,23 @@ export type OfficialAscensionInput = Omit<
   "id" | "source" | "sourceFlightId" | "gpsDurationMinutes"
 >;
 
+export function pilotFunctionForRegulatoryRole(role: OfficialRegulatoryRole): OfficialAscension["pilotFunction"] {
+  return role === "DUAL" ? "Élève" : "Pilote";
+}
+
 export function roundJournalAltitudeMeters(value: number | null): number | null {
   return value === null || !Number.isFinite(value) ? null : Math.round(value);
 }
 
-function withRoundedOfficialAltitude(input: OfficialAscensionInput): OfficialAscensionInput {
-  return { ...input, maximumAltitudeM: roundJournalAltitudeMeters(input.maximumAltitudeM) };
+function normalizeOfficialAscensionInput(input: OfficialAscensionInput): OfficialAscensionInput {
+  return {
+    ...input,
+    ...(input.regulatoryRole === null ? {} : {
+      pilotFunction: pilotFunctionForRegulatoryRole(input.regulatoryRole),
+      supervisedByFiB: input.regulatoryRole === "PIC" ? input.supervisedByFiB === true : false,
+    }),
+    maximumAltitudeM: roundJournalAltitudeMeters(input.maximumAltitudeM),
+  };
 }
 
 export function officialAscensionFlightNature(ascension: Pick<OfficialAscension, "flightNature">): OfficialFlightNature {
@@ -190,7 +212,7 @@ export function validateOfficialAscension(
   const sourceFlight = state.journalFlights.find(({ id }) => id === sourceFlightId);
   if (!sourceFlight) return state;
   const ascension: OfficialAscension = {
-    ...withRoundedOfficialAltitude(input),
+    ...normalizeOfficialAscensionInput(input),
     id: sourceFlightId === DEMO_COMPLETION_FLIGHT_ID ? DEMO_COMPLETION_ASCENSION_ID : `ascension-${sourceFlightId}`,
     sourceFlightId,
     source: "GPS_BALLOON_COMPANION",
@@ -281,7 +303,7 @@ export function addManualOfficialAscension(
   return {
     ...state,
     officialAscensions: [...state.officialAscensions, {
-      ...withRoundedOfficialAltitude(input),
+      ...normalizeOfficialAscensionInput(input),
       id,
       sourceFlightId: null,
       source: "MANUAL",
@@ -315,7 +337,7 @@ export function updateOfficialAscension(
   const index = state.officialAscensions.findIndex(({ id }) => id === ascensionId);
   if (index < 0) return state;
   const current = state.officialAscensions[index]!;
-  const normalizedInput = withRoundedOfficialAltitude(input);
+  const normalizedInput = normalizeOfficialAscensionInput(input);
   const unchanged = (Object.keys(normalizedInput) as Array<keyof OfficialAscensionInput>)
     .every((key) => current[key] === normalizedInput[key]);
   if (unchanged) return state;
@@ -402,6 +424,8 @@ export function defaultOfficialAscensionInput(): OfficialAscensionInput {
     arrival: "Mérignies",
     category: "Libre à air chaud",
     pilotFunction: "Pilote",
+    regulatoryRole: "PIC",
+    supervisedByFiB: false,
     nightFlight: false,
     maximumAltitudeM: 982,
     officialDurationMinutes: 57,

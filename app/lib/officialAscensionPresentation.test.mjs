@@ -6,6 +6,7 @@ import {
   officialAscensionFlightNatureLabel,
   officialAscensionMovementLabels,
   officialAscensionOriginLabel,
+  officialAscensionRegulatoryRoleLabel,
   qualificationPersonLabel,
 } from "./officialAscensionPresentation.ts";
 
@@ -39,11 +40,20 @@ test("omet les personnes absentes et affiche les personnes présentes sans ligne
   assert.equal(qualificationPersonLabel({ name: "Anne Martin", licenceNumber: "FI-123" }), "Anne Martin · FI-123");
 });
 
+test("présente les rôles réglementaires sans réinterpréter les lignes legacy", () => {
+  assert.equal(officialAscensionRegulatoryRoleLabel(ascension({ regulatoryRole: "PIC" })), "Commandant de bord (PIC)");
+  assert.equal(officialAscensionRegulatoryRoleLabel(ascension({ regulatoryRole: "DUAL" })), "Double commande");
+  assert.equal(officialAscensionRegulatoryRoleLabel(ascension({ regulatoryRole: "FI_B" })), "Instructeur FI(B)");
+  assert.equal(officialAscensionRegulatoryRoleLabel(ascension({ regulatoryRole: "FE_B" })), "Examinateur FE(B)");
+  assert.equal(officialAscensionRegulatoryRoleLabel(ascension({ regulatoryRole: null, pilotFunction: "Élève" })), "Élève");
+});
+
 test("la fiche conserve ses informations existantes et ajoute les champs réglementaires conditionnels", () => {
   const source = readFileSync(new URL("../components/journal/CompletionAscensionDetail.tsx", import.meta.url), "utf8");
   for (const label of ["Date", "Type de ballon", "Constructeur", "Immatriculation", "Lieu d’envol", "Lieu d’atterrissage", "Fonction", "Vol de nuit", "Altitude atteinte", "Temps officiel", "Nature du vol", "Décollages", "Atterrissages", "Origine"]) {
     assert.match(source, new RegExp(`\\["${label}"`));
   }
-  assert.match(source, /\.\.\.\(instructor \? \[\["Instructeur"/);
+  assert.match(source, /"Solo sous supervision FI\(B\)"/);
+  assert.match(source, /"FI\(B\) superviseur" : "Instructeur"/);
   assert.match(source, /\.\.\.\(examiner \? \[\["Examinateur"/);
 });

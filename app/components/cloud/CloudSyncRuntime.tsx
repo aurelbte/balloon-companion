@@ -248,6 +248,8 @@ async function createLocalOfficialAscensionTest(scope: `USER:${string}`): Promis
     arrival: "BC TEST ARRIVEE",
     category: "Libre à air chaud",
     pilotFunction: "Pilote",
+    regulatoryRole: "PIC",
+    supervisedByFiB: false,
     nightFlight: false,
     maximumAltitudeM: 424,
     officialDurationMinutes: 42,

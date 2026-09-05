@@ -11,6 +11,7 @@ import {
   officialAscensionFlightNatureLabel,
   officialAscensionMovementLabels,
   officialAscensionOriginLabel,
+  officialAscensionRegulatoryRoleLabel,
   qualificationPersonLabel,
 } from "../../lib/officialAscensionPresentation";
 
@@ -35,14 +36,15 @@ export default function CompletionAscensionDetail({ ascensionId }: { ascensionId
     ["Immatriculation", ascension.registration],
     ["Lieu d’envol", ascension.departure],
     ["Lieu d’atterrissage", ascension.arrival],
-    ["Fonction", ascension.pilotFunction],
+    ["Fonction", officialAscensionRegulatoryRoleLabel(ascension)],
+    ...(ascension.regulatoryRole === "PIC" && ascension.supervisedByFiB === true ? [["Supervision", "Solo sous supervision FI(B)"] as const] : []),
     ["Vol de nuit", ascension.nightFlight ? "Oui" : "Non"],
     ["Altitude atteinte", ascension.maximumAltitudeM === null ? "—" : formatFlightAltitude(roundJournalAltitudeMeters(ascension.maximumAltitudeM)!, units.flightInstruments.altitudeUnit)],
     ["Temps officiel", formatOfficialDuration(ascension.officialDurationMinutes)],
     ["Nature du vol", officialAscensionFlightNatureLabel(ascension)],
     ["Décollages", movements.takeoffs],
     ["Atterrissages", movements.landings],
-    ...(instructor ? [["Instructeur", instructor] as const] : []),
+    ...(instructor ? [[ascension.regulatoryRole === "PIC" && ascension.supervisedByFiB === true ? "FI(B) superviseur" : "Instructeur", instructor] as const] : []),
     ...(examiner ? [["Examinateur", examiner] as const] : []),
     ["Origine", officialAscensionOriginLabel(ascension.source)],
   ];

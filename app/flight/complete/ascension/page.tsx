@@ -39,6 +39,8 @@ function toFormValues(flightId: string): OfficialAscensionFormValues {
     arrival: value.arrival,
     category: value.category,
     pilotFunction: value.pilotFunction,
+    regulatoryRole: value.regulatoryRole,
+    supervisedByFiB: value.supervisedByFiB,
     nightFlight: value.nightFlight,
     maximumAltitudeM: value.maximumAltitudeM === null ? "" : String(roundJournalAltitudeMeters(value.maximumAltitudeM)),
     officialDurationMinutes: value.officialDurationMinutes,

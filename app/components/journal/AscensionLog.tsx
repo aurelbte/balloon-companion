@@ -29,6 +29,7 @@ import {
   removeOfficialAscension,
 } from "../../lib/flightCompletion";
 import { saveFlightCompletionState } from "../../lib/flightCompletionStorage";
+import { officialAscensionRegulatoryRoleLabel } from "../../lib/officialAscensionPresentation";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import { useJournalCardSwipe } from "../../hooks/useJournalCardSwipe";
 import DeleteFlightDialog from "./DeleteFlightDialog";
@@ -189,7 +190,7 @@ export default function AscensionLog() {
       registration: item.registration,
       balloonModel: item.balloonModel,
       balloonType: item.category === "Libre à gaz" ? "Gaz" : "Air chaud",
-      function: item.pilotFunction,
+      function: officialAscensionRegulatoryRoleLabel(item),
       flightType: item.nightFlight ? "Nuit" : "Jour",
       maximumAltitudeM: item.maximumAltitudeM,
       officialDurationMinutes: item.officialDurationMinutes,
@@ -250,7 +251,7 @@ export default function AscensionLog() {
         {dateFilter === "year" && <label><span>Année</span><select value={year} onChange={(event) => setYear(event.target.value)}><option value="">Sélectionner</option>{years.map((value) => <option key={value}>{value}</option>)}</select></label>}
         {dateFilter === "date" && <label><span>Date précise</span><input type="date" value={exactDate} onChange={(event) => setExactDate(event.target.value)} /></label>}
         <label><span>Ballon</span><select value={registration} onChange={(event) => setRegistration(event.target.value)}><option value="all">Tous</option>{registrations.map((value) => <option key={value}>{value}</option>)}</select></label>
-        <label><span>Fonction</span><select value={functionFilter} onChange={(event) => setFunctionFilter(event.target.value as ValueFilter<AscensionFunction>)}><option value="all">Tous</option><option value="Pilote">Pilote</option><option value="Élève">Élève</option></select></label>
+        <label><span>Fonction</span><select value={functionFilter} onChange={(event) => setFunctionFilter(event.target.value as ValueFilter<AscensionFunction>)}><option value="all">Tous</option><option value="Commandant de bord (PIC)">Commandant de bord (PIC)</option><option value="Double commande">Double commande</option><option value="Instructeur FI(B)">Instructeur FI(B)</option><option value="Examinateur FE(B)">Examinateur FE(B)</option><option value="Pilote">Pilote (historique)</option><option value="Élève">Élève (historique)</option></select></label>
         <label><span>Vol</span><select value={flightType} onChange={(event) => setFlightType(event.target.value as ValueFilter<AscensionFlightType>)}><option value="all">Tous</option><option value="Jour">Jour</option><option value="Nuit">Nuit</option></select></label>
         <label><span>Type</span><select value={balloonType} onChange={(event) => setBalloonType(event.target.value as ValueFilter<AscensionBalloonType>)}><option value="all">Tous</option><option value="Air chaud">Air chaud</option><option value="Gaz">Gaz</option></select></label>
         <button type="button" className={styles.resetFilters} disabled={!filtersActive} onClick={resetFilters}>Réinitialiser</button>

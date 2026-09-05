@@ -9,6 +9,8 @@ export type OfficialAscensionEditValues = {
   arrival: string;
   category: OfficialAscension["category"];
   pilotFunction: OfficialAscension["pilotFunction"];
+  regulatoryRole: OfficialAscension["regulatoryRole"];
+  supervisedByFiB: OfficialAscension["supervisedByFiB"];
   nightFlight: boolean;
   maximumAltitudeM: string;
   officialDurationMinutes: number;
@@ -35,6 +37,8 @@ export function officialAscensionToEditValues(
     arrival: ascension.arrival,
     category: ascension.category,
     pilotFunction: ascension.pilotFunction,
+    regulatoryRole: ascension.regulatoryRole ?? null,
+    supervisedByFiB: ascension.supervisedByFiB ?? null,
     nightFlight: ascension.nightFlight,
     maximumAltitudeM:
       ascension.maximumAltitudeM === null

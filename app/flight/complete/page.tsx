@@ -9,14 +9,24 @@ import {
   defaultOfficialAscensionInput,
   DEMO_COMPLETION_FLIGHT_ID,
   roundJournalAltitudeMeters,
+  pilotFunctionForRegulatoryRole,
   type CompletionJournalFlight,
   type OfficialAscensionInput,
+  type OfficialRegulatoryRole,
 } from "../../lib/flightCompletion";
 import { ensureDemoCompletionPersisted, findJournalFlightBySourceId, persistJournalFlightDecision, persistOfficialAscension, reconcileRecordedFlightJournalProjection } from "../../lib/flightCompletionStorage";
 import { DATA_SCOPE_CHANGED_EVENT } from "../../lib/auth/dataScopeRuntime";
 import styles from "./FlightComplete.module.css";
 
-type FlightRole = OfficialAscensionInput["pilotFunction"] | "NON_PILOT";
+type FlightRole = OfficialRegulatoryRole | "NON_PILOT";
+
+const FLIGHT_ROLE_LABELS: Readonly<Record<FlightRole, string>> = Object.freeze({
+  PIC: "Commandant de bord (PIC)",
+  DUAL: "Double commande",
+  FI_B: "Instructeur FI(B)",
+  FE_B: "Examinateur FE(B)",
+  NON_PILOT: "Je n’ai pas piloté",
+});
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
@@ -91,7 +101,9 @@ function FlightCompleteContent() {
       registration: activeFlight.balloonRegistration,
       departure: activeFlight.departure,
       arrival: activeFlight.arrival,
-      pilotFunction: role,
+      pilotFunction: pilotFunctionForRegulatoryRole(role),
+      regulatoryRole: role,
+      supervisedByFiB: false,
       maximumAltitudeM: roundJournalAltitudeMeters(activeFlight.maxAltitudeM),
       officialDurationMinutes: duration,
     } satisfies OfficialAscensionInput;
@@ -115,7 +127,7 @@ function FlightCompleteContent() {
           <header><p className={styles.eyebrow}>Journal enregistré</p><h1 className={styles.title} id="completion-title">Vol enregistré</h1></header>
           <p className={styles.gpsDuration}><span>Durée GPS</span><strong>{formatDuration(activeFlight.durationMinutes)}</strong></p>
           <div className={styles.officialDuration}><span>Durée au carnet</span><div><button type="button" aria-label="Réduire la durée officielle de 1 minute" onClick={() => setOfficialDuration(adjustOfficialDurationMinutes(displayedOfficialDuration, -1))}><ChevronDown size={30} /></button><strong>{formatDuration(displayedOfficialDuration)}</strong><button type="button" aria-label="Augmenter la durée officielle de 1 minute" onClick={() => setOfficialDuration(adjustOfficialDurationMinutes(displayedOfficialDuration, 1))}><ChevronUp size={30} /></button></div></div>
-          <fieldset className={styles.flightRole}><legend>Fonction pendant ce vol</legend>{(["Pilote", "Élève", "NON_PILOT"] as const).map((value) => <label key={value}><input type="radio" name="flight-role" checked={role === value} onChange={() => setRole(value)} /><span>{value === "NON_PILOT" ? "Je n’ai pas piloté" : value}</span></label>)}</fieldset>
+          <fieldset className={styles.flightRole}><legend>Fonction pendant ce vol</legend>{(["PIC", "DUAL", "FI_B", "FE_B", "NON_PILOT"] as const).map((value) => <label key={value}><input type="radio" name="flight-role" checked={role === value} onChange={() => setRole(value)} /><span>{FLIGHT_ROLE_LABELS[value]}</span></label>)}</fieldset>
           <div className={styles.completionActions}><button type="button" disabled={!role} onClick={confirm}>{role === "NON_PILOT" ? "Conserver uniquement dans le Journal" : "Ajouter au carnet"}</button><button type="button" onClick={leaveForLater}>Plus tard</button></div>
         </section>
       </div>

@@ -18,6 +18,8 @@ import {
   updateOfficialAscension,
   validateOfficialAscension,
   OFFICIAL_FLIGHT_NATURES,
+  OFFICIAL_REGULATORY_ROLES,
+  pilotFunctionForRegulatoryRole,
 } from "./flightCompletion.ts";
 import { officialAscensionToEditValues } from "./officialAscensionEditing.ts";
 import { getAscensionAutomaticName } from "./ascensionMockData.ts";
@@ -194,6 +196,7 @@ test("modifier une ascension préserve le vol GPS, sa trace et ses métadonnées
     departure: "Bondues",
     arrival: "Templeuve",
     pilotFunction: "Élève",
+    regulatoryRole: "DUAL",
     officialDurationMinutes: 70,
   });
 
@@ -266,6 +269,8 @@ test("le formulaire de modification reçoit tous les champs officiels prérempli
     arrival: validated.officialAscensions[0].arrival,
     category: validated.officialAscensions[0].category,
     pilotFunction: validated.officialAscensions[0].pilotFunction,
+    regulatoryRole: "PIC",
+    supervisedByFiB: false,
     nightFlight: true,
     maximumAltitudeM: "982",
     officialDurationMinutes: 69,
@@ -280,6 +285,32 @@ test("le formulaire de modification reçoit tous les champs officiels prérempli
   });
 });
 
+test("les quatre fonctions réglementaires conservent le mapping pilotFunction legacy", () => {
+  assert.deepEqual(OFFICIAL_REGULATORY_ROLES, ["PIC", "DUAL", "FI_B", "FE_B"]);
+  assert.equal(pilotFunctionForRegulatoryRole("PIC"), "Pilote");
+  assert.equal(pilotFunctionForRegulatoryRole("DUAL"), "Élève");
+  assert.equal(pilotFunctionForRegulatoryRole("FI_B"), "Pilote");
+  assert.equal(pilotFunctionForRegulatoryRole("FE_B"), "Pilote");
+  for (const [regulatoryRole, pilotFunction] of [["PIC", "Pilote"], ["DUAL", "Élève"], ["FI_B", "Pilote"], ["FE_B", "Pilote"]]) {
+    const state = addManualOfficialAscension(createEmptyFlightCompletionState(), `role-${regulatoryRole}`, { ...manualInput, pilotFunction: "Pilote", regulatoryRole, supervisedByFiB: regulatoryRole === "PIC" });
+    assert.equal(state.officialAscensions[0].pilotFunction, pilotFunction);
+    assert.equal(state.officialAscensions[0].regulatoryRole, regulatoryRole);
+    assert.equal(state.officialAscensions[0].supervisedByFiB, regulatoryRole === "PIC");
+  }
+});
+
+test("une édition legacy préserve les champs réglementaires null sans les déduire", () => {
+  for (const pilotFunction of ["Pilote", "Élève"]) {
+    const legacy = { ...defaultOfficialAscensionInput(), id: `legacy-${pilotFunction}`, sourceFlightId: null, source: "MANUAL", gpsDurationMinutes: null, pilotFunction, regulatoryRole: null, supervisedByFiB: null };
+    const values = officialAscensionToEditValues(legacy);
+    assert.equal(values.regulatoryRole, null);
+    assert.equal(values.supervisedByFiB, null);
+    const updated = updateOfficialAscension({ ...createEmptyFlightCompletionState(), officialAscensions: [legacy] }, legacy.id, { ...legacy, observations: "Modifié" });
+    assert.equal(updated.officialAscensions[0].regulatoryRole, null);
+    assert.equal(updated.officialAscensions[0].supervisedByFiB, null);
+  }
+});
+
 test("le mode édition soumet nativement le formulaire officiel", () => {
   const formSource = readFileSync(
     new URL("../components/journal/OfficialAscensionForm.tsx", import.meta.url),
@@ -291,6 +322,23 @@ test("le mode édition soumet nativement le formulaire officiel", () => {
   );
   assert.match(formSource, /form=\{nativeSubmit \? "official-ascension-form"/);
   assert.match(editSource, /nativeSubmit/);
+});
+
+test("le formulaire impose le superviseur uniquement pour un PIC supervisé et préserve le legacy", () => {
+  const formSource = readFileSync(new URL("../components/journal/OfficialAscensionForm.tsx", import.meta.url), "utf8");
+  assert.match(formSource, /values\.regulatoryRole === "PIC" && values\.supervisedByFiB === true/);
+  assert.match(formSource, /flightNatureRequiresInstructor\(values\.flightNature\) \|\| supervisedPic/);
+  assert.match(formSource, /Solo sous supervision FI\(B\)/);
+  assert.match(formSource, /values\.regulatoryRole === null \? values\.supervisedByFiB/);
+  assert.match(formSource, /fonction réglementaire à préciser/);
+});
+
+test("la fin de vol propose les quatre rôles et conserve NON_PILOT", () => {
+  const source = readFileSync(new URL("../flight/complete/page.tsx", import.meta.url), "utf8");
+  for (const role of ["PIC", "DUAL", "FI_B", "FE_B", "NON_PILOT"]) assert.match(source, new RegExp(`\\b${role}\\b`));
+  assert.match(source, /pilotFunctionForRegulatoryRole\(role\)/);
+  assert.match(source, /supervisedByFiB: false/);
+  assert.match(source, /role === "NON_PILOT"/);
 });
 
 test("supprimer une ascension liée conserve le vol GPS et tous ses points", () => {
@@ -409,7 +457,7 @@ test("Je n’ai pas piloté conserve uniquement le Journal et les totaux", () =>
 test("Élève crée une ascension officielle sans modifier la durée ni la trace GPS", () => {
   const pending = ensureCompletionJournalFlight(createEmptyFlightCompletionState());
   const pointsBefore = structuredClone(pending.journalFlights[0].points);
-  const validated = validateOfficialAscension(pending, DEMO_COMPLETION_FLIGHT_ID, { ...defaultOfficialAscensionInput(), pilotFunction: "Élève", officialDurationMinutes: 62 });
+  const validated = validateOfficialAscension(pending, DEMO_COMPLETION_FLIGHT_ID, { ...defaultOfficialAscensionInput(), pilotFunction: "Élève", regulatoryRole: "DUAL", officialDurationMinutes: 62 });
   assert.equal(validated.journalFlights[0].logbookStatus, "CARNET_VALIDATED");
   assert.equal(validated.journalFlights[0].durationMinutes, 57);
   assert.deepEqual(validated.journalFlights[0].points, pointsBefore);

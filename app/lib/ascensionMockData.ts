@@ -1,6 +1,6 @@
 import { DEMO_OPENING_BALANCE } from "./flightCompletion.ts";
 
-export type AscensionFunction = "Pilote" | "Élève";
+export type AscensionFunction = "Pilote" | "Élève" | "Commandant de bord (PIC)" | "Double commande" | "Instructeur FI(B)" | "Examinateur FE(B)";
 export type AscensionFlightType = "Jour" | "Nuit";
 export type AscensionBalloonType = "Air chaud" | "Gaz";
 

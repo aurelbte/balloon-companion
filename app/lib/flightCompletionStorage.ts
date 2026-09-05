@@ -4,9 +4,11 @@ import {
   createEmptyFlightCompletionState,
   ensureCompletionJournalFlight,
   FLIGHT_COMPLETION_SCHEMA_VERSION,
+  OFFICIAL_REGULATORY_ROLES,
   type FlightCompletionState,
   type OfficialAscension,
   type OfficialAscensionInput,
+  type OfficialRegulatoryRole,
   validateOfficialAscension,
   type CompletionJournalFlight,
   removeJournalFlight,
@@ -128,6 +130,10 @@ function normalizeState(value: unknown): FlightCompletionState | null {
     }),
     officialAscensions: state.officialAscensions.map((ascension) => ({
       ...ascension,
+      regulatoryRole: OFFICIAL_REGULATORY_ROLES.includes(ascension.regulatoryRole as OfficialRegulatoryRole)
+        ? ascension.regulatoryRole as OfficialRegulatoryRole
+        : null,
+      supervisedByFiB: typeof ascension.supervisedByFiB === "boolean" ? ascension.supervisedByFiB : null,
       ...(ascension.maximumAltitudeM === null || typeof ascension.maximumAltitudeM === "number"
         ? { maximumAltitudeM: roundJournalAltitudeMeters(ascension.maximumAltitudeM) } : {}),
     })),

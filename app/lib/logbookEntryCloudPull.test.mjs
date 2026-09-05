@@ -5,13 +5,35 @@ import { setRuntimeAuthSnapshot, scopedBusinessStorageKey } from "./auth/dataSco
 import { CloudPullService } from "./cloudPullService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, FLIGHT_COMPLETION_STORAGE_KEY, hasOfficialAscensionSourceFlightConflict } from "./flightCompletionStorage.ts";
+import { parseLogbookEntryCloudRow } from "./cloudPullBrowser.ts";
 
 const scope = "USER:user-1";
 const now = "2026-08-24T08:00:00.000Z";
 const instructor = { firstName: "Instructeur", lastName: "Test", licenceNumber: "FI-1" };
 const examiner = { firstName: "Examinateur", lastName: "Test", licenceNumber: "FE-1" };
-const ascension = (overrides = {}) => ({ id: "entry-a", sourceFlightId: "flight-a", source: "GPS_BALLOON_COMPANION", dateIso: "2026-08-24", date: "24 août 2026", balloonModel: "Z105", balloonManufacturer: "Cameron", registration: "F-CLOUD", departure: "Départ", arrival: "Arrivée", category: "Libre à air chaud", pilotFunction: "Pilote", nightFlight: false, maximumAltitudeM: 1000, gpsDurationMinutes: 42, officialDurationMinutes: 40, observations: "Cloud official", flightNature: "TRAINING_BPL", takeoffCount: 2, landingCount: 2, instructor, examiner, ...overrides });
+const ascension = (overrides = {}) => ({ id: "entry-a", sourceFlightId: "flight-a", source: "GPS_BALLOON_COMPANION", dateIso: "2026-08-24", date: "24 août 2026", balloonModel: "Z105", balloonManufacturer: "Cameron", registration: "F-CLOUD", departure: "Départ", arrival: "Arrivée", category: "Libre à air chaud", pilotFunction: "Pilote", regulatoryRole: "PIC", supervisedByFiB: false, nightFlight: false, maximumAltitudeM: 1000, gpsDurationMinutes: 42, officialDurationMinutes: 40, observations: "Cloud official", flightNature: "TRAINING_BPL", takeoffCount: 2, landingCount: 2, instructor, examiner, ...overrides });
 const row = (overrides = {}) => ({ id: "entry-a", entityId: "entry-a", userId: "user-1", revision: 0, createdAt: now, updatedAt: now, deletedAt: null, value: ascension(), ...overrides });
+const databaseRow = (overrides = {}) => ({
+  id: "entry-a", user_id: "user-1", revision: 2, created_at: now, updated_at: now, deleted_at: null,
+  flight_id: "flight-a", source: "GPS_BALLOON_COMPANION", date_iso: "2026-08-24", balloon_model: "Z105",
+  balloon_manufacturer: "Cameron", registration: "F-CLOUD", departure: "Départ", arrival: "Arrivée",
+  category: "Libre à air chaud", pilot_function: "Pilote", regulatory_role: "PIC", supervised_by_fi_b: false,
+  night_flight: false, maximum_altitude_m: 1000, gps_duration_minutes: 42, official_duration_minutes: 40,
+  observations: "Cloud official", flight_nature: "STANDARD", takeoff_count: 1, landing_count: 1,
+  instructor: null, examiner: null, ...overrides,
+});
+
+test("le parser PULL conserve les quatre rôles, la supervision et les null historiques", () => {
+  for (const role of ["PIC", "DUAL", "FI_B", "FE_B"]) {
+    const parsed = parseLogbookEntryCloudRow(databaseRow({ regulatory_role: role, supervised_by_fi_b: role === "PIC" }));
+    assert.equal(parsed.value.regulatoryRole, role);
+    assert.equal(parsed.value.supervisedByFiB, role === "PIC");
+  }
+  const legacy = parseLogbookEntryCloudRow(databaseRow({ regulatory_role: null, supervised_by_fi_b: null, pilot_function: "Élève" }));
+  assert.equal(legacy.value.regulatoryRole, null);
+  assert.equal(legacy.value.supervisedByFiB, null);
+  assert.equal(legacy.value.pilotFunction, "Élève");
+});
 
 class Cursors {
   values = new Map();
@@ -178,7 +200,7 @@ test("adaptateur et helpers restent sans flight fantôme, GPS, enqueue, RPC ni a
   const browser = readFileSync(new URL("./cloudPullBrowser.ts", import.meta.url), "utf8");
   const completion = readFileSync(new URL("./flightCompletionStorage.ts", import.meta.url), "utf8");
   const runtime = readFileSync(new URL("../components/cloud/CloudSyncRuntime.tsx", import.meta.url), "utf8");
-  assert.match(browser, /from\("logbook_entries"\)[\s\S]*?\.select\("id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner"\)/);
+  assert.match(browser, /from\("logbook_entries"\)[\s\S]*?\.select\("id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,regulatory_role,supervised_by_fi_b,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner"\)/);
   const adapter = browser.match(/export function createBrowserLogbookEntryPullService[\s\S]*$/)?.[0] ?? "";
   assert.doesNotMatch(adapter, /createRecordedFlight|completeFlight|saveFlightCompletionState|syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(/);
   const silent = completion.match(/export function applyOfficialAscensionFromCloudWithoutEnqueue[\s\S]*?\n\}/)?.[0] ?? "";

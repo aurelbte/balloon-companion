@@ -23,7 +23,7 @@ const ascension = {
   id: "ascension-a", sourceFlightId: "flight-a", source: "GPS_BALLOON_COMPANION",
   dateIso: "2026-08-23", date: "23 août 2026", balloonModel: "Z105", balloonManufacturer: "Cameron",
   registration: "F-TEST", departure: "Boeschepe", arrival: "Lille", category: "Libre à air chaud",
-  pilotFunction: "Pilote", nightFlight: false, maximumAltitudeM: 850, gpsDurationMinutes: 60,
+  pilotFunction: "Pilote", regulatoryRole: "PIC", supervisedByFiB: true, nightFlight: false, maximumAltitudeM: 850, gpsDurationMinutes: 60,
   officialDurationMinutes: 55, flightNature: "TRAINING_BPL", takeoffCount: 2, landingCount: 2,
   instructor: { name: "Alice", licenceNumber: "FI-1" }, observations: "RAS",
 };
@@ -40,8 +40,21 @@ test("OfficialAscension produit un payload logbook_entry complet sans date local
   assert.equal(payload.payload.flight_nature, "TRAINING_BPL");
   assert.equal(payload.payload.takeoff_count, 2);
   assert.deepEqual(payload.payload.instructor, ascension.instructor);
+  assert.equal(payload.payload.regulatory_role, "PIC");
+  assert.equal(payload.payload.supervised_by_fi_b, true);
   assert.equal("date" in payload.payload, false);
   assert.equal(payload.payload.date_iso, "2026-08-23");
+});
+
+test("le payload conserve tous les rôles et les valeurs réglementaires null/false", async () => {
+  for (const [regulatoryRole, supervisedByFiB] of [["DUAL", false], ["FI_B", false], ["FE_B", false], [null, null]]) {
+    const storage = new MemoryStorage();
+    const value = { ...ascension, id: `entry-${regulatoryRole ?? "legacy"}`, regulatoryRole, supervisedByFiB };
+    storage.setItem(scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY), JSON.stringify({ officialAscensions: [value] }));
+    const result = await new BrowserCloudSyncPayloadProvider(storage, scope).build({ mutationId: `mutation-${regulatoryRole ?? "legacy"}`, entityType: "logbook-entry", entityId: value.id, operation: "UPSERT", baseRevision: 0, createdAt: "2026-08-23T10:00:00.000Z", attempts: 0 });
+    assert.equal(result.payload.regulatory_role, regulatoryRole);
+    assert.equal(result.payload.supervised_by_fi_b, supervisedByFiB);
+  }
 });
 
 test("le payload logbook_entry conserve la nature CAPTIVE", async () => {
@@ -80,4 +93,14 @@ test("la migration captive étend uniquement la contrainte flight_nature", () =>
   assert.match(migration, /drop constraint if exists logbook_entries_flight_nature_check/);
   assert.match(migration, /add constraint logbook_entries_flight_nature_check/);
   assert.match(migration, /'CAPTIVE'/);
+});
+
+test("la migration réglementaire est additive, sans backfill, et préserve les champs absents en UPDATE", () => {
+  const migration = readFileSync(new URL("../../supabase/migrations/20260905120000_add_logbook_regulatory_role.sql", import.meta.url), "utf8");
+  assert.match(migration, /add column if not exists regulatory_role text null/);
+  assert.match(migration, /add column if not exists supervised_by_fi_b boolean null/);
+  for (const role of ["PIC", "DUAL", "FI_B", "FE_B"]) assert.match(migration, new RegExp(`'${role}'`));
+  assert.doesNotMatch(migration, /update public\.logbook_entries\s+set regulatory_role/i);
+  assert.match(migration, /p_payload \? 'regulatory_role'[\s\S]*else t\.regulatory_role end/);
+  assert.match(migration, /p_payload \? 'supervised_by_fi_b'[\s\S]*else t\.supervised_by_fi_b end/);
 });

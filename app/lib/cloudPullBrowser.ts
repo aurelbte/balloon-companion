@@ -275,6 +275,8 @@ export function parseLogbookEntryCloudRow(value: unknown): LogbookEntryCloudRow 
     || typeof row.registration !== "string" || typeof row.departure !== "string" || typeof row.arrival !== "string"
     || !["Libre à air chaud", "Libre à gaz"].includes(String(row.category))
     || !["Pilote", "Élève"].includes(String(row.pilot_function)) || typeof row.night_flight !== "boolean"
+    || (row.regulatory_role !== null && !["PIC", "DUAL", "FI_B", "FE_B"].includes(String(row.regulatory_role)))
+    || (row.supervised_by_fi_b !== null && typeof row.supervised_by_fi_b !== "boolean")
     || !nullableNumber("maximum_altitude_m") || !nullableNumber("gps_duration_minutes")
     || typeof row.official_duration_minutes !== "number" || !Number.isInteger(row.official_duration_minutes)
     || typeof row.observations !== "string" || !OFFICIAL_FLIGHT_NATURES.includes(row.flight_nature as typeof OFFICIAL_FLIGHT_NATURES[number])
@@ -294,6 +296,8 @@ export function parseLogbookEntryCloudRow(value: unknown): LogbookEntryCloudRow 
     arrival: row.arrival,
     category: row.category as OfficialAscension["category"],
     pilotFunction: row.pilot_function as OfficialAscension["pilotFunction"],
+    regulatoryRole: row.regulatory_role as OfficialAscension["regulatoryRole"],
+    supervisedByFiB: row.supervised_by_fi_b as OfficialAscension["supervisedByFiB"],
     nightFlight: row.night_flight,
     maximumAltitudeM: row.maximum_altitude_m as number | null,
     gpsDurationMinutes: row.gps_duration_minutes as number | null,
@@ -698,7 +702,7 @@ export function createBrowserLogbookEntryPullService(input: Readonly<{
     logbookEntryDomain: {
       readPage: async (cursor, limit) => {
         let query = input.client.from("logbook_entries")
-          .select("id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner")
+          .select("id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,regulatory_role,supervised_by_fi_b,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner")
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
         const { data, error } = await query;

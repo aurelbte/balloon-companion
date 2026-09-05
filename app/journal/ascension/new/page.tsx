@@ -15,6 +15,8 @@ const EMPTY_VALUES: OfficialAscensionFormValues = {
   arrival: "",
   category: "",
   pilotFunction: "",
+  regulatoryRole: null,
+  supervisedByFiB: null,
   nightFlight: null,
   maximumAltitudeM: "",
   officialDurationMinutes: null,
