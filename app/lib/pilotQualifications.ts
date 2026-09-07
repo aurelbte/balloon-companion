@@ -10,6 +10,7 @@ export type QualificationEventType =
   | "SKILL_TEST_BPL"
   | "INITIAL_COMMERCIAL_ISSUANCE"
   | "COMMERCIAL_PROFICIENCY_CHECK"
+  | "OPERATOR_PROFICIENCY_CHECK"
   | "COMMERCIAL_REFRESHER_COURSE"
   | "FI_B_REFRESHER_TRAINING"
   | "FI_B_SUPERVISED_INSTRUCTION"
@@ -30,6 +31,7 @@ export const QUALIFICATION_EVENT_TYPES = Object.freeze([
   "SKILL_TEST_BPL",
   "INITIAL_COMMERCIAL_ISSUANCE",
   "COMMERCIAL_PROFICIENCY_CHECK",
+  "OPERATOR_PROFICIENCY_CHECK",
   "COMMERCIAL_REFRESHER_COURSE",
   "FI_B_REFRESHER_TRAINING",
   "FI_B_SUPERVISED_INSTRUCTION",
@@ -86,6 +88,8 @@ export type QualificationProfile = Readonly<{
   bplBalloonClasses: readonly BplBalloonClass[];
   hotAirBalloonGroupPrivilege: HotAirBalloonGroup | null;
   commercialOperationsEnabled: boolean;
+  commercialBalloonClasses: readonly BplBalloonClass[];
+  commercialHotAirBalloonGroupPrivilege: HotAirBalloonGroup | null;
   fiBEnabled: boolean;
   feBEnabled: boolean;
 }>;
@@ -140,6 +144,8 @@ export function createEmptyQualificationProfile(): QualificationProfile {
     bplBalloonClasses: [],
     hotAirBalloonGroupPrivilege: null,
     commercialOperationsEnabled: false,
+    commercialBalloonClasses: [],
+    commercialHotAirBalloonGroupPrivilege: null,
     fiBEnabled: false,
     feBEnabled: false,
   };
@@ -189,6 +195,12 @@ export function normalizeQualificationProfile(value: unknown): QualificationProf
     ? candidate.hotAirBalloonGroupPrivilege as HotAirBalloonGroup
     : null;
   const commercialOperationsEnabled = candidate.commercialOperationsEnabled === true;
+  const commercialBalloonClasses = Array.isArray(candidate.commercialBalloonClasses)
+    ? BPL_BALLOON_CLASSES.filter((classId) => candidate.commercialBalloonClasses!.includes(classId))
+    : [];
+  const commercialHotAirBalloonGroupPrivilege = HOT_AIR_BALLOON_GROUPS.includes(candidate.commercialHotAirBalloonGroupPrivilege as HotAirBalloonGroup)
+    ? candidate.commercialHotAirBalloonGroupPrivilege as HotAirBalloonGroup
+    : null;
   const fiBEnabled = candidate.fiBEnabled === true;
   const feBEnabled = candidate.feBEnabled === true;
   const historyCoverageStartDate = optionalDate(candidate.historyCoverageStartDate) ?? null;
@@ -223,6 +235,8 @@ export function normalizeQualificationProfile(value: unknown): QualificationProf
     bplBalloonClasses,
     hotAirBalloonGroupPrivilege,
     commercialOperationsEnabled,
+    commercialBalloonClasses,
+    commercialHotAirBalloonGroupPrivilege,
     fiBEnabled,
     feBEnabled,
   };

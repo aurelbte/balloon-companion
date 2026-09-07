@@ -40,6 +40,8 @@ test("les qualifications vides n’inventent aucun privilège", () => {
     bplBalloonClasses: [],
     hotAirBalloonGroupPrivilege: null,
     commercialOperationsEnabled: false,
+    commercialBalloonClasses: [],
+    commercialHotAirBalloonGroupPrivilege: null,
     fiBEnabled: false,
     feBEnabled: false,
   });
@@ -148,6 +150,16 @@ test("les privilèges BPL sont normalisés, dédupliqués et persistés par scop
   assert.deepEqual(loadPilotQualifications(storage).profile.bplBalloonClasses, ["GAS_BALLOON"]);
   signedIn("classes-b");
   assert.deepEqual(loadPilotQualifications(storage).profile.bplBalloonClasses, []);
+});
+
+test("les classes et le groupe commerciaux sont explicites, normalisés et sans inférence BPL", () => {
+  const legacy = normalizeQualificationProfile({ bplBalloonClasses: ["HOT_AIR_BALLOON"], hotAirBalloonGroupPrivilege: "D", commercialOperationsEnabled: true });
+  assert.deepEqual(legacy.commercialBalloonClasses, []);
+  assert.equal(legacy.commercialHotAirBalloonGroupPrivilege, null);
+  const normalized = normalizeQualificationProfile({ commercialBalloonClasses: ["GAS_BALLOON", "BAD", "HOT_AIR_BALLOON", "GAS_BALLOON"], commercialHotAirBalloonGroupPrivilege: "C" });
+  assert.deepEqual(normalized.commercialBalloonClasses, ["HOT_AIR_BALLOON", "GAS_BALLOON"]);
+  assert.equal(normalized.commercialHotAirBalloonGroupPrivilege, "C");
+  assert.equal(normalizeQualificationProfile({ commercialHotAirBalloonGroupPrivilege: "X" }).commercialHotAirBalloonGroupPrivilege, null);
 });
 
 test("le privilège de groupe hot-air accepte seulement A à D sans aucune déduction", () => {

@@ -6,7 +6,7 @@ import { createQualificationEvent } from "./pilotQualifications.ts";
 
 const hotAir = { classId: "HOT_AIR_BALLOON" };
 const gas = { classId: "GAS_BALLOON" };
-const commercialProfile = { licenceType: "BPL", commercialOperationsEnabled: true, fiBEnabled: false, feBEnabled: false };
+const commercialProfile = { licenceType: "BPL", commercialOperationsEnabled: true, commercialBalloonClasses: ["HOT_AIR_BALLOON"], commercialHotAirBalloonGroupPrivilege: "D", fiBEnabled: false, feBEnabled: false };
 let sequence = 100;
 
 function ascension(id, dateIso, category = "Libre à air chaud", pilotFunction = "Pilote", details = {}) {
@@ -201,4 +201,67 @@ test("un legacy ambigu n'altère jamais une conclusion positive explicite", () =
   const explicit = [1, 2, 3].map((id) => ascension(`explicit-${id}`, "2026-06-01"));
   const legacy = ascension("legacy", "2026-06-02", "Libre à air chaud", "Pilote", { regulatoryRole: null });
   assert.equal(calculate({ ascensions: [...explicit, legacy], ascensionHistoryComplete: false }).recency.status, "COMPLIANT");
+});
+
+test("une classe non déclarée n'est jamais inférée depuis les vols ou événements", () => {
+  const profile = { ...commercialProfile, commercialBalloonClasses: [] };
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  assert.equal(calculate({ profile, events: [issuance], ascensions: [ascension("x", "2026-06-01")] }).overallStatus, "UNKNOWN");
+});
+
+test("le maintien 24 mois est global aux deux classes commerciales déclarées", () => {
+  const profile = { ...commercialProfile, commercialBalloonClasses: ["HOT_AIR_BALLOON", "GAS_BALLOON"] };
+  const issuanceGas = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: gas });
+  const hotCheck = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: { ...hotAir, groupId: "D" }, examiner: { name: "FE" } });
+  const result = calculate({ profile, balloonClass: gas, events: [issuanceGas, hotCheck] });
+  assert.equal(result.maintenance24mStatus, "COMPLIANT");
+  assert.equal(result.recentExperience180dStatus, "ACTION_REQUIRED");
+});
+
+test("la limitation groupe prend le minimum du privilège et du meilleur crédit", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const cases = [["D", "D", "D"], ["D", "B", "B"], ["C", "D", "C"], ["B", "C", "B"]];
+  for (const [held, credit, expected] of cases) {
+    const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: { ...hotAir, groupId: credit }, examiner: { name: "FE" } });
+    const result = calculate({ profile: { ...commercialProfile, commercialHotAirBalloonGroupPrivilege: held }, events: [issuance, check] });
+    assert.equal(result.groupLimitation.exercisableGroup, expected);
+  }
+});
+
+test("un groupe de crédit inconnu laisse le maintien valide mais la limitation UNKNOWN", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: hotAir, examiner: { name: "FE" } });
+  const result = calculate({ events: [issuance, check] });
+  assert.equal(result.maintenance24mStatus, "COMPLIANT");
+  assert.equal(result.groupLimitation.status, "UNKNOWN");
+});
+
+test("le meilleur groupe est retenu même si une preuve inférieure est plus récente", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const checkD = event("COMMERCIAL_PROFICIENCY_CHECK", "2025-10-01", { balloonClass: { ...hotAir, groupId: "D" }, examiner: { name: "FE D" } });
+  const checkB = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-05-01", { balloonClass: { ...hotAir, groupId: "B" }, examiner: { name: "FE B" } });
+  const result = calculate({ events: [issuance, checkD, checkB] });
+  assert.equal(result.groupLimitation.exercisableGroup, "D");
+  assert.deepEqual(result.maintenance.sourceEventIds, [checkD.id]);
+});
+
+test("un crédit supérieur expiré ne masque pas un crédit inférieur encore valide", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const expiredD = event("COMMERCIAL_PROFICIENCY_CHECK", "2024-08-19", { balloonClass: { ...hotAir, groupId: "D" }, examiner: { name: "FE D" } });
+  const validB = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: { ...hotAir, groupId: "B" }, examiner: { name: "FE B" } });
+  const result = calculate({ events: [issuance, expiredD, validB] });
+  assert.equal(result.maintenance24mStatus, "COMPLIANT");
+  assert.equal(result.groupLimitation.exercisableGroup, "B");
+  assert.deepEqual(result.maintenance.sourceEventIds, [validB.id]);
+});
+
+test("un contrôle opérateur valide maintient 24 mois sans satisfaire la récence", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const operator = event("OPERATOR_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: { ...hotAir, groupId: "C" }, examiner: { name: "Examinateur" } });
+  const result = calculate({ events: [issuance, operator] });
+  assert.equal(result.operatorEquivalent.status, "COMPLIANT");
+  assert.equal(result.maintenance24mStatus, "COMPLIANT");
+  assert.equal(result.recentExperience180dStatus, "ACTION_REQUIRED");
+  assert.equal(result.groupLimitation.creditGroup, "C");
+  assert.equal(calculate({ events: [issuance, { ...operator, dateIso: "2024-08-19" }] }).operatorEquivalent.status, "ACTION_REQUIRED");
 });

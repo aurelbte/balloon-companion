@@ -1,6 +1,7 @@
 import type { OfficialAscension } from "./flightCompletion.ts";
 import { addCalendarMonths, type QualificationRequirementResult, type QualificationRequirementStatus } from "./bplQualificationEngine.ts";
 import type { QualificationBalloonClass, QualificationEvent, QualificationProfile } from "./pilotQualifications.ts";
+import { HOT_AIR_BALLOON_GROUPS, type HotAirBalloonGroup } from "./hotAirBalloonGroup.ts";
 
 export const COMMERCIAL_REGULATORY_RULES = Object.freeze({
   recencyDays: 180,
@@ -35,6 +36,13 @@ export type CommercialQualificationResult = Readonly<{
   proficiencyCheckStatus: QualificationRequirementStatus;
   refresherStatus: QualificationRequirementStatus;
   overallStatus: QualificationRequirementStatus;
+  groupLimitation: Readonly<{
+    status: QualificationRequirementStatus;
+    heldGroup: HotAirBalloonGroup | null;
+    creditGroup: HotAirBalloonGroup | null;
+    exercisableGroup: HotAirBalloonGroup | null;
+    sourceEventIds: readonly string[];
+  }> | null;
 }>;
 
 const DAY_MS = 86_400_000;
@@ -78,6 +86,26 @@ function latest(events: readonly QualificationEvent[]): QualificationEvent | nul
   return [...events].sort((left, right) => right.dateIso.localeCompare(left.dateIso) || right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
 }
 
+function groupRank(group: HotAirBalloonGroup): number {
+  return HOT_AIR_BALLOON_GROUPS.indexOf(group);
+}
+
+function lowerGroup(left: HotAirBalloonGroup, right: HotAirBalloonGroup): HotAirBalloonGroup {
+  return groupRank(left) <= groupRank(right) ? left : right;
+}
+
+function bestMaintenanceEvent(events: readonly QualificationEvent[], heldGroup: HotAirBalloonGroup | null): QualificationEvent | null {
+  return [...events].sort((left, right) => {
+    if (heldGroup) {
+      const leftGroup = HOT_AIR_BALLOON_GROUPS.includes(left.balloonClass?.groupId as HotAirBalloonGroup) ? left.balloonClass!.groupId as HotAirBalloonGroup : null;
+      const rightGroup = HOT_AIR_BALLOON_GROUPS.includes(right.balloonClass?.groupId as HotAirBalloonGroup) ? right.balloonClass!.groupId as HotAirBalloonGroup : null;
+      const groupDifference = (rightGroup ? groupRank(lowerGroup(heldGroup, rightGroup)) : -1) - (leftGroup ? groupRank(lowerGroup(heldGroup, leftGroup)) : -1);
+      if (groupDifference) return groupDifference;
+    }
+    return right.dateIso.localeCompare(left.dateIso) || right.updatedAt.localeCompare(left.updatedAt);
+  })[0] ?? null;
+}
+
 export function calculateCommercialQualification(input: Readonly<{
   profile: QualificationProfile;
   events: readonly QualificationEvent[];
@@ -87,20 +115,20 @@ export function calculateCommercialQualification(input: Readonly<{
   ascensionHistoryComplete: boolean;
   historyCoverageStartDate?: string | null;
 }>): CommercialQualificationResult {
-  const notApplicable: QualificationRequirementResult = { status: "NON_APPLICABLE", reason: "Les opérations commerciales sont désactivées dans le profil." };
+  const notApplicable: QualificationRequirementResult = { status: "NON_APPLICABLE", reason: "Le suivi de l’activité commerciale passagers est désactivé dans le profil." };
   if (!input.profile.commercialOperationsEnabled) {
-    return { balloonClass: input.balloonClass, initialAccess: notApplicable, recency: notApplicable, proficiencyCheckFeB: notApplicable, refresherCourse: notApplicable, operatorEquivalent: notApplicable, maintenance: notApplicable, overall: notApplicable, recentExperience180dStatus: "NON_APPLICABLE", recentPicFlights180d: 0, supervisedPicAlternativeStatus: "NON_APPLICABLE", maintenance24mStatus: "NON_APPLICABLE", proficiencyCheckStatus: "NON_APPLICABLE", refresherStatus: "NON_APPLICABLE", overallStatus: "NON_APPLICABLE" };
+    return { balloonClass: input.balloonClass, initialAccess: notApplicable, recency: notApplicable, proficiencyCheckFeB: notApplicable, refresherCourse: notApplicable, operatorEquivalent: notApplicable, maintenance: notApplicable, overall: notApplicable, recentExperience180dStatus: "NON_APPLICABLE", recentPicFlights180d: 0, supervisedPicAlternativeStatus: "NON_APPLICABLE", maintenance24mStatus: "NON_APPLICABLE", proficiencyCheckStatus: "NON_APPLICABLE", refresherStatus: "NON_APPLICABLE", overallStatus: "NON_APPLICABLE", groupLimitation: null };
   }
-  if (!input.balloonClass.classId) {
-    const unknown = { status: "UNKNOWN", reason: "Classe ballon concernée inconnue." } as const;
-    return { balloonClass: input.balloonClass, initialAccess: unknown, recency: unknown, proficiencyCheckFeB: unknown, refresherCourse: unknown, operatorEquivalent: unknown, maintenance: unknown, overall: unknown, recentExperience180dStatus: "UNKNOWN", recentPicFlights180d: 0, supervisedPicAlternativeStatus: "UNKNOWN", maintenance24mStatus: "UNKNOWN", proficiencyCheckStatus: "UNKNOWN", refresherStatus: "UNKNOWN", overallStatus: "UNKNOWN" };
+  if (!input.balloonClass.classId || !input.profile.commercialBalloonClasses?.includes(input.balloonClass.classId as "HOT_AIR_BALLOON" | "GAS_BALLOON")) {
+    const unknown = { status: "UNKNOWN", reason: "Classe détenue pour l’activité commerciale passagers non renseignée." } as const;
+    return { balloonClass: input.balloonClass, initialAccess: unknown, recency: unknown, proficiencyCheckFeB: unknown, refresherCourse: unknown, operatorEquivalent: unknown, maintenance: unknown, overall: unknown, recentExperience180dStatus: "UNKNOWN", recentPicFlights180d: 0, supervisedPicAlternativeStatus: "UNKNOWN", maintenance24mStatus: "UNKNOWN", proficiencyCheckStatus: "UNKNOWN", refresherStatus: "UNKNOWN", overallStatus: "UNKNOWN", groupLimitation: input.balloonClass.classId === "HOT_AIR_BALLOON" ? { status: "UNKNOWN", heldGroup: input.profile.commercialHotAirBalloonGroupPrivilege ?? null, creditGroup: null, exercisableGroup: null, sourceEventIds: [] } : null };
   }
 
   const issuances = input.events.filter((event) => event.type === "INITIAL_COMMERCIAL_ISSUANCE" && event.dateIso <= input.referenceDateIso && sameClass(event.balloonClass, input.balloonClass));
   const issuance = latest(issuances);
   const initialAccess: QualificationRequirementResult = issuance
-    ? { status: "COMPLIANT", reason: "Délivrance initiale professionnelle renseignée pour cette classe.", currentValue: issuance.dateIso, sourceEventIds: [issuance.id] }
-    : { status: "UNKNOWN", reason: "Délivrance initiale professionnelle non renseignée pour cette classe." };
+    ? { status: "COMPLIANT", reason: "Délivrance initiale pour l’activité commerciale passagers renseignée dans cette classe.", currentValue: issuance.dateIso, sourceEventIds: [issuance.id] }
+    : { status: "UNKNOWN", reason: "Délivrance initiale pour l’activité commerciale passagers non renseignée dans cette classe." };
 
   const startIso = subtractDays(input.referenceDateIso, COMMERCIAL_REGULATORY_RULES.recencyDays);
   const historyComplete = input.historyCoverageStartDate === undefined
@@ -128,43 +156,66 @@ export function calculateCommercialQualification(input: Readonly<{
       ? { status: "UNKNOWN", reason: "Historique récent à compléter pour couvrir toute la fenêtre de 180 jours.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 } }
       : { status: "ACTION_REQUIRED", reason: "Aucune voie de récence commerciale n’est satisfaite sur 180 jours.", currentValue: { picFlights: recentPic.length, flightsInClass: recentInClass.length }, requiredValue: { picFlights: 3, flightsInClass: 1 } };
 
-  const checks = input.events.filter((event) => event.type === "COMMERCIAL_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && sameClass(event.balloonClass, input.balloonClass));
-  const proficiencyCheckAlternative = eventResult(latest(checks), input.referenceDateIso, "Aucun contrôle de compétences professionnel avec FE(B) identifiable dans cette classe.");
+  const heldClasses = input.profile.commercialBalloonClasses ?? [];
+  const inHeldClass = (event: QualificationEvent) => Boolean(event.balloonClass && heldClasses.includes(event.balloonClass.classId as "HOT_AIR_BALLOON" | "GAS_BALLOON"));
+  const heldGroup = input.profile.commercialHotAirBalloonGroupPrivilege ?? null;
+  const checks = input.events.filter((event) => event.type === "COMMERCIAL_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && inHeldClass(event));
+  const activeChecks = checks.filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
+  const proficiencyCheckAlternative = eventResult(bestMaintenanceEvent(activeChecks, heldGroup) ?? bestMaintenanceEvent(checks, heldGroup), input.referenceDateIso, "Aucun contrôle de compétences commercial avec FE(B) identifiable.");
 
   const byId = new Map(input.events.map((event) => [event.id, event]));
   const courses = input.events.filter((course) => {
-    if (course.type !== "COMMERCIAL_REFRESHER_COURSE" || course.dateIso > input.referenceDateIso || !sameClass(course.balloonClass, input.balloonClass) || (course.theoryMinutes ?? 0) < COMMERCIAL_REGULATORY_RULES.refresherTheoryMinutes) return false;
+    if (course.type !== "COMMERCIAL_REFRESHER_COURSE" || course.dateIso > input.referenceDateIso || !inHeldClass(course) || (course.theoryMinutes ?? 0) < COMMERCIAL_REGULATORY_RULES.refresherTheoryMinutes) return false;
     const courseWindowStart = addCalendarMonths(input.referenceDateIso, -COMMERCIAL_REGULATORY_RULES.maintenanceMonths);
     return course.relatedEventIds?.some((id) => {
       const training = byId.get(id);
-      return training?.type === "TRAINING_FLIGHT_BPL" && training.dateIso >= courseWindowStart && training.dateIso <= input.referenceDateIso && training.instructor?.name.trim() && sameClass(training.balloonClass, input.balloonClass) && course.commercialQualifiedFiB === true;
+      return training?.type === "TRAINING_FLIGHT_BPL" && training.dateIso >= courseWindowStart && training.dateIso <= input.referenceDateIso && training.instructor?.name.trim() && sameClass(training.balloonClass, course.balloonClass!) && course.commercialQualifiedFiB === true;
     });
   });
-  const course = latest(courses);
+  const activeCourses = courses.filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
+  const course = bestMaintenanceEvent(activeCourses, heldGroup) ?? bestMaintenanceEvent(courses, heldGroup);
   const baseRefresherCourse = eventResult(course, input.referenceDateIso, "Aucun cours de remise à niveau commercial complet identifiable dans cette classe.");
   const trainingId = course?.relatedEventIds?.find((id) => {
       const training = byId.get(id);
-      return training?.type === "TRAINING_FLIGHT_BPL" && training.instructor?.name.trim() && sameClass(training.balloonClass, input.balloonClass);
+      return training?.type === "TRAINING_FLIGHT_BPL" && training.instructor?.name.trim() && sameClass(training.balloonClass, course.balloonClass!);
   });
   const refresherCourseAlternative = course && trainingId
     ? { ...baseRefresherCourse, sourceEventIds: [course.id, trainingId] }
     : baseRefresherCourse;
 
   const proficiencyCheckFeB = proficiencyCheckAlternative;
-  const ambiguousCourse = input.events.some((candidate) => candidate.type === "COMMERCIAL_REFRESHER_COURSE" && candidate.dateIso <= input.referenceDateIso && sameClass(candidate.balloonClass, input.balloonClass) && (candidate.theoryMinutes ?? 0) >= 360 && candidate.commercialQualifiedFiB === undefined);
+  const ambiguousCourse = input.events.some((candidate) => candidate.type === "COMMERCIAL_REFRESHER_COURSE" && candidate.dateIso <= input.referenceDateIso && inHeldClass(candidate) && (candidate.theoryMinutes ?? 0) >= 360 && candidate.commercialQualifiedFiB === undefined);
   const refresherCourse: QualificationRequirementResult = course ? refresherCourseAlternative : ambiguousCourse ? { status: "UNKNOWN", reason: "La qualification commerciale du FI(B) lié n’est pas renseignée." } : baseRefresherCourse;
-  const operatorEquivalent: QualificationRequirementResult = { status: "UNKNOWN", reason: "Crédit de contrôle opérateur réservé pour une évolution future ; aucun type d’événement n’existe actuellement." };
+  const operatorChecks = input.events.filter((event) => event.type === "OPERATOR_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && inHeldClass(event));
+  const activeOperatorChecks = operatorChecks.filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
+  const operatorEquivalent = eventResult(bestMaintenanceEvent(activeOperatorChecks, heldGroup) ?? bestMaintenanceEvent(operatorChecks, heldGroup), input.referenceDateIso, "Aucun contrôle de compétences opérateur admissible sur 24 mois.");
+  const validRoutes = [...checks, ...courses, ...operatorChecks].filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
+  const knownHotAirRoutes = validRoutes.flatMap((event) => event.balloonClass?.classId === "HOT_AIR_BALLOON" && HOT_AIR_BALLOON_GROUPS.includes(event.balloonClass.groupId as HotAirBalloonGroup) ? [{ event, group: event.balloonClass.groupId as HotAirBalloonGroup }] : []);
+  const bestHotAirRoute = heldGroup ? knownHotAirRoutes.sort((left, right) => groupRank(lowerGroup(heldGroup, right.group)) - groupRank(lowerGroup(heldGroup, left.group)))[0] : undefined;
+  const hasUnknownHotAirRoute = validRoutes.some((event) => event.balloonClass?.classId === "HOT_AIR_BALLOON" && !event.balloonClass.groupId);
+  const groupLimitation = input.balloonClass.classId === "HOT_AIR_BALLOON" ? {
+    status: (!heldGroup || (!bestHotAirRoute && hasUnknownHotAirRoute) || (!bestHotAirRoute && validRoutes.length > 0)) ? "UNKNOWN" as const : bestHotAirRoute ? "COMPLIANT" as const : "ACTION_REQUIRED" as const,
+    heldGroup,
+    creditGroup: bestHotAirRoute?.group ?? null,
+    exercisableGroup: heldGroup && bestHotAirRoute ? lowerGroup(heldGroup, bestHotAirRoute.group) : null,
+    sourceEventIds: bestHotAirRoute ? [bestHotAirRoute.event.id] : [],
+  } : null;
+  const bestGroupedMaintenance = bestHotAirRoute?.event.type === "COMMERCIAL_PROFICIENCY_CHECK" ? proficiencyCheckFeB
+    : bestHotAirRoute?.event.type === "OPERATOR_PROFICIENCY_CHECK" ? operatorEquivalent
+      : bestHotAirRoute?.event.type === "COMMERCIAL_REFRESHER_COURSE" ? refresherCourse : null;
   const maintenance: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
-    ? { status: "UNKNOWN", reason: "Accès initial professionnel à renseigner avant le maintien." }
-    : active(proficiencyCheckFeB.status) ? proficiencyCheckFeB
+    ? { status: "UNKNOWN", reason: "Accès initial à l’activité commerciale passagers à renseigner avant le maintien." }
+    : bestGroupedMaintenance && active(bestGroupedMaintenance.status) ? bestGroupedMaintenance
+      : active(proficiencyCheckFeB.status) ? proficiencyCheckFeB
+      : active(operatorEquivalent.status) ? operatorEquivalent
       : active(refresherCourse.status) ? refresherCourse
         : proficiencyCheckFeB.status === "UNKNOWN" || refresherCourse.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Preuves de maintien sur 24 mois insuffisantes." }
           : { status: "ACTION_REQUIRED", reason: "Aucune preuve de maintien sur 24 mois n’est satisfaite." };
   const overall: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
-    ? { status: "UNKNOWN", reason: "Accès initial à l’activité professionnelle non renseigné." }
+    ? { status: "UNKNOWN", reason: "Accès initial à l’activité commerciale passagers non renseigné." }
     : active(recency.status) && active(maintenance.status)
       ? { status: "COMPLIANT", reason: "Récence 180 jours et maintien 24 mois satisfaits.", sourceEventIds: [...(recency.sourceEventIds ?? []), ...(maintenance.sourceEventIds ?? [])], ...(recency.provenance ? { provenance: recency.provenance, declarationReferenceDateIso: recency.declarationReferenceDateIso } : {}) }
-      : recency.status === "UNKNOWN" || maintenance.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Données insuffisantes pour confirmer la récence et le maintien professionnel." }
+      : recency.status === "UNKNOWN" || maintenance.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Données insuffisantes pour confirmer la récence et le maintien de l’activité commerciale passagers." }
         : { status: "ACTION_REQUIRED", reason: recency.status === "ACTION_REQUIRED" ? "Récence commerciale de 180 jours non satisfaite." : "Maintien commercial de 24 mois non satisfait." };
-  return { balloonClass: input.balloonClass, initialAccess, recency, proficiencyCheckFeB, refresherCourse, operatorEquivalent, maintenance, overall, recentExperience180dStatus: recency.status, recentPicFlights180d: recentPic.length, supervisedPicAlternativeStatus: supervisedPath ? "COMPLIANT" : historyComplete ? "ACTION_REQUIRED" : "UNKNOWN", maintenance24mStatus: maintenance.status, proficiencyCheckStatus: proficiencyCheckFeB.status, refresherStatus: refresherCourse.status, overallStatus: overall.status };
+  return { balloonClass: input.balloonClass, initialAccess, recency, proficiencyCheckFeB, refresherCourse, operatorEquivalent, maintenance, overall, recentExperience180dStatus: recency.status, recentPicFlights180d: recentPic.length, supervisedPicAlternativeStatus: supervisedPath ? "COMPLIANT" : historyComplete ? "ACTION_REQUIRED" : "UNKNOWN", maintenance24mStatus: maintenance.status, proficiencyCheckStatus: proficiencyCheckFeB.status, refresherStatus: refresherCourse.status, overallStatus: overall.status, groupLimitation };
 }

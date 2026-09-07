@@ -46,7 +46,7 @@ test("le médical legacy reste clairement identifié avec classe inconnue", () =
 test("le commercial et les formations sont masqués lorsque l’activité est désactivée", () => {
   const conditions = page.match(/qualifications\.profile\.commercialOperationsEnabled && <section/g) ?? [];
   assert.equal(conditions.length, 1);
-  assert.match(page, /Activité professionnelle/);
+  assert.match(page, /Activité commerciale passagers/);
   assert.match(page, /Premiers secours \/ PSC1/);
   assert.match(page, /Formation incendie/);
 });
@@ -55,7 +55,8 @@ test("l’historique utilise les libellés aéronautiques français", () => {
   assert.equal(qualificationEventLabel("TRAINING_FLIGHT_BPL"), "Vol d’entraînement BPL");
   assert.equal(qualificationEventLabel("PROFICIENCY_CHECK_BPL"), "Contrôle de compétences BPL");
   assert.equal(qualificationEventLabel("SKILL_TEST_BPL"), "Examen pratique BPL");
-  assert.equal(qualificationEventLabel("COMMERCIAL_REFRESHER_COURSE"), "Formation / remise à niveau professionnelle");
+  assert.equal(qualificationEventLabel("COMMERCIAL_REFRESHER_COURSE"), "Formation / remise à niveau commerciale");
+  assert.equal(qualificationEventLabel("OPERATOR_PROFICIENCY_CHECK"), "Contrôle de compétences opérateur");
   assert.doesNotMatch(page, />Training flight|>Proficiency check/i);
   assert.match(page, /FI\(B\) :/);
   assert.match(page, /FE\(B\) :/);
@@ -184,7 +185,7 @@ test("la phase 7B.1 distingue délivrance, maintien normal et voie alternative",
 });
 
 test("la phase 7C expose accès initial et voies professionnelles sans cumul artificiel", () => {
-  assert.match(page, /Délivrance initiale — activité professionnelle/);
+  assert.match(page, /Délivrance initiale — activité commerciale passagers/);
   assert.match(page, /Ajouter ma délivrance/);
   assert.match(page, /Récence — 180 jours/);
   assert.match(page, /Maintien 24 mois — contrôle de compétences/);
@@ -198,6 +199,17 @@ test("la phase 7C expose accès initial et voies professionnelles sans cumul art
 test("le formulaire commercial exige la preuve explicite du FI(B) qualifié", () => {
   assert.match(page, /FI\(B\) qualifié pour l’activité commerciale/);
   assert.match(page, /recentExperience180dStatus|view\.commercial/);
+});
+
+test("le lot commercial passagers expose classes, groupe et contrôle opérateur", () => {
+  assert.match(page, /Activité commerciale passagers/);
+  assert.match(page, /commercialBalloonClasses/);
+  assert.match(page, /CLASSES COMMERCIALES DÉTENUES/);
+  assert.match(page, /Groupe hot-air commercial maximal détenu/);
+  assert.match(page, /commercialBalloonClasses\.includes\("HOT_AIR_BALLOON"\)/);
+  assert.match(page, /OPERATOR_PROFICIENCY_CHECK/);
+  assert.match(page, /Maintien 24 mois — contrôle opérateur/);
+  assert.match(page, /Groupe actuellement exerçable/);
 });
 
 test("la phase 7C.1 expose la couverture et l’action historique sans faux FE(B)", () => {
@@ -218,7 +230,7 @@ test("la phase 7C.2 permet de déclarer, modifier et supprimer la situation init
   assert.match(page, /Déclaré par le pilote/);
   assert.match(page, /onSubmit=\{onSubmit\}/);
   assert.match(page, /Supprimer la déclaration BPL/);
-  assert.match(page, /window\.confirm\("Supprimer cette déclaration initiale professionnelle/);
+  assert.match(page, /window\.confirm\("Supprimer cette déclaration initiale commerciale passagers/);
 });
 
 test("la phase 7C.3 masque À faire sans obligation et ignore une déclaration valide comme alerte", () => {

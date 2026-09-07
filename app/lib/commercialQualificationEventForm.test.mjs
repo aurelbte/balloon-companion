@@ -36,9 +36,11 @@ test("GUEST ajoute, modifie, supprime et recharge une délivrance professionnell
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
   const created = upsertCommercialQualificationEvent([], "INITIAL_COMMERCIAL_ISSUANCE", { ...emptyCommercialEventDraft(), dateIso: "2025-01-01", classId: hotAir, groupId: "A" }, undefined, options());
   assert.equal(created.ok, true);
-  const profile = { ...createEmptyQualificationProfile(), configured: true, commercialOperationsEnabled: true };
+  const profile = { ...createEmptyQualificationProfile(), configured: true, commercialOperationsEnabled: true, commercialBalloonClasses: [hotAir], commercialHotAirBalloonGroupPrivilege: "A" };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
   const reloaded = loadPilotQualifications(local);
+  assert.deepEqual(reloaded.profile.commercialBalloonClasses, [hotAir]);
+  assert.equal(reloaded.profile.commercialHotAirBalloonGroupPrivilege, "A");
   const edited = upsertCommercialQualificationEvent(reloaded.events, "INITIAL_COMMERCIAL_ISSUANCE", { ...emptyCommercialEventDraft(reloaded.events[0]), dateIso: "2025-02-01" }, reloaded.events[0].id, options());
   assert.equal(edited.ok, true); assert.equal(edited.events.length, 1);
   assert.equal(savePilotQualifications({ profile, events: edited.events }, local), true);
@@ -55,4 +57,12 @@ test("USER conserve les événements professionnels dans son scope", () => {
   const profile = { ...createEmptyQualificationProfile(), configured: true, commercialOperationsEnabled: true };
   assert.equal(savePilotQualifications({ profile, events: created.events }, local), true);
   assert.equal(loadPilotQualifications(local).events[0].examiner.name, "FE Test");
+});
+
+test("le contrôle opérateur conserve classe, groupe et examinateur", () => {
+  const result = upsertCommercialQualificationEvent([], "OPERATOR_PROFICIENCY_CHECK", { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, groupId: "C", personName: "Examinateur opérateur" }, undefined, options());
+  assert.equal(result.ok, true);
+  assert.equal(result.event.type, "OPERATOR_PROFICIENCY_CHECK");
+  assert.equal(result.event.balloonClass.groupId, "C");
+  assert.equal(result.event.examiner.name, "Examinateur opérateur");
 });
