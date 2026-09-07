@@ -70,6 +70,15 @@ test("le maintien FI(B) expose les trois exigences et leurs formulaires dédiés
   assert.match(page, /Instruction sous supervision/);
 });
 
+test("la validité FE(B) expose certificat, refresher et acte supervisé", () => {
+  assert.equal(qualificationEventLabel("FE_B_CERTIFICATE"), "Certificat FE(B)");
+  assert.equal(qualificationEventLabel("FE_B_REFRESHER_COURSE"), "Remise à niveau examinateur FE(B)");
+  assert.equal(qualificationEventLabel("FE_B_SUPERVISED_ASSESSMENT"), "Acte FE(B) sous supervision");
+  assert.match(page, /Validité FE\(B\)/);
+  assert.match(page, /renouvellement requis/);
+  assert.match(page, /Type d’acte/);
+});
+
 test("une ascension liée supprimée est signalée sans masquer l’événement", () => {
   assert.match(page, /officialAscensionDeletedAt/);
   assert.match(page, /Ascension liée supprimée — preuve réglementaire conservée/);

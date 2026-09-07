@@ -1,0 +1,6 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { emptyFeBEventDraft, suggestedFeBCertificateExpiry, upsertFeBQualificationEvent } from "./feBQualificationEventForm.ts";
+const options = { uuid: () => "123e4567-e89b-42d3-a456-426614174000", now: () => new Date("2026-09-07T00:00:00Z") };
+test("le certificat conserve l'expiration explicitement confirmée", () => { assert.equal(suggestedFeBCertificateExpiry("2022-01-31"), "2027-01-31"); const result = upsertFeBQualificationEvent([], "FE_B_CERTIFICATE", { ...emptyFeBEventDraft(), dateIso: "2022-01-01", expiryDateIso: "2026-12-17" }, undefined, options); assert.equal(result.ok && result.event.expiryDateIso, "2026-12-17"); });
+test("l'acte supervisé exige nature et superviseur", () => { const draft = { ...emptyFeBEventDraft(), dateIso: "2026-01-01" }; assert.equal(upsertFeBQualificationEvent([], "FE_B_SUPERVISED_ASSESSMENT", draft, undefined, options).ok, false); const result = upsertFeBQualificationEvent([], "FE_B_SUPERVISED_ASSESSMENT", { ...draft, assessmentKind: "PROFICIENCY_CHECK", examinerName: "Inspecteur" }, undefined, options); assert.equal(result.ok && result.event.assessmentKind, "PROFICIENCY_CHECK"); });

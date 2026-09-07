@@ -14,6 +14,9 @@ export type QualificationEventType =
   | "FI_B_REFRESHER_TRAINING"
   | "FI_B_SUPERVISED_INSTRUCTION"
   | "FI_B_ASSESSMENT_OF_COMPETENCE"
+  | "FE_B_CERTIFICATE"
+  | "FE_B_REFRESHER_COURSE"
+  | "FE_B_SUPERVISED_ASSESSMENT"
   | "MEDICAL"
   | "FIRST_AID"
   | "FIRE_TRAINING"
@@ -31,6 +34,9 @@ export const QUALIFICATION_EVENT_TYPES = Object.freeze([
   "FI_B_REFRESHER_TRAINING",
   "FI_B_SUPERVISED_INSTRUCTION",
   "FI_B_ASSESSMENT_OF_COMPETENCE",
+  "FE_B_CERTIFICATE",
+  "FE_B_REFRESHER_COURSE",
+  "FE_B_SUPERVISED_ASSESSMENT",
   "MEDICAL",
   "FIRST_AID",
   "FIRE_TRAINING",
@@ -58,6 +64,7 @@ export const BPL_BALLOON_CLASSES = Object.freeze([
 ] as const satisfies readonly BplBalloonClass[]);
 
 export type QualificationMedicalClass = "LAPL" | "CLASS_2" | (string & {});
+export type FeBAssessmentKind = "SKILL_TEST" | "PROFICIENCY_CHECK" | "ASSESSMENT_OF_COMPETENCE";
 
 export type DeclaredBplInitialSituation = Readonly<{
   referenceDateIso: string | null;
@@ -95,6 +102,7 @@ export type QualificationEvent = Readonly<{
   balloonClass?: QualificationBalloonClass;
   instructor?: QualificationPersonSnapshot;
   examiner?: QualificationPersonSnapshot;
+  assessmentKind?: FeBAssessmentKind;
   theoryMinutes?: number;
   relatedEventIds?: readonly string[];
   medicalClass?: QualificationMedicalClass;
@@ -239,6 +247,9 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
   const eventBalloonClass = balloonClass(candidate.balloonClass);
   const instructor = person(candidate.instructor);
   const examiner = person(candidate.examiner);
+  const assessmentKind = ["SKILL_TEST", "PROFICIENCY_CHECK", "ASSESSMENT_OF_COMPETENCE"].includes(String(candidate.assessmentKind))
+    ? candidate.assessmentKind as FeBAssessmentKind
+    : undefined;
   const theoryMinutes = typeof candidate.theoryMinutes === "number" && Number.isInteger(candidate.theoryMinutes) && candidate.theoryMinutes >= 0
     ? candidate.theoryMinutes
     : undefined;
@@ -260,6 +271,7 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
     ...(eventBalloonClass ? { balloonClass: eventBalloonClass } : {}),
     ...(instructor ? { instructor } : {}),
     ...(examiner ? { examiner } : {}),
+    ...(assessmentKind ? { assessmentKind } : {}),
     ...(theoryMinutes !== undefined ? { theoryMinutes } : {}),
     ...(relatedEventIds.length ? { relatedEventIds } : {}),
     ...(medicalClass ? { medicalClass } : {}),

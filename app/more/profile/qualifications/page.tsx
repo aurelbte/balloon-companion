@@ -12,6 +12,8 @@ import { emptyCommercialEventDraft, upsertCommercialQualificationEvent, type Com
 import { calculateMedicalQualification, calculateProfessionalTrainingStatus } from "../../../lib/medicalTrainingQualificationEngine";
 import { evaluateFiBRecency } from "../../../lib/fiBQualificationEngine";
 import { emptyFiBEventDraft, upsertFiBQualificationEvent, type EditableFiBEventType, type FiBEventDraft } from "../../../lib/fiBQualificationEventForm";
+import { evaluateFeBValidity } from "../../../lib/feBQualificationEngine";
+import { emptyFeBEventDraft, suggestedFeBCertificateExpiry, upsertFeBQualificationEvent, type EditableFeBEventType, type FeBEventDraft } from "../../../lib/feBQualificationEventForm";
 import { emptyQualificationEventDraft, removeQualificationEvent, upsertQualificationEvent, type EditableQualificationEventType, type QualificationEventDraft } from "../../../lib/qualificationEventForm";
 import { bplEventCredits } from "../../../lib/qualificationEventCredits";
 import { formatQualificationDate, mostRestrictiveQualificationResult, qualificationClassLabel, qualificationEventLabel, qualificationStatusLabel } from "../../../lib/qualificationPresentation";
@@ -186,6 +188,18 @@ function FiBEventForm({ type, draft, editing, ascensions, error, onChange, onCan
   return <form className={styles.eventForm} onSubmit={onSubmit}><div className={styles.eventFormHeader}><h2>{editing ? "Modifier" : "Ajouter"} — {FI_B_EVENT_LABELS[type]}</h2><button type="button" onClick={onCancel}>Fermer</button></div><label><span>Date</span><input required type="date" value={draft.dateIso} onChange={(event) => onChange({ ...draft, dateIso: event.target.value })} /></label>{!refresher && <><label><span>Ascension liée (facultative)</span><select value={draft.officialAscensionId} onChange={(event) => onChange({ ...draft, officialAscensionId: event.target.value })}><option value="">Aucune</option>{ascensions.map((ascension) => <option key={ascension.id} value={ascension.id}>{formatQualificationDate(ascension.dateIso)} · {ascension.registration}</option>)}</select></label><label><span>Classe ballon (facultative)</span><select value={draft.classId} onChange={(event) => onChange({ ...draft, classId: event.target.value })}><option value="">Non renseignée</option><option value="HOT_AIR_BALLOON">Ballon libre à air chaud</option><option value="GAS_BALLOON">Ballon libre à gaz</option></select></label><label><span>{type === "FI_B_ASSESSMENT_OF_COMPETENCE" ? "Examinateur" : "Instructeur superviseur"} (facultatif)</span><input value={draft.personName} onChange={(event) => onChange({ ...draft, personName: event.target.value })} /></label></>}<label className={styles.eventFormWide}><span>Notes (facultatif)</span><textarea value={draft.notes} onChange={(event) => onChange({ ...draft, notes: event.target.value })} /></label>{error && <p className={styles.formError} role="alert">{error}</p>}<button className={`${styles.save} ${styles.eventFormWide}`} type="submit">Enregistrer</button>{editing && onDelete && <button className={`${styles.deleteAction} ${styles.eventFormWide}`} type="button" onClick={onDelete}>Supprimer cette donnée</button>}</form>;
 }
 
+const FE_B_EVENT_LABELS: Record<EditableFeBEventType, string> = { FE_B_CERTIFICATE: "Certificat FE(B)", FE_B_REFRESHER_COURSE: "Remise à niveau examinateur", FE_B_SUPERVISED_ASSESSMENT: "Acte sous supervision" };
+function FeBEventForm({ type, draft, editing, ascensions, error, onChange, onCancel, onDelete, onSubmit }: { type: EditableFeBEventType; draft: FeBEventDraft; editing: boolean; ascensions: PilotQualificationsPageState["completion"]["officialAscensions"]; error: string; onChange: (draft: FeBEventDraft) => void; onCancel: () => void; onDelete?: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  const certificate = type === "FE_B_CERTIFICATE", assessment = type === "FE_B_SUPERVISED_ASSESSMENT";
+  return <form className={styles.eventForm} onSubmit={onSubmit}>
+    <div className={styles.eventFormHeader}><h2>{editing ? "Modifier" : "Ajouter"} — {FE_B_EVENT_LABELS[type]}</h2><button type="button" onClick={onCancel}>Fermer</button></div>
+    <label><span>{certificate ? "Date de délivrance" : "Date"}</span><input required type="date" value={draft.dateIso} onChange={(event) => { const dateIso = event.target.value; onChange({ ...draft, dateIso, ...(certificate && !draft.expiryDateIso ? { expiryDateIso: suggestedFeBCertificateExpiry(dateIso) } : {}) }); }} /></label>
+    {certificate && <label><span>Date réelle d’expiration</span><input required type="date" min={draft.dateIso || undefined} value={draft.expiryDateIso} onChange={(event) => onChange({ ...draft, expiryDateIso: event.target.value })} /></label>}
+    {assessment && <><label><span>Type d’acte</span><select required value={draft.assessmentKind} onChange={(event) => onChange({ ...draft, assessmentKind: event.target.value as FeBEventDraft["assessmentKind"] })}><option value="">Choisir</option><option value="SKILL_TEST">Examen pratique</option><option value="PROFICIENCY_CHECK">Contrôle de compétences</option><option value="ASSESSMENT_OF_COMPETENCE">Évaluation de compétences</option></select></label><label><span>Inspecteur / examinateur superviseur</span><input required value={draft.examinerName} onChange={(event) => onChange({ ...draft, examinerName: event.target.value })} /></label><label><span>Ascension liée (facultative)</span><select value={draft.officialAscensionId} onChange={(event) => onChange({ ...draft, officialAscensionId: event.target.value })}><option value="">Aucune</option>{ascensions.map((ascension) => <option key={ascension.id} value={ascension.id}>{formatQualificationDate(ascension.dateIso)} · {ascension.registration}</option>)}</select></label><label><span>Classe ballon (facultative)</span><select value={draft.classId} onChange={(event) => onChange({ ...draft, classId: event.target.value })}><option value="">Non renseignée</option><option value="HOT_AIR_BALLOON">Ballon libre à air chaud</option><option value="GAS_BALLOON">Ballon libre à gaz</option></select></label></>}
+    <label className={styles.eventFormWide}><span>Notes (facultatif)</span><textarea value={draft.notes} onChange={(event) => onChange({ ...draft, notes: event.target.value })} /></label>{error && <p className={styles.formError} role="alert">{error}</p>}<button className={`${styles.save} ${styles.eventFormWide}`} type="submit">Enregistrer</button>{editing && onDelete && <button className={`${styles.deleteAction} ${styles.eventFormWide}`} type="button" onClick={onDelete}>Supprimer cette donnée</button>}
+  </form>;
+}
+
 function eventClassKeys(events: readonly QualificationEvent[], ascensions: PilotQualificationsPageState["completion"]["officialAscensions"], profile: QualificationProfile): QualificationBalloonClass[] {
   const values = [
     ...events.flatMap(({ balloonClass }) => balloonClass ? [balloonClass] : []),
@@ -229,6 +243,10 @@ export default function QualificationsPage() {
   const [fiBDraft, setFiBDraft] = useState<FiBEventDraft>(() => emptyFiBEventDraft());
   const [fiBEditedEventId, setFiBEditedEventId] = useState<string | undefined>();
   const [fiBError, setFiBError] = useState("");
+  const [feBEditor, setFeBEditor] = useState<EditableFeBEventType | null>(null);
+  const [feBDraft, setFeBDraft] = useState<FeBEventDraft>(() => emptyFeBEventDraft());
+  const [feBEditedEventId, setFeBEditedEventId] = useState<string | undefined>();
+  const [feBError, setFeBError] = useState("");
   const lastSubmittedProfile = useRef<string | null>(null);
   const eventEditorAnchor = useRef<HTMLDivElement | null>(null);
   const referenceDateIso = localIsoDate();
@@ -243,10 +261,10 @@ export default function QualificationsPage() {
   }, []);
 
   useEffect(() => {
-    if (!eventEditor && !bplEditor && !issuanceEditorOpen && !commercialEditor && !fiBEditor) return;
+    if (!eventEditor && !bplEditor && !issuanceEditorOpen && !commercialEditor && !fiBEditor && !feBEditor) return;
     const frame = window.requestAnimationFrame(() => eventEditorAnchor.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
     return () => window.cancelAnimationFrame(frame);
-  }, [eventEditor, bplEditor, issuanceEditorOpen, commercialEditor, fiBEditor]);
+  }, [eventEditor, bplEditor, issuanceEditorOpen, commercialEditor, fiBEditor, feBEditor]);
 
   const view = useMemo(() => {
     if (!qualifications || !qualifications.profile.configured) return null;
@@ -259,7 +277,8 @@ export default function QualificationsPage() {
       : [];
     const credits = bplEventCredits(qualifications.events).filter(({ creditedFrom }) => creditedFrom === "COMMERCIAL_PROFICIENCY_CHECK" || creditedFrom === "COMMERCIAL_REFRESHER_COURSE");
     const fiB = evaluateFiBRecency({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso, historyCoverageStartDate: qualifications.profile.historyCoverageStartDate });
-    return { bpl, bplPrivileges, medical, commercialClasses, commercial, credits, fiB };
+    const feB = evaluateFeBValidity({ profile: qualifications.profile, events: qualifications.events, ascensions: completion.officialAscensions, referenceDateIso });
+    return { bpl, bplPrivileges, medical, commercialClasses, commercial, credits, fiB, feB };
   }, [completion, qualifications, referenceDateIso]);
 
   if (!qualifications || !settings) return null;
@@ -311,6 +330,9 @@ export default function QualificationsPage() {
   const openFiBEditor = (type: EditableFiBEventType, existing?: QualificationEvent) => { setFiBEditor(type); setFiBEditedEventId(existing?.id); setFiBDraft(emptyFiBEventDraft(existing)); setFiBError(""); setEventEditor(null); setBplEditor(null); setCommercialEditor(null); };
 
   const submitFiBEvent = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!fiBEditor) return; const result = upsertFiBQualificationEvent(qualifications.events, fiBEditor, fiBDraft, fiBEditedEventId); if (!result.ok) { setFiBError(result.error); return; } if (!savePilotQualifications({ profile: qualifications.profile, events: result.events }, window.localStorage)) { setFiBError("Enregistrement local impossible."); return; } setQualifications({ ...qualifications, events: result.events }); setFiBEditor(null); };
+
+  const openFeBEditor = (type: EditableFeBEventType, existing?: QualificationEvent) => { setFeBEditor(type); setFeBEditedEventId(existing?.id); setFeBDraft(emptyFeBEventDraft(existing)); setFeBError(""); setEventEditor(null); setBplEditor(null); setCommercialEditor(null); setFiBEditor(null); };
+  const submitFeBEvent = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!feBEditor) return; const result = upsertFeBQualificationEvent(qualifications.events, feBEditor, feBDraft, feBEditedEventId); if (!result.ok) { setFeBError(result.error); return; } if (!savePilotQualifications({ profile: qualifications.profile, events: result.events }, window.localStorage)) { setFeBError("Enregistrement local impossible."); return; } setQualifications({ ...qualifications, events: result.events }); setFeBEditor(null); };
 
   const submitEvent = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -372,6 +394,7 @@ export default function QualificationsPage() {
     setIssuanceEditorOpen(false);
     setCommercialEditor(null);
     setFiBEditor(null);
+    setFeBEditor(null);
   };
 
   const submitSettings = (event: FormEvent<HTMLFormElement>) => {
@@ -484,6 +507,11 @@ export default function QualificationsPage() {
       {(["FI_B_REFRESHER_TRAINING", "FI_B_SUPERVISED_INSTRUCTION"] as const).map((type) => { const result = type === "FI_B_REFRESHER_TRAINING" ? view.fiB.refresherRequirementStatus : view.fiB.supervisedInstructionRequirementStatus; const existing = qualifications.events.filter((event) => event.type === type).sort((a, b) => b.dateIso.localeCompare(a.dateIso))[0]; return <CompactRequirement key={type} title={type === "FI_B_REFRESHER_TRAINING" ? "Remise à niveau instructeur" : "Instruction sous supervision"} result={result}><p>{typeof result.currentValue === "string" ? formatQualificationDate(result.currentValue) : "Manquante"} — {type === "FI_B_REFRESHER_TRAINING" ? "3 ans" : "9 ans"}</p><button className={styles.inlineAction} type="button" onClick={() => openFiBEditor(type, existing)}>{existing ? "Modifier" : "Ajouter"}</button></CompactRequirement>; })}
       <button className={styles.inlineAction} type="button" onClick={() => openFiBEditor("FI_B_ASSESSMENT_OF_COMPETENCE")}>Ajouter une évaluation de compétences</button>
       {fiBEditor && <div ref={eventEditorAnchor}><FiBEventForm type={fiBEditor} draft={fiBDraft} editing={Boolean(fiBEditedEventId)} ascensions={completion.officialAscensions} error={fiBError} onChange={setFiBDraft} onCancel={() => setFiBEditor(null)} onDelete={fiBEditedEventId ? () => deleteEvent(fiBEditedEventId) : undefined} onSubmit={submitFiBEvent} /></div>}
+    </section>}
+
+    {qualifications.profile.feBEnabled && <section className={styles.section} aria-labelledby="fe-b-title"><div className={styles.sectionHeader}><h2 id="fe-b-title">Validité FE(B)</h2><StatusBadge status={view.feB.status === "VALID" ? "COMPLIANT" : view.feB.status === "UNKNOWN" ? "UNKNOWN" : "ACTION_REQUIRED"} /></div>
+      {(["FE_B_CERTIFICATE", "FE_B_REFRESHER_COURSE", "FE_B_SUPERVISED_ASSESSMENT"] as const).map((type) => { const id = type === "FE_B_CERTIFICATE" ? view.feB.certificateEventId : type === "FE_B_REFRESHER_COURSE" ? view.feB.refresherEventId : view.feB.supervisedAssessmentEventId; const existing = id ? qualifications.events.find((event) => event.id === id) : qualifications.events.filter((event) => event.type === type).sort((a, b) => b.dateIso.localeCompare(a.dateIso))[0]; const rawStatus = type === "FE_B_CERTIFICATE" ? view.feB.certificateStatus : type === "FE_B_REFRESHER_COURSE" ? view.feB.refresherStatus : view.feB.supervisedAssessmentStatus; const result: QualificationRequirementResult = { status: rawStatus === "EXPIRED" ? "ACTION_REQUIRED" : rawStatus, reason: type === "FE_B_CERTIFICATE" ? view.feB.renewalRequired ? "Certificat expiré : renouvellement requis selon BFCL.445." : view.feB.expiryDateIso ? "Certificat administrativement valide." : "Données du certificat insuffisantes." : rawStatus === "COMPLIANT" ? "Preuve admissible pour le certificat courant." : rawStatus === "UNKNOWN" ? "Preuve incomplète." : "Preuve manquante pour le certificat courant." }; const text = type === "FE_B_CERTIFICATE" ? view.feB.expiryDateIso ? view.feB.renewalRequired ? `Expiré le ${formatQualificationDate(view.feB.expiryDateIso)} — renouvellement requis` : `Valable jusqu’au ${formatQualificationDate(view.feB.expiryDateIso)}` : "Données insuffisantes" : type === "FE_B_REFRESHER_COURSE" ? view.feB.refresherDateIso ? formatQualificationDate(view.feB.refresherDateIso) : "Manquante" : view.feB.supervisedAssessmentDateIso ? `${view.feB.assessmentKind === "SKILL_TEST" ? "Skill test" : view.feB.assessmentKind === "PROFICIENCY_CHECK" ? "Proficiency check" : "Assessment of competence"} · ${formatQualificationDate(view.feB.supervisedAssessmentDateIso)}` : "Manquant"; return <CompactRequirement key={type} title={FE_B_EVENT_LABELS[type]} result={result}><p>{text}</p><button className={styles.inlineAction} type="button" onClick={() => openFeBEditor(type, existing)}>{existing ? "Modifier" : "Ajouter"}</button></CompactRequirement>; })}
+      {feBEditor && <div ref={eventEditorAnchor}><FeBEventForm type={feBEditor} draft={feBDraft} editing={Boolean(feBEditedEventId)} ascensions={completion.officialAscensions} error={feBError} onChange={setFeBDraft} onCancel={() => setFeBEditor(null)} onDelete={feBEditedEventId ? () => deleteEvent(feBEditedEventId) : undefined} onSubmit={submitFeBEvent} /></div>}
     </section>}
 
     <section className={styles.section} aria-labelledby="medical-title"><div className={styles.sectionHeader}><h2 id="medical-title">Médical</h2><StatusBadge status={view.medical.overall.status} /></div>
