@@ -17,10 +17,11 @@ test("délivrance, contrôle et remise à niveau restent trois événements dist
   const training = createQualificationEvent({ type: "TRAINING_FLIGHT_BPL", dateIso: "2026-01-02", source: "MANUAL", balloonClass: { classId: hotAir, groupId: "B" }, instructor: { name: "FI Test" } }, options());
   result = upsertCommercialQualificationEvent([...result.events, training], "COMMERCIAL_PROFICIENCY_CHECK", { ...emptyCommercialEventDraft(), dateIso: "2026-02-01", classId: hotAir, groupId: "B", personName: "FE Test" }, undefined, options());
   assert.equal(result.ok, true);
-  result = upsertCommercialQualificationEvent(result.events, "COMMERCIAL_REFRESHER_COURSE", { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, groupId: "B", theoryMinutes: "360", trainingEventId: training.id }, undefined, options());
+  result = upsertCommercialQualificationEvent(result.events, "COMMERCIAL_REFRESHER_COURSE", { ...emptyCommercialEventDraft(), dateIso: "2026-03-01", classId: hotAir, groupId: "B", theoryMinutes: "360", trainingEventId: training.id, commercialQualifiedFiB: true }, undefined, options());
   assert.equal(result.ok, true);
   assert.deepEqual(result.events.map(({ type }) => type), ["INITIAL_COMMERCIAL_ISSUANCE", "TRAINING_FLIGHT_BPL", "COMMERCIAL_PROFICIENCY_CHECK", "COMMERCIAL_REFRESHER_COURSE"]);
   assert.equal(result.event.balloonClass.groupId, "B");
+  assert.equal(result.event.commercialQualifiedFiB, true);
 });
 
 test("la remise à niveau refuse un vol FI(B) absent ou d’une autre classe", () => {

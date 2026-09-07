@@ -187,12 +187,17 @@ test("la phase 7C expose accès initial et voies professionnelles sans cumul art
   assert.match(page, /Délivrance initiale — activité professionnelle/);
   assert.match(page, /Ajouter ma délivrance/);
   assert.match(page, /Récence — 180 jours/);
-  assert.match(page, /Voie alternative — contrôle de compétences/);
-  assert.match(page, /Voie alternative — formation \/ remise à niveau/);
-  assert.match(page, /proficiencyCheckFeB\.status !== "NON_APPLICABLE"/);
-  assert.match(page, /refresherCourse\.status !== "NON_APPLICABLE"/);
+  assert.match(page, /Maintien 24 mois — contrôle de compétences/);
+  assert.match(page, /Maintien 24 mois — formation \/ remise à niveau/);
+  assert.match(page, /result=\{commercial\.proficiencyCheckFeB\}/);
+  assert.match(page, /result=\{commercial\.refresherCourse\}/);
   assert.match(page, /function CommercialEventForm/);
   assert.match(page, /upsertCommercialQualificationEvent/);
+});
+
+test("le formulaire commercial exige la preuve explicite du FI(B) qualifié", () => {
+  assert.match(page, /FI\(B\) qualifié pour l’activité commerciale/);
+  assert.match(page, /recentExperience180dStatus|view\.commercial/);
 });
 
 test("la phase 7C.1 expose la couverture et l’action historique sans faux FE(B)", () => {

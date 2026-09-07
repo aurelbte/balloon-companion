@@ -103,6 +103,7 @@ export type QualificationEvent = Readonly<{
   instructor?: QualificationPersonSnapshot;
   examiner?: QualificationPersonSnapshot;
   assessmentKind?: FeBAssessmentKind;
+  commercialQualifiedFiB?: boolean;
   theoryMinutes?: number;
   relatedEventIds?: readonly string[];
   medicalClass?: QualificationMedicalClass;
@@ -250,6 +251,7 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
   const assessmentKind = ["SKILL_TEST", "PROFICIENCY_CHECK", "ASSESSMENT_OF_COMPETENCE"].includes(String(candidate.assessmentKind))
     ? candidate.assessmentKind as FeBAssessmentKind
     : undefined;
+  const commercialQualifiedFiB = typeof candidate.commercialQualifiedFiB === "boolean" ? candidate.commercialQualifiedFiB : undefined;
   const theoryMinutes = typeof candidate.theoryMinutes === "number" && Number.isInteger(candidate.theoryMinutes) && candidate.theoryMinutes >= 0
     ? candidate.theoryMinutes
     : undefined;
@@ -272,6 +274,7 @@ export function normalizeQualificationEvent(value: unknown): QualificationEvent 
     ...(instructor ? { instructor } : {}),
     ...(examiner ? { examiner } : {}),
     ...(assessmentKind ? { assessmentKind } : {}),
+    ...(commercialQualifiedFiB !== undefined ? { commercialQualifiedFiB } : {}),
     ...(theoryMinutes !== undefined ? { theoryMinutes } : {}),
     ...(relatedEventIds.length ? { relatedEventIds } : {}),
     ...(medicalClass ? { medicalClass } : {}),
