@@ -215,7 +215,6 @@ import { getTrajectoryAnalysisRequest } from "./trajectory/projectionStorage.ts"
 import { loadWeatherAnalysis, loadExportedPlannedTrajectories, resumeExactOfflineAnalysis } from "./trajectory/weatherAnalysisStorage.ts";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { DEFAULT_ALTITUDE_OPTIONS } from "./trajectory/integration.ts";
 
 function storedPreparationSession(t) {
   const data = new Map();
@@ -248,17 +247,17 @@ test("nouvelle session : aucun ancien modèle, échéance, altitude, profil ou e
   assert.deepEqual([...data.entries()], before);
 });
 
-test("nouvelle session : le formulaire garde ses valeurs par défaut existantes", (t) => {
+test("nouvelle session : le formulaire démarre sans modèle ni altitude", (t) => {
   storedPreparationSession(t);
   startNewPreparationSession();
   assert.equal(loadPreparationDraft(), null);
   const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
   const formFunction = source.slice(source.indexOf("function initialForm()"), source.indexOf("function parseNumber("));
   const js = ts.transpileModule(formFunction, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const initialForm = new Function("DEFAULT_ALTITUDE_OPTIONS", `${js}; return initialForm;`)(DEFAULT_ALTITUDE_OPTIONS);
+  const initialForm = new Function(`${js}; return initialForm;`)();
   assert.deepEqual(initialForm(), {
     launchSite: null, launchSearch: "", date: "", time: "", durationMinutes: "", targetAltitudeAmslM: "",
-    selectedAltitudes: [...DEFAULT_ALTITUDE_OPTIONS], weatherModel: "arome_seamless",
+    selectedAltitudes: [], weatherModel: "",
     ascentRateMps: 0, descentRateMps: 0, balloonName: "", occupantsWeightKg: "",
   });
 });
@@ -315,4 +314,25 @@ test("reprise offline dans la même préparation : choix explicites de la carte 
   savePreparationDraft(input.preparation);
   saveTrajectoryAnalysisRequest(input.request);
   assert.equal(resumeExactOfflineAnalysis(input.request, ["arome"], [300]), null);
+});
+
+test("préparation sans présélection : les choix explicites sur la carte donnent une analyse valide", () => {
+  const input = fixture();
+  input.preparation.weatherModel = "";
+  input.preparation.selectedAltitudes = [];
+  input.request.weatherModel = "";
+  input.request.altitudesAmslM = [];
+  assert.deepEqual(validateFlightWeather(input).snapshot, input.snapshot);
+  assert.deepEqual(validateFlightWeather({ ...input, analysis: null }).trajectories, []);
+});
+
+test("ouvrir l'analyse reste possible avec les sélections météo vides", async () => {
+  const integration = await import("./trajectory/integration.ts");
+  const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
+  const body = source.slice(source.indexOf("  const buildRequest ="), source.indexOf("  const submitProjection ="));
+  const js = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const form = { launchSite: { name: "Terrain", latitude: 50, longitude: 3 }, date: "2026-09-13", time: "06:00", durationMinutes: "60", targetAltitudeAmslM: "", ascentRateMps: 0, descentRateMps: 0, weatherModel: "", selectedAltitudes: [] };
+  const request = new Function("form", "setError", "combineLocalDateAndTime", "parseNumber", "optionalVerticalRate", "durationMinutesToSeconds", `${js}; return buildRequest();`)(form, message => assert.fail(message), integration.combineLocalDateAndTime, value => value.trim() ? Number(value) : null, integration.optionalVerticalRate, integration.durationMinutesToSeconds);
+  assert.equal(request.weatherModel, "");
+  assert.deepEqual(request.altitudesAmslM, []);
 });

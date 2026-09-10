@@ -42,10 +42,15 @@ export function validateFlightWeather(input: {
         : null
       : input.request;
     if (!request || !analysis || !Number.isFinite(now)) return unavailable();
-    const model = weatherModelByProviderId(request.weatherModel);
+    // New preparations defer both selections to the analysis map.
+    const selectionsDeferred = request.weatherModel === "" && request.altitudesAmslM.length === 0 &&
+      input.request?.weatherModel === "" && input.request.altitudesAmslM.length === 0;
+    const model = selectionsDeferred
+      ? WEATHER_MODEL_REGISTRY.find(({ id }) => id === analysis.selectedModelIds[0])
+      : weatherModelByProviderId(request.weatherModel);
     const requestedAltitudes = normalizeAltitudeOptions(request.altitudesAmslM);
     const selectedAltitudes = normalizeAltitudeOptions(analysis.selectedAltitudes);
-    if (!model?.supported || !requestedAltitudes.length || !selectedAltitudes.length || !analysis.selectedModelIds.length ||
+    if (!model?.supported || (!selectionsDeferred && !requestedAltitudes.length) || !selectedAltitudes.length || !analysis.selectedModelIds.length ||
         analysis.selectedModelIds.some((id) => !WEATHER_MODEL_REGISTRY.some((candidate) => candidate.id === id && candidate.supported))) return unavailable();
     if (preparation && input.request) {
       // A new draft invalidates an older submitted request. Once submitted,

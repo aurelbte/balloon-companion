@@ -27,7 +27,6 @@ import {
 } from "../lib/preparationDraftStorage";
 import {
   combineLocalDateAndTime,
-  DEFAULT_ALTITUDE_OPTIONS,
   durationMinutesToSeconds,
   optionalVerticalRate,
   WEATHER_MODEL_REGISTRY,
@@ -73,8 +72,8 @@ function initialForm(): TrajectoryFormState {
     time: "",
     durationMinutes: "",
     targetAltitudeAmslM: "",
-    selectedAltitudes: [...DEFAULT_ALTITUDE_OPTIONS],
-    weatherModel: "arome_seamless",
+    selectedAltitudes: [],
+    weatherModel: "",
     ascentRateMps: 0,
     descentRateMps: 0,
     balloonName: "",
@@ -208,16 +207,14 @@ export default function PreparePage() {
               ? ""
               : String(stored.targetAltitudeAmslM),
           selectedAltitudes:
-            stored.selectedAltitudes?.length
-              ? stored.selectedAltitudes
-              : [...DEFAULT_ALTITUDE_OPTIONS],
+            stored.selectedAltitudes ?? [],
           weatherModel: WEATHER_MODEL_REGISTRY.some(
             (model) =>
               model.providerModelId === stored.weatherModel &&
               model.supported,
           )
             ? stored.weatherModel
-            : "arome_seamless",
+            : "",
           ascentRateMps: clampVerticalRateMps(stored.ascentRateMps ?? 0),
           descentRateMps: -clampVerticalRateMps(Math.abs(stored.descentRateMps ?? 0)),
           balloonName: stored.balloonName ?? "",
@@ -371,10 +368,6 @@ export default function PreparePage() {
     }
     if (durationMinutes === null || durationMinutes <= 0) {
       setError("La durée doit être strictement positive.");
-      return null;
-    }
-    if (form.selectedAltitudes.length === 0) {
-      setError("Sélectionnez au moins une altitude.");
       return null;
     }
     const numericAltitudes = form.selectedAltitudes.filter(
