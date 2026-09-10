@@ -1,6 +1,9 @@
 /* Generated configuration contains only build artifacts, never session responses. */
 const FLIGHT_OFFLINE = __FLIGHT_OFFLINE_MANIFEST__;
-const CACHE_PREFIX = "balloon-flight-shell-";
+// Separate namespaces during migration: the existing /flight worker may still
+// control an open flight. Neither registration may delete the other's build.
+const CACHE_PREFIX = new URL(self.registration.scope).pathname === "/"
+  ? "balloon-flight-entry-root-" : "balloon-flight-entry-legacy-";
 const CACHE_NAME = CACHE_PREFIX + FLIGHT_OFFLINE.version;
 const allowedAssets = new Set(FLIGHT_OFFLINE.assets.map(({ url }) => url));
 
@@ -49,6 +52,20 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   // Next RSC/prefetch payloads are not HTML documents and are never cached here.
   if (request.headers.has("RSC") || url.searchParams.has("_rsc")) return;
+  if (request.mode === "navigate" && url.pathname === "/") {
+    event.respondWith((async () => {
+      try {
+        // Keep the online Cockpit, but never persist its response or auth data.
+        const response = await fetch(request, { cache: "no-store" });
+        if (response.status < 500) return response;
+      } catch { /* Offline launch: enter the already cached flight route. */ }
+      return new Response(null, {
+        status: 302,
+        headers: { Location: new URL("/flight", self.location.origin).href, "Cache-Control": "no-store" },
+      });
+    })());
+    return;
+  }
   const navigation = request.mode === "navigate" && (url.pathname === "/flight" || url.pathname === "/flight/");
   if (!navigation && !allowedAssets.has(url.pathname)) return;
   event.respondWith((async () => {
