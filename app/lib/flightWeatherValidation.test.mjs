@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validateFlightWeather, loadValidatedFlightWeather, selectFlightWeatherSnapshot } from "./flightWeatherValidation.ts";
+import { snapshotWindProfile } from "./flightWindProfile.ts";
 import { createTrajectoryAnalysisKey } from "./trajectory/analysisState.ts";
 import { WEATHER_MODEL_REGISTRY } from "./weather/models.ts";
 import { saveWeatherAnalysis, saveFlightWeatherSnapshot, saveExportedPlannedTrajectories, DEFAULT_ANALYSIS_LAYERS } from "./trajectory/weatherAnalysisStorage.ts";
@@ -31,6 +32,20 @@ test("cache signé correspondant : profil et trajectoires utilisables sans rése
   assert.equal(result.validUntil, Date.parse("2026-09-10T07:00:00Z"));
 });
 
+for (const now of ["2026-09-10T05:01:00Z", "2026-09-10T05:59:00Z"]) test(`préparation fraîche avant décollage (${now}) : export accepté et profil prévu disponible dans Vol`, () => {
+  const input = { ...fixture(), now: Date.parse(now) };
+  const result = validateFlightWeather(input);
+  assert.deepEqual(result.trajectories, input.trajectories);
+  const snapshot = selectFlightWeatherSnapshot(result.snapshot, null);
+  assert.equal(snapshot?.modelLabel, "AROME");
+  assert.equal(snapshot?.forecastAtIso, input.request.launchDateTimeIso);
+  const winds = snapshotWindProfile(snapshot);
+  assert.equal(winds.size, 1);
+  assert.equal(winds.get(300).directionDeg, 120);
+  assert.equal(winds.get(300).speedKt, 4 * 1.943844);
+  assert.equal(result.validUntil, Date.parse("2026-09-10T07:00:00Z"));
+});
+
 for (const [name, patch] of [
   ["coordonnées", { launchSite: { name: "Autre terrain", latitude: 49, longitude: 3 } }],
   ["modèle", { weatherModel: "icon_seamless" }],
@@ -46,7 +61,7 @@ for (const [name, patch] of [
   assert.deepEqual(validateFlightWeather(input), { snapshot: null, trajectories: [], validUntil: null });
 });
 
-for (const now of ["2026-09-10T05:59:00Z", "2026-09-10T07:00:00Z", "2026-09-11T06:15:00Z"]) test(`prévision hors de la fenêtre préparée (${now}) exclue même si la signature correspond`, () => {
+for (const now of ["2026-09-10T07:00:00Z", "2026-09-11T06:15:00Z"]) test(`prévision après la fin prévue (${now}) exclue même si la signature correspond`, () => {
   assert.equal(validateFlightWeather({ ...fixture(), now: Date.parse(now) }).snapshot, null);
 });
 
@@ -92,7 +107,7 @@ test("un vol actif/récupéré ne reçoit jamais un autre snapshot ni un fallbac
   assert.equal(selectFlightWeatherSnapshot(snapshot, { weatherSnapshot: { ...snapshot, weatherModel: "icon_seamless" } }), null);
 });
 
-test("chargement réel depuis les stockages, offline, puis brouillon modifié et JSON corrompu", (t) => {
+test("Prépa → Carte → Vol avant départ : export chargé offline, ancienne préparation incompatible refusée", (t) => {
   const storage = () => { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
   const localStorage = storage(), sessionStorage = storage();
   globalThis.window = { localStorage, sessionStorage };
@@ -100,18 +115,21 @@ test("chargement réel depuis les stockages, offline, puis brouillon modifié et
   t.after(() => { delete globalThis.window; delete globalThis.localStorage; setRuntimeGuestModeActive(false); });
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
   t.mock.method(globalThis, "fetch", () => { throw new Error("No network must be used"); });
-  const input = fixture();
+  const input = { ...fixture(), now: Date.parse("2026-09-10T05:15:00Z") };
   assert.ok(saveTrajectoryAnalysisRequest(input.request)); assert.ok(savePreparationDraft(input.preparation));
   assert.ok(saveWeatherAnalysis(input.analysis)); assert.ok(saveFlightWeatherSnapshot(input.snapshot)); assert.ok(saveExportedPlannedTrajectories(input.trajectories));
-  assert.deepEqual(loadValidatedFlightWeather(input.now).snapshot, input.snapshot);
+  const loaded = loadValidatedFlightWeather(input.now);
+  assert.deepEqual(loaded.snapshot, input.snapshot);
+  assert.deepEqual(loaded.trajectories, input.trajectories);
+  assert.equal(snapshotWindProfile(selectFlightWeatherSnapshot(loaded.snapshot, null)).size, 1);
   savePreparationDraft({ ...input.preparation, selectedAltitudes: [600] });
   assert.equal(loadValidatedFlightWeather(input.now).snapshot, null);
   localStorage.getItem = () => "{";
   assert.deepEqual(loadValidatedFlightWeather(input.now), { snapshot: null, trajectories: [], validUntil: null });
 });
 
-test("offline : conserve les modèles et altitudes explicitement sélectionnés sur la carte", () => {
-  const input = fixture();
+test("offline avant départ : conserve les modèles et altitudes explicitement sélectionnés sur la carte", () => {
+  const input = { ...fixture(), now: Date.parse("2026-09-10T05:30:00Z") };
   const icon = WEATHER_MODEL_REGISTRY.find(({ id }) => id === "icon");
   input.analysis.selectedModelIds = ["icon"];
   input.analysis.selectedAltitudes = [600];

@@ -64,10 +64,11 @@ export function validateFlightWeather(input: {
 
     const startsAt = Date.parse(request.launchDateTimeIso);
     const validUntil = startsAt + request.durationSeconds * 1_000;
-    // No provider run/expiry is stored. Use only the available planned flight
-    // window, without inventing a cache TTL or requiring an online refresh.
+    // A forecast is usable during preparation, before the planned departure.
+    // That timestamp identifies the forecast, not an activation time. Keep the
+    // existing planned-end cutoff; no provider TTL or online refresh is added.
     if (!Number.isFinite(startsAt) || !Number.isFinite(validUntil) || request.durationSeconds <= 0 ||
-        now < startsAt || now >= validUntil || Date.parse(analysis.updatedAtIso) > now) return unavailable();
+        now >= validUntil || Date.parse(analysis.updatedAtIso) > now) return unavailable();
 
     const traces = analysis.traces.filter((trace) =>
       analysis.selectedModelIds.includes(trace.model.id) &&
