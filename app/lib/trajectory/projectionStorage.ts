@@ -1,3 +1,4 @@
+import { currentPreparationValue, rememberPreparationValue } from "../preparationSession.ts";
 import type {
   MultiAltitudeProjectionRequest,
   StoredTrajectoryProjectionV1,
@@ -57,7 +58,9 @@ export function saveTrajectoryProjection(
   )
     return false;
   try {
-    return writeScopedBusinessValue(sessionStorage, STORAGE_KEY, JSON.stringify(value));
+    const saved = writeScopedBusinessValue(sessionStorage, STORAGE_KEY, JSON.stringify(value));
+    if (saved) rememberPreparationValue("projection", value);
+    return saved;
   } catch {
     return false;
   }
@@ -73,7 +76,7 @@ export function getTrajectoryProjection():
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     return isStoredProjectionV1(parsed) || isStoredProjectionV2(parsed)
-      ? parsed
+      ? currentPreparationValue("projection", parsed)
       : null;
   } catch {
     return null;
@@ -90,15 +93,12 @@ export function saveTrajectoryAnalysisRequest(
 ): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return writeScopedBusinessValue(
-      localStorage,
-      ANALYSIS_REQUEST_KEY,
-      JSON.stringify({
-        version: 1,
-        updatedAtIso: new Date().toISOString(),
-        request,
-      } satisfies StoredTrajectoryAnalysisRequest),
-    );
+    const value: StoredTrajectoryAnalysisRequest = {
+      version: 1, updatedAtIso: new Date().toISOString(), request,
+    };
+    const saved = writeScopedBusinessValue(localStorage, ANALYSIS_REQUEST_KEY, JSON.stringify(value));
+    if (saved) rememberPreparationValue("request", value);
+    return saved;
   } catch {
     return false;
   }
@@ -119,7 +119,7 @@ export function getTrajectoryAnalysisRequest(): StoredTrajectoryAnalysisRequest 
     ) {
       return null;
     }
-    return value as StoredTrajectoryAnalysisRequest;
+    return currentPreparationValue("request", value as StoredTrajectoryAnalysisRequest);
   } catch {
     return null;
   }

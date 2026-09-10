@@ -207,3 +207,112 @@ test("le modèle du profil dépend de la sélection d'analyse, jamais du sous-en
   assert.deepEqual(malformed.snapshot, exported.snapshot);
   assert.deepEqual(malformed.trajectories, []);
 });
+
+// These tests keep the persistent stores intact while dropping only the current session.
+import { startNewPreparationSession } from "./preparationSession.ts";
+import { loadPreparationDraft } from "./preparationDraftStorage.ts";
+import { getTrajectoryAnalysisRequest } from "./trajectory/projectionStorage.ts";
+import { loadWeatherAnalysis, loadExportedPlannedTrajectories, resumeExactOfflineAnalysis } from "./trajectory/weatherAnalysisStorage.ts";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { DEFAULT_ALTITUDE_OPTIONS } from "./trajectory/integration.ts";
+
+function storedPreparationSession(t) {
+  const data = new Map();
+  const storage = { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
+  globalThis.window = { localStorage: storage, sessionStorage: storage };
+  globalThis.localStorage = storage;
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
+  startNewPreparationSession();
+  t.after(() => { startNewPreparationSession(); delete globalThis.window; delete globalThis.localStorage; setRuntimeGuestModeActive(false); });
+  const input = fixture();
+  assert.ok(savePreparationDraft(input.preparation));
+  assert.ok(saveTrajectoryAnalysisRequest(input.request));
+  assert.ok(saveWeatherAnalysis(input.analysis));
+  assert.ok(saveExportedPlannedTrajectories(input.trajectories));
+  return { data, input };
+}
+
+test("nouvelle session : aucun ancien modèle, échéance, altitude, profil ou export courant ; aucun stockage effacé", (t) => {
+  const { data, input } = storedPreparationSession(t);
+  // Include unrelated journal/GPS records: reset must perform no persistent writes/deletes.
+  data.set("journal-flight", JSON.stringify({ id: "recorded", status: "COMPLETED", gps: [[50.6, 3.1]] }));
+  const before = [...data.entries()];
+  assert.deepEqual(loadValidatedFlightWeather(input.now).snapshot, input.snapshot);
+  startNewPreparationSession();
+  assert.equal(loadPreparationDraft(), null);
+  assert.equal(getTrajectoryAnalysisRequest(), null);
+  assert.deepEqual(loadValidatedFlightWeather(input.now), { snapshot: null, trajectories: [], validUntil: null });
+  assert.deepEqual(loadWeatherAnalysis(), input.analysis);
+  assert.deepEqual(loadExportedPlannedTrajectories(), input.trajectories);
+  assert.deepEqual([...data.entries()], before);
+});
+
+test("nouvelle session : le formulaire garde ses valeurs par défaut existantes", (t) => {
+  storedPreparationSession(t);
+  startNewPreparationSession();
+  assert.equal(loadPreparationDraft(), null);
+  const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
+  const formFunction = source.slice(source.indexOf("function initialForm()"), source.indexOf("function parseNumber("));
+  const js = ts.transpileModule(formFunction, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const initialForm = new Function("DEFAULT_ALTITUDE_OPTIONS", `${js}; return initialForm;`)(DEFAULT_ALTITUDE_OPTIONS);
+  assert.deepEqual(initialForm(), {
+    launchSite: null, launchSearch: "", date: "", time: "", durationMinutes: "", targetAltitudeAmslM: "",
+    selectedAltitudes: [...DEFAULT_ALTITUDE_OPTIONS], weatherModel: "arome_seamless",
+    ascentRateMps: 0, descentRateMps: 0, balloonName: "", occupantsWeightKg: "",
+  });
+});
+
+test("nouvelle préparation exacte : le cache ne devient courant qu'après le secours offline, sans anciens exports", (t) => {
+  const { input } = storedPreparationSession(t);
+  startNewPreparationSession();
+  t.mock.method(globalThis, "fetch", () => { throw new Error("offline"); });
+  savePreparationDraft(input.preparation);
+  saveTrajectoryAnalysisRequest(input.request);
+  assert.equal(loadValidatedFlightWeather(input.now).snapshot, null);
+  assert.deepEqual(resumeExactOfflineAnalysis(input.request, ["arome"], [300]), input.analysis);
+  assert.deepEqual(loadValidatedFlightWeather(input.now).snapshot, input.snapshot);
+  assert.deepEqual(loadValidatedFlightWeather(input.now).trajectories, []);
+});
+
+for (const [name, patch, models, altitudes] of [
+  ["terrain", { launchSite: { name: "Autre", latitude: 49, longitude: 2 } }, ["arome"], [300]],
+  ["date", { launchDateTimeIso: "2026-09-13T06:00:00.000Z" }, ["arome"], [300]],
+  ["modèle", { weatherModel: "icon_seamless" }, ["icon"], [300]],
+  ["altitudes", { altitudesAmslM: [600] }, ["arome"], [600]],
+]) test(`nouvelle préparation (${name}) : l'ancien cache ne remplace jamais les choix soumis`, (t) => {
+  const { input } = storedPreparationSession(t);
+  const request = { ...input.request, ...patch };
+  saveTrajectoryAnalysisRequest(request);
+  assert.equal(resumeExactOfflineAnalysis(request, models, altitudes), null);
+  assert.equal(loadValidatedFlightWeather(input.now).snapshot, null);
+  assert.deepEqual(loadValidatedFlightWeather(input.now).trajectories, []);
+  assert.deepEqual(loadWeatherAnalysis(), input.analysis);
+});
+
+test("nouveau document PWA : aucune valeur courante héritée des stockages", async (t) => {
+  const { data, input } = storedPreparationSession(t);
+  const before = [...data.entries()];
+  // A freshly evaluated module models a document restart, including retained sessionStorage.
+  const freshDocument = await import(`./preparationSession.ts?document=${Date.now()}`);
+  assert.equal(freshDocument.currentPreparationValue("draft", input.preparation), null);
+  assert.equal(freshDocument.currentPreparationValue("analysis", loadWeatherAnalysis()), null);
+  assert.equal(freshDocument.currentPreparationValue("exports", loadExportedPlannedTrajectories()), null);
+  assert.deepEqual([...data.entries()], before);
+});
+
+test("reprise offline dans la même préparation : choix explicites de la carte conservés", (t) => {
+  const { input } = storedPreparationSession(t);
+  const icon = WEATHER_MODEL_REGISTRY.find(({ id }) => id === "icon");
+  const analysis = {
+    ...input.analysis, selectedModelIds: ["icon"], selectedAltitudes: [600],
+    analysisKey: createTrajectoryAnalysisKey(input.request, ["icon"], [600]),
+    traces: [{ ...input.analysis.traces[0], model: icon, traceId: "icon:600", altitudeAmslM: 600, altitudeKey: "600" }],
+  };
+  saveWeatherAnalysis(analysis);
+  assert.deepEqual(resumeExactOfflineAnalysis(input.request, ["arome"], [300]), analysis);
+  startNewPreparationSession();
+  savePreparationDraft(input.preparation);
+  saveTrajectoryAnalysisRequest(input.request);
+  assert.equal(resumeExactOfflineAnalysis(input.request, ["arome"], [300]), null);
+});

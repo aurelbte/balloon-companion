@@ -1,3 +1,4 @@
+import { currentPreparationValue } from "./preparationSession.ts";
 import type { StoredFlightPreparationV2 } from "./flightStorage.ts";
 import { loadPreparationDraft } from "./preparationDraftStorage.ts";
 import { createTrajectoryAnalysisKey } from "./trajectory/analysisState.ts";
@@ -127,11 +128,11 @@ function validateExportedTrajectories(
 
 export function loadValidatedFlightWeather(now = Date.now()): ValidatedFlightWeather {
   let trajectories: ExportedPlannedTrajectory[] = [];
-  try { trajectories = loadExportedPlannedTrajectories(); } catch { /* Optional layer unavailable. */ }
+  try { trajectories = currentPreparationValue("exports", loadExportedPlannedTrajectories()) ?? []; } catch { /* Optional layer unavailable. */ }
   try {
     return validateFlightWeather({
       preparation: loadPreparationDraft(), request: getTrajectoryAnalysisRequest()?.request ?? null,
-      analysis: loadWeatherAnalysis(), trajectories, now,
+      analysis: currentPreparationValue("analysis", loadWeatherAnalysis()), trajectories, now,
     });
   } catch { return unavailable(); }
 }

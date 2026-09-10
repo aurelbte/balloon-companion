@@ -26,6 +26,7 @@ import {
   type AirspaceCoverageViewport,
 } from "../hooks/useAirspaceCoverage";
 import { getAirspaceFrequencyPresentations } from "../lib/operationalFrequency";
+import { rememberPreparationValue } from "../lib/preparationSession";
 import { loadPreparationDraft, savePreparationDraft } from "../lib/preparationDraftStorage";
 import { buildLoadCalculationInput } from "../lib/loadPerformance/balloonInput";
 import { calculateOfficialLoad } from "../lib/loadPerformance/engine";
@@ -61,6 +62,7 @@ import {
   extractPredictedWind,
   isUsableWeatherAnalysisCache,
   loadWeatherAnalysis,
+  resumeExactOfflineAnalysis,
   newAnalysisLayerSettings,
   saveExportedPlannedTrajectories,
   saveFlightWeatherSnapshot,
@@ -164,20 +166,16 @@ export default function MapPage() {
         const savedModel = weatherModelByProviderId(preparation?.weatherModel ?? stored.request.weatherModel);
         const savedAltitudes = normalizeAltitudeOptions(preparation?.selectedAltitudes ?? stored.request.altitudesAmslM);
         const restoredModels = savedModel?.supported ? [savedModel.id] : [];
-        const cached = loadWeatherAnalysis();
-        const cachedModels = cached?.selectedModelIds.filter((modelId) => WEATHER_MODEL_REGISTRY.some((model) => model.id === modelId && model.supported)) ?? [];
-        const cachedAltitudes = normalizeAltitudeOptions(cached?.selectedAltitudes ?? []);
-        const cachedSignature = cachedModels.length > 0 && cachedAltitudes.length > 0
-          ? createTrajectoryAnalysisKey(stored.request, cachedModels, cachedAltitudes)
+        const usableOfflineCache = !navigator.onLine
+          ? resumeExactOfflineAnalysis(stored.request, restoredModels, savedAltitudes)
           : null;
-        const usableOfflineCache = !navigator.onLine && cachedSignature !== null && isUsableWeatherAnalysisCache(cached, cachedSignature) ? cached : null;
-        setSelectedModels(usableOfflineCache ? cachedModels : restoredModels);
-        setSelectedAltitudes(usableOfflineCache ? cachedAltitudes : savedAltitudes);
+        setSelectedModels(usableOfflineCache?.selectedModelIds ?? restoredModels);
+        setSelectedAltitudes(usableOfflineCache?.selectedAltitudes ?? savedAltitudes);
         setTraces(usableOfflineCache?.traces ?? []);
         setFailures(usableOfflineCache?.failures ?? []);
         setVisibleTraceIds(usableOfflineCache?.traces.map(({ traceId }) => traceId) ?? []);
         setLayers(newAnalysisLayerSettings());
-        signatureRef.current = usableOfflineCache && cachedSignature ? cachedSignature : "";
+        signatureRef.current = usableOfflineCache?.analysisKey ?? "";
         desiredSignatureRef.current = "";
         if (usableOfflineCache) {
           setNotice(`Hors ligne — analyse en cache du ${new Date(usableOfflineCache.updatedAtIso).toLocaleString("fr-FR")}.`);
@@ -243,6 +241,7 @@ export default function MapPage() {
     if (!navigator.onLine) {
       const cached = loadWeatherAnalysis();
       if (isUsableWeatherAnalysisCache(cached, signature)) {
+        rememberPreparationValue("analysis", cached);
         setTraces(cached.traces);
         setFailures(cached.failures);
         setVisibleTraceIds(cached.traces.map(({ traceId }) => traceId));

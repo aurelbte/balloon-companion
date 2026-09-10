@@ -1,3 +1,4 @@
+import { currentPreparationValue, rememberPreparationValue } from "./preparationSession.ts";
 import {
   migrateStoredPreparation,
   type StoredFlightPreparationV2,
@@ -12,7 +13,7 @@ export function loadPreparationDraft(): StoredFlightPreparationV2 | null {
 
   try {
     const raw = readScopedBusinessValue(window.sessionStorage, PREPARATION_DRAFT_STORAGE_KEY);
-    return raw ? migrateStoredPreparation(JSON.parse(raw)) : null;
+    return raw ? currentPreparationValue("draft", migrateStoredPreparation(JSON.parse(raw))) : null;
   } catch {
     return null;
   }
@@ -27,7 +28,9 @@ export function savePreparationDraft(
   if (!validated) return false;
 
   try {
-    return writeScopedBusinessValue(window.sessionStorage, PREPARATION_DRAFT_STORAGE_KEY, JSON.stringify(validated));
+    const saved = writeScopedBusinessValue(window.sessionStorage, PREPARATION_DRAFT_STORAGE_KEY, JSON.stringify(validated));
+    if (saved) rememberPreparationValue("draft", validated);
+    return saved;
   } catch {
     return false;
   }

@@ -198,8 +198,8 @@ test("l'Analyse restaure les sélections valides du brouillon sans réintroduire
   const source = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
   assert.match(source, /weatherModelByProviderId\(preparation\?\.weatherModel \?\? stored\.request\.weatherModel\)/);
   assert.match(source, /normalizeAltitudeOptions\(preparation\?\.selectedAltitudes \?\? stored\.request\.altitudesAmslM\)/);
-  assert.match(source, /setSelectedModels\(usableOfflineCache \? cachedModels : restoredModels\)/);
-  assert.match(source, /setSelectedAltitudes\(usableOfflineCache \? cachedAltitudes : savedAltitudes\)/);
+  assert.match(source, /setSelectedModels\(usableOfflineCache\?\.selectedModelIds \?\? restoredModels\)/);
+  assert.match(source, /setSelectedAltitudes\(usableOfflineCache\?\.selectedAltitudes \?\? savedAltitudes\)/);
   assert.match(source, /Sélectionnez un modèle et une altitude\./);
 });
 

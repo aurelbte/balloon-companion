@@ -1,3 +1,6 @@
+"use client";
+
+import { startNewPreparationSession } from "../lib/preparationSession";
 import Link from "next/link";
 import {
   BookOpen,
@@ -86,6 +89,7 @@ export default function NavigationBar({
             <Link
               key={item.label}
               href={item.href}
+              onClick={activeItem === "Cockpit" && item.href === "/prepare" ? startNewPreparationSession : undefined}
               {...sharedProps}
             >
               {content}

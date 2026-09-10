@@ -1,9 +1,13 @@
+import { currentPreparationValue, rememberPreparationValue } from "../preparationSession.ts";
+import { createTrajectoryAnalysisKey } from "./analysisState.ts";
+import { normalizeAltitudeOptions } from "./integration.ts";
 import type {
+  MultiAltitudeProjectionRequest,
   AltitudeOption,
   AltitudeProjectionFailure,
   AltitudeProjectionResult,
 } from "./integration.ts";
-import type { WeatherModelDefinition } from "../weather/models.ts";
+import { WEATHER_MODEL_REGISTRY, type WeatherModelDefinition } from "../weather/models.ts";
 import { readScopedBusinessValue, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
 import type { TrajectoryPoint } from "./types.ts";
 
@@ -152,7 +156,9 @@ export function loadWeatherAnalysis(): WeatherAnalysisState | null {
 export function saveWeatherAnalysis(value: WeatherAnalysisState): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return writeScopedBusinessValue(localStorage, ANALYSIS_KEY, JSON.stringify(value));
+    const saved = writeScopedBusinessValue(localStorage, ANALYSIS_KEY, JSON.stringify(value));
+    if (saved) rememberPreparationValue("analysis", value);
+    return saved;
   } catch {
     return false;
   }
@@ -176,6 +182,25 @@ export function isUsableWeatherAnalysisCache(
   );
 }
 
+/** Offline fallback uses today's submitted choices unless resuming this document's analysis. */
+export function resumeExactOfflineAnalysis(
+  request: MultiAltitudeProjectionRequest,
+  models: string[],
+  altitudes: AltitudeOption[],
+): WeatherAnalysisState | null {
+  const cached = loadWeatherAnalysis();
+  const current = currentPreparationValue("analysis", cached);
+  const selectedModels = (current?.selectedModelIds ?? models).filter((id) =>
+    WEATHER_MODEL_REGISTRY.some((model) => model.id === id && model.supported),
+  );
+  const selectedAltitudes = normalizeAltitudeOptions(current?.selectedAltitudes ?? altitudes);
+  if (!selectedModels.length || !selectedAltitudes.length) return null;
+  const signature = createTrajectoryAnalysisKey(request, selectedModels, selectedAltitudes);
+  if (!isUsableWeatherAnalysisCache(cached, signature)) return null;
+  rememberPreparationValue("analysis", cached);
+  return cached;
+}
+
 export function loadExportedPlannedTrajectories(): ExportedPlannedTrajectory[] {
   const value = typeof window === "undefined" ? null : JSON.parse(readScopedBusinessValue(window.localStorage, FLIGHT_EXPORT_KEY) ?? "null") as unknown;
   return Array.isArray(value)
@@ -196,7 +221,9 @@ export function saveExportedPlannedTrajectories(
 ): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return writeScopedBusinessValue(window.localStorage, FLIGHT_EXPORT_KEY, JSON.stringify(trajectories));
+    const saved = writeScopedBusinessValue(window.localStorage, FLIGHT_EXPORT_KEY, JSON.stringify(trajectories));
+    if (saved) rememberPreparationValue("exports", trajectories);
+    return saved;
   } catch {
     return false;
   }
