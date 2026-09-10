@@ -50,11 +50,8 @@ import {
   type MultiAltitudeProjectionApiResponse,
   type MultiAltitudeProjectionRequest,
 } from "../lib/trajectory/integration";
-import {
-  getTrajectoryAnalysisRequest,
-  getTrajectoryProjectionV2,
-  type StoredTrajectoryAnalysisRequest,
-} from "../lib/trajectory/projectionStorage";
+import type { StoredTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
+import { loadMapAnalysisRequest } from "../lib/trajectory/mapAnalysisRequest";
 import {
   MODEL_LINE_STYLES,
 } from "../lib/trajectory/analysisStyles";
@@ -136,7 +133,6 @@ export default function MapPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const analysisRequest = getTrajectoryAnalysisRequest();
       setAnalysisSessionId(`analysis-${Date.now()}`);
       const demoEnabled = resolveLoadDemoMode(window.location.search);
       setTestLoadEnabled(demoEnabled);
@@ -144,16 +140,7 @@ export default function MapPage() {
       setTemperatureDebugEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("debugTemp") === "1");
       setProfileDebugEnabled(process.env.NODE_ENV === "development" && new URLSearchParams(window.location.search).get("debugProfile") === "1");
       const preparation = loadPreparationDraft();
-      const legacyProjection = getTrajectoryProjectionV2();
-      const stored =
-        analysisRequest ??
-        (legacyProjection
-          ? {
-              version: 1 as const,
-              updatedAtIso: legacyProjection.createdAtIso,
-              request: legacyProjection.request,
-            }
-          : null);
+      const stored = loadMapAnalysisRequest();
       setConfig(stored);
       setSelectedBalloonId(preparation?.balloonName ?? "");
       setPreparation(preparation);
