@@ -41,9 +41,9 @@ export type OfficialAscensionFormValues = {
 
 export type OfficialAscensionFormMode = "CREATE" | "VALIDATE" | "EDIT";
 
-type Props = { mode: OfficialAscensionFormMode; ascensionId?: string; title: string; subtitle?: string; backLabel: string; submitLabel: string; gpsDurationMinutes?: number; manualDateEntry?: boolean; nativeSubmit?: boolean; initialValues: OfficialAscensionFormValues; onCancel: (dirty: boolean) => void; onSubmit: (input: OfficialAscensionInput) => boolean | void | Promise<boolean | void> };
+type Props = { submissionError?: string | null; mode: OfficialAscensionFormMode; ascensionId?: string; title: string; subtitle?: string; backLabel: string; submitLabel: string; gpsDurationMinutes?: number; manualDateEntry?: boolean; nativeSubmit?: boolean; initialValues: OfficialAscensionFormValues; onCancel: (dirty: boolean) => void; onSubmit: (input: OfficialAscensionInput) => boolean | void | Promise<boolean | void> };
 
-export default function OfficialAscensionForm({ mode, ascensionId, title, subtitle, backLabel, submitLabel, gpsDurationMinutes, manualDateEntry = false, nativeSubmit = false, initialValues, onCancel, onSubmit }: Props) {
+export default function OfficialAscensionForm({ submissionError, mode, ascensionId, title, subtitle, backLabel, submitLabel, gpsDurationMinutes, manualDateEntry = false, nativeSubmit = false, initialValues, onCancel, onSubmit }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const balloons = useBalloons();
@@ -148,6 +148,7 @@ export default function OfficialAscensionForm({ mode, ascensionId, title, subtit
   return <main className={styles.screen}><div className={styles.layout}>
     <button type="button" className={styles.backButton} onClick={() => onCancel(dirty)}><ChevronLeft size={18} aria-hidden="true" /> {backLabel}</button>
     <header className={styles.formHeader}><p className={styles.eyebrow}>Carnet officiel</p><h1 className={styles.title}>{title}</h1>{subtitle && <p className={styles.route}>{subtitle}</p>}{gpsDurationMinutes !== undefined && <p className={styles.gpsFact}>Temps GPS <strong>{gpsDurationMinutes} min</strong></p>}</header>
+    {submissionError && <p role="alert" style={{ color: "var(--bc-danger)" }}>{submissionError}</p>}
     <form id="official-ascension-form" className={styles.form} onSubmit={(event) => { event.preventDefault(); void submit(); }} onKeyDown={moveToNextField}>
       <label className={styles.wide}><span>Ballon</span><select value={selectedBalloonId || MANUAL_BALLOON_VALUE} onChange={(event) => chooseBalloon(event.target.value)}><option value={MANUAL_BALLOON_VALUE}>Aucun ballon enregistré</option>{balloons.map((balloon) => <option key={balloon.id} value={balloon.id}>{balloonDisplayName(balloon)}</option>)}<option value={ADD_BALLOON_VALUE}>Ajouter un ballon…</option></select></label>
       <label><span>Immatriculation</span><input autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={values.registration} readOnly={Boolean(selectedBalloon)} onChange={(e) => update("registration", e.target.value.toUpperCase())} /></label>

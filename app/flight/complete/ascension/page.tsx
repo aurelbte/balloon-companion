@@ -11,6 +11,7 @@ import {
   roundJournalAltitudeMeters,
 } from "../../../lib/flightCompletion";
 import {
+  FLIGHT_COMPLETION_SAVE_ERROR,
   ensureDemoCompletionPersisted,
   loadFlightCompletionState,
   persistOfficialAscension,
@@ -61,6 +62,7 @@ function ValidateAscensionContent() {
   const flightId = searchParams.get("flightId") ?? DEMO_COMPLETION_FLIGHT_ID;
   const completionState = useFlightCompletionState();
   const sourceFlight = completionState.journalFlights.find(({ id }) => id === flightId);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [initialValues, setInitialValues] = useState<OfficialAscensionFormValues | null>(null);
 
   useEffect(() => {
@@ -79,15 +81,26 @@ function ValidateAscensionContent() {
       submitLabel="Valider l’ascension"
       gpsDurationMinutes={sourceFlight?.durationMinutes}
       initialValues={initialValues}
+      submissionError={saveError}
       onCancel={(dirty) => {
         if (!dirty || window.confirm("Quitter sans enregistrer les modifications ?")) {
           router.push(`/journal/${encodeURIComponent(flightId)}`);
         }
       }}
       onSubmit={(input) => {
-        persistOfficialAscension(flightId, input);
-        window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
+        try {
+          if (!persistOfficialAscension(flightId, input).persisted) {
+            setSaveError(FLIGHT_COMPLETION_SAVE_ERROR);
+            return false;
+          }
+        } catch {
+          setSaveError(FLIGHT_COMPLETION_SAVE_ERROR);
+          return false;
+        }
+        setSaveError(null);
+        try { window.sessionStorage.setItem("balloon-companion-journal-view", "logbook"); } catch { /* Optional preference. */ }
         router.push("/journal");
+        return true;
       }}
     />
   );

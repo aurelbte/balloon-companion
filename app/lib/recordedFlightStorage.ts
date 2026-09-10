@@ -22,6 +22,8 @@ const FLIGHTS_STORE = RECORDED_FLIGHTS_STORE;
 const ACTIVE_FLIGHT_STORE = "activeFlight";
 const ACTIVE_FLIGHT_KEY = "current";
 
+export type FlightLocationLabels = Pick<RecordedFlight, "startLocationLabel" | "endLocationLabel" | "generatedTitle">;
+
 interface ActiveFlightRecord {
   key: typeof ACTIVE_FLIGHT_KEY;
   flight: RecordedFlight;
@@ -35,6 +37,7 @@ export interface RecordedFlightStorage {
   getFlight(id: string): Promise<RecordedFlight | null>;
   listFlights(): Promise<RecordedFlight[]>;
   updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null>;
+  updateFlightLocations(id: string, labels: FlightLocationLabels): Promise<RecordedFlight | null>;
   deleteFlight(id: string): Promise<void>;
 }
 
@@ -91,6 +94,8 @@ export class MemoryRecordedFlightStorage implements RecordedFlightStorage {
     return this.activeFlight;
   }
   async saveActiveFlight(flight: RecordedFlight) {
+    if (this.activeFlight && this.activeFlight.id !== flight.id) throw new Error("Un autre vol actif est conservé");
+    if (this.flights.has(flight.id)) throw new Error("Ce vol est déjà terminé");
     this.activeFlight = structuredClone(flight);
   }
   async clearActiveFlight() {
@@ -98,7 +103,14 @@ export class MemoryRecordedFlightStorage implements RecordedFlightStorage {
   }
   async completeFlight(flight: RecordedFlight) {
     this.flights.set(flight.id, structuredClone(flight));
-    this.activeFlight = null;
+    if (this.activeFlight?.id === flight.id) this.activeFlight = null;
+  }
+  async updateFlightLocations(id: string, labels: FlightLocationLabels) {
+    const flight = this.flights.get(id);
+    if (!flight) return null;
+    const updated = { ...flight, ...labels, updatedAt: Date.now() };
+    this.flights.set(id, structuredClone(updated));
+    return updated;
   }
   async getFlight(id: string) {
     return this.flights.get(id) ?? null;
@@ -145,7 +157,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
         }
       };
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onerror = () => { this.databasePromise = null; reject(request.error); };
     });
     return this.databasePromise;
   }
@@ -169,15 +181,24 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
   async saveActiveFlight(flight: RecordedFlight): Promise<void> {
     const database = await this.database();
     await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(
-        ACTIVE_FLIGHT_STORE,
-        "readwrite",
-      );
-      transaction
-        .objectStore(ACTIVE_FLIGHT_STORE)
-        .put({ key: ACTIVE_FLIGHT_KEY, flight } satisfies ActiveFlightRecord);
+      const transaction = database.transaction([ACTIVE_FLIGHT_STORE, FLIGHTS_STORE], "readwrite");
+      const active = transaction.objectStore(ACTIVE_FLIGHT_STORE);
+      const request = active.get(ACTIVE_FLIGHT_KEY);
+      request.onsuccess = () => {
+        // Check and write in the same transaction, including concurrent tabs.
+        if (request.result && request.result.flight?.id !== flight.id) {
+          transaction.abort();
+          return;
+        }
+        const completed = transaction.objectStore(FLIGHTS_STORE).get(flight.id);
+        completed.onsuccess = () => {
+          if (completed.result) transaction.abort();
+          else active.put({ key: ACTIVE_FLIGHT_KEY, flight } satisfies ActiveFlightRecord);
+        };
+      };
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error("Un vol conservé empêche cette écriture"));
     });
   }
 
@@ -191,6 +212,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.objectStore(ACTIVE_FLIGHT_STORE).delete(ACTIVE_FLIGHT_KEY);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -202,21 +224,53 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
         "readwrite",
       );
       transaction.objectStore(FLIGHTS_STORE).put(flight);
-      transaction.objectStore(ACTIVE_FLIGHT_STORE).delete(ACTIVE_FLIGHT_KEY);
+      const active = transaction.objectStore(ACTIVE_FLIGHT_STORE);
+      const request = active.get(ACTIVE_FLIGHT_KEY);
+      request.onsuccess = () => {
+        if (request.result?.flight?.id === flight.id) active.delete(ACTIVE_FLIGHT_KEY);
+      };
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
-    if (!await enqueueLocalSyncMutation("flight", flight.id) && getRuntimeDataScope()?.startsWith("USER:")) {
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction([FLIGHTS_STORE, ACTIVE_FLIGHT_STORE], "readwrite");
-        transaction.objectStore(FLIGHTS_STORE).delete(flight.id);
-        transaction.objectStore(ACTIVE_FLIGHT_STORE).put({ key: ACTIVE_FLIGHT_KEY, flight } satisfies ActiveFlightRecord);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-      });
-      throw new Error("Mutation flight UPSERT non persistée");
+    // The local transaction is the commit point. Existing backfill/track discovery
+    // can reconstruct missing jobs from this durable flight after a queue failure.
+    this.enqueueCompletedFlightBestEffort(flight);
+  }
+
+  private enqueueCompletedFlightBestEffort(flight: RecordedFlight): void {
+    if (this.scope !== getRuntimeDataScope()) return;
+    void Promise.resolve().then(() => {
+      if (this.scope === getRuntimeDataScope()) return enqueueLocalSyncMutation("flight", flight.id);
+    }).catch(() => undefined);
+    if (flight.status === "COMPLETED" && flight.points.length > 0) {
+      void enqueueTrackJobForCurrentUser(flight.id, "UPLOAD").catch(() => undefined);
     }
-    if (flight.status === "COMPLETED" && flight.points.length > 0) await enqueueTrackJobForCurrentUser(flight.id, "UPLOAD");
+  }
+
+  async updateFlightLocations(id: string, labels: FlightLocationLabels): Promise<RecordedFlight | null> {
+    const database = await this.database();
+    const updated = await new Promise<RecordedFlight | null>((resolve, reject) => {
+      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+      const store = transaction.objectStore(FLIGHTS_STORE);
+      let updated: RecordedFlight | null = null;
+      const request = store.get(id);
+      request.onsuccess = () => {
+        if (!isRecordedFlight(request.result)) return;
+        // Patch labels only: never resurrect a deleted flight or overwrite notes.
+        updated = { ...request.result, ...labels, updatedAt: Date.now() };
+        store.put(updated);
+      };
+      transaction.oncomplete = () => resolve(updated);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    if (updated && this.scope === getRuntimeDataScope()) {
+      void Promise.resolve().then(() => {
+        if (this.scope === getRuntimeDataScope()) return enqueueLocalSyncMutation("flight", id);
+      }).catch(() => undefined);
+    }
+    return updated;
   }
 
   async getFlight(id: string): Promise<RecordedFlight | null> {

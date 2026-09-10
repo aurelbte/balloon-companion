@@ -80,7 +80,7 @@ export default function FlightRecoveryDialog({
         </p>
         <div style={{ display: "grid", gap: "10px", marginTop: "20px" }}>
           <button
-            disabled={busy}
+            disabled={busy || flight.status === "COMPLETED"}
             onClick={onResume}
             style={{
               ...buttonStyle,

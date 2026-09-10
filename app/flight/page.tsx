@@ -48,14 +48,13 @@ import type {
   ProjectionPoint,
 } from "../types/flight";
 import {
-  loadExportedPlannedTrajectories,
-  loadFlightWeatherSnapshot,
   type ExportedPlannedTrajectory,
   type FlightWeatherSnapshot,
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { Button, FloatingPanel } from "../design-system";
 import { createFlightSession } from "../lib/flightCore";
 import { aggregateObservedWind, snapshotWindProfile } from "../lib/flightWindProfile";
+import { loadValidatedFlightWeather, selectFlightWeatherSnapshot } from "../lib/flightWeatherValidation";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
 import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
@@ -183,11 +182,24 @@ export default function FlightPage() {
     return () => { if (liveRuntimeRef.current === runtime) liveRuntimeRef.current = null; void runtime.close(); };
   }, [currentUserId]);
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setPlannedTrajectories(loadExportedPlannedTrajectories());
-      setValidatedWeatherSnapshot(loadFlightWeatherSnapshot());
-    }, 0);
-    return () => window.clearTimeout(timer);
+    let timer: number;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      const weather = loadValidatedFlightWeather();
+      setPlannedTrajectories(weather.trajectories);
+      setValidatedWeatherSnapshot(weather.snapshot);
+      const delay = weather.validUntil === null ? 60_000 : Math.min(60_000, Math.max(1, weather.validUntil - Date.now()));
+      timer = window.setTimeout(refresh, delay);
+    };
+    const foreground = () => { if (document.visibilityState === "visible") refresh(); };
+    timer = window.setTimeout(refresh, 0);
+    document.addEventListener("visibilitychange", foreground);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", foreground);
+      window.removeEventListener("storage", refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -345,8 +357,11 @@ export default function FlightPage() {
       const preparation = loadPreparationDraft();
       const selectedBalloonId = preparation?.balloonName;
       const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
-      const weatherSnapshot = validatedWeatherSnapshot;
-      startTracking(currentPosition, {
+      const weather = loadValidatedFlightWeather();
+      const weatherSnapshot = weather.snapshot;
+      setValidatedWeatherSnapshot(weatherSnapshot);
+      setPlannedTrajectories(weather.trajectories);
+      void startTracking(currentPosition, {
         ...(selectedBalloon?.registration ? { balloonRegistration: selectedBalloon.registration } : {}),
         ...(weatherSnapshot
           ? {
@@ -367,7 +382,6 @@ export default function FlightPage() {
     requestPermission,
     startTracking,
     storageReady,
-    validatedWeatherSnapshot,
     balloonRegistry.balloons,
   ]);
 
@@ -664,10 +678,9 @@ export default function FlightPage() {
     () => aggregateObservedWind(flightSession.trajectory.points),
     [flightSession.trajectory.points],
   );
-  const flightWeatherSnapshot =
-    activeFlight?.weatherSnapshot ??
-    recoverableFlight?.weatherSnapshot ??
-    validatedWeatherSnapshot;
+  const flightWeatherSnapshot = selectFlightWeatherSnapshot(
+    validatedWeatherSnapshot, activeFlight ?? recoverableFlight,
+  );
   const predictedWinds = useMemo(
     () => snapshotWindProfile(flightWeatherSnapshot),
     [flightWeatherSnapshot],
@@ -762,6 +775,7 @@ export default function FlightPage() {
         observed={observedWindProfile}
         predicted={predictedWinds}
         predictedModelLabel={predictedModelLabel}
+        predictedForecastAt={flightWeatherSnapshot?.forecastAtIso ?? null}
         onToggle={() => { setIsLiveSharingOpen(false); setIsMapOptionsOpen(false); setIsWindProfileOpen((open) => !open); }}
         onClose={() => setIsWindProfileOpen(false)}
       />
@@ -954,7 +968,7 @@ export default function FlightPage() {
           busy={flightActionBusy}
           onResume={resumeInterruptedFlight}
           onComplete={() => void handleCompleteInterruptedFlight()}
-          onIgnore={ignoreInterruptedFlight}
+          onIgnore={() => { ignoreInterruptedFlight(); router.push("/"); }}
         />
       )}
 

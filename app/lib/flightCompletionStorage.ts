@@ -389,6 +389,21 @@ export function persistRecordedFlightInJournal(
   return { state, persisted: saveFlightCompletionState(state) };
 }
 
+/** Optional geocoding only patches labels; it preserves completion, titles and notes. */
+export function enrichJournalFlightLocations(flight: RecordedFlight): void {
+  const state = loadFlightCompletionState();
+  const journalFlights = state.journalFlights.map((existing) =>
+    (existing.sourceFlightId ?? existing.id) === flight.id
+      ? { ...existing, departure: flight.startLocationLabel ?? existing.departure,
+          arrival: flight.endLocationLabel ?? existing.arrival,
+          generatedTitle: flight.generatedTitle ?? existing.generatedTitle }
+      : existing,
+  );
+  if (journalFlights.some((flight, index) => flight !== state.journalFlights[index])) {
+    saveFlightCompletionState({ ...state, journalFlights });
+  }
+}
+
 export async function loadRecordedFlightForJournal(
   sourceFlightId: string,
 ): Promise<RecordedFlight | null> {
@@ -447,18 +462,20 @@ export async function migrateCompletedRecordedFlightsToJournal(): Promise<number
   return migrated;
 }
 
+export const FLIGHT_COMPLETION_SAVE_ERROR = "Impossible d’enregistrer sur cet appareil. Vos saisies restent à l’écran. Réessayez ; si nécessaire, libérez de l’espace sans fermer cette page.";
+
 export function persistOfficialAscension(
   sourceFlightId: string,
   input: OfficialAscensionInput,
-): FlightCompletionState {
-  const state = validateOfficialAscension(
-    loadFlightCompletionState(),
-    sourceFlightId,
-    input,
-  );
-  saveFlightCompletionState(state);
-  persistQualificationLink(state.officialAscensions.find(({ sourceFlightId: linkedFlightId }) => linkedFlightId === sourceFlightId));
-  return state;
+): { state: FlightCompletionState; persisted: boolean } {
+  const current = loadFlightCompletionState();
+  if (!findJournalFlightBySourceId(current, sourceFlightId)) return { state: current, persisted: false };
+  const state = validateOfficialAscension(current, sourceFlightId, input);
+  const persisted = saveFlightCompletionState(state);
+  if (persisted) {
+    persistQualificationLink(state.officialAscensions.find(({ sourceFlightId: linkedFlightId }) => linkedFlightId === sourceFlightId));
+  }
+  return { state, persisted };
 }
 
 export function persistOfficialAscensionUpdate(
@@ -484,10 +501,11 @@ export function persistOfficialAscensionUpdate(
 export function persistJournalFlightDecision(
   flightId: string,
   decision: "CARNET_PENDING" | "JOURNAL_ONLY",
-): FlightCompletionState {
-  const state = setJournalFlightLogbookStatus(loadFlightCompletionState(), flightId, decision);
-  saveFlightCompletionState(state);
-  return state;
+): { state: FlightCompletionState; persisted: boolean } {
+  const current = loadFlightCompletionState();
+  if (!current.journalFlights.some(({ id }) => id === flightId)) return { state: current, persisted: false };
+  const state = setJournalFlightLogbookStatus(current, flightId, decision);
+  return { state, persisted: saveFlightCompletionState(state) };
 }
 
 export function persistJournalFlightCustomTitle(

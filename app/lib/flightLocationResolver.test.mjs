@@ -51,3 +51,18 @@ test("un échec réseau conserve le vol et des fallbacks honnêtes", async () =>
 test("la résolution est une opération explicite et non une lecture du Journal", () => {
   assert.equal(typeof resolveRecordedFlightLocations, "function");
 });
+
+test("un corps de réponse bloqué est également borné dans le temps", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let signal;
+  const resolution = resolveRecordedFlightLocations(recorded(), "Boeschepe", async (_url, options) => {
+    signal = options.signal;
+    return { ok: true, json: () => new Promise(() => {}) };
+  }, 3_000);
+  await Promise.resolve();
+  t.mock.timers.tick(3_000);
+  const flight = await resolution;
+  assert.equal(signal.aborted, true);
+  assert.equal(flight.startLocationLabel, "Boeschepe");
+  assert.equal(flight.endLocationLabel, "Arrivée inconnue");
+});

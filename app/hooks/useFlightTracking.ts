@@ -21,10 +21,11 @@ import {
   IndexedDbRecordedFlightStorage,
   type RecordedFlightStorage,
 } from "../lib/recordedFlightStorage";
-import { persistRecordedFlightInJournal } from "../lib/flightCompletionStorage";
+import { persistRecordedFlightInJournal, enrichJournalFlightLocations } from "../lib/flightCompletionStorage";
 import { loadFlightSession } from "../lib/flightSessionStorage";
 import { legacyFlightSessionToRecordedFlight } from "../lib/realFlightJournal";
-import { resolveRecordedFlightLocations } from "../lib/flightLocationResolver";
+import { resolveRecordedFlightLocations, withRecordedFlightLocationFallbacks } from "../lib/flightLocationResolver";
+import { getRuntimeDataScope } from "../lib/auth/dataScopeRuntime";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { classifyGpsTraceQuality } from "../lib/gpsPointQuality";
 import { assignFlightSegmentIds } from "../lib/flightSegments";
@@ -47,7 +48,7 @@ interface UseFlightTrackingResult {
   completedFlight: RecordedFlight | null;
   markAcquiring: () => void;
   markReady: () => void;
-  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot }) => void;
+  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot }) => Promise<boolean>;
   stopTracking: () => Promise<RecordedFlight | null>;
   resumeInterruptedFlight: () => void;
   completeInterruptedFlight: () => Promise<RecordedFlight | null>;
@@ -106,6 +107,8 @@ export function useFlightTracking(
     useState<RecordedFlight | null>(null);
 
   const statusRef = useRef(status);
+  const startingRef = useRef(false);
+  const recoverableFlightRef = useRef<RecordedFlight | null>(null);
   const activeFlightRef = useRef<RecordedFlight | null>(null);
   const pointsRef = useRef<GeoPoint[]>([]);
   const metricsRef = useRef<FlightMetrics>(EMPTY_METRICS);
@@ -161,7 +164,7 @@ export function useFlightTracking(
 
   const persistCurrentFlight = useCallback(() => {
     const flight = activeFlightRef.current;
-    if (!flight || statusRef.current !== "recording") {
+    if (!flight || statusRef.current !== "recording" || completionPromiseRef.current) {
       return Promise.resolve();
     }
     return queueActiveFlightPersistence(flight);
@@ -172,15 +175,37 @@ export function useFlightTracking(
     void storageRef.current
       .getActiveFlight()
       .then(async (storedFlight) => {
+        if (cancelled) return;
         if (!storedFlight) {
           const legacy = loadFlightSession();
           storedFlight = legacy ? legacyFlightSessionToRecordedFlight(legacy) : null;
-          if (storedFlight) await storageRef.current.saveActiveFlight(storedFlight);
+          if (storedFlight && storedFlight.status !== "COMPLETED") {
+            await storageRef.current.saveActiveFlight(storedFlight);
+          }
         }
-        if (!storedFlight || storedFlight.status === "COMPLETED") return;
+        if (!storedFlight || cancelled) return;
+        if (storedFlight.status === "COMPLETED") {
+          // Repair old rollbacks without recomputing dates or overwriting a richer
+          // completed copy that may already exist in the Journal store.
+          recoverableFlightRef.current = storedFlight;
+          setRecoverableFlight(storedFlight);
+          const completed = await storageRef.current.getFlight(storedFlight.id) ?? storedFlight;
+          await storageRef.current.completeFlight(completed);
+          try { persistRecordedFlightInJournal(completed); } catch { /* Journal reconstruction can retry later. */ }
+          if (!cancelled) {
+            recoverableFlightRef.current = null;
+            setRecoverableFlight(null);
+            setCompletedFlight(completed);
+            updateStatus("stopped");
+          }
+          return;
+        }
         const interrupted = interruptRecordedFlight(storedFlight);
+        if (!cancelled) {
+          recoverableFlightRef.current = interrupted;
+          setRecoverableFlight(interrupted);
+        }
         await storageRef.current.saveActiveFlight(interrupted);
-        if (!cancelled) setRecoverableFlight(interrupted);
       })
       .catch((error: unknown) => {
         console.error("Impossible de lire le vol actif", error);
@@ -194,7 +219,7 @@ export function useFlightTracking(
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [updateStatus]);
 
   const markAcquiring = useCallback(() => {
     if (statusRef.current === "ready") updateStatus("acquiring");
@@ -205,63 +230,108 @@ export function useFlightTracking(
   }, [updateStatus]);
 
   const startTracking = useCallback(
-    (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot } = {}) => {
+    async (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot } = {}) => {
       if (
         !isEnabled ||
+        !storageReady ||
+        startingRef.current ||
+        completionPromiseRef.current ||
         statusRef.current === "recording" ||
-        recoverableFlight
+        recoverableFlightRef.current
       ) {
-        return;
+        return false;
       }
-      const now = Date.now();
-      const firstPoint = initialPoint
-        ? geoPointToRecordedFlightPoint(initialPoint)
-        : null;
-      const createdFlight = createRecordedFlight({
-        startedAt: now,
-        firstPoint,
-        balloonRegistration: context.balloonRegistration,
-        weatherModel: context.weatherModel,
-        weatherSnapshot: context.weatherSnapshot,
-      });
-      const flight = {
-        ...createdFlight,
-        points: assignFlightSegmentIds(classifyGpsTraceQuality(createdFlight.points)),
-      };
-      setCompletedFlight(null);
-      applyActiveFlight(flight);
-      void queueActiveFlightPersistence(flight);
+      startingRef.current = true;
+      try {
+        const now = Date.now();
+        const firstPoint = initialPoint
+          ? geoPointToRecordedFlightPoint(initialPoint)
+          : null;
+        const createdFlight = createRecordedFlight({
+          startedAt: now,
+          firstPoint,
+          balloonRegistration: context.balloonRegistration,
+          weatherModel: context.weatherModel,
+          weatherSnapshot: context.weatherSnapshot,
+        });
+        const flight = {
+          ...createdFlight,
+          points: assignFlightSegmentIds(classifyGpsTraceQuality(createdFlight.points)),
+        };
+        // Re-read before starting: an ignored/recovered flight or another tab
+        // must not be replaced. The storage transaction also enforces this.
+        const stored = await storageRef.current.getActiveFlight();
+        if (stored) {
+          const recovered = stored.status === "COMPLETED" ? stored : interruptRecordedFlight(stored);
+          recoverableFlightRef.current = recovered;
+          setRecoverableFlight(recovered);
+          updateStatus("ready");
+          return false;
+        }
+        await storageRef.current.saveActiveFlight(flight);
+        setStorageError(null);
+        setCompletedFlight(null);
+        applyActiveFlight(flight);
+        return true;
+      } catch (error) {
+        console.error("Impossible de démarrer le vol localement", error);
+        setStorageError("Départ refusé : impossible de sauvegarder le vol sur cet appareil. Réessayez.");
+        updateStatus("ready");
+        return false;
+      } finally {
+        startingRef.current = false;
+      }
     },
     [
       applyActiveFlight,
       isEnabled,
-      queueActiveFlightPersistence,
-      recoverableFlight,
+      storageReady,
+      updateStatus,
     ],
   );
 
   const completeFlight = useCallback(
     async (flight: RecordedFlight): Promise<RecordedFlight | null> => {
-      const finalized = finalizeRecordedFlight(flight);
+      const scope = getRuntimeDataScope();
+      const preparedStartName = loadPreparationDraft()?.launchSite?.name;
+      const finalized = flight.status === "COMPLETED" ? flight : finalizeRecordedFlight(
+        flight,
+        flight.status === "INTERRUPTED"
+          ? flight.points.at(-1)?.timestamp ?? flight.startedAt
+          : Date.now(),
+      );
+      const completed = withRecordedFlightLocationFallbacks(finalized, preparedStartName);
       try {
-        const completed = await resolveRecordedFlightLocations(
-          finalized,
-          loadPreparationDraft()?.launchSite?.name,
-        );
+        if (flight.status === "RECORDING") await queueActiveFlightPersistence(flight);
         await persistenceChainRef.current.catch(() => undefined);
         await storageRef.current.completeFlight(completed);
-        const journalPersistence = persistRecordedFlightInJournal(completed);
-        if (!journalPersistence.persisted && process.env.NODE_ENV === "development") {
-          console.error("[useFlightTracking] Métadonnées Journal non persistées", {
-            flightId: completed.id,
-          });
-        }
+        // Metadata projection is repairable from the durable completed record.
+        // Its failure must not turn a successful local commit into a failed stop.
+        try { persistRecordedFlightInJournal(completed); } catch { /* Best effort. */ }
         activeFlightRef.current = null;
         setActiveFlight(null);
+        recoverableFlightRef.current = null;
         setRecoverableFlight(null);
         setCompletedFlight(completed);
         updateStatus("stopped");
         setStorageError(null);
+        // Detached from the local commit and navigation. Only patch labels in
+        // the original scope, preserving edits made during the request.
+        void resolveRecordedFlightLocations(completed, preparedStartName).then(async (enriched) => {
+          if (getRuntimeDataScope() !== scope || (
+            enriched.startLocationLabel === completed.startLocationLabel &&
+            enriched.endLocationLabel === completed.endLocationLabel
+          )) return;
+          const labels = {
+            startLocationLabel: enriched.startLocationLabel,
+            endLocationLabel: enriched.endLocationLabel,
+            generatedTitle: enriched.generatedTitle,
+          };
+          const updated = await storageRef.current.updateFlightLocations(completed.id, labels);
+          if (!updated || getRuntimeDataScope() !== scope) return;
+          enrichJournalFlightLocations(updated);
+          setCompletedFlight((current) => current?.id === updated.id ? updated : current);
+        }).catch(() => undefined);
         return completed;
       } catch (error) {
         console.error("Impossible de finaliser le vol", error);
@@ -271,7 +341,7 @@ export function useFlightTracking(
         return null;
       }
     },
-    [updateStatus],
+    [queueActiveFlightPersistence, updateStatus],
   );
 
   const completeFlightOnce = useCallback(
@@ -291,13 +361,13 @@ export function useFlightTracking(
   const stopTracking = useCallback(async () => {
     const flight = activeFlightRef.current;
     if (!flight || statusRef.current !== "recording") return null;
-    await persistCurrentFlight();
     return completeFlightOnce(flight);
-  }, [completeFlightOnce, persistCurrentFlight]);
+  }, [completeFlightOnce]);
 
   const resumeInterruptedFlight = useCallback(() => {
-    if (!recoverableFlight) return;
+    if (!recoverableFlight || recoverableFlight.status === "COMPLETED" || completionPromiseRef.current) return;
     const resumed = resumeRecordedFlight(recoverableFlight);
+    recoverableFlightRef.current = null;
     setRecoverableFlight(null);
     applyActiveFlight(resumed);
     void queueActiveFlightPersistence(resumed);
@@ -316,6 +386,7 @@ export function useFlightTracking(
     if (!recoverableFlight) return true;
     try {
       await storageRef.current.clearActiveFlight();
+      recoverableFlightRef.current = null;
       setRecoverableFlight(null);
       setStorageError(null);
       return true;
@@ -327,7 +398,7 @@ export function useFlightTracking(
   }, [recoverableFlight]);
 
   const ignoreInterruptedFlight = useCallback(() => {
-    setRecoverableFlight(null);
+    // Leaving the recovery screen must keep the start interlock intact.
     updateStatus("ready");
   }, [updateStatus]);
 
@@ -342,7 +413,7 @@ export function useFlightTracking(
 
   const addPoint = useCallback((point: GeoPoint) => {
     const flight = activeFlightRef.current;
-    if (!flight || statusRef.current !== "recording") return;
+    if (!flight || statusRef.current !== "recording" || completionPromiseRef.current) return;
 
     const recordedPoint = geoPointToRecordedFlightPoint(point);
     const result = appendRecordedFlightPoint(flight, recordedPoint);

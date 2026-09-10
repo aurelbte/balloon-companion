@@ -137,11 +137,10 @@ test("la projection prépare tous les niveaux VENTS même si seules quelques alt
   assert.equal(result.body.windProfile.find(({ levelM }) => levelM === 200)?.directionFromDeg, 20);
 });
 
-test("le panneau lit le snapshot validé et non les trajectoires ou le brouillon", () => {
+test("le panneau lit le snapshot du vol après validation, sans reconstituer les vents depuis les trajectoires", () => {
   assert.equal(snapshotWindProfile(null).size, 0);
   const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /activeFlight\?\.weatherSnapshot/);
-  assert.match(page, /recoverableFlight\?\.weatherSnapshot/);
+  assert.match(page, /selectFlightWeatherSnapshot\(\s*validatedWeatherSnapshot, activeFlight \?\? recoverableFlight/);
   assert.match(page, /snapshotWindProfile\(flightWeatherSnapshot\)/);
   assert.doesNotMatch(page, /predictedWindProfile\(plannedTrajectories/);
 });

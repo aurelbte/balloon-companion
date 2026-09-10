@@ -26,6 +26,7 @@ interface UseGeolocationResult {
 }
 
 const STALE_POSITION_MS = 10_000;
+const GPS_RETRY_MS = 2_000;
 const MAX_ACCEPTED_ACCURACY_METERS = 100;
 const MAX_PLAUSIBLE_SPEED_KMH = 200;
 const JUMP_TOLERANCE_METERS = 500;
@@ -130,6 +131,9 @@ export function useGeolocation(
   const [now, setNow] = useState(0);
 
   const watchIdRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trackingRequestedRef = useRef(false);
+  const watchGenerationRef = useRef(0);
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastValidPointRef = useRef<GeoPoint | null>(null);
   const stateRef = useRef<GeolocationState>("idle");
@@ -147,33 +151,41 @@ export function useGeolocation(
   }, []);
 
   const clearActiveWatch = useCallback(() => {
+    watchGenerationRef.current += 1;
     if (watchIdRef.current !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
   }, []);
 
+  const cancelRetry = useCallback(() => {
+    if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+  }, []);
+
   const stopTracking = useCallback(() => {
-    if (watchIdRef.current !== null) {
-      clearActiveWatch();
-    }
+    trackingRequestedRef.current = false;
+    cancelRetry();
+    clearActiveWatch();
     if (simulationIntervalRef.current !== null) {
       clearInterval(simulationIntervalRef.current);
       simulationIntervalRef.current = null;
     }
     updateState("idle");
     setError(null);
-  }, [clearActiveWatch, updateState]);
+  }, [cancelRetry, clearActiveWatch, updateState]);
 
-  const requestPermission = useCallback(() => {
+  const requestPermission = useCallback(function requestPosition(): void {
     if (
       watchIdRef.current !== null ||
       simulationIntervalRef.current !== null ||
+      retryTimerRef.current !== null ||
       stateRef.current === "requesting"
     ) {
       return;
     }
 
+    trackingRequestedRef.current = true;
     updateState("requesting");
     setError(null);
 
@@ -202,9 +214,11 @@ export function useGeolocation(
       return;
     }
 
-    // Démarrer le suivi GPS réel
+    // Ignore late callbacks from a stopped/replaced watcher.
+    const generation = ++watchGenerationRef.current;
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        if (generation !== watchGenerationRef.current || !trackingRequestedRef.current) return;
         const receivedAt = Date.now();
         const { latitude, longitude, altitude, accuracy, altitudeAccuracy } =
           position.coords;
@@ -238,9 +252,12 @@ export function useGeolocation(
         onLocationChange?.(newPoint);
       },
       (err) => {
+        if (generation !== watchGenerationRef.current || !trackingRequestedRef.current) return;
         clearActiveWatch();
         switch (err.code) {
           case err.PERMISSION_DENIED:
+            trackingRequestedRef.current = false;
+            cancelRetry();
             updateState("permission_denied");
             setError("Permission de géolocalisation refusée");
             break;
@@ -256,7 +273,13 @@ export function useGeolocation(
             updateState("error");
             setError("Erreur de géolocalisation");
         }
-
+        if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
+          cancelRetry();
+          retryTimerRef.current = setTimeout(() => {
+            retryTimerRef.current = null;
+            if (trackingRequestedRef.current && document.visibilityState === "visible") requestPosition();
+          }, GPS_RETRY_MS);
+        }
       },
       {
         enableHighAccuracy,
@@ -265,6 +288,7 @@ export function useGeolocation(
       }
     );
   }, [
+    cancelRetry,
     clearActiveWatch,
     enableDevelopmentTestMode,
     enableHighAccuracy,
@@ -285,11 +309,20 @@ export function useGeolocation(
         gpsQualitySessionRef.current?.enteredBackground();
       } else {
         gpsQualitySessionRef.current?.returnedToForeground();
+        if (trackingRequestedRef.current && simulationIntervalRef.current === null) {
+          const lastPoint = lastValidPointRef.current;
+          if (watchIdRef.current === null || !lastPoint || Date.now() - lastPoint.timestamp > STALE_POSITION_MS) {
+            cancelRetry();
+            clearActiveWatch();
+            updateState("unavailable");
+            requestPermission();
+          }
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, []);
+  }, [cancelRetry, clearActiveWatch, requestPermission, updateState]);
 
   // Cleanup au démontage
   useEffect(() => {

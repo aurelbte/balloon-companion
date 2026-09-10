@@ -3,6 +3,8 @@ import test from "node:test";
 import { createRecordedFlight, finalizeRecordedFlight } from "./recordedFlight.ts";
 import {
   findJournalFlightBySourceId,
+  enrichJournalFlightLocations,
+  saveFlightCompletionState,
   loadFlightCompletionState,
   reconcileRecordedFlightJournalProjection,
 } from "./flightCompletionStorage.ts";
@@ -77,5 +79,25 @@ test("un scope indisponible ou changé pendant la lecture n'écrit aucune projec
 
   assert.equal((await reconciliation).status, "SCOPE_CHANGED");
   assert.equal(loadFlightCompletionState().journalFlights.length, 0);
+  delete globalThis.window;
+});
+
+
+test("enrichissement des lieux préserve les décisions de complétion et les notes", async () => {
+  globalThis.window = { localStorage: memoryStorage(), dispatchEvent: () => true };
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
+  setRuntimeGuestModeActive(true);
+  const recorded = finalizeRecordedFlight(createRecordedFlight({ id: "enriched", startedAt: 1_000 }), 61_000);
+  await reconcileRecordedFlightJournalProjection(recorded.id, { getFlight: async () => recorded });
+  const state = loadFlightCompletionState();
+  state.journalFlights[0] = { ...state.journalFlights[0], notes: "Note pilote", customTitle: "Mon vol", logbookStatus: "CARNET_VALIDATED" };
+  saveFlightCompletionState(state);
+  enrichJournalFlightLocations({ ...recorded, startLocationLabel: "Départ résolu", endLocationLabel: "Arrivée résolue", generatedTitle: "Départ résolu → Arrivée résolue" });
+  const updated = loadFlightCompletionState().journalFlights[0];
+  assert.equal(updated.departure, "Départ résolu");
+  assert.equal(updated.notes, "Note pilote");
+  assert.equal(updated.customTitle, "Mon vol");
+  assert.equal(updated.logbookStatus, "CARNET_VALIDATED");
+  assert.deepEqual(loadFlightCompletionState().officialAscensions, state.officialAscensions);
   delete globalThis.window;
 });
