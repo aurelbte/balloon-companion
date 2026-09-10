@@ -1,3 +1,4 @@
+import FlightOfflineRegistration from "./components/FlightOfflineRegistration";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -48,6 +49,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <FlightOfflineRegistration />
         <BalloonAuthProvider><Suspense fallback={null}><CloudSyncRuntime /></Suspense><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
       </body>
     </html>
