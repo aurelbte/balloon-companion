@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -67,19 +67,39 @@ function flightGeoJson(flight: JournalFlight): GeoJSON.FeatureCollection {
   };
 }
 
-export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
+function JournalFlightMap({ flight }: JournalFlightMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [expanded, setExpanded] = useState(false);
   const { points, trackState } = useRecordedFlightJournalPointsState(flight, true);
+  const traceRef = useRef<JournalFlight | null>(null);
+  const [hasTrace, setHasTrace] = useState(false);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || points.length === 0) {
+    // An intermediate empty hydration result must not erase an already visible track.
+    if (!points.length) return;
+    const hydratedFlight = { ...flight, points };
+    const unchanged = JSON.stringify(traceRef.current?.points) === JSON.stringify(points);
+    traceRef.current = hydratedFlight;
+    const map = mapRef.current;
+    const source = map?.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source && !unchanged) {
+      source.setData(flightGeoJson(hydratedFlight));
+      map!.fitBounds(flightBounds(hydratedFlight), {
+        padding: compactMapPadding(containerRef.current!), maxZoom: 13, duration: 0,
+      });
+    }
+    if (source) {
+      const frame = window.requestAnimationFrame(() => setHasTrace(true));
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, [flight, points]);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) {
       return;
     }
-    const hydratedFlight = { ...flight, points };
-    const first = points[0];
-    if (!first) return;
+    const first = traceRef.current?.points[0];
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: {
@@ -95,7 +115,7 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
         },
         layers: [{ id: "journal-plan", type: "raster", source: "osm" }],
       },
-      center: [first.longitude, first.latitude],
+      center: first ? [first.longitude, first.latitude] : [0, 0],
       zoom: 10,
       ...TWO_DIMENSIONAL_MAP_OPTIONS,
       attributionControl: { compact: true },
@@ -111,7 +131,8 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       "top-left",
     );
     map.on("load", () => {
-      map.addSource(SOURCE_ID, { type: "geojson", data: flightGeoJson(hydratedFlight) });
+      const hydratedFlight = traceRef.current;
+      map.addSource(SOURCE_ID, { type: "geojson", data: hydratedFlight ? flightGeoJson(hydratedFlight) : { type: "FeatureCollection", features: [] } });
       map.addLayer({
         id: "journal-track-halo",
         type: "line",
@@ -145,7 +166,8 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
           "circle-stroke-width": 2,
         },
       });
-      map.fitBounds(flightBounds(hydratedFlight), {
+      if (hydratedFlight) setHasTrace(true);
+      if (hydratedFlight) map.fitBounds(flightBounds(hydratedFlight), {
         padding: compactMapPadding(containerRef.current!),
         maxZoom: 13,
         duration: 0,
@@ -155,35 +177,39 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       map.remove();
       mapRef.current = null;
     };
-  }, [flight, points]);
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
     const map = mapRef.current;
-    if (!container || !map || expanded || points.length === 0 || typeof ResizeObserver === "undefined") return;
+    if (!container || !map || expanded || typeof ResizeObserver === "undefined") return;
+    let width = container.clientWidth;
+    let height = container.clientHeight;
     const observer = new ResizeObserver(() => {
+      if (width === container.clientWidth && height === container.clientHeight) return;
+      width = container.clientWidth;
+      height = container.clientHeight;
       map.resize();
-      map.fitBounds(flightBounds({ ...flight, points }), { padding: compactMapPadding(container), maxZoom: 13, duration: 0 });
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [expanded, flight, points]);
+  }, [expanded]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const frame = window.requestAnimationFrame(() => {
       map.resize();
-      if (expanded) {
-        map.fitBounds(flightBounds({ ...flight, points }), {
-          padding: 64,
+      if (traceRef.current) {
+        map.fitBounds(flightBounds(traceRef.current), {
+          padding: expanded ? 64 : compactMapPadding(containerRef.current!),
           maxZoom: 13,
           duration: 250,
         });
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [expanded, flight, points]);
+  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -205,8 +231,8 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
       aria-modal={expanded || undefined}
       aria-label={expanded ? `Trace du vol ${flight.departure} vers ${flight.arrival}` : undefined}
     >
-      <div ref={containerRef} className="h-full w-full" />
-      {points.length === 0 && <p className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-[var(--bc-text-secondary)]">{trackState === "LOADING_CLOUD" ? "Chargement de la trace…" : trackState === "CLOUD_OFFLINE" ? "Trace disponible dans le Cloud — connexion requise" : "Trace indisponible"}</p>}
+      <div ref={containerRef} className={`h-full w-full ${hasTrace ? "" : "invisible"}`} />
+      {!hasTrace && points.length === 0 && <p className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-[var(--bc-text-secondary)]">{trackState === "LOADING_CLOUD" ? "Chargement de la trace…" : trackState === "CLOUD_OFFLINE" ? "Trace disponible dans le Cloud — connexion requise" : flight.origin === "REAL_GPS" ? "La trace s’affichera ici lorsqu’elle sera disponible." : "Trace indisponible"}</p>}
       {expanded ? (
         <button
           type="button"
@@ -231,3 +257,14 @@ export default function JournalFlightMap({ flight }: JournalFlightMapProps) {
     </div>
   );
 }
+
+// Journal state may rebuild equivalent flight objects during hydration.
+export default memo(JournalFlightMap, (previous, next) =>
+  previous.flight.id === next.flight.id &&
+  previous.flight.origin === next.flight.origin &&
+  previous.flight.departure === next.flight.departure &&
+  previous.flight.arrival === next.flight.arrival &&
+  (previous.flight as JournalFlight & { sourceFlightId?: string }).sourceFlightId ===
+    (next.flight as JournalFlight & { sourceFlightId?: string }).sourceFlightId &&
+  JSON.stringify(previous.flight.points) === JSON.stringify(next.flight.points),
+);
