@@ -32,6 +32,23 @@ test("cache signé correspondant : profil et trajectoires utilisables sans rése
   assert.equal(result.validUntil, Date.parse("2026-09-10T07:00:00Z"));
 });
 
+test("analyse valide sans aucun export ni snapshot exporté : profil disponible, carte vide", () => {
+  const input = fixture();
+  const result = validateFlightWeather({ ...input, snapshot: null, trajectories: [] });
+  assert.deepEqual(result.snapshot, input.snapshot);
+  assert.deepEqual(result.trajectories, []);
+  assert.equal(snapshotWindProfile(selectFlightWeatherSnapshot(result.snapshot, null)).get(300).directionDeg, 120);
+});
+
+test("désactiver les couches ou retirer les exports ne modifie pas le profil prévu", () => {
+  const input = fixture();
+  const withExports = validateFlightWeather(input);
+  input.analysis.layers = { ...input.analysis.layers, trajectories: false };
+  const withoutExports = validateFlightWeather({ ...input, snapshot: null, trajectories: [] });
+  assert.deepEqual(withoutExports.snapshot, withExports.snapshot);
+  assert.deepEqual(withoutExports.trajectories, []);
+});
+
 for (const now of ["2026-09-10T05:01:00Z", "2026-09-10T05:59:00Z"]) test(`préparation fraîche avant décollage (${now}) : export accepté et profil prévu disponible dans Vol`, () => {
   const input = { ...fixture(), now: Date.parse(now) };
   const result = validateFlightWeather(input);
@@ -74,13 +91,13 @@ test("signature absente ou sélection d'altitudes incohérente : pas de secours 
 });
 
 for (const [name, patch] of [
-  ["modèle", { weatherModel: "icon_seamless" }],
+  ["modèle", { model: WEATHER_MODEL_REGISTRY.find(({ id }) => id === "icon") }],
   ["échéance", { forecastAtIso: "2026-09-09T06:00:00.000Z" }],
-  ["calcul", { sourceUpdatedAt: "2026-09-09T05:00:00.000Z" }],
-  ["terrain", { referenceLocation: { latitude: 49, longitude: 3.1, terrainAltitudeAmslM: 20 } }],
-  ["profil", { windProfile: [{ levelM: 300, altitudeAmslM: 300, directionFromDeg: 20, speedMps: 99 }] }],
-]) test(`snapshot exporté incohérent (${name}) non attachable`, () => {
-  const input = fixture(); input.snapshot = { ...input.snapshot, ...patch };
+  ["calcul futur", { calculatedAtIso: "2026-09-11T05:00:00.000Z" }],
+  ["altitude terrain", { terrainAltitudeAmslM: Number.NaN }],
+  ["profil invalide", { predictedWindProfile: [{ levelM: 300, altitudeAmslM: 300, directionFromDeg: 20, speedMps: -1 }] }],
+]) test(`source météo incohérente (${name}) non attachable, même si un ancien snapshot existe`, () => {
+  const input = fixture(); input.analysis.traces[0] = { ...input.analysis.traces[0], ...patch };
   assert.equal(validateFlightWeather(input).snapshot, null);
 });
 
@@ -143,4 +160,50 @@ test("offline avant départ : conserve les modèles et altitudes explicitement s
   // A subsequent draft change is not the same as an explicit map selection.
   input.preparation.selectedAltitudes = [1000];
   assert.equal(validateFlightWeather(input).snapshot, null);
+});
+
+
+test("offline exact sans export : l'analyse suffit, un ancien snapshot ou un export corrompu ne la masque pas", (t) => {
+  const data = new Map();
+  const storage = { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
+  globalThis.window = { localStorage: storage, sessionStorage: storage };
+  globalThis.localStorage = storage;
+  t.after(() => { delete globalThis.window; delete globalThis.localStorage; setRuntimeGuestModeActive(false); });
+  setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
+  t.mock.method(globalThis, "fetch", () => { throw new Error("Offline: aucun accès réseau"); });
+  const input = fixture();
+  assert.ok(saveTrajectoryAnalysisRequest(input.request));
+  assert.ok(savePreparationDraft(input.preparation));
+  assert.ok(saveWeatherAnalysis(input.analysis));
+  const fresh = loadValidatedFlightWeather(input.now);
+  assert.deepEqual(fresh.snapshot, input.snapshot);
+  assert.deepEqual(fresh.trajectories, []);
+  saveFlightWeatherSnapshot({ ...input.snapshot, forecastAtIso: "2026-09-09T06:00:00.000Z" });
+  assert.deepEqual(loadValidatedFlightWeather(input.now).snapshot, input.snapshot);
+  saveExportedPlannedTrajectories(input.trajectories);
+  const exportKey = [...data.keys()].find((key) => key.includes("planned_trajectories"));
+  data.set(exportKey, "{");
+  const corrupted = loadValidatedFlightWeather(input.now);
+  assert.deepEqual(corrupted.snapshot, input.snapshot);
+  assert.deepEqual(corrupted.trajectories, []);
+  savePreparationDraft({ ...input.preparation, departureTime: "2026-09-11T06:00:00.000Z" });
+  assert.deepEqual(loadValidatedFlightWeather(input.now), { snapshot: null, trajectories: [], validUntil: null });
+});
+
+test("le modèle du profil dépend de la sélection d'analyse, jamais du sous-ensemble exporté", () => {
+  const input = fixture();
+  const icon = WEATHER_MODEL_REGISTRY.find(({ id }) => id === "icon");
+  input.analysis.selectedModelIds = ["arome", "icon"];
+  input.analysis.analysisKey = createTrajectoryAnalysisKey(input.request, input.analysis.selectedModelIds, [300]);
+  input.analysis.traces.push({ ...structuredClone(input.analysis.traces[0]), model: icon, traceId: "icon:300" });
+  // Only AROME is exported; the last selected analysis model remains ICON.
+  const exported = validateFlightWeather(input);
+  const hidden = validateFlightWeather({ ...input, trajectories: [] });
+  assert.equal(exported.snapshot.weatherModel, icon.providerModelId);
+  assert.deepEqual(exported.trajectories, input.trajectories);
+  assert.deepEqual(hidden.snapshot, exported.snapshot);
+  assert.deepEqual(hidden.trajectories, []);
+  const malformed = validateFlightWeather({ ...input, trajectories: [null] });
+  assert.deepEqual(malformed.snapshot, exported.snapshot);
+  assert.deepEqual(malformed.trajectories, []);
 });

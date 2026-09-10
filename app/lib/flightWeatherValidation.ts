@@ -6,7 +6,7 @@ import { getTrajectoryAnalysisRequest } from "./trajectory/projectionStorage.ts"
 import { WEATHER_MODEL_REGISTRY, weatherModelByProviderId } from "./weather/models.ts";
 import {
   isUsableWeatherAnalysisCache, loadWeatherAnalysis, loadExportedPlannedTrajectories,
-  loadFlightWeatherSnapshot, type WeatherAnalysisState, type ExportedPlannedTrajectory,
+  type WeatherAnalysisState, type WeatherAnalysisTrace, type ExportedPlannedTrajectory,
   type FlightWeatherSnapshot,
 } from "./trajectory/weatherAnalysisStorage.ts";
 
@@ -16,19 +16,17 @@ export type ValidatedFlightWeather = {
   validUntil: number | null;
 };
 const unavailable = (): ValidatedFlightWeather => ({ snapshot: null, trajectories: [], validUntil: null });
-const coordinate = (value: number) => Number(value.toFixed(6));
 
 /** Uses the existing analysis signature, never a second cache identity. */
 export function validateFlightWeather(input: {
   preparation: StoredFlightPreparationV2 | null;
   request: MultiAltitudeProjectionRequest | null;
   analysis: WeatherAnalysisState | null;
-  snapshot: FlightWeatherSnapshot | null;
   trajectories: ExportedPlannedTrajectory[];
   now: number;
 }): ValidatedFlightWeather {
   try {
-    const { preparation, analysis, snapshot, now } = input;
+    const { preparation, analysis, now } = input;
     const request: MultiAltitudeProjectionRequest | null = preparation
       ? preparation.launchSite && preparation.departureTime && preparation.durationMinutes
         ? {
@@ -76,39 +74,64 @@ export function validateFlightWeather(input: {
       Date.parse(trace.forecastAtIso) === startsAt &&
       Number.isFinite(Date.parse(trace.calculatedAtIso)) && Date.parse(trace.calculatedAtIso) <= now,
     );
-    const trajectories = input.trajectories.filter((exported) => traces.some((trace) =>
-      trace.traceId === exported.traceId && trace.model.id === exported.modelId &&
-      trace.model.providerModelId === exported.providerModelId && trace.altitudeKey === exported.altitudeKey &&
-      trace.altitudeAmslM === exported.altitudeAmslM && trace.calculatedAtIso === exported.calculatedAtIso &&
-      trace.forecastAtIso === exported.forecastAtIso &&
-      JSON.stringify(exported.geometry) === JSON.stringify(trace.projection.points.map((point) => [point.longitude, point.latitude])),
-    ));
-    const reference = snapshot && traces.find((trace) =>
-      trace.model.providerModelId === snapshot.weatherModel &&
-      trace.calculatedAtIso === snapshot.sourceUpdatedAt && trace.forecastAtIso === snapshot.forecastAtIso &&
-      trace.terrainAltitudeAmslM === snapshot.referenceLocation.terrainAltitudeAmslM &&
-      JSON.stringify(trace.predictedWindProfile) === JSON.stringify(snapshot.windProfile),
-    );
-    const snapshotValid = snapshot && reference &&
-      coordinate(snapshot.referenceLocation.latitude) === coordinate(request.launchSite.latitude) &&
-      coordinate(snapshot.referenceLocation.longitude) === coordinate(request.launchSite.longitude) &&
-      (preparation?.launchSite?.terrainAltitudeAmslM === undefined || preparation.launchSite.terrainAltitudeAmslM === snapshot.referenceLocation.terrainAltitudeAmslM) &&
-      snapshot.windProfile.length > 0 && snapshot.windProfile.every((wind) =>
+    // The full wind profile is already persisted in the signed analysis.
+    // Select its reference model independently of exported/visible map layers.
+    const profileSources = traces.filter((trace) =>
+      Number.isFinite(trace.terrainAltitudeAmslM) &&
+      (preparation?.launchSite?.terrainAltitudeAmslM === undefined || preparation.launchSite.terrainAltitudeAmslM === trace.terrainAltitudeAmslM) &&
+      trace.predictedWindProfile?.length && trace.predictedWindProfile.every((wind) =>
         [wind.levelM, wind.altitudeAmslM, wind.directionFromDeg, wind.speedMps].every(Number.isFinite) && wind.speedMps >= 0,
-      );
-    return { snapshot: snapshotValid ? snapshot : null, trajectories, validUntil };
+      ),
+    );
+    const referenceModelId = analysis.selectedModelIds.findLast((id) => profileSources.some((trace) => trace.model.id === id));
+    const reference = profileSources.find((trace) => trace.model.id === referenceModelId);
+    const snapshot: FlightWeatherSnapshot | null = reference ? {
+      version: 1,
+      weatherModel: reference.model.providerModelId,
+      modelLabel: reference.model.label,
+      referenceLocation: {
+        name: request.launchSite.name,
+        latitude: request.launchSite.latitude,
+        longitude: request.launchSite.longitude,
+        terrainAltitudeAmslM: reference.terrainAltitudeAmslM,
+      },
+      forecastAtIso: reference.forecastAtIso,
+      sourceUpdatedAt: reference.calculatedAtIso,
+      windProfile: reference.predictedWindProfile!,
+    } : null;
+    return { snapshot, trajectories: validateExportedTrajectories(input.trajectories, traces), validUntil };
   } catch {
     // Missing/legacy/corrupt data must never revive an unverified export.
     return unavailable();
   }
 }
 
+/** Optional map exports cannot invalidate an independently validated profile. */
+function validateExportedTrajectories(
+  exports: ExportedPlannedTrajectory[],
+  traces: WeatherAnalysisTrace[],
+): ExportedPlannedTrajectory[] {
+  if (!Array.isArray(exports)) return [];
+  return exports.filter((exported) => {
+    try {
+      return traces.some((trace) =>
+        trace.traceId === exported.traceId && trace.model.id === exported.modelId &&
+        trace.model.providerModelId === exported.providerModelId && trace.altitudeKey === exported.altitudeKey &&
+        trace.altitudeAmslM === exported.altitudeAmslM && trace.calculatedAtIso === exported.calculatedAtIso &&
+        trace.forecastAtIso === exported.forecastAtIso &&
+        JSON.stringify(exported.geometry) === JSON.stringify(trace.projection.points.map((point) => [point.longitude, point.latitude])),
+      );
+    } catch { return false; }
+  });
+}
+
 export function loadValidatedFlightWeather(now = Date.now()): ValidatedFlightWeather {
+  let trajectories: ExportedPlannedTrajectory[] = [];
+  try { trajectories = loadExportedPlannedTrajectories(); } catch { /* Optional layer unavailable. */ }
   try {
     return validateFlightWeather({
       preparation: loadPreparationDraft(), request: getTrajectoryAnalysisRequest()?.request ?? null,
-      analysis: loadWeatherAnalysis(), snapshot: loadFlightWeatherSnapshot(),
-      trajectories: loadExportedPlannedTrajectories(), now,
+      analysis: loadWeatherAnalysis(), trajectories, now,
     });
   } catch { return unavailable(); }
 }
