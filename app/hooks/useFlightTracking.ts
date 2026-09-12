@@ -21,11 +21,12 @@ import {
   IndexedDbRecordedFlightStorage,
   type RecordedFlightStorage,
 } from "../lib/recordedFlightStorage";
-import { persistRecordedFlightInJournal, enrichJournalFlightLocations } from "../lib/flightCompletionStorage";
+import { persistRecordedFlightInJournal } from "../lib/flightCompletionStorage";
 import { loadFlightSession } from "../lib/flightSessionStorage";
 import { legacyFlightSessionToRecordedFlight } from "../lib/realFlightJournal";
-import { resolveRecordedFlightLocations, withRecordedFlightLocationFallbacks } from "../lib/flightLocationResolver";
 import { getRuntimeDataScope } from "../lib/auth/dataScopeRuntime";
+import { enrichRecordedFlightLocations } from "../lib/flightLocationEnrichment";
+import { withRecordedFlightLocationFallbacks } from "../lib/flightLocationResolver";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { classifyGpsTraceQuality } from "../lib/gpsPointQuality";
 import { assignFlightSegmentIds } from "../lib/flightSegments";
@@ -317,21 +318,11 @@ export function useFlightTracking(
         setStorageError(null);
         // Detached from the local commit and navigation. Only patch labels in
         // the original scope, preserving edits made during the request.
-        void resolveRecordedFlightLocations(completed, preparedStartName).then(async (enriched) => {
-          if (getRuntimeDataScope() !== scope || (
-            enriched.startLocationLabel === completed.startLocationLabel &&
-            enriched.endLocationLabel === completed.endLocationLabel
-          )) return;
-          const labels = {
-            startLocationLabel: enriched.startLocationLabel,
-            endLocationLabel: enriched.endLocationLabel,
-            generatedTitle: enriched.generatedTitle,
-          };
-          const updated = await storageRef.current.updateFlightLocations(completed.id, labels);
-          if (!updated || getRuntimeDataScope() !== scope) return;
-          enrichJournalFlightLocations(updated);
-          setCompletedFlight((current) => current?.id === updated.id ? updated : current);
-        }).catch(() => undefined);
+        if (getRuntimeDataScope() === scope) {
+          void enrichRecordedFlightLocations(completed, storageRef.current, preparedStartName).then((updated) => {
+            if (updated && getRuntimeDataScope() === scope) setCompletedFlight((current) => current?.id === updated.id ? updated : current);
+          }).catch(error => console.warn("[Flight locations] Enrichissement différé", error));
+        }
         return completed;
       } catch (error) {
         console.error("Impossible de finaliser le vol", error);

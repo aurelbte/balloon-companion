@@ -1,3 +1,4 @@
+import { FLIGHT_LOCATIONS_TIMEOUT_MS } from "./reverseGeocoding.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { UNKNOWN_ARRIVAL, UNKNOWN_DEPARTURE } from "./journalFlightTitle.ts";
 
@@ -6,10 +7,13 @@ type ReverseGeocodingResponse = {
   endLocationLabel?: unknown;
 };
 
+export function isUnknownFlightLocation(value: unknown): boolean {
+  return typeof value !== "string" || !value.trim() ||
+    ["Lieu inconnu", UNKNOWN_DEPARTURE, UNKNOWN_ARRIVAL].includes(value.trim());
+}
+
 function usableLabel(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() && value !== "Lieu inconnu"
-    ? value.trim()
-    : fallback;
+  return isUnknownFlightLocation(value) ? fallback : (value as string).trim();
 }
 
 export function withRecordedFlightLocationFallbacks(flight: RecordedFlight, preparedStartName?: string): RecordedFlight {
@@ -22,12 +26,14 @@ export async function resolveRecordedFlightLocations(
   flight: RecordedFlight,
   preparedStartName?: string,
   request: typeof fetch = fetch,
-  timeoutMs = 3_000,
+  timeoutMs = FLIGHT_LOCATIONS_TIMEOUT_MS,
 ): Promise<RecordedFlight> {
   const start = flight.points[0];
   const end = flight.points.at(-1);
   const fallback = withRecordedFlightLocationFallbacks(flight, preparedStartName);
-  if (!start || !end) return fallback;
+  const needsStart = isUnknownFlightLocation(fallback.startLocationLabel);
+  const needsEnd = isUnknownFlightLocation(fallback.endLocationLabel);
+  if ((!needsStart && !needsEnd) || !start || !end) return fallback;
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let payload: ReverseGeocodingResponse = {};
@@ -38,8 +44,8 @@ export async function resolveRecordedFlightLocations(
         signal: controller.signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          start: { latitude: start.latitude, longitude: start.longitude },
-          end: { latitude: end.latitude, longitude: end.longitude },
+          ...(needsStart ? { start: { latitude: start.latitude, longitude: start.longitude } } : {}),
+          ...(needsEnd ? { end: { latitude: end.latitude, longitude: end.longitude } } : {}),
           preparedStartName,
         }),
       });
@@ -56,8 +62,8 @@ export async function resolveRecordedFlightLocations(
   } finally {
     clearTimeout(timer);
   }
-  const startLocationLabel = usableLabel(payload.startLocationLabel, fallback.startLocationLabel!);
-  const endLocationLabel = usableLabel(payload.endLocationLabel, fallback.endLocationLabel!);
+  const startLocationLabel = needsStart ? usableLabel(payload.startLocationLabel, fallback.startLocationLabel!) : fallback.startLocationLabel!;
+  const endLocationLabel = needsEnd ? usableLabel(payload.endLocationLabel, fallback.endLocationLabel!) : fallback.endLocationLabel!;
   return {
     ...flight,
     startLocationLabel,

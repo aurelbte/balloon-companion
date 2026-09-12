@@ -1,3 +1,4 @@
+import FlightLocationRetry from "./components/FlightLocationRetry";
 import FlightOfflineRegistration from "./components/FlightOfflineRegistration";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -50,7 +51,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <FlightOfflineRegistration />
-        <BalloonAuthProvider><Suspense fallback={null}><CloudSyncRuntime /></Suspense><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
+        <BalloonAuthProvider><FlightLocationRetry /><Suspense fallback={null}><CloudSyncRuntime /></Suspense><UnitPreferencesProvider><WeatherPreferencesProvider><FlightRuntimeProvider><GpsStatsDiagnosticRunner />{children}</FlightRuntimeProvider></WeatherPreferencesProvider></UnitPreferencesProvider><LocalDataMigrationDialog /></BalloonAuthProvider>
       </body>
     </html>
   );

@@ -66,3 +66,16 @@ test("un corps de réponse bloqué est également borné dans le temps", async (
   assert.equal(flight.startLocationLabel, "Boeschepe");
   assert.equal(flight.endLocationLabel, "Arrivée inconnue");
 });
+
+test("retry : seul le lieu inconnu est demandé, le terrain préparé reste conservé", async () => {
+  let body;
+  const result = await resolveRecordedFlightLocations({ ...recorded(), startLocationLabel: "Départ inconnu" }, "Bondues", async (_url, options) => {
+    body = JSON.parse(options.body);
+    return Response.json({ startLocationLabel: "Ne pas remplacer", endLocationLabel: "Mérignies" });
+  });
+  assert.equal(body.start, undefined);
+  assert.deepEqual(body.end, { latitude: 50.82, longitude: 2.61 });
+  assert.equal(result.startLocationLabel, "Bondues");
+  assert.equal(result.endLocationLabel, "Mérignies");
+  await resolveRecordedFlightLocations(result, undefined, async () => assert.fail("Aucun lieu inconnu"));
+});

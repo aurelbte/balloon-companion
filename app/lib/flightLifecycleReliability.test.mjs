@@ -7,6 +7,7 @@ import ts from "typescript";
 import { createRecordedFlight, finalizeRecordedFlight } from "./recordedFlight.ts";
 import { MemoryRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { CloudBackfillService } from "./cloudBackfillService.ts";
+import { FLIGHT_LOCATIONS_TIMEOUT_MS } from "./reverseGeocoding.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
 const require = createRequire(import.meta.url);
@@ -84,6 +85,10 @@ async function tracking(t, storage = new MemoryRecordedFlightStorage(), extra = 
   const journal = [];
   const { useFlightTracking } = loadModule("../hooks/useFlightTracking.ts", {
     react: hooks.react,
+    "../lib/flightLocationEnrichment": loadModule("./flightLocationEnrichment.ts", {
+      "./auth/dataScopeRuntime.ts": { getRuntimeDataScope: () => "GUEST" },
+      "./flightCompletionStorage.ts": { enrichJournalFlightLocations: () => true, loadFlightCompletionState: () => ({ journalFlights: [] }) },
+    }),
     "../lib/flightCompletionStorage": { persistRecordedFlightInJournal: (flight) => { journal.push(flight); return { persisted: true }; }, enrichJournalFlightLocations: () => {} },
     "../lib/flightSessionStorage": { loadFlightSession: () => null },
     "../lib/preparationDraftStorage": { loadPreparationDraft: () => null },
@@ -181,8 +186,9 @@ test("fin locale immédiate malgré géocodage bloqué, sans résurrection par l
   assert.equal(h.journal.length, 1);
   assert.equal(await h.storage.getActiveFlight(), null);
   assert.equal(completed.endLocationLabel, "Arrivée inconnue");
+  await flush();
   assert.equal(signal.aborted, false);
-  t.mock.timers.tick(10_000); await flush();
+  t.mock.timers.tick(FLIGHT_LOCATIONS_TIMEOUT_MS); await flush();
   assert.equal(signal.aborted, true);
   assert.equal(await h.storage.getActiveFlight(), null);
   assert.equal((await h.storage.listFlights()).length, 1);

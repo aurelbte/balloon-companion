@@ -390,18 +390,21 @@ export function persistRecordedFlightInJournal(
 }
 
 /** Optional geocoding only patches labels; it preserves completion, titles and notes. */
-export function enrichJournalFlightLocations(flight: RecordedFlight): void {
+export function enrichJournalFlightLocations(flight: RecordedFlight): boolean {
   const state = loadFlightCompletionState();
   const journalFlights = state.journalFlights.map((existing) =>
     (existing.sourceFlightId ?? existing.id) === flight.id
       ? { ...existing, departure: flight.startLocationLabel ?? existing.departure,
           arrival: flight.endLocationLabel ?? existing.arrival,
+          startLocationLabel: flight.startLocationLabel ?? existing.startLocationLabel,
+          endLocationLabel: flight.endLocationLabel ?? existing.endLocationLabel,
           generatedTitle: flight.generatedTitle ?? existing.generatedTitle }
       : existing,
   );
   if (journalFlights.some((flight, index) => flight !== state.journalFlights[index])) {
-    saveFlightCompletionState({ ...state, journalFlights });
+    return saveFlightCompletionState({ ...state, journalFlights });
   }
+  return persistRecordedFlightInJournal(flight).persisted;
 }
 
 export async function loadRecordedFlightForJournal(

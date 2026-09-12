@@ -1,3 +1,7 @@
+export const REVERSE_GEOCODING_TIMEOUT_MS = 4_000;
+export const REVERSE_GEOCODING_GAP_MS = 1_050;
+export const FLIGHT_LOCATIONS_TIMEOUT_MS = 2 * REVERSE_GEOCODING_TIMEOUT_MS + REVERSE_GEOCODING_GAP_MS + 3_000;
+
 import type { FlightPlaceIdentity } from "./journalFlightTitle.ts";
 
 export type Coordinate = { latitude: number; longitude: number };
