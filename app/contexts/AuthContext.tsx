@@ -43,6 +43,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const [authChoiceState, setAuthChoiceState] = useState<"AUTH_CHOICE_PENDING" | "GUEST_ACTIVE">("AUTH_CHOICE_PENDING");
   const isolatedAuthCallback = isIsolatedAuthCallbackPath(pathname);
   const effectiveSnapshot = isolatedAuthCallback ? UNKNOWN_AUTH_SNAPSHOT : snapshot;
+  const migrationUserId = snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION" ? snapshot.user?.id ?? null : null;
   setRuntimeAuthSnapshot(effectiveSnapshot);
   setRuntimeGuestModeActive(authChoiceState === "GUEST_ACTIVE");
 
@@ -60,15 +61,15 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     if (isolatedAuthCallback) {
       setPendingLocalDataMigration(null); setDataReadyUserId(null); setLocalDataMigrationCollisions([]); return;
     }
-    if ((snapshot.state !== "SIGNED_IN" && snapshot.state !== "OFFLINE_SESSION") || !snapshot.user) {
+    if (!migrationUserId) {
       setPendingLocalDataMigration(null); setDataReadyUserId(null); setLocalDataMigrationCollisions([]); return;
     }
-    let active = true; const userId = snapshot.user.id;
+    let active = true; const userId = migrationUserId;
     setDataReadyUserId(null); setLocalDataMigrationState("MIGRATION_COPYING");
     const deviceId = getOrCreateDeviceIdentity(window.localStorage).deviceId;
     void migrateGuestAndLegacyToUser({ userId, deviceId, storage: window.localStorage, factory: window.indexedDB })
       .then((report) => {
-        if (!active || snapshot.user?.id !== userId) return;
+        if (!active) return;
         setLocalDataMigrationCollisions(report.collisions); setLocalDataMigrationState("MIGRATION_COMPLETE");
         setDataReadyUserId(userId); window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT));
       })
@@ -78,7 +79,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
         setDataReadyUserId(userId);
       });
     return () => { active = false; };
-  }, [isolatedAuthCallback, snapshot]);
+  }, [isolatedAuthCallback, migrationUserId]);
 
   const decideLocalDataMigration = useCallback((decision: LocalDataMigrationDecision) => {
     const migration = pendingLocalDataMigration;

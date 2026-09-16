@@ -30,6 +30,7 @@ export default function WindProfilePanel({ open, observed, predicted, predictedM
       {predicted.size === 0
         ? <p role="status" style={{ fontSize: "12px", marginBottom: "8px" }}>Prévision indisponible ou périmée</p>
         : predictedForecastAt && <p style={{ fontSize: "11px", marginBottom: "8px" }}>Prévision du {new Date(predictedForecastAt).toLocaleString("fr-FR")}</p>}
+      <p style={{ fontSize: "11px", marginBottom: "8px" }}>Observé : estimation basée sur la dérive GPS. Directions d’où vient le vent.</p>
       <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr", gap: "8px", alignItems: "center", fontSize: "11px", fontVariantNumeric: "tabular-nums" }}>
         <span /><strong style={{ color: "var(--bc-color-text-secondary)", fontSize: "9px", letterSpacing: ".06em", textTransform: "uppercase" }}>Observé</strong><strong style={{ color: "var(--bc-color-text-secondary)", fontSize: "9px", letterSpacing: ".06em", textTransform: "uppercase" }}>Prévu · {predictedModelLabel ?? "—"}</strong>
         {FLIGHT_WIND_ALTITUDE_LEVELS.map((level) => <div key={level} style={{ display: "contents" }}><strong style={{ color: "var(--bc-color-text-secondary)" }}>{level === 0 ? "Sol" : formatFlightAltitude(level, units.flightInstruments.altitudeUnit)}</strong><span>{formatObserved(observed.get(level))}</span><span>{formatPredictedWind(predicted.get(level))}</span></div>)}

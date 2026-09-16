@@ -8,6 +8,7 @@ export const FLIGHT_WIND_ALTITUDE_LEVELS = [
 export type FlightWindLevel = (typeof FLIGHT_WIND_ALTITUDE_LEVELS)[number];
 
 export interface ObservedWind {
+  /** Direction d'où vient le vent, estimée à partir de la dérive GPS. */
   directionDeg: number;
   speedKt: number;
   sampleCount: number;
@@ -36,7 +37,7 @@ export function aggregateObservedWind(points: readonly GeoPoint[]): Map<FlightWi
     const directionDeg = (Math.atan2(
       directionRadians.reduce((sum, angle) => sum + Math.sin(angle), 0),
       directionRadians.reduce((sum, angle) => sum + Math.cos(angle), 0),
-    ) * 180 / Math.PI + 360) % 360;
+    ) * 180 / Math.PI + 540) % 360;
     profile.set(level, {
       directionDeg,
       speedKt: levelSamples.reduce((sum, { speed }) => sum + speed!, 0) / levelSamples.length * 1.943844,

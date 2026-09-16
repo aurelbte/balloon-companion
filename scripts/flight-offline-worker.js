@@ -21,14 +21,17 @@ self.addEventListener("install", event => {
     const cache = await caches.open(CACHE_NAME);
     try {
       // Publish the shell last: a failed/partial download must never become usable.
-      await cache.delete(FLIGHT_OFFLINE.shell.url);
+      const shells = [FLIGHT_OFFLINE.shell, FLIGHT_OFFLINE.completionShell];
+      for (const shell of shells) await cache.delete(shell.url);
       for (const asset of FLIGHT_OFFLINE.assets) {
         await cache.put(asset.url, await checkedResponse(asset));
       }
-      const shell = await checkedResponse(FLIGHT_OFFLINE.shell);
-      await cache.put(FLIGHT_OFFLINE.shell.url, new Response(await shell.arrayBuffer(), {
-        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-      }));
+      for (const shell of shells) {
+        const response = await checkedResponse(shell);
+        await cache.put(shell.url, new Response(await response.arrayBuffer(), {
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+        }));
+      }
     } catch (error) {
       await caches.delete(CACHE_NAME);
       throw error;
@@ -66,11 +69,15 @@ self.addEventListener("fetch", event => {
     })());
     return;
   }
-  const navigation = request.mode === "navigate" && (url.pathname === "/flight" || url.pathname === "/flight/");
+  const shellUrl = url.pathname === "/flight" || url.pathname === "/flight/"
+    ? FLIGHT_OFFLINE.shell.url
+    : url.pathname === "/flight/complete" || url.pathname === "/flight/complete/"
+      ? FLIGHT_OFFLINE.completionShell.url : null;
+  const navigation = request.mode === "navigate" && shellUrl !== null;
   if (!navigation && !allowedAssets.has(url.pathname)) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
-    const response = await cache.match(navigation ? FLIGHT_OFFLINE.shell.url : url.pathname);
+    const response = await cache.match(navigation ? shellUrl : url.pathname);
     // Never repair a missing old-build file with an unchecked new deployment.
     return response ?? new Response("Offline flight cache incomplete. Reconnect and reopen the application.", {
       status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },

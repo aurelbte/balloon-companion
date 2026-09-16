@@ -419,7 +419,7 @@ export function useFlightTracking(
     const nextMetrics: FlightMetrics = {
       ...metricsRef.current,
       altitude: point.altitude,
-      verticalSpeed: estimateVerticalSpeed(nextPoints, 5),
+      verticalSpeed: estimateVerticalSpeed(nextFlight.points.slice(-5).map(recordedFlightPointToGeoPoint), 5),
       groundSpeed: point.speed,
       heading: point.heading,
       distanceKm:

@@ -3,6 +3,7 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useBalloonAuth } from "../../contexts/AuthContext";
 import { useFlightCompletionState } from "../../hooks/useFlightCompletionState";
 import {
   adjustOfficialDurationMinutes,
@@ -35,10 +36,12 @@ function formatDuration(minutes: number): string {
 
 function FlightCompleteContent() {
   const router = useRouter();
+  const auth = useBalloonAuth();
   const searchParams = useSearchParams();
   const journalPath = () => `/journal${new URLSearchParams(window.location.search).get("cloudSyncTest") === "targeted" ? "?cloudSyncTest=targeted" : ""}`;
   const state = useFlightCompletionState();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [offlineSaved, setOfflineSaved] = useState(false);
   const [role, setRole] = useState<FlightRole | null>(null);
   const demoEnabled = process.env.NODE_ENV === "development" && searchParams.get("demo") === "1";
   const requestedFlightId = searchParams.get("flightId") ?? (demoEnabled ? DEMO_COMPLETION_FLIGHT_ID : null);
@@ -100,13 +103,18 @@ function FlightCompleteContent() {
     return false;
   };
 
+  const leaveAfterSave = () => {
+    if (!navigator.onLine) { setOfflineSaved(true); return; }
+    router.push(journalPath());
+  };
+
   const leaveForLater = () => {
     if (!activeFlight || !saveBeforeLeaving(() => persistJournalFlightDecision(activeFlight.id, "CARNET_PENDING"))) return;
     try {
       window.sessionStorage.setItem("balloon-companion-journal-view", "flights");
       window.sessionStorage.setItem("balloon-companion-completion-deferred", activeFlight.id);
     } catch { /* Navigation preferences do not affect the saved completion. */ }
-    router.push(journalPath());
+    leaveAfterSave();
   };
 
   const officialInput = useMemo(() => {
@@ -128,6 +136,20 @@ function FlightCompleteContent() {
     } satisfies OfficialAscensionInput;
   }, [activeFlight, officialDuration, role]);
 
+  if (auth.state === "SIGNED_OUT" && auth.authChoiceState === "AUTH_CHOICE_PENDING") return (
+    <main className={styles.screen}><section className={styles.completionSheet}>
+      <h1>Accéder au vol local</h1>
+      <p>Pour retrouver un vol effectué sans compte après un rechargement, réactivez le mode invité. Un vol associé à un compte nécessite ce même compte.</p>
+      <button type="button" onClick={auth.activateGuestMode}>Continuer en mode invité</button>
+    </section></main>
+  );
+  if (offlineSaved) return (
+    <main className={styles.screen}><section className={styles.completionSheet}>
+      <h1>Finalisation enregistrée localement</h1>
+      <p>Votre choix a été sauvegardé sur cet appareil.</p>
+      <a href="/flight">Retour au mode vol</a>
+    </section></main>
+  );
   if (!activeFlight) return resolutionError ? (
     <main className={styles.screen}><section className={styles.completionSheet}>
       <p role="alert">Impossible d’ouvrir la complétion. Le vol reste conservé sur cet appareil. Réessayez sans fermer cette page.</p>
@@ -142,7 +164,7 @@ function FlightCompleteContent() {
       : officialInput ? () => persistOfficialAscension(activeFlight.id, officialInput) : null;
     if (!save || !saveBeforeLeaving(save)) return;
     try { window.sessionStorage.setItem("balloon-companion-journal-view", "flights"); } catch { /* Optional preference. */ }
-    router.push(journalPath());
+    leaveAfterSave();
   };
 
   return (

@@ -16,10 +16,19 @@ test("agrège plusieurs observations par moyenne de vitesse et moyenne circulair
   const profile = aggregateObservedWind([point(198, 2, 359, 1), point(201, 4, 1, 2), point(205, 3, 0, 3)]);
   const observed = profile.get(200);
   assert.ok(observed);
-  assert.ok(observed.directionDeg < 2 || observed.directionDeg > 358);
+  assert.ok(Math.abs(observed.directionDeg - 180) < 2);
   assert.ok(Math.abs(observed.speedKt - 5.831532) < 0.001);
   assert.equal(observed.sampleCount, 3);
 });
+
+for (const [heading, expectedFrom] of [[0, 180], [90, 270], [180, 0], [270, 90]]) {
+  test(`dérive GPS vers ${heading}° : vent estimé venant de ${expectedFrom}°`, () => {
+    const observed = aggregateObservedWind([1, 2, 3].map((time) => point(200, 3, heading, time))).get(200);
+    assert.ok(Math.abs(observed.directionDeg - expectedFrom) < 1e-9);
+    assert.ok(Math.abs(observed.speedKt - 3 * 1.943844) < 1e-9);
+    assert.equal(observed.sampleCount, 3);
+  });
+}
 
 test("conserve les tranches traversées et n'affiche rien sans assez de données", () => {
   const profile = aggregateObservedWind([

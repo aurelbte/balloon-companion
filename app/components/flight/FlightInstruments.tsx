@@ -9,6 +9,8 @@ import { getFlightAltitudeReadings, kilometresToNauticalMiles, kmhToKnots } from
 interface FlightInstrumentsProps {
   session: FlightSession;
   highContrast?: boolean;
+  qnhStatus?: string;
+  staleQnhHpa?: number | null;
   geolocationState?: string;
   withNavigation?: boolean;
 }
@@ -16,6 +18,8 @@ interface FlightInstrumentsProps {
 export default function FlightInstruments({
   session,
   highContrast = false,
+  qnhStatus,
+  staleQnhHpa = null,
   withNavigation = false,
 }: FlightInstrumentsProps) {
   const units = useUnitPreferences();
@@ -287,6 +291,8 @@ export default function FlightInstruments({
             <div className="flight-altimeter__secondary">
               {session.altitude.qnhHpa === null ? "—" : `${session.altitude.qnhHpa} hPa`}
             </div>
+            {staleQnhHpa !== null && <p style={{ marginTop: "6px", fontSize: "12px", color: "var(--bc-color-warning, #fbbf24)" }}>Ancien QNH : {staleQnhHpa} hPa — non utilisable comme actuel</p>}
+            {qnhStatus && <p role="status" style={{ marginTop: "6px", fontSize: "11px", lineHeight: 1.3, color: session.altitude.qnhHpa === null ? "var(--bc-color-warning, #fbbf24)" : "var(--bc-color-text-secondary)" }}>{qnhStatus}</p>}
           </div>
         </div>
       </section>

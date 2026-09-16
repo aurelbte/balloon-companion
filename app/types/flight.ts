@@ -31,6 +31,9 @@ export interface GeoPoint {
   deltaTimeSincePreviousPoint?: number;
   resumedAfterBackground?: boolean;
   firstFixAfterResume?: boolean;
+  quality?: GpsPointQuality;
+  qualityReason?: GpsPointQualityReason;
+  segmentId?: string;
 }
 
 export type GpsAppState = "FOREGROUND" | "BACKGROUND" | "RESUME";

@@ -20,6 +20,9 @@ function browser(t) {
   Object.assign(win, { localStorage, sessionStorage, location: { search: "" }, setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args) });
   globalThis.window = win;
   t.after(() => { delete globalThis.window; setRuntimeGuestModeActive(false); });
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { onLine: true } });
+  t.after(() => previousNavigator ? Object.defineProperty(globalThis, "navigator", previousNavigator) : delete globalThis.navigator);
   setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null }); setRuntimeGuestModeActive(true);
   return { localStorage, sessionStorage };
 }
@@ -69,7 +72,7 @@ function loadComponent(relative, mocks) {
   const path = resolve(dirname(new URL(import.meta.url).pathname), relative);
   const { outputText } = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } });
   const module = { exports: {} };
-  const localRequire = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id.endsWith(".css") ? { default: {} } : id.startsWith(".") ? require(resolve(dirname(path), id.endsWith(".ts") ? id : `${id}.ts`)) : require(id);
+  const localRequire = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id === "../../contexts/AuthContext" ? { useBalloonAuth: () => ({ state: "SIGNED_IN" }) } : id.endsWith(".css") ? { default: {} } : id.startsWith(".") ? require(resolve(dirname(path), id.endsWith(".ts") ? id : `${id}.ts`)) : require(id);
   new Function("require", "module", "exports", outputText)(localRequire, module, module.exports);
   return module.exports.default;
 }
@@ -80,8 +83,9 @@ function nodes(tree) {
 }
 const find = (tree, predicate) => { const value = nodes(tree).find(predicate); assert.ok(value, "Expected rendered control"); return value; };
 
-for (const action of ["PIC", "NON_PILOT", "LATER"]) test(`complétion ${action} : aucune navigation en échec, durée/rôle conservés, retry`, async (t) => {
+for (const action of ["PIC", "NON_PILOT", "LATER"]) for (const offline of [false, true]) test(`complétion ${action} ${offline ? "offline" : "online"} : aucune navigation en échec, durée/rôle conservés, retry`, async (t) => {
   const hooks = dispatcher(); t.after(() => hooks.unmount()); browser(t);
+  navigator.onLine = !offline;
   let persisted = false; const attempts = [], navigations = [];
   const state = flightState();
   const Page = loadComponent("../flight/complete/page.tsx", {
@@ -112,7 +116,12 @@ for (const action of ["PIC", "NON_PILOT", "LATER"]) test(`complétion ${action} 
   persisted = true;
   button().props.onClick();
   assert.deepEqual(attempts[1], first);
-  assert.deepEqual(navigations, ["/journal"]);
+  if (offline) {
+    tree = render();
+    assert.deepEqual(navigations, []);
+    find(tree, (node) => node.props?.children === "Finalisation enregistrée localement");
+    assert.equal(find(tree, (node) => node.type === "a").props.href, "/flight");
+  } else assert.deepEqual(navigations, ["/journal"]);
 });
 
 test("écran ascension : propage false au formulaire, mêmes valeurs après erreur et au retry", async (t) => {
@@ -190,4 +199,28 @@ test("projection Journal non persistée à l'ouverture : erreur réessayable, au
   render(); await flush(); tree = render();
   assert.equal(navigations.length, 0);
   assert.ok(nodes(tree).some((node) => node.type === "button" && node.props.children === "Ajouter au carnet"));
+});
+
+test("finalisation après rechargement invité : choix explicite puis vol local accessible", async (t) => {
+  const hooks = dispatcher(); t.after(() => hooks.unmount()); browser(t);
+  setRuntimeGuestModeActive(false);
+  let activations = 0;
+  const auth = { state: "SIGNED_OUT", authChoiceState: "AUTH_CHOICE_PENDING", activateGuestMode() { activations++; auth.authChoiceState = "GUEST_ACTIVE"; setRuntimeGuestModeActive(true); } };
+  const state = flightState(), navigations = [];
+  const Page = loadComponent("../flight/complete/page.tsx", {
+    react: hooks.react,
+    "../../contexts/AuthContext": { useBalloonAuth: () => auth },
+    "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), replace: (path) => navigations.push(path) }), useSearchParams: () => new URLSearchParams("flightId=real") },
+    "../../hooks/useFlightCompletionState": { useFlightCompletionState: () => auth.authChoiceState === "GUEST_ACTIVE" ? state : { ...state, journalFlights: [] } },
+    "../../lib/flightCompletionStorage": { ...persistence, reconcileRecordedFlightJournalProjection: async () => ({ status: "SCOPE_UNAVAILABLE", flight: null }) },
+  });
+  const Content = Page().props.children.type;
+  const render = () => hooks.render(Content);
+  let tree = render(); await flush(); tree = render();
+  assert.equal(activations, 0);
+  find(tree, (node) => node.type === "button" && node.props.children === "Continuer en mode invité").props.onClick();
+  tree = render();
+  assert.equal(activations, 1);
+  assert.equal(nodes(tree).some((node) => node.props?.children === "Vol enregistré"), true);
+  assert.deepEqual(navigations, []);
 });

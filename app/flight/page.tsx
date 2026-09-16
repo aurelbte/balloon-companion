@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { navigateToFlightCompletion } from "../lib/flightCompletionNavigation";
 import { useFlightRuntime } from "../contexts/FlightRuntimeContext";
 import { useSelectedAirspace } from "../hooks/useSelectedAirspace";
 import { useFlightContext } from "../hooks/useFlightContext";
 import { useAirspaceCoverage, type AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import {
   buildGpsProjectionPoints,
-  buildWeatherProjectionPoints,
 } from "../lib/geo";
 import {
   type AirspaceGeoJsonProperties,
@@ -57,8 +57,10 @@ import { aggregateObservedWind, snapshotWindProfile } from "../lib/flightWindPro
 import { loadValidatedFlightWeather, selectFlightWeatherSnapshot } from "../lib/flightWeatherValidation";
 import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { loadAviationPreferences } from "../lib/aviation/aviationPreferencesStorage";
-import { loadAviationWeatherForAirport } from "../lib/aviation/aviationWeatherService";
 import { qnhHpaFromMetar } from "../weather/aviationPresentation";
+import type { AviationWeather } from "../lib/aviation/types";
+import { aviationFreshness, retainStaleAviation } from "../lib/aviation/aviationFreshness";
+import { startCockpitAviationRefresh } from "../lib/aviation/cockpitAviationRefresh";
 import { useBalloonAuth } from "../contexts/AuthContext";
 import LiveFlightSimulatorPanel from "../components/flight/LiveFlightSimulatorPanel";
 import type { SharedPilotMapEntry } from "../lib/liveFlightMap.ts";
@@ -124,7 +126,11 @@ export default function FlightPage() {
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [flightActionBusy, setFlightActionBusy] = useState(false);
   const [demoFlightEnding, setDemoFlightEnding] = useState(false);
-  const [qnhHpa, setQnhHpa] = useState<number | null>(null);
+  const [qnhWeather, setQnhWeather] = useState<AviationWeather | null>(null);
+  const [qnhNow, setQnhNow] = useState<number | null>(null);
+  const qnhFreshness = qnhWeather && qnhNow !== null ? aviationFreshness(qnhWeather, "metar", qnhNow) : null;
+  const lastQnhHpa = qnhHpaFromMetar(qnhWeather?.metarRaw ?? null);
+  const qnhHpa = qnhFreshness?.usable ? lastQnhHpa : null;
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -209,15 +215,13 @@ export default function FlightPage() {
   }, [demoFlightEnding, router]);
 
   useEffect(() => {
-    const controller = new AbortController();
     const airport = loadAviationPreferences()?.airportIcao ?? null;
-    if (!airport) return () => controller.abort();
-    loadAviationWeatherForAirport(airport, controller.signal)
-      .then((result) => setQnhHpa(qnhHpaFromMetar(result.data?.metarRaw ?? null)))
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setQnhHpa(null);
-      });
-    return () => controller.abort();
+    if (!airport) return;
+    return startCockpitAviationRefresh(airport, {
+      onClock: setQnhNow,
+      onResult: (result) => setQnhWeather((previous) => result.data ?? retainStaleAviation(previous, airport)),
+      onFailure: () => setQnhWeather((previous) => retainStaleAviation(previous, airport)),
+    });
   }, []);
 
   const { geolocation, tracking } = useFlightRuntime();
@@ -300,22 +304,8 @@ export default function FlightPage() {
     );
   }, [currentPosition, isStale]);
 
-  const weatherProjection = useMemo<ProjectionPoint[]>(() => {
-    if (
-      !layerSettings.weatherProjection ||
-      gpsProjection.length === 0 ||
-      !currentPosition
-    ) {
-      return [];
-    }
-
-    return buildWeatherProjectionPoints(
-      currentPosition.latitude,
-      currentPosition.longitude,
-      currentPosition.heading as number,
-      (currentPosition.speed as number) * 3.6
-    );
-  }, [currentPosition, gpsProjection.length, layerSettings.weatherProjection]);
+  // Aucun moteur météo cockpit réel : ne produire ni afficher de projection simulée.
+  const weatherProjection = useMemo<ProjectionPoint[]>(() => [], []);
 
   useEffect(() => {
     if (!shouldRequestLocalGeolocation) return;
@@ -414,7 +404,7 @@ export default function FlightPage() {
     if (completed) {
       setStopConfirmationOpen(false);
       stopGeolocation();
-      router.push(completionPath(completed.id));
+      navigateToFlightCompletion(completionPath(completed.id), router);
     }
   }, [router, stopGeolocation, stopTracking]);
 
@@ -687,6 +677,14 @@ export default function FlightPage() {
   );
   const predictedModelLabel = flightWeatherSnapshot?.modelLabel ?? null;
 
+  if (auth.state === "SIGNED_OUT" && auth.authChoiceState === "AUTH_CHOICE_PENDING") return (
+    <main style={{ padding: "32px 20px" }}>
+      <h1>Accéder au vol local</h1>
+      <p>Pour récupérer un vol effectué sans compte, réactivez le mode invité. Un vol associé à un compte nécessite ce même compte.</p>
+      <Button onClick={auth.activateGuestMode}>Continuer en mode invité</Button>
+    </main>
+  );
+
   return (
     <div
       style={{
@@ -726,9 +724,7 @@ export default function FlightPage() {
           showGpsProjection={
             layerSettings.gpsProjection && flightSession.state.isRecording
           }
-          showWeatherProjection={
-            layerSettings.weatherProjection && flightSession.state.isRecording
-          }
+          showWeatherProjection={false}
           followPosition={followPosition}
           recenterRequest={recenterRequest}
           fitProjectionRequest={fitProjectionRequest}
@@ -781,6 +777,8 @@ export default function FlightPage() {
       />
       <FlightInstruments
         session={flightSession}
+        qnhStatus={qnhWeather ? `${qnhWeather.airport} · ${qnhFreshness?.label ?? "Fraîcheur non vérifiable"}` : "QNH Aviation indisponible"}
+        staleQnhHpa={qnhFreshness?.usable ? null : lastQnhHpa}
         highContrast={layerSettings.highContrast}
         geolocationState={geoState}
         withNavigation

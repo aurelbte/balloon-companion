@@ -13,8 +13,10 @@ async function fixture(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   const files = {
     ".next/BUILD_ID": "build-A",
-    ".next/prerender-manifest.json": JSON.stringify({ routes: { "/flight": { initialRevalidateSeconds: false } } }),
+    ".next/prerender-manifest.json": JSON.stringify({ routes: { "/flight": { initialRevalidateSeconds: false }, "/flight/complete": { initialRevalidateSeconds: false } } }),
     ".next/server/app/flight.html": '<html><link href="/_next/static/chunks/style.css" rel="stylesheet"><script src="/_next/static/chunks/flight.js"></script>Static shell</html>',
+    ".next/server/app/flight/complete.html": '<html><script src="/_next/static/chunks/complete.js"></script>Completion shell</html>',
+    ".next/static/chunks/complete.js": 'console.log("completion dependency");',
     ".next/static/chunks/flight.js": 'load("static/chunks/lazy.js");',
     ".next/static/chunks/lazy.js": 'console.log("flight dependency");',
     ".next/static/chunks/style.css": '@font-face { src: url(../media/font.woff2); }',
@@ -27,7 +29,7 @@ async function fixture(t) {
   }
   const manifest = await buildFlightOffline(root);
   const resources = new Map();
-  for (const item of [...manifest.assets, manifest.shell]) {
+  for (const item of [...manifest.assets, manifest.shell, manifest.completionShell]) {
     resources.set(item.url, await readFile(resolve(root, item.url.startsWith("/_next/") ? ".next/" + item.url.slice(7) : "public/" + item.url.slice(1))));
   }
   return { root, manifest, resources, worker: await readFile(resolve(root, "public/flight-sw.js"), "utf8") };
@@ -63,9 +65,9 @@ function workerHarness(worker, resources, cachesData = new Map(), scope = "/") {
   };
 }
 
-test("build : shell statique + fermeture des dépendances JS/CSS/polices, sans autres routes", async t => {
+test("build : deux shells statiques + fermeture des dépendances JS/CSS/polices, sans autres routes", async t => {
   const { root, manifest } = await fixture(t);
-  assert.deepEqual(manifest.assets.map(({ url }) => url), ["/_next/static/chunks/flight.js", "/_next/static/chunks/lazy.js", "/_next/static/chunks/style.css", "/_next/static/media/font.woff2"]);
+  assert.deepEqual(manifest.assets.map(({ url }) => url), ["/_next/static/chunks/complete.js", "/_next/static/chunks/flight.js", "/_next/static/chunks/lazy.js", "/_next/static/chunks/style.css", "/_next/static/media/font.woff2"]);
   const before = manifest.version;
   await writeFile(resolve(root, ".next/static/chunks/lazy.js"), "new build content");
   assert.notEqual((await buildFlightOffline(root)).version, before);
@@ -85,14 +87,14 @@ test("premier chargement connecté : /flight se recharge ensuite hors ligne avec
   for (const asset of manifest.assets) {
     assert.equal((await h.request(asset.url, { mode: "cors" })).status, 200);
   }
-  assert.equal(h.fetched.length, manifest.assets.length + 1);
+  assert.equal(h.fetched.length, manifest.assets.length + 2);
   assert.ok(h.fetched.every(({ options }) => options.credentials === "omit" && options.redirect === "error"));
 });
 
 test("aucune interception ni cache des données auth/API/RSC, météo, tuiles ou autres pages", async t => {
   const { worker, resources } = await fixture(t);
   const h = workerHarness(worker, resources); await h.lifecycle("install");
-  for (const path of ["/journal", "/api/weather", "/auth/callback", "https://tile.openstreetmap.org/0/0/0.png", "/flight?_rsc=abc"]) {
+  for (const path of ["/journal", "/api/weather", "/auth/callback", "https://tile.openstreetmap.org/0/0/0.png", "/flight?_rsc=abc", "/flight/complete?_rsc=abc", "/flight/complete/ascension"]) {
     assert.equal(h.request(path), undefined);
   }
   assert.equal(h.request("/flight", { mode: "cors", headers: { RSC: "1" } }), undefined);
@@ -174,4 +176,36 @@ test("migration de scope : le worker racine et l'ancien worker /flight ne suppri
   root.offline(); legacy.offline();
   assert.equal((await root.request("/flight")).status, 200);
   assert.equal((await legacy.request("/flight")).status, 200);
+});
+
+
+test("fin hors ligne : navigation HTML avec flightId, toutes dépendances de finalisation disponibles", async t => {
+  const { worker, resources, manifest } = await fixture(t);
+  const h = workerHarness(worker, resources);
+  await h.lifecycle("install"); await h.lifecycle("activate");
+  assert.equal((await h.request("/flight")).status, 200);
+  h.offline();
+  const before = h.fetched.length;
+  for (const path of ["/flight/complete?flightId=local-flight", "/flight/complete/?flightId=local-flight"]) {
+    const response = await h.request(path);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /text\/html/);
+    assert.match(await response.text(), /Completion shell/);
+  }
+  for (const asset of manifest.assets) assert.equal((await h.request(asset.url, { mode: "cors" })).status, 200);
+  assert.equal((await h.request("/flight")).status, 200); // reprise/récupération après fermeture
+  assert.equal(h.fetched.length, before);
+});
+
+test("shell de finalisation manquant ou modifié : installation entière refusée, ancien build conservé", async t => {
+  const { worker, resources, manifest, root } = await fixture(t);
+  for (const brokenShell of [null, Buffer.from("another completion build")]) {
+    const broken = new Map(resources);
+    if (brokenShell) broken.set(manifest.completionShell.url, brokenShell); else broken.delete(manifest.completionShell.url);
+    const old = new Map([["balloon-flight-entry-root-old", new Map()]]);
+    await assert.rejects(workerHarness(worker, broken, old).lifecycle("install"));
+    assert.deepEqual([...old.keys()], ["balloon-flight-entry-root-old"]);
+  }
+  await writeFile(resolve(root, ".next/prerender-manifest.json"), JSON.stringify({ routes: { "/flight": { initialRevalidateSeconds: false }, "/flight/complete": { initialRevalidateSeconds: 60 } } }));
+  await assert.rejects(buildFlightOffline(root), /Offline \/flight\/complete requires a static/);
 });

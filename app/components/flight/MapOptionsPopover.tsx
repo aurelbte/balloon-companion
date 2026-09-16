@@ -32,7 +32,6 @@ const optionKeys = [
   ["airspaces", "Espaces aériens"],
   ["powerLines", "Lignes haute tension"],
   ["gpsProjection", "Projection GPS"],
-  ["weatherProjection", "Projection météo"],
   ["highContrast", "Contraste élevé"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof FlightLayerSettings, string]

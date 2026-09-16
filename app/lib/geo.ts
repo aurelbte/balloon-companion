@@ -127,27 +127,6 @@ export function buildGpsProjectionPoints(
 }
 
 /**
- * Construire des points de projection météo simulés
- * Pour cette version, retourne une trajectoire légèrement décalée pour tester l'UI
- */
-export function buildWeatherProjectionPoints(
-  lat: number,
-  lon: number,
-  bearing: number,
-  speedKmh: number
-): ProjectionPoint[] {
-  if (speedKmh <= 0 || !isFinite(bearing)) {
-    return [];
-  }
-
-  // Décaler le bearing de 15° pour la simulation météo
-  const weatherBearing = (bearing + 15) % 360;
-  const weatherSpeed = speedKmh * 0.9; // Réduire la vitesse simulée
-
-  return buildGpsProjectionPoints(lat, lon, weatherBearing, weatherSpeed);
-}
-
-/**
  * Calculer la distance parcourue cumulée à partir d'une liste de points
  */
 export function calculateTotalDistance(points: GeoPoint[]): number {
@@ -179,22 +158,46 @@ export function estimateVerticalSpeed(
 ): number | null {
   if (points.length < 2) return null;
 
-  // Utiliser les derniers points pour estimer
+  // Conserver la fenêtre et le calcul existants. Seule l'admissibilité change.
+  // Une incertitude verticale > 25 m est trop dégradée pour une pente sur quelques fixes.
+  // 8 s : même rupture que flightSegments ; 10 m/s : pic non confirmé de gpsPointQuality.
   const recentPoints = points.slice(-Math.max(windowSize, 2));
-  const validPoints = recentPoints.filter((p) => p.altitude !== null) as Array<
-    GeoPoint & { altitude: number }
-  >;
-
+  let validPoints: Array<GeoPoint & { altitude: number }> = [];
+  for (let index = 0; index < recentPoints.length; index++) {
+    const point = recentPoints[index];
+    if (point.altitude === null || !Number.isFinite(point.altitude) || !Number.isFinite(point.timestamp) ||
+        point.verticalAccuracy === null || !Number.isFinite(point.verticalAccuracy) ||
+        point.verticalAccuracy < 0 || point.verticalAccuracy > 25 ||
+        (point.quality !== undefined && point.quality !== "VALID") ||
+        point.firstFixAfterResume || point.appState === "RESUME" ||
+        (point.qualityReason !== undefined && point.qualityReason !== "NONE")) {
+      validPoints = [];
+      continue;
+    }
+    const previous = recentPoints[index - 1];
+    if (previous) {
+      const delta = point.timestamp - previous.timestamp;
+      if (delta <= 0) { validPoints = []; continue; }
+      if (delta >= 8_000 || (point.deltaTimeSincePreviousPoint ?? 0) >= 8_000 ||
+          (point.segmentId !== undefined && previous.segmentId !== undefined && point.segmentId !== previous.segmentId)) {
+        validPoints = [];
+      } else if (point.quality === undefined && (previous.quality === undefined || previous.quality === "VALID") &&
+          previous.altitude !== null && Number.isFinite(previous.altitude) &&
+          Math.abs((point.altitude - previous.altitude) / (delta / 1_000)) > 10) {
+        // Ne pas diluer un pic non confirmé dans une pente apparemment crédible.
+        validPoints = [];
+        continue;
+      }
+    }
+    validPoints.push(point as GeoPoint & { altitude: number });
+  }
   if (validPoints.length < 2) return null;
-
   const first = validPoints[0];
   const last = validPoints[validPoints.length - 1];
-  const timeDiffSeconds = (last.timestamp - first.timestamp) / 1000;
-
-  if (timeDiffSeconds === 0) return null;
-
-  const altitudeDiff = last.altitude - first.altitude;
-  return altitudeDiff / timeDiffSeconds;
+  const timeDiffSeconds = (last.timestamp - first.timestamp) / 1_000;
+  if (timeDiffSeconds <= 0) return null;
+  const rate = (last.altitude - first.altitude) / timeDiffSeconds;
+  return Number.isFinite(rate) ? rate : null;
 }
 
 /**

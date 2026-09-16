@@ -9,6 +9,7 @@ import { MemoryRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { CloudBackfillService } from "./cloudBackfillService.ts";
 import { FLIGHT_LOCATIONS_TIMEOUT_MS } from "./reverseGeocoding.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
+import { navigateToFlightCompletion } from "./flightCompletionNavigation.ts";
 
 const require = createRequire(import.meta.url);
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -99,6 +100,45 @@ async function tracking(t, storage = new MemoryRecordedFlightStorage(), extra = 
   render(); await flush();
   return { render, storage, journal, current: render() };
 }
+
+test("vario live : utilise la qualité classifiée plutôt que les fixes GPS bruts", async (t) => {
+  const h = await tracking(t);
+  await h.current.startTracking({ ...point(), verticalAccuracy: 8 });
+  for (const [offset, altitude] of [[1_000, 102], [2_000, 104]]) {
+    h.render().addPoint({ ...point(100_000 + offset), altitude, verticalAccuracy: 8 });
+  }
+  assert.equal(h.render().metrics.verticalSpeed, 2);
+  h.render().addPoint({ ...point(103_000), altitude: 130, verticalAccuracy: 8 });
+  assert.equal(h.render().activeFlight.points.at(-1).quality, "SUSPECT");
+  assert.equal(h.render().metrics.verticalSpeed, null);
+});
+
+test("offline : départ connecté, perte réseau, commit local puis navigation HTML de finalisation", async (t) => {
+  const h = await tracking(t);
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const network = { onLine: true };
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: network });
+  t.after(() => previous ? Object.defineProperty(globalThis, "navigator", previous) : delete globalThis.navigator);
+  const browserNavigations = [], routerNavigations = [];
+  window.location = { assign: (path) => browserNavigations.push(path) };
+  const router = { push: (path) => routerNavigations.push(path) };
+  navigateToFlightCompletion("/flight/complete?flightId=online", router);
+  assert.deepEqual(routerNavigations, ["/flight/complete?flightId=online"]);
+  assert.equal(await h.current.startTracking({ ...point(), verticalAccuracy: 8 }), true);
+  const flightId = h.render().activeFlight.id;
+  network.onLine = false;
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("offline"); });
+  h.render().addPoint({ ...point(101_000), altitude: 102, verticalAccuracy: 8 });
+  const completed = await h.render().stopTracking();
+  assert.equal(completed.id, flightId);
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(await h.storage.getActiveFlight(), null);
+  assert.equal((await h.storage.getFlight(flightId)).points.length, 2);
+  assert.equal(h.journal[0].id, flightId);
+  navigateToFlightCompletion(`/flight/complete?flightId=${completed.id}`, router);
+  assert.deepEqual(browserNavigations, [`/flight/complete?flightId=${flightId}`]);
+  assert.equal(h.render().status, "stopped");
+});
 
 test("ignorer conserve le verrou, l'identité et la trace récupérables", async (t) => {
   const storage = new MemoryRecordedFlightStorage();

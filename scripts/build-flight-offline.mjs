@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 
-/** Follow only static resources referenced by the flight HTML and its chunks/CSS. */
+/** Follow only static resources referenced by the two flight HTML pages and their chunks/CSS. */
 export function staticReferences(text, from = "/flight") {
   const references = new Set();
   const decoded = text.replaceAll("\\/", "/");
@@ -24,13 +24,16 @@ export function staticReferences(text, from = "/flight") {
 export async function buildFlightOffline(root = process.cwd()) {
   const buildRoot = resolve(root, ".next");
   const prerender = JSON.parse(await readFile(resolve(buildRoot, "prerender-manifest.json"), "utf8"));
-  if (!prerender.routes["/flight"] || prerender.routes["/flight"].initialRevalidateSeconds !== false) {
-    throw new Error("Offline /flight requires a static build-time page; never cache an authenticated response");
+  for (const route of ["/flight", "/flight/complete"]) {
+    if (!prerender.routes[route] || prerender.routes[route].initialRevalidateSeconds !== false) {
+      throw new Error(`Offline ${route} requires a static build-time page; never cache an authenticated response`);
+    }
   }
   const html = await readFile(resolve(buildRoot, "server/app/flight.html"));
+  const completionHtml = await readFile(resolve(buildRoot, "server/app/flight/complete.html"));
   const buildId = (await readFile(resolve(buildRoot, "BUILD_ID"), "utf8")).trim();
   const template = await readFile(new URL("./flight-offline-worker.js", import.meta.url), "utf8");
-  const pending = staticReferences(html.toString());
+  const pending = [...staticReferences(html.toString()), ...staticReferences(completionHtml.toString(), "/flight/complete")];
   const assets = new Map();
   for (let i = 0; i < pending.length; i++) {
     const url = pending[i];
@@ -43,12 +46,15 @@ export async function buildFlightOffline(root = process.cwd()) {
   }
   if (![...assets.keys()].some(url => url.endsWith(".js"))) throw new Error("No flight JavaScript found");
   const entries = [...assets.values()].sort((a, b) => a.url.localeCompare(b.url));
-  const version = hash(buildId + hash(html) + JSON.stringify(entries) + template).slice(0, 24);
+  const version = hash(buildId + hash(html) + hash(completionHtml) + JSON.stringify(entries) + template).slice(0, 24);
   const shell = { url: `/flight-offline/${version}/shell.html`, sha256: hash(html) };
-  const manifest = { version, shell, assets: entries };
-  const destination = resolve(root, "public", shell.url.slice(1));
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(destination, html);
+  const completionShell = { url: `/flight-offline/${version}/complete.html`, sha256: hash(completionHtml) };
+  const manifest = { version, shell, completionShell, assets: entries };
+  for (const [entry, bytes] of [[shell, html], [completionShell, completionHtml]]) {
+    const destination = resolve(root, "public", entry.url.slice(1));
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, bytes);
+  }
   await writeFile(resolve(root, "public/flight-sw.js"), template.replace("__FLIGHT_OFFLINE_MANIFEST__", JSON.stringify(manifest)));
   return manifest;
 }
