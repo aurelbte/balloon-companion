@@ -257,11 +257,11 @@ test("le payload flight reste structuré sans points, trace, document ni Blob", 
   assert.equal(Object.hasOwn(payload.payload, "trace"), false);
 });
 
-test("un échec sidecar après confirmation garde la mutation pour replay", async () => {
+test("un échec d’acquittement atomique après confirmation garde la mutation pour replay", async () => {
   const base = new MemorySyncOutboxStorage({ dependencies: { createId: () => "00000000-0000-4000-8000-000000000099", now: () => NOW.toISOString() } });
   let fail = true;
   const outbox = new Proxy(base, { get(target, property) {
-    if (property === "setMetadata") return async (metadata) => { if (fail) { fail = false; throw new Error("crash"); } return target.setMetadata(metadata); };
+    if (property === "acknowledge") return async (id, metadata) => { if (fail) { fail = false; throw new Error("crash"); } return target.acknowledge(id, metadata); };
     const value = target[property];
     return typeof value === "function" ? value.bind(target) : value;
   } });
@@ -369,7 +369,9 @@ test("syncMutationById protège le scope lors d un USER switch", async () => {
   } });
   const target = await value.outbox.enqueue({ entityType: "favorite-weather-place", entityId: "test", operation: "UPSERT" });
   assert.equal((await value.service.syncMutationById(target.mutationId)).state, "STOPPED_USER_SWITCH");
-  assert.deepEqual(await value.outbox.list(), [{ ...target, attempts: 1 }]);
+  assert.deepEqual(await value.outbox.list(), [{ ...target, attempts: 1, payloadSnapshot: {
+    serverEntityType: "favorite-weather-place", serverEntityId: "test", payload: { first_name: "Alice" },
+  } }]);
   assert.equal((await value.outbox.getMetadata(target.entityType, target.entityId)).revision, 0);
 });
 

@@ -8,6 +8,11 @@ export const SYNC_METADATA_STORE = "metadata";
 export const SYNC_MUTATION_ENQUEUED_EVENT = "balloon-companion:sync-mutation-enqueued";
 
 export type SyncOperation = "UPSERT" | "DELETE";
+export type SyncMutationPayload = Readonly<{
+  serverEntityType: string;
+  serverEntityId: string;
+  payload: Readonly<Record<string, unknown>>;
+}>;
 export type SyncMutation = Readonly<{
   mutationId: string;
   entityType: string;
@@ -18,6 +23,8 @@ export type SyncMutation = Readonly<{
   attempts: number;
   nextAttemptAt?: string;
   lastErrorCode?: string;
+  /** Captured once before transport; retries of this mutationId reuse these bytes. */
+  payloadSnapshot?: SyncMutationPayload;
 }>;
 
 export type StoredSyncMetadata = SyncMetadata & Readonly<{
@@ -33,6 +40,8 @@ export interface SyncOutboxStorage {
   listMetadata(): Promise<StoredSyncMetadata[]>;
   setMetadata(metadata: StoredSyncMetadata): Promise<void>;
   markAttempt(mutationId: string, input?: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
+  freezePayload(mutationId: string, payload: SyncMutationPayload): Promise<SyncMutation | null>;
+  acknowledge(mutationId: string, metadata: StoredSyncMetadata): Promise<void>;
   updateMutation(mutationId: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
   remove(mutationId: string): Promise<void>;
   removeMany(mutationIds: readonly string[]): Promise<void>;
@@ -67,6 +76,16 @@ function coalesce(
   return null;
 }
 
+function sameEntity(left: SyncMutation, right: SyncMutation): boolean {
+  return left.entityType === right.entityType && left.entityId === right.entityId;
+}
+
+function acknowledgedMetadata(metadata: StoredSyncMetadata, previous: StoredSyncMetadata | null, hasSuccessor: boolean): StoredSyncMetadata {
+  if (!hasSuccessor || !previous) return metadata;
+  // The server revision advances, but pending local edits own the local date/tombstone.
+  return { ...metadata, updatedAt: previous.updatedAt, deletedAt: previous.deletedAt };
+}
+
 export class MemorySyncOutboxStorage implements SyncOutboxStorage {
   private readonly mutations: Map<string, SyncMutation>;
   private readonly metadata: Map<string, StoredSyncMetadata>;
@@ -85,7 +104,8 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
   async enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation> {
     const now = (this.dependencies.now ?? (() => new Date().toISOString()))();
     const baseRevision = input.baseRevision ?? this.metadata.get(metadataKey(input.entityType, input.entityId))?.revision ?? 0;
-    const merged = coalesce(await this.list(), { ...input, baseRevision });
+    // No await between reading candidates and writing: same atomic boundary as IDB.
+    const merged = coalesce([...this.mutations.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), { ...input, baseRevision });
     const mutation = merged ?? {
       mutationId: (this.dependencies.createId ?? mutationId)(),
       entityType: input.entityType,
@@ -137,6 +157,29 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
     return updated;
   }
 
+  async freezePayload(mutationIdValue: string, payload: SyncMutationPayload): Promise<SyncMutation | null> {
+    const current = this.mutations.get(mutationIdValue);
+    if (!current) return null;
+    if (current.attempts === 0) throw new Error("Mutation must be reserved before payload capture");
+    const updated = current.payloadSnapshot ? current : { ...current, payloadSnapshot: structuredClone(payload) };
+    this.mutations.set(mutationIdValue, updated);
+    return structuredClone(updated);
+  }
+
+  async acknowledge(mutationIdValue: string, metadata: StoredSyncMetadata): Promise<void> {
+    const current = this.mutations.get(mutationIdValue);
+    if (!current) return;
+    const successors = [...this.mutations.values()].filter((mutation) => mutation.mutationId !== mutationIdValue && sameEntity(mutation, current));
+    for (const mutation of successors) {
+      if (mutation.attempts === 0 && mutation.baseRevision === current.baseRevision) {
+        this.mutations.set(mutation.mutationId, { ...mutation, baseRevision: metadata.revision });
+      }
+    }
+    const key = metadataKey(current.entityType, current.entityId);
+    this.metadata.set(key, acknowledgedMetadata(metadata, this.metadata.get(key) ?? null, successors.length > 0));
+    this.mutations.delete(mutationIdValue);
+  }
+
   async updateMutation(mutationIdValue: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null> {
     const current = this.mutations.get(mutationIdValue);
     if (!current) return null;
@@ -179,28 +222,37 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
 
   async enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation> {
     const database = await this.database();
-    const existingMutations = await this.list();
-    const previous = await this.getMetadata(input.entityType, input.entityId);
-    const now = new Date().toISOString();
-    const baseRevision = input.baseRevision ?? previous?.revision ?? 0;
-    const merged = coalesce(existingMutations, { ...input, baseRevision });
-    const mutation = merged ?? { mutationId: mutationId(), entityType: input.entityType, entityId: input.entityId, operation: input.operation, baseRevision, createdAt: now, attempts: 0 };
-    const metadata: StoredSyncMetadata = {
-      entityType: input.entityType,
-      entityId: input.entityId,
-      ...(previous ?? createInitialSyncMetadata(now)),
-      updatedAt: now,
-      ...(input.operation === "DELETE" ? { deletedAt: now } : { deletedAt: undefined }),
-    };
-    await new Promise<void>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const transaction = database.transaction([SYNC_MUTATIONS_STORE, SYNC_METADATA_STORE], "readwrite");
-      transaction.objectStore(SYNC_MUTATIONS_STORE).put(mutation);
-      transaction.objectStore(SYNC_METADATA_STORE).put(metadata);
-      transaction.oncomplete = () => resolve();
+      const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
+      const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+      const mutationsRequest = store.getAll();
+      const metadataRequest = metadataStore.get([input.entityType, input.entityId]);
+      let reads = 2;
+      let mutation: SyncMutation;
+      const write = () => {
+        if (--reads !== 0) return;
+        const previous = metadataRequest.result as StoredSyncMetadata | undefined;
+        const now = new Date().toISOString();
+        const baseRevision = input.baseRevision ?? previous?.revision ?? 0;
+        const candidates = (mutationsRequest.result as SyncMutation[]).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        mutation = coalesce(candidates, { ...input, baseRevision }) ?? {
+          mutationId: mutationId(), entityType: input.entityType, entityId: input.entityId,
+          operation: input.operation, baseRevision, createdAt: now, attempts: 0,
+        };
+        store.put(mutation);
+        metadataStore.put({
+          entityType: input.entityType, entityId: input.entityId,
+          ...(previous ?? createInitialSyncMetadata(now)), updatedAt: now,
+          deletedAt: input.operation === "DELETE" ? now : undefined,
+        });
+      };
+      mutationsRequest.onsuccess = write;
+      metadataRequest.onsuccess = write;
+      transaction.oncomplete = () => resolve(mutation);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
-    return mutation;
   }
 
   async enqueueFresh(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision: number }>): Promise<SyncMutation> {
@@ -269,6 +321,59 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       };
       transaction.oncomplete = () => resolve(updated);
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  async freezePayload(mutationIdValue: string, payload: SyncMutationPayload): Promise<SyncMutation | null> {
+    const snapshot = structuredClone(payload);
+    const database = await this.database();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
+      const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
+      let updated: SyncMutation | null = null;
+      const request = store.get(mutationIdValue);
+      request.onsuccess = () => {
+        const current = request.result as SyncMutation | undefined;
+        if (!current) return;
+        if (current.attempts === 0) { transaction.abort(); return; }
+        updated = current.payloadSnapshot ? current : { ...current, payloadSnapshot: snapshot };
+        store.put(updated);
+      };
+      transaction.oncomplete = () => resolve(updated);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  async acknowledge(mutationIdValue: string, metadata: StoredSyncMetadata): Promise<void> {
+    const database = await this.database();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction([SYNC_MUTATIONS_STORE, SYNC_METADATA_STORE], "readwrite");
+      const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
+      const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+      const mutationsRequest = store.getAll();
+      const metadataRequest = metadataStore.get([metadata.entityType, metadata.entityId]);
+      let reads = 2;
+      const commit = () => {
+        if (--reads !== 0) return;
+        const mutations = mutationsRequest.result as SyncMutation[];
+        const current = mutations.find((mutation) => mutation.mutationId === mutationIdValue);
+        if (!current) return;
+        const successors = mutations.filter((mutation) => mutation.mutationId !== mutationIdValue && sameEntity(mutation, current));
+        for (const mutation of successors) {
+          if (mutation.attempts === 0 && mutation.baseRevision === current.baseRevision) {
+            store.put({ ...mutation, baseRevision: metadata.revision });
+          }
+        }
+        metadataStore.put(acknowledgedMetadata(metadata, metadataRequest.result ?? null, successors.length > 0));
+        store.delete(mutationIdValue);
+      };
+      mutationsRequest.onsuccess = commit;
+      metadataRequest.onsuccess = commit;
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 

@@ -1,5 +1,5 @@
 import type { LocalDataScope } from "./auth/dataScope.ts";
-import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./syncOutbox.ts";
+import type { StoredSyncMetadata, SyncMutation, SyncMutationPayload, SyncOutboxStorage } from "./syncOutbox.ts";
 
 export const PHASE_3A_SYNC_ENTITY_TYPES = Object.freeze([
   "pilot-profile",
@@ -66,11 +66,7 @@ export class CloudSyncTransportError extends Error {
   }
 }
 
-export type CloudSyncPayload = Readonly<{
-  serverEntityType: string;
-  serverEntityId: string;
-  payload: Readonly<Record<string, unknown>>;
-}>;
+export type CloudSyncPayload = SyncMutationPayload;
 
 export type CloudSyncDependencies = Readonly<{
   outbox: SyncOutboxStorage;
@@ -83,7 +79,7 @@ export type CloudSyncDependencies = Readonly<{
 }>;
 
 export type CloudSyncPassResult = Readonly<{
-  state: "COMPLETED" | "SKIPPED_GUEST" | "SKIPPED_NO_ONLINE_SESSION" | "STOPPED_USER_SWITCH" | "STOPPED_ERROR";
+  state: "COMPLETED" | "PENDING" | "SKIPPED_GUEST" | "SKIPPED_NO_ONLINE_SESSION" | "STOPPED_USER_SWITCH" | "STOPPED_ERROR";
   applied: number;
   conflicts: number;
   notFound: number;
@@ -144,7 +140,7 @@ export class CloudSyncService {
       .sort((left, right) => (AUTOMATIC_TYPE_PRIORITY.get(left.mutation.entityType) ?? Number.MAX_SAFE_INTEGER)
         - (AUTOMATIC_TYPE_PRIORITY.get(right.mutation.entityType) ?? Number.MAX_SAFE_INTEGER) || left.index - right.index)
       .map(({ mutation }) => mutation);
-    return this.processMutations(mutations, authorization, AUTOMATIC_ALLOWED_TYPES);
+    return this.processMutations(mutations, authorization, AUTOMATIC_ALLOWED_TYPES, true);
   }
 
   async syncMutationById(mutationId: string): Promise<CloudSyncPassResult> {
@@ -171,6 +167,7 @@ export class CloudSyncService {
     mutations: readonly SyncMutation[],
     authorization: Readonly<{ scope: `USER:${string}`; userId: string }>,
     allowedTypes: ReadonlySet<string>,
+    wholeOutbox = false,
   ): Promise<CloudSyncPassResult> {
     const counters = { applied: 0, conflicts: 0, notFound: 0, ignored: 0 };
     const now = (this.dependencies.now ?? (() => new Date()))();
@@ -180,15 +177,27 @@ export class CloudSyncService {
       if (!isEligible(candidate, now)) continue;
       if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
 
-      const payload = await this.dependencies.buildPayload(candidate);
-      if (!payload && candidate.operation === "UPSERT") {
-        const attempted = await this.dependencies.outbox.markAttempt(candidate.mutationId);
-        if (attempted) await this.scheduleRetry(attempted, "LOCAL_PAYLOAD_NOT_FOUND", now);
+      // Reserve before any asynchronous local read: subsequent edits cannot coalesce here.
+      let attempted = await this.dependencies.outbox.markAttempt(candidate.mutationId);
+      if (!attempted) continue;
+      try {
+        if (!attempted.payloadSnapshot) {
+          const payload = await this.dependencies.buildPayload(attempted);
+          if (!payload && attempted.operation === "UPSERT") {
+            await this.scheduleRetry(attempted, "LOCAL_PAYLOAD_NOT_FOUND", now);
+            return { state: "STOPPED_ERROR", ...counters };
+          }
+          attempted = await this.dependencies.outbox.freezePayload(attempted.mutationId, payload ?? {
+            serverEntityType: attempted.entityType, serverEntityId: attempted.entityId, payload: {},
+          });
+          if (!attempted) continue;
+        }
+      } catch {
+        if (attempted) await this.scheduleRetry(attempted, "LOCAL_PAYLOAD_PREPARATION_FAILED", now);
         return { state: "STOPPED_ERROR", ...counters };
       }
-
-      const attempted = await this.dependencies.outbox.markAttempt(candidate.mutationId);
-      if (!attempted) continue;
+      if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
+      const payload = attempted.payloadSnapshot!;
       try {
         const response = await this.dependencies.applyMutation({
           mutationId: attempted.mutationId,
@@ -196,7 +205,7 @@ export class CloudSyncService {
           entityId: payload?.serverEntityId ?? candidate.entityId,
           operation: attempted.operation,
           baseRevision: attempted.baseRevision,
-          payload: attempted.operation === "DELETE" ? {} : payload?.payload ?? {},
+          payload: attempted.operation === "DELETE" ? {} : structuredClone(payload.payload),
         });
         if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
 
@@ -209,9 +218,8 @@ export class CloudSyncService {
             updatedAt: response.serverUpdatedAt,
             ...(response.deletedAt ? { deletedAt: response.deletedAt } : {}),
           };
-          await this.dependencies.outbox.setMetadata(metadata);
           await this.dependencies.issues.remove(attempted.entityType, attempted.entityId);
-          await this.dependencies.outbox.remove(attempted.mutationId);
+          await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
           counters.applied += 1;
           continue;
         }
@@ -244,7 +252,12 @@ export class CloudSyncService {
         return { state: "STOPPED_ERROR", ...counters };
       }
     }
-    return { state: "COMPLETED", ...counters };
+    const remaining = await this.dependencies.outbox.list();
+    const pending = remaining.some((mutation) => allowedTypes.has(mutation.entityType) &&
+      (wholeOutbox || mutations.some((candidate) => candidate.entityType === mutation.entityType && candidate.entityId === mutation.entityId)) &&
+      // Targeted conflict resolution still owns cleanup of blocked historical mutations.
+      (wholeOutbox || mutation.lastErrorCode !== "CONFLICT"));
+    return { state: pending ? "PENDING" : "COMPLETED", ...counters };
   }
 
   private sameUser(scope: LocalDataScope, userId: string): boolean {
