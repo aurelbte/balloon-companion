@@ -1,4 +1,5 @@
-import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { createEmptyPilotProfile, normalizePilotProfile, type PilotProfile } from "./pilotProfile.ts";
 import { PILOT_PROFILE_STORAGE_KEY } from "./pilotProfileStorage.ts";
 import {
@@ -65,7 +66,7 @@ export function savePilotQualifications(
 ): boolean {
   if (!storage) return false;
   const normalized = normalizeStored({ version: PILOT_QUALIFICATIONS_VERSION, ...state });
-  const saved = writeScopedBusinessValue(storage as Storage, PILOT_QUALIFICATIONS_STORAGE_KEY, JSON.stringify(normalized));
+  const saved = writeBusinessValueWithSync(storage as Storage, PILOT_QUALIFICATIONS_STORAGE_KEY, JSON.stringify(normalized), [{ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT" }]);
   if (saved && typeof window !== "undefined" && storage === window.localStorage) {
     void enqueueLocalSyncMutation("pilot-qualifications", "singleton");
     window.dispatchEvent(new Event(PILOT_QUALIFICATIONS_EVENT));

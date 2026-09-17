@@ -1,3 +1,4 @@
+import { recoverBrowserLocalSyncIntents } from "./browserLocalSyncRecovery.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRuntimeDataScope } from "./auth/dataScopeRuntime.ts";
 import { CloudBootstrapService } from "./cloudBootstrapService.ts";
@@ -37,7 +38,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
       return data.user?.id ?? null;
     },
     isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
-    listOutbox: () => outbox.list(),
+    listOutbox: async () => { await recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox); return outbox.list(); },
     pulls: {
       profile: () => profile.pullPilotProfile(),
       pilotQualifications: () => preferences.pullPilotQualifications(),

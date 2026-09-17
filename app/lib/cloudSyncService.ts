@@ -73,6 +73,7 @@ export type CloudSyncDependencies = Readonly<{
   issues: CloudSyncIssueRepository;
   getScope(): LocalDataScope | null;
   getOnlineUserId(): Promise<string | null>;
+  recoverLocalMutations?(): Promise<void>;
   buildPayload(mutation: SyncMutation): Promise<CloudSyncPayload | null>;
   applyMutation(request: CloudMutationRequest): Promise<CloudMutationResult>;
   now?: () => Date;
@@ -160,6 +161,9 @@ export class CloudSyncService {
     try { onlineUserId = await this.dependencies.getOnlineUserId(); }
     catch { return this.result("SKIPPED_NO_ONLINE_SESSION"); }
     if (!onlineUserId || onlineUserId !== expectedUserId) return this.result("SKIPPED_NO_ONLINE_SESSION");
+    try { await this.dependencies.recoverLocalMutations?.(); }
+    catch { return this.result("STOPPED_ERROR"); }
+    if (!this.sameUser(initialScope!, expectedUserId)) return this.result("STOPPED_USER_SWITCH");
     return { scope: initialScope as `USER:${string}`, userId: expectedUserId };
   }
 
@@ -242,7 +246,13 @@ export class CloudSyncService {
 
         // NOT_FOUND is terminal for this mutation in V1: preserve a diagnostic issue,
         // then remove it to avoid an infinite retry loop.
-        await this.dependencies.outbox.remove(attempted.mutationId);
+        if (attempted.durableIntentIds?.length) {
+          const metadata = await this.dependencies.outbox.getMetadata(attempted.entityType, attempted.entityId) ?? {
+            entityType: attempted.entityType, entityId: attempted.entityId,
+            revision: attempted.baseRevision, updatedAt: attempted.createdAt,
+          };
+          await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
+        } else await this.dependencies.outbox.remove(attempted.mutationId);
         counters.notFound += 1;
       } catch (error) {
         if (error instanceof CloudSyncTransportError && error.kind === "AUTH") {
@@ -252,6 +262,9 @@ export class CloudSyncService {
         return { state: "STOPPED_ERROR", ...counters };
       }
     }
+    try { await this.dependencies.recoverLocalMutations?.(); }
+    catch { return { state: "STOPPED_ERROR", ...counters }; }
+    if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
     const remaining = await this.dependencies.outbox.list();
     const pending = remaining.some((mutation) => allowedTypes.has(mutation.entityType) &&
       (wholeOutbox || mutations.some((candidate) => candidate.entityType === mutation.entityType && candidate.entityId === mutation.entityId)) &&

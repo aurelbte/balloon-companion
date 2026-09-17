@@ -1,3 +1,5 @@
+import { withSyncIntents, recoverIndexedDbSyncIntents, isLocalSyncDeleted, LOCAL_SYNC_DELETED } from "./durableSyncIntent.ts";
+import type { SyncOutboxStorage } from "./syncOutbox.ts";
 import {
   RECORDED_FLIGHT_SCHEMA_VERSION,
   type RecordedFlight,
@@ -7,8 +9,7 @@ import type { LocalDataScope } from "./auth/dataScope.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 import { enqueueFlightTrackJob, IndexedDbFlightTrackQueueStorage } from "./flightTrackQueue.ts";
 
-async function enqueueTrackJobForCurrentUser(flightId: string, operation: "UPLOAD" | "DELETE"): Promise<void> {
-  const scope = getRuntimeDataScope();
+async function enqueueTrackJobForCurrentUser(flightId: string, operation: "UPLOAD" | "DELETE", scope: LocalDataScope | null = getRuntimeDataScope()): Promise<void> {
   if (!scope?.startsWith("USER:")) return;
   const userScope = scope as `USER:${string}`;
   await enqueueFlightTrackJob(new IndexedDbFlightTrackQueueStorage(userScope), { scope: userScope, flightId, operation });
@@ -64,7 +65,7 @@ export async function deleteRecordedFlightWithCloudMutation({
 }
 
 function isRecordedFlight(value: unknown): value is RecordedFlight {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || isLocalSyncDeleted(value)) return false;
   const flight = value as Partial<RecordedFlight>;
   return (
     typeof flight.id === "string" &&
@@ -142,7 +143,9 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     if (typeof indexedDB === "undefined") {
       return Promise.reject(new Error("IndexedDB indisponible"));
     }
-    this.scope ??= getRuntimeDataScope();
+    const operationScope = getRuntimeDataScope();
+    if (this.scope && this.scope !== operationScope) return Promise.reject(new Error("SYNC_INTENT_SCOPE_MISMATCH"));
+    this.scope ??= operationScope;
     if (!this.scope) return Promise.reject(new Error("Scope local indisponible"));
     this.databasePromise ??= new Promise((resolve, reject) => {
       const request = indexedDB.open(scopedIndexedDbName(this.scope!, DATABASE_NAME), DATABASE_VERSION);
@@ -217,13 +220,14 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
   }
 
   async completeFlight(flight: RecordedFlight): Promise<void> {
+    const scope = getRuntimeDataScope(); if (!scope) throw new Error("Scope local indisponible");
     const database = await this.database();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(
         [FLIGHTS_STORE, ACTIVE_FLIGHT_STORE],
         "readwrite",
       );
-      transaction.objectStore(FLIGHTS_STORE).put(flight);
+      transaction.objectStore(FLIGHTS_STORE).put(withSyncIntents(flight, [{ entityType: "flight", entityId: flight.id, operation: "UPSERT" }], flight, scope));
       const active = transaction.objectStore(ACTIVE_FLIGHT_STORE);
       const request = active.get(ACTIVE_FLIGHT_KEY);
       request.onsuccess = () => {
@@ -235,20 +239,21 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     });
     // The local transaction is the commit point. Existing backfill/track discovery
     // can reconstruct missing jobs from this durable flight after a queue failure.
-    this.enqueueCompletedFlightBestEffort(flight);
+    this.enqueueCompletedFlightBestEffort(flight, scope);
   }
 
-  private enqueueCompletedFlightBestEffort(flight: RecordedFlight): void {
+  private enqueueCompletedFlightBestEffort(flight: RecordedFlight, scope: LocalDataScope): void {
     if (this.scope !== getRuntimeDataScope()) return;
     void Promise.resolve().then(() => {
-      if (this.scope === getRuntimeDataScope()) return enqueueLocalSyncMutation("flight", flight.id);
+      if (this.scope === getRuntimeDataScope()) return enqueueLocalSyncMutation("flight", flight.id, "UPSERT", scope);
     }).catch(() => undefined);
     if (flight.status === "COMPLETED" && flight.points.length > 0) {
-      void enqueueTrackJobForCurrentUser(flight.id, "UPLOAD").catch(() => undefined);
+      void enqueueTrackJobForCurrentUser(flight.id, "UPLOAD", scope).catch(() => undefined);
     }
   }
 
   async updateFlightLocations(id: string, labels: FlightLocationLabels): Promise<RecordedFlight | null> {
+    const scope = getRuntimeDataScope(); if (!scope) throw new Error("Scope local indisponible");
     const database = await this.database();
     const updated = await new Promise<RecordedFlight | null>((resolve, reject) => {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
@@ -258,7 +263,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       request.onsuccess = () => {
         if (!isRecordedFlight(request.result)) return;
         // Patch labels only: never resurrect a deleted flight or overwrite notes.
-        updated = { ...request.result, ...labels, updatedAt: Date.now() };
+        updated = withSyncIntents({ ...request.result, ...labels, updatedAt: Date.now() }, [{ entityType: "flight", entityId: id, operation: "UPSERT" }], request.result, scope);
         store.put(updated);
       };
       transaction.oncomplete = () => resolve(updated);
@@ -267,7 +272,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     });
     if (updated && this.scope === getRuntimeDataScope()) {
       void Promise.resolve().then(() => {
-        if (this.scope === getRuntimeDataScope()) return enqueueLocalSyncMutation("flight", id);
+        if (this.scope === getRuntimeDataScope()) return enqueueLocalSyncMutation("flight", id, "UPSERT", scope);
       }).catch(() => undefined);
     }
     return updated;
@@ -336,8 +341,8 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
   }
 
   async updateFlightNotes(id: string, notes: string | null): Promise<RecordedFlight | null> {
+    const scope = getRuntimeDataScope(); if (!scope) throw new Error("Scope local indisponible");
     const database = await this.database();
-    let previous: RecordedFlight | null = null;
     const updated = await new Promise<RecordedFlight | null>((resolve, reject) => {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
       const store = transaction.objectStore(FLIGHTS_STORE);
@@ -345,8 +350,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       const request = store.get(id);
       request.onsuccess = () => {
         if (!isRecordedFlight(request.result)) return;
-        previous = structuredClone(request.result);
-        updated = { ...request.result, updatedAt: Date.now() };
+        updated = withSyncIntents({ ...request.result, updatedAt: Date.now() }, [{ entityType: "flight", entityId: id, operation: "UPSERT" }], request.result, scope);
         if (notes) updated.notes = notes;
         else delete updated.notes;
         store.put(updated);
@@ -355,42 +359,31 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
-    if (updated && !await enqueueLocalSyncMutation("flight", id) && getRuntimeDataScope()?.startsWith("USER:")) {
-      if (previous) await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
-        transaction.objectStore(FLIGHTS_STORE).put(previous);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-      });
-      throw new Error("Mutation flight UPSERT non persistée");
-    }
+    if (updated) await enqueueLocalSyncMutation("flight", id, "UPSERT", scope);
     return updated;
   }
 
+  async recoverSyncIntents(scope: `USER:${string}`, outbox: SyncOutboxStorage): Promise<void> {
+    if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
+    if ((this.scope && this.scope !== scope) || outbox.getScope?.() !== scope) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
+    const database = await this.database();
+    if (this.scope !== scope || (database.name && database.name !== scopedIndexedDbName(scope, DATABASE_NAME))) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
+    await recoverIndexedDbSyncIntents(database, FLIGHTS_STORE, scope, outbox);
+  }
+
   async deleteFlight(id: string): Promise<void> {
+    const scope = getRuntimeDataScope(); if (!scope) throw new Error("Scope local indisponible");
     const database = await this.database();
     const previous = await this.getFlight(id);
-    const scope = getRuntimeDataScope();
-    await deleteRecordedFlightWithCloudMutation({
-      id,
-      previous,
-      scope,
-      deleteLocal: () => new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
-        transaction.objectStore(FLIGHTS_STORE).delete(id);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error);
-      }),
-      restoreLocal: (flight) => new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
-        transaction.objectStore(FLIGHTS_STORE).put(flight);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error);
-      }),
-      enqueueDelete: () => enqueueLocalSyncMutation("flight", id, "DELETE"),
+    if (!previous) return;
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
+      const store = transaction.objectStore(FLIGHTS_STORE);
+      if (scope === "GUEST") store.delete(id);
+      else store.put(withSyncIntents({ id, [LOCAL_SYNC_DELETED]: true }, [{ entityType: "flight", entityId: id, operation: "DELETE" }], previous, scope));
+      transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error);
     });
-    await enqueueTrackJobForCurrentUser(id, "DELETE");
+    await enqueueLocalSyncMutation("flight", id, "DELETE", scope);
+    await enqueueTrackJobForCurrentUser(id, "DELETE", scope);
   }
 }

@@ -1,3 +1,4 @@
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import { createBalloon, REGISTERED_BALLOONS, updateBalloon, type Balloon, type BalloonInput } from "./balloons.ts";
 import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
@@ -101,6 +102,11 @@ async function saveBalloonMutationDurably(registry: BalloonRegistry, entityId: s
   const scope = getRuntimeDataScope();
   if (!scope || typeof window === "undefined") return false;
   if (scope === "GUEST") { saveBalloonRegistry(registry); void enqueue("balloon", entityId, operation); return true; }
+  if (enqueue === enqueueLocalSyncMutation) {
+    if (!writeBusinessValueWithSync(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(registry), [{ entityType: "balloon", entityId, operation }])) return false;
+    await enqueue("balloon", entityId, operation);
+    window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT)); return true;
+  }
   const previous = loadBalloonRegistry();
   if (!writeScopedBusinessValue(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(registry))) return false;
   if (!await enqueue("balloon", entityId, operation)) {
@@ -113,7 +119,7 @@ async function saveBalloonMutationDurably(registry: BalloonRegistry, entityId: s
 export async function addBalloon(input: BalloonInput, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<Balloon | null> { const result = addBalloonToRegistry(loadBalloonRegistry(), input); return await saveBalloonMutationDurably(result.registry, result.balloon.id, "UPSERT", enqueue) ? result.balloon : null; }
 export async function editBalloon(id: string, input: BalloonInput, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<boolean> { return saveBalloonMutationDurably(updateBalloonInRegistry(loadBalloonRegistry(), id, input), id, "UPSERT", enqueue); }
 export async function deleteBalloon(id: string, enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation): Promise<boolean> { return saveBalloonMutationDurably(removeBalloonFromRegistry(loadBalloonRegistry(), id), id, "DELETE", enqueue); }
-export function setActiveBalloon(id: string): void { saveBalloonRegistry(setActiveBalloonInRegistry(loadBalloonRegistry(), id)); void enqueueLocalSyncMutation("balloon-preferences", "singleton"); }
+export function setActiveBalloon(id: string): void { if (typeof window === "undefined" || !writeBusinessValueWithSync(window.localStorage, BALLOON_REGISTRY_STORAGE_KEY, JSON.stringify(setActiveBalloonInRegistry(loadBalloonRegistry(), id)), [{ entityType: "balloon-preferences", entityId: "singleton", operation: "UPSERT" }])) throw new Error("Préférence ballon non enregistrée"); window.dispatchEvent(new Event(BALLOON_REGISTRY_EVENT)); void enqueueLocalSyncMutation("balloon-preferences", "singleton"); }
 
 /** Pull-only hydration primitive for the account-wide active balloon selection. */
 export function applyActiveBalloonPreferenceFromCloudWithoutEnqueue(scope: `USER:${string}`, value: unknown, deleted: boolean, storage: Storage = window.localStorage): boolean {

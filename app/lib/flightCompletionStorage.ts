@@ -1,3 +1,4 @@
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import {
   addManualOfficialAscension,
   confirmPilotExperience,
@@ -297,7 +298,7 @@ export function persistPilotExperience(balance: {
   ascensions: number;
 }): FlightCompletionState {
   const state = confirmPilotExperience(loadFlightCompletionState(), balance);
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   return state;
 }
 
@@ -326,7 +327,7 @@ export function persistManualOfficialAscension(
     id,
     input,
   );
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   persistQualificationLink(state.officialAscensions.find((ascension) => ascension.id === id));
   return state;
 }
@@ -342,8 +343,14 @@ export function saveFlightCompletionState(state: FlightCompletionState): boolean
       ...state,
       journalFlights: state.journalFlights.map(lightweightJournalFlight),
     };
-    if (!writeScopedBusinessValue(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState))) return false;
+    const changes = [
+      ...journalFlightCloudMutations(previousState.journalFlights, lightweightState.journalFlights).map((mutation) => ({ ...mutation, entityType: "flight" })),
+      ...officialAscensionCloudMutations(previousState.officialAscensions, lightweightState.officialAscensions).map((mutation) => ({ ...mutation, entityType: "logbook-entry" })),
+      ...(JSON.stringify(previousState.openingBalance) !== JSON.stringify(lightweightState.openingBalance) ? [{ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT" as const }] : []),
+    ];
+    if (!writeBusinessValueWithSync(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState), changes)) return false;
     enqueueLocalSyncMutation("flight-completion", "singleton");
+    if (changes.some(({ entityType }) => entityType === "pilot-profile")) enqueueLocalSyncMutation("pilot-profile", "singleton");
     for (const mutation of journalFlightCloudMutations(previousState.journalFlights, lightweightState.journalFlights)) {
       enqueueLocalSyncMutation("flight", mutation.entityId, mutation.operation);
     }
@@ -370,13 +377,13 @@ export function saveFlightCompletionState(state: FlightCompletionState): boolean
 
 export function ensureDemoCompletionPersisted(): FlightCompletionState {
   const state = ensureCompletionJournalFlight(loadFlightCompletionState());
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   return state;
 }
 
 export function persistJournalFlight(flight: CompletionJournalFlight): FlightCompletionState {
   const state = ensureCompletionJournalFlight(loadFlightCompletionState(), flight);
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   return state;
 }
 
@@ -495,7 +502,7 @@ export function persistOfficialAscensionUpdate(
     if (process.env.NODE_ENV === "development") console.debug("[flightCompletionStorage] updateOfficialAscension", { ascensionId, result: "NOT_FOUND" });
     return null;
   }
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   persistQualificationLink(updated);
   if (process.env.NODE_ENV === "development") console.debug("[flightCompletionStorage] updateOfficialAscension", { ascensionId, result: updated });
   return updated;
@@ -516,7 +523,7 @@ export function persistJournalFlightCustomTitle(
   customTitle: string | null,
 ): FlightCompletionState {
   const state = setJournalFlightCustomTitle(loadFlightCompletionState(), flightId, customTitle);
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   return state;
 }
 
@@ -526,13 +533,13 @@ export function persistJournalFlightNotes(
 ): FlightCompletionState {
   const normalizedNotes = notes?.trim() || null;
   const state = setJournalFlightNotes(loadFlightCompletionState(), flightId, normalizedNotes);
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   return state;
 }
 
 export function persistJournalFlightDeletion(flightId: string, removeLinkedAscension: boolean): FlightCompletionState {
   const state = removeJournalFlight(loadFlightCompletionState(), flightId, removeLinkedAscension);
-  saveFlightCompletionState(state);
+  if (!saveFlightCompletionState(state)) throw new Error("Enregistrement local du carnet impossible");
   return state;
 }
 

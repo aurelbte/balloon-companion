@@ -21,8 +21,7 @@ export function UnitPreferencesProvider({ children }: { children: React.ReactNod
       weather: { ...current.weather, ...changes.weather },
       flightInstruments: { ...current.flightInstruments, ...changes.flightInstruments },
     };
-    saveUnitPreferences(next);
-    return next;
+    return saveUnitPreferences(next) ? next : current;
   }), []);
   const value = useMemo(() => ({ ...preferences, updateUnitPreferences }), [preferences, updateUnitPreferences]);
   return <UnitPreferencesContext.Provider value={value}>{children}</UnitPreferencesContext.Provider>;

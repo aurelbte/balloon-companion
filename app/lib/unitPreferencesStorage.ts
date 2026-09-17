@@ -1,4 +1,5 @@
-import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { DEFAULT_UNIT_PREFERENCES, type UnitPreferences } from "./unitPreferences.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
@@ -32,7 +33,7 @@ export function loadUnitPreferences(): UnitPreferences {
 
 export function saveUnitPreferences(value: UnitPreferences): boolean {
   if (typeof localStorage === "undefined") return false;
-  const saved = writeScopedBusinessValue(localStorage, UNIT_PREFERENCES_STORAGE_KEY, JSON.stringify(normalizeUnitPreferences(value)));
+  const saved = writeBusinessValueWithSync(localStorage, UNIT_PREFERENCES_STORAGE_KEY, JSON.stringify(normalizeUnitPreferences(value)), [{ entityType: "unit-preferences", entityId: "singleton", operation: "UPSERT" }]);
   if (saved) enqueueLocalSyncMutation("unit-preferences", "singleton");
   return saved;
 }

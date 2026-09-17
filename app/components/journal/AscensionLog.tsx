@@ -263,8 +263,7 @@ export default function AscensionLog() {
       </div>
 
       {deleting && <DeleteFlightDialog entityLabel="ascension" flightName={getAscensionAutomaticName(deleting)} linkedAscension={Boolean(completionState.officialAscensions.find(({ id }) => id === deleting.id)?.sourceFlightId)} returnFocusTo={null} onCancel={() => setDeleting(null)} onConfirm={() => {
-        saveFlightCompletionState(removeOfficialAscension(completionState, deleting.id));
-        setDeleting(null);
+        if (saveFlightCompletionState(removeOfficialAscension(completionState, deleting.id))) setDeleting(null);
       }} />}
       <p role="status" aria-live="polite" className={`${styles.toast} ${addedToast ? styles.toastVisible : ""}`}>Ascension ajoutée</p>
     </section>

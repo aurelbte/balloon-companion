@@ -1,3 +1,4 @@
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import type { GeocodingResult } from "./trajectory/integration.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
@@ -105,7 +106,11 @@ export function applyFavoriteWeatherPlaceFromCloudWithoutEnqueue(
 export function saveFavoriteWeatherPlaces(favorites: readonly FavoriteWeatherPlace[]): boolean {
   if (typeof window === "undefined") return false;
   const previous = loadFavoriteWeatherPlaces();
-  const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites }));
+  const changes = [
+      ...favorites.filter((favorite) => { const prior = previous.find((item) => item.id === favorite.id); return !prior || JSON.stringify(prior) !== JSON.stringify(favorite); }).map((favorite) => ({ entityType: "favorite-weather-place", entityId: favorite.id, operation: "UPSERT" as const })),
+      ...previous.filter((item) => !favorites.some((favorite) => favorite.id === item.id)).map((item) => ({ entityType: "favorite-weather-place", entityId: item.id, operation: "DELETE" as const })),
+    ];
+    const saved = writeBusinessValueWithSync(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites }), changes);
   if (saved) {
     for (const favorite of favorites) {
       const prior = previous.find(({ id }) => id === favorite.id);
@@ -123,7 +128,7 @@ export async function saveFavoriteWeatherPlacesWithDurableOutbox(
   favorites: readonly FavoriteWeatherPlace[],
   enqueue: typeof enqueueLocalSyncMutation = enqueueLocalSyncMutation,
 ): Promise<boolean> {
-  if (getRuntimeDataScope() === "GUEST") return saveFavoriteWeatherPlaces(favorites);
+  if (enqueue === enqueueLocalSyncMutation || getRuntimeDataScope() === "GUEST") return saveFavoriteWeatherPlaces(favorites);
   if (typeof window === "undefined") return false;
   const previous = loadFavoriteWeatherPlaces();
   const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_WEATHER_PLACES_STORAGE_KEY, JSON.stringify({ version: VERSION, favorites }));

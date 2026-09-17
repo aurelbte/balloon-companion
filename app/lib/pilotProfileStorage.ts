@@ -1,10 +1,11 @@
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import { createEmptyPilotProfile, normalizePilotProfile, type PilotProfile } from "./pilotProfile.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
-import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 export const PILOT_PROFILE_STORAGE_KEY = "balloon-companion-pilot-profile";
 export const PILOT_PROFILE_EVENT = "balloon-companion:pilot-profile-changed";
 export function loadPilotProfile(): PilotProfile { if (typeof window === "undefined") return createEmptyPilotProfile(); try { return normalizePilotProfile(JSON.parse(readScopedBusinessValue(window.localStorage, PILOT_PROFILE_STORAGE_KEY) ?? "null")); } catch { return createEmptyPilotProfile(); } }
-export function savePilotProfile(profile: PilotProfile): PilotProfile { const normalized = normalizePilotProfile(profile); if (typeof window !== "undefined" && writeScopedBusinessValue(window.localStorage, PILOT_PROFILE_STORAGE_KEY, JSON.stringify(normalized))) { enqueueLocalSyncMutation("pilot-profile", "singleton"); window.dispatchEvent(new Event(PILOT_PROFILE_EVENT)); } return normalized; }
+export function savePilotProfile(profile: PilotProfile): PilotProfile { const normalized = normalizePilotProfile(profile); if (typeof window === "undefined") throw new Error("Profil local indisponible"); if (writeBusinessValueWithSync(window.localStorage, PILOT_PROFILE_STORAGE_KEY, JSON.stringify(normalized), [{ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT" }])) { enqueueLocalSyncMutation("pilot-profile", "singleton"); window.dispatchEvent(new Event(PILOT_PROFILE_EVENT)); } else throw new Error("Profil non enregistré"); return normalized; }
 
 /** Pull-only profile hydration. It never enqueues a PUSH mutation. */
 export function applyPilotProfileFromCloudWithoutEnqueue(

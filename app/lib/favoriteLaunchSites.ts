@@ -1,5 +1,6 @@
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import type { GeocodingResult } from "./trajectory/integration.ts";
-import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const FAVORITE_LAUNCH_SITES_STORAGE_KEY = "balloon-companion-favorite-launch-sites-v1";
@@ -143,7 +144,11 @@ export function saveFavoriteLaunchSites(favorites: readonly FavoriteLaunchSite[]
   if (typeof window === "undefined") return false;
   try {
     const previous = loadFavoriteLaunchSites();
-    const saved = writeScopedBusinessValue(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }));
+    const changes = [
+      ...favorites.filter((favorite) => { const prior = previous.find((item) => item.id === favorite.id); return !prior || JSON.stringify(prior) !== JSON.stringify(favorite); }).map((favorite) => ({ entityType: "favorite-launch-site", entityId: favorite.id, operation: "UPSERT" as const })),
+      ...previous.filter((item) => !favorites.some((favorite) => favorite.id === item.id)).map((item) => ({ entityType: "favorite-launch-site", entityId: item.id, operation: "DELETE" as const })),
+    ];
+    const saved = writeBusinessValueWithSync(window.localStorage, FAVORITE_LAUNCH_SITES_STORAGE_KEY, JSON.stringify({ version: FAVORITE_LAUNCH_SITES_VERSION, favorites }), changes);
     if (!saved) return false;
     for (const favorite of favorites) {
       const prior = previous.find(({ id }) => id === favorite.id);

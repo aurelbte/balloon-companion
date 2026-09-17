@@ -1,3 +1,4 @@
+import { recoverBrowserLocalSyncIntents } from "./browserLocalSyncRecovery.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
@@ -283,8 +284,10 @@ export function createBrowserCloudSyncService(input: Readonly<{
   getScope(): LocalDataScope | null;
 }>): CloudSyncService {
   const payloads = new BrowserCloudSyncPayloadProvider(input.storage, input.scope);
+  const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   return new CloudSyncService({
-    outbox: new IndexedDbSyncOutboxStorage(input.scope),
+    outbox,
+    recoverLocalMutations: () => recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox),
     issues: new BrowserCloudSyncIssueRepository(input.storage, input.scope),
     getScope: input.getScope,
     getOnlineUserId: async () => {

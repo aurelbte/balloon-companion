@@ -1,3 +1,4 @@
+import { hasLocalStorageSyncIntent, recoverLocalStorageSyncIntents } from "./durableSyncIntent.ts";
 import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import { createInitialSyncMetadata, type SyncMetadata } from "./syncMetadata.ts";
@@ -25,15 +26,19 @@ export type SyncMutation = Readonly<{
   lastErrorCode?: string;
   /** Captured once before transport; retries of this mutationId reuse these bytes. */
   payloadSnapshot?: SyncMutationPayload;
+  durableIntentIds?: readonly string[];
 }>;
 
 export type StoredSyncMetadata = SyncMetadata & Readonly<{
+  /** Local receipts also deduplicate recovery after acknowledgement / another tab. */
+  acknowledgedLocalIntentIds?: readonly string[];
   entityType: string;
   entityId: string;
 }>;
 
 export interface SyncOutboxStorage {
-  enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation>;
+  getScope?(): LocalDataScope | null;
+  enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number; mutationId?: string }>): Promise<SyncMutation>;
   enqueueFresh(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision: number }>): Promise<SyncMutation>;
   list(): Promise<SyncMutation[]>;
   getMetadata(entityType: string, entityId: string): Promise<StoredSyncMetadata | null>;
@@ -80,13 +85,17 @@ function sameEntity(left: SyncMutation, right: SyncMutation): boolean {
   return left.entityType === right.entityType && left.entityId === right.entityId;
 }
 
-function acknowledgedMetadata(metadata: StoredSyncMetadata, previous: StoredSyncMetadata | null, hasSuccessor: boolean): StoredSyncMetadata {
+function acknowledgedMetadata(metadata: StoredSyncMetadata, previous: StoredSyncMetadata | null, hasSuccessor: boolean, intentIds: readonly string[] = []): StoredSyncMetadata {
+  const receipts = [...new Set([...(previous?.acknowledgedLocalIntentIds ?? []), ...intentIds])];
+  if (receipts.length) metadata = { ...metadata, acknowledgedLocalIntentIds: receipts };
   if (!hasSuccessor || !previous) return metadata;
   // The server revision advances, but pending local edits own the local date/tombstone.
   return { ...metadata, updatedAt: previous.updatedAt, deletedAt: previous.deletedAt };
 }
 
 export class MemorySyncOutboxStorage implements SyncOutboxStorage {
+  private readonly scope = getRuntimeDataScope();
+  getScope(): LocalDataScope | null { return this.scope; }
   private readonly mutations: Map<string, SyncMutation>;
   private readonly metadata: Map<string, StoredSyncMetadata>;
   private readonly dependencies: SyncOutboxDependencies;
@@ -101,13 +110,19 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
     this.dependencies = input.dependencies ?? {};
   }
 
-  async enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation> {
+  async enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number; mutationId?: string }>): Promise<SyncMutation> {
     const now = (this.dependencies.now ?? (() => new Date().toISOString()))();
     const baseRevision = input.baseRevision ?? this.metadata.get(metadataKey(input.entityType, input.entityId))?.revision ?? 0;
     // No await between reading candidates and writing: same atomic boundary as IDB.
+    const replay = input.mutationId && [...this.mutations.values()].find((item) => item.mutationId === input.mutationId || item.durableIntentIds?.includes(input.mutationId!));
+    if (replay) return replay;
+    const previousReceipt = this.metadata.get(metadataKey(input.entityType, input.entityId));
+    if (input.mutationId && previousReceipt?.acknowledgedLocalIntentIds?.includes(input.mutationId)) {
+      return { ...input, mutationId: input.mutationId, baseRevision, createdAt: previousReceipt.updatedAt, attempts: 1 };
+    }
     const merged = coalesce([...this.mutations.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), { ...input, baseRevision });
-    const mutation = merged ?? {
-      mutationId: (this.dependencies.createId ?? mutationId)(),
+    let mutation = merged ?? {
+      mutationId: input.mutationId ?? (this.dependencies.createId ?? mutationId)(),
       entityType: input.entityType,
       entityId: input.entityId,
       operation: input.operation,
@@ -115,6 +130,7 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
       createdAt: now,
       attempts: 0,
     };
+    if (input.mutationId) mutation = { ...mutation, durableIntentIds: [...(mutation.durableIntentIds ?? []), input.mutationId] };
     this.mutations.set(mutation.mutationId, mutation);
     const previous = this.metadata.get(metadataKey(input.entityType, input.entityId));
     this.metadata.set(metadataKey(input.entityType, input.entityId), {
@@ -146,7 +162,9 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
   }
 
   async setMetadata(metadata: StoredSyncMetadata): Promise<void> {
-    this.metadata.set(metadataKey(metadata.entityType, metadata.entityId), metadata);
+    const key = metadataKey(metadata.entityType, metadata.entityId);
+    const receipts = this.metadata.get(key)?.acknowledgedLocalIntentIds;
+    this.metadata.set(key, { ...metadata, ...(receipts ? { acknowledgedLocalIntentIds: receipts } : {}) });
   }
 
   async markAttempt(mutationIdValue: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }> = {}): Promise<SyncMutation | null> {
@@ -176,7 +194,7 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
       }
     }
     const key = metadataKey(current.entityType, current.entityId);
-    this.metadata.set(key, acknowledgedMetadata(metadata, this.metadata.get(key) ?? null, successors.length > 0));
+    this.metadata.set(key, acknowledgedMetadata(metadata, this.metadata.get(key) ?? null, successors.length > 0, current.durableIntentIds));
     this.mutations.delete(mutationIdValue);
   }
 
@@ -204,11 +222,13 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
     this.scope = scope;
   }
 
+  getScope(): LocalDataScope | null { return this.scope; }
+
   private database(): Promise<IDBDatabase> {
     if (typeof indexedDB === "undefined") return Promise.reject(new Error("IndexedDB indisponible"));
     this.scope ??= getRuntimeDataScope();
     if (!this.scope) return Promise.reject(new Error("Scope local indisponible"));
-    this.databasePromise ??= new Promise((resolve, reject) => {
+    this.databasePromise ??= new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(scopedIndexedDbName(this.scope!, SYNC_OUTBOX_DB_NAME), 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(SYNC_MUTATIONS_STORE)) request.result.createObjectStore(SYNC_MUTATIONS_STORE, { keyPath: "mutationId" });
@@ -216,11 +236,11 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
-    });
+    }).catch((error: unknown) => { this.databasePromise = null; throw error; });
     return this.databasePromise;
   }
 
-  async enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number }>): Promise<SyncMutation> {
+  async enqueue(input: Readonly<{ entityType: string; entityId: string; operation: SyncOperation; baseRevision?: number; mutationId?: string }>): Promise<SyncMutation> {
     const database = await this.database();
     return new Promise((resolve, reject) => {
       const transaction = database.transaction([SYNC_MUTATIONS_STORE, SYNC_METADATA_STORE], "readwrite");
@@ -235,11 +255,17 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
         const previous = metadataRequest.result as StoredSyncMetadata | undefined;
         const now = new Date().toISOString();
         const baseRevision = input.baseRevision ?? previous?.revision ?? 0;
+        const replay = input.mutationId && (mutationsRequest.result as SyncMutation[]).find((item) => item.mutationId === input.mutationId || item.durableIntentIds?.includes(input.mutationId!));
+        if (replay) { mutation = replay; return; }
+        if (input.mutationId && previous?.acknowledgedLocalIntentIds?.includes(input.mutationId)) {
+          mutation = { ...input, mutationId: input.mutationId, baseRevision, createdAt: previous.updatedAt, attempts: 1 }; return;
+        }
         const candidates = (mutationsRequest.result as SyncMutation[]).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
         mutation = coalesce(candidates, { ...input, baseRevision }) ?? {
-          mutationId: mutationId(), entityType: input.entityType, entityId: input.entityId,
+          mutationId: input.mutationId ?? mutationId(), entityType: input.entityType, entityId: input.entityId,
           operation: input.operation, baseRevision, createdAt: now, attempts: 0,
         };
+        if (input.mutationId) mutation = { ...mutation, durableIntentIds: [...(mutation.durableIntentIds ?? []), input.mutationId] };
         store.put(mutation);
         metadataStore.put({
           entityType: input.entityType, entityId: input.entityId,
@@ -299,7 +325,12 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
     const database = await this.database();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(SYNC_METADATA_STORE, "readwrite");
-      transaction.objectStore(SYNC_METADATA_STORE).put(metadata);
+      const store = transaction.objectStore(SYNC_METADATA_STORE);
+      const request = store.get([metadata.entityType, metadata.entityId]);
+      request.onsuccess = () => {
+        const receipts = (request.result as StoredSyncMetadata | undefined)?.acknowledgedLocalIntentIds;
+        store.put({ ...metadata, ...(receipts ? { acknowledgedLocalIntentIds: receipts } : {}) });
+      };
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
@@ -366,7 +397,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
             store.put({ ...mutation, baseRevision: metadata.revision });
           }
         }
-        metadataStore.put(acknowledgedMetadata(metadata, metadataRequest.result ?? null, successors.length > 0));
+        metadataStore.put(acknowledgedMetadata(metadata, metadataRequest.result ?? null, successors.length > 0, current.durableIntentIds));
         store.delete(mutationIdValue);
       };
       mutationsRequest.onsuccess = commit;
@@ -422,17 +453,28 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
 const runtimeStorages = new Map<LocalDataScope, IndexedDbSyncOutboxStorage>();
 let enqueueChain: Promise<unknown> = Promise.resolve();
 
-export function enqueueLocalSyncMutation(entityType: string, entityId: string, operation: SyncOperation = "UPSERT"): Promise<boolean> {
-  const scope = getRuntimeDataScope();
-  if (typeof indexedDB === "undefined" || !scope) return Promise.resolve(false);
+export function enqueueLocalSyncMutation(entityType: string, entityId: string, operation: SyncOperation = "UPSERT", scope: LocalDataScope | null = getRuntimeDataScope()): Promise<boolean> {
+  if (typeof indexedDB === "undefined" || !scope) {
+    if (scope?.startsWith("USER:")) console.warn("[syncOutbox] Synchronisation différée : outbox indisponible, intention locale conservée");
+    return Promise.resolve(false);
+  }
   const storage = runtimeStorages.get(scope) ?? new IndexedDbSyncOutboxStorage(scope);
   runtimeStorages.set(scope, storage);
+  let journaled = false;
+  try {
+    journaled = scope !== "GUEST" && typeof window !== "undefined" && hasLocalStorageSyncIntent(window.localStorage, scope, entityType, entityId);
+  } catch (error) {
+    console.warn("[syncOutbox] Intention locale inaccessible, synchronisation différée", error);
+    return Promise.resolve(false);
+  }
   const queued = enqueueChain.catch(() => undefined).then(async () => {
-    await storage.enqueue({ entityType, entityId, operation });
+    const recovered = scope !== "GUEST" && typeof window !== "undefined" && await recoverLocalStorageSyncIntents(window.localStorage, scope, storage, { entityType, entityId });
+    // Another recovery may already have transferred this write while we waited.
+    if (!recovered && !journaled) await storage.enqueue({ entityType, entityId, operation });
     window.dispatchEvent(new Event(SYNC_MUTATION_ENQUEUED_EVENT));
     return true;
   }).catch((error: unknown) => {
-    if (process.env.NODE_ENV === "development") console.error("[syncOutbox] Mutation locale non enregistrée", { entityType, entityId, operation, error });
+    console.warn("[syncOutbox] Synchronisation différée, intention locale conservée", { entityType, entityId, operation, error });
     return false;
   });
   enqueueChain = queued;

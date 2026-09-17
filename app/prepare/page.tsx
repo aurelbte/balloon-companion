@@ -284,8 +284,7 @@ export default function PreparePage() {
   ) => {
     setFavoriteTerrains((current) => {
       const next = updater(current);
-      saveFavoriteLaunchSites(next);
-      return next;
+      return saveFavoriteLaunchSites(next) ? next : current;
     });
   };
 
@@ -491,8 +490,8 @@ export default function PreparePage() {
               );
               if (duplicate) return `Un favori existe déjà à cet emplacement : ${duplicate.name}.`;
               const next = addFavoriteLaunchSite(favoriteTerrains, terrain, undefined, displayName);
+              if (!saveFavoriteLaunchSites(next)) return "Enregistrement local du favori impossible.";
               setFavoriteTerrains(next);
-              saveFavoriteLaunchSites(next);
               return null;
             }}
             onUpdateFavorite={(favoriteId, point, displayName) => {
@@ -503,8 +502,8 @@ export default function PreparePage() {
                 sourceName: point.name,
               });
               if (result.duplicate) return `Un favori existe déjà à cet emplacement : ${result.duplicate.name}.`;
+              if (!saveFavoriteLaunchSites(result.favorites)) return "Enregistrement local du favori impossible.";
               setFavoriteTerrains(result.favorites);
-              saveFavoriteLaunchSites(result.favorites);
               return null;
             }}
             onRemoveFavorite={(terrain) =>

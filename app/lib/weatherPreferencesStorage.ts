@@ -1,4 +1,5 @@
-import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 
 export const WEATHER_PREFERENCES_STORAGE_KEY = "balloon-companion-weather-preferences-v1";
@@ -18,7 +19,8 @@ export function loadWeatherPreferences(): WeatherPreferences {
 
 export function saveWeatherPreferences(value: WeatherPreferences): boolean {
   if (typeof window === "undefined") return false;
-  const saved = writeScopedBusinessValue(window.localStorage, WEATHER_PREFERENCES_STORAGE_KEY, JSON.stringify(value));
+  const saved = writeBusinessValueWithSync(window.localStorage, WEATHER_PREFERENCES_STORAGE_KEY, JSON.stringify(value), [{ entityType: "weather-preferences", entityId: "singleton", operation: "UPSERT" }]);
+  if (!saved) throw new Error("Préférences météo non enregistrées");
   if (saved) enqueueLocalSyncMutation("weather-preferences", "singleton");
   if (saved) window.dispatchEvent(new Event(WEATHER_PREFERENCES_EVENT));
   return saved;

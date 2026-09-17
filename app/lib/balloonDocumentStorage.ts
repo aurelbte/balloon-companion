@@ -1,3 +1,6 @@
+import { withSyncIntents, putIndexedDbWithSyncIntents, recoverIndexedDbSyncIntents, isLocalSyncDeleted, LOCAL_SYNC_DELETED } from "./durableSyncIntent.ts";
+import type { LocalDataScope } from "./auth/dataScope.ts";
+import type { SyncOutboxStorage } from "./syncOutbox.ts";
 import { sortBalloonDocuments, supportedBalloonDocumentMimeType, validateBalloonDocumentFile, type BalloonDocument, type BalloonDocumentChanges, type BalloonDocumentStorage, type NewBalloonDocumentMetadata } from "./balloonDocuments.ts";
 import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
@@ -50,9 +53,8 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
     this.factory = factory;
   }
 
-  private database(): Promise<IDBDatabase> {
+  private database(scope: LocalDataScope | null = getRuntimeDataScope()): Promise<IDBDatabase> {
     if (!this.factory) return Promise.reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le stockage local des documents n’est pas disponible sur cet appareil."));
-    const scope = getRuntimeDataScope();
     if (!scope) return Promise.reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le scope local n’est pas encore disponible."));
     const databaseName = scopedIndexedDbName(scope, BALLOON_DOCUMENT_DB_NAME);
     if (!this.databasePromises.has(databaseName)) this.databasePromises.set(databaseName, new Promise((resolve, reject) => {
@@ -63,28 +65,28 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
         if (!database.objectStoreNames.contains(FILES_STORE)) database.createObjectStore(FILES_STORE, { keyPath: "documentId" });
       };
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onerror = () => { this.databasePromises.delete(databaseName); reject(request.error); };
       request.onblocked = () => reject(new BalloonDocumentStorageError("UNAVAILABLE", "Le stockage local est occupé par une autre version de l’application."));
     }));
     return this.databasePromises.get(databaseName)!;
   }
 
-  async listByBalloonId(balloonId: string): Promise<readonly BalloonDocument[]> {
-    const database = await this.database();
+  async listByBalloonId(balloonId: string, scope: LocalDataScope | null = getRuntimeDataScope()): Promise<readonly BalloonDocument[]> {
+    const database = await this.database(scope);
     const transaction = database.transaction(DOCUMENTS_STORE, "readonly");
     const documents = await requestResult(transaction.objectStore(DOCUMENTS_STORE).index(BALLOON_INDEX).getAll(balloonId)) as BalloonDocument[];
     await transactionDone(transaction);
-    return sortBalloonDocuments(documents);
+    return sortBalloonDocuments(documents.filter((value) => !isLocalSyncDeleted(value)));
   }
-  async listDocuments(): Promise<readonly BalloonDocument[]> { const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const documents = await requestResult(transaction.objectStore(DOCUMENTS_STORE).getAll()) as BalloonDocument[]; await transactionDone(transaction); return sortBalloonDocuments(documents); }
-  async getDocument(documentId: string): Promise<BalloonDocument | null> { const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const result = await requestResult(transaction.objectStore(DOCUMENTS_STORE).get(documentId)) as BalloonDocument | undefined; await transactionDone(transaction); return result ?? null; }
+  async listDocuments(): Promise<readonly BalloonDocument[]> { const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const documents = await requestResult(transaction.objectStore(DOCUMENTS_STORE).getAll()) as BalloonDocument[]; await transactionDone(transaction); return sortBalloonDocuments(documents.filter((value) => !isLocalSyncDeleted(value))); }
+  async getDocument(documentId: string, scope: LocalDataScope | null = getRuntimeDataScope()): Promise<BalloonDocument | null> { const database = await this.database(scope); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const result = await requestResult(transaction.objectStore(DOCUMENTS_STORE).get(documentId)) as BalloonDocument | undefined; await transactionDone(transaction); return isLocalSyncDeleted(result) ? null : result ?? null; }
   async getDocumentFile(documentId: string): Promise<Blob | null> { const database = await this.database(); const transaction = database.transaction(FILES_STORE, "readonly"); const result = await requestResult(transaction.objectStore(FILES_STORE).get(documentId)) as StoredFile | undefined; await transactionDone(transaction); return result?.file ?? null; }
   async hasLocalBlob(documentId: string): Promise<boolean> { const database = await this.database(); const transaction = database.transaction(FILES_STORE, "readonly"); const count = await requestResult(transaction.objectStore(FILES_STORE).count(documentId)); await transactionDone(transaction); return count > 0; }
   /** Pull-only metadata write. The file store is deliberately never opened for writing. */
   async applyMetadataFromCloudWithoutEnqueue(scope: `USER:${string}`, id: string, metadata: BalloonDocument | null): Promise<boolean> {
     if (getRuntimeDataScope() !== scope) return false;
-    const database = await this.database();
-    const current = metadata ? await this.getDocument(id) : null;
+    const database = await this.database(scope);
+    const current = metadata ? await this.getDocument(id, scope) : null;
     const value = metadata ? mergeDocumentMetadataFromCloud(current, metadata) : null;
     const transaction = database.transaction(DOCUMENTS_STORE, "readwrite");
     if (value) transaction.objectStore(DOCUMENTS_STORE).put(value);
@@ -93,23 +95,23 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
     this.notify();
     return true;
   }
-  async addDocument(metadata: NewBalloonDocumentMetadata, file: File): Promise<BalloonDocument> {
+  async addDocument(metadata: NewBalloonDocumentMetadata, file: File): Promise<BalloonDocument> { const scope = getRuntimeDataScope(); if (!scope) throw new BalloonDocumentStorageError("UNAVAILABLE", "Scope local indisponible.");
     const validation = validateBalloonDocumentFile(file); if (validation) throw new BalloonDocumentStorageError("WRITE_FAILED", validation);
     if (!metadata.title.trim()) throw new BalloonDocumentStorageError("WRITE_FAILED", "Le titre du document est obligatoire.");
-    const database = await this.database(); const id = identifier(); const storageKey = `balloon/${metadata.balloonId}/${id}`; const now = new Date().toISOString();
+    const database = await this.database(scope); const id = identifier(); const storageKey = `balloon/${metadata.balloonId}/${id}`; const now = new Date().toISOString();
     const document: BalloonDocument = { id, balloonId: metadata.balloonId, category: metadata.category, title: metadata.title.trim(), originalFileName: file.name, mimeType: supportedBalloonDocumentMimeType(file)!, sizeBytes: file.size, createdAt: now, updatedAt: now, storageKey, ...(metadata.notes?.trim() ? { notes: metadata.notes.trim() } : {}), ...(metadata.issueDate ? { issueDate: metadata.issueDate } : {}), ...(metadata.expiryDate ? { expiryDate: metadata.expiryDate } : {}) };
     const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite");
-    try { transaction.objectStore(FILES_STORE).add({ documentId: id, storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).add(document); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", id); this.notify(); return document; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); }
+    try { transaction.objectStore(FILES_STORE).add({ documentId: id, storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).add(withSyncIntents(document, [{ entityType: "balloon-document", entityId: document.id, operation: "UPSERT" }], document, scope)); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", id, "UPSERT", scope); this.notify(); return document; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); }
   }
   /** Metadata-only creation used by the controlled DEV Cloud test; no file-store entry is created. */
   async addMetadataOnlyDocumentForCloudTest(
     metadata: NewBalloonDocumentMetadata,
     fileMetadata: Readonly<{ originalFileName: string; mimeType: string; sizeBytes: number }>,
-  ): Promise<BalloonDocument> {
+  ): Promise<BalloonDocument> { const scope = getRuntimeDataScope(); if (!scope) throw new BalloonDocumentStorageError("UNAVAILABLE", "Scope local indisponible.");
     if (!metadata.title.trim() || !fileMetadata.originalFileName.trim() || fileMetadata.mimeType !== "application/pdf" || fileMetadata.sizeBytes <= 0) {
       throw new BalloonDocumentStorageError("WRITE_FAILED", "Métadonnées du document de test invalides.");
     }
-    const database = await this.database();
+    const database = await this.database(scope);
     const id = identifier();
     const now = new Date().toISOString();
     const document: BalloonDocument = {
@@ -128,22 +130,24 @@ export class IndexedDbBalloonDocumentStorage implements BalloonDocumentStorage {
       ...(metadata.expiryDate ? { expiryDate: metadata.expiryDate } : {}),
     };
     const transaction = database.transaction(DOCUMENTS_STORE, "readwrite");
-    transaction.objectStore(DOCUMENTS_STORE).add(document);
+    transaction.objectStore(DOCUMENTS_STORE).add(withSyncIntents(document, [{ entityType: "balloon-document", entityId: document.id, operation: "UPSERT" }], document, scope));
     await transactionDone(transaction);
-    if (!await enqueueLocalSyncMutation("balloon-document", id)) {
-      const rollback = database.transaction(DOCUMENTS_STORE, "readwrite");
-      rollback.objectStore(DOCUMENTS_STORE).delete(id);
-      await transactionDone(rollback);
-      throw new BalloonDocumentStorageError("WRITE_FAILED", "Mutation Cloud locale du document non persistée.");
-    }
+    await enqueueLocalSyncMutation("balloon-document", id, "UPSERT", scope);
     this.notify();
     return document;
   }
-  async updateDocument(documentId: string, changes: BalloonDocumentChanges): Promise<BalloonDocument> { const current = await this.getDocument(documentId); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const updated = { ...current, ...changes, title: changes.title?.trim() || current.title, updatedAt: new Date().toISOString() }; const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readwrite"); transaction.objectStore(DOCUMENTS_STORE).put(updated); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId); this.notify(); return updated; }
-  async replaceDocumentFile(documentId: string, file: File): Promise<BalloonDocument> { const validation = validateBalloonDocumentFile(file); if (validation) throw new BalloonDocumentStorageError("WRITE_FAILED", validation); const current = await this.getDocument(documentId); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const storageKey = current.storageKey ?? `balloon/${current.balloonId}/${documentId}`; const updated = { ...current, storageKey, originalFileName: file.name, mimeType: supportedBalloonDocumentMimeType(file)!, sizeBytes: file.size, updatedAt: new Date().toISOString() }; const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).put({ documentId, storageKey, file } satisfies StoredFile); transaction.objectStore(DOCUMENTS_STORE).put(updated); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId); this.notify(); return updated; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); } }
-  async deleteDocument(documentId: string): Promise<void> { const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).delete(documentId); transaction.objectStore(DOCUMENTS_STORE).delete(documentId); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId, "DELETE"); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }
-  async countByBalloonId(balloonId: string): Promise<number> { const database = await this.database(); const transaction = database.transaction(DOCUMENTS_STORE, "readonly"); const count = await requestResult(transaction.objectStore(DOCUMENTS_STORE).index(BALLOON_INDEX).count(balloonId)); await transactionDone(transaction); return count; }
-  async deleteByBalloonId(balloonId: string): Promise<void> { const documents = await this.listByBalloonId(balloonId); const database = await this.database(); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { for (const document of documents) { transaction.objectStore(FILES_STORE).delete(document.id); transaction.objectStore(DOCUMENTS_STORE).delete(document.id); } await transactionDone(transaction); for (const document of documents) enqueueLocalSyncMutation("balloon-document", document.id, "DELETE"); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }
+  async updateDocument(documentId: string, changes: BalloonDocumentChanges): Promise<BalloonDocument> { const scope = getRuntimeDataScope(); if (!scope) throw new BalloonDocumentStorageError("UNAVAILABLE", "Scope local indisponible."); const current = await this.getDocument(documentId, scope); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const updated = { ...current, ...changes, title: changes.title?.trim() || current.title, updatedAt: new Date().toISOString() }; const database = await this.database(scope); const transaction = database.transaction(DOCUMENTS_STORE, "readwrite"); putIndexedDbWithSyncIntents(transaction.objectStore(DOCUMENTS_STORE), updated, [{ entityType: "balloon-document", entityId: documentId, operation: "UPSERT" }], scope); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId, "UPSERT", scope); this.notify(); return updated; }
+  async replaceDocumentFile(documentId: string, file: File): Promise<BalloonDocument> { const scope = getRuntimeDataScope(); if (!scope) throw new BalloonDocumentStorageError("UNAVAILABLE", "Scope local indisponible."); const validation = validateBalloonDocumentFile(file); if (validation) throw new BalloonDocumentStorageError("WRITE_FAILED", validation); const current = await this.getDocument(documentId, scope); if (!current) throw new BalloonDocumentStorageError("NOT_FOUND", "Document introuvable."); const storageKey = current.storageKey ?? `balloon/${current.balloonId}/${documentId}`; const updated = { ...current, storageKey, originalFileName: file.name, mimeType: supportedBalloonDocumentMimeType(file)!, sizeBytes: file.size, updatedAt: new Date().toISOString() }; const database = await this.database(scope); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).put({ documentId, storageKey, file } satisfies StoredFile); putIndexedDbWithSyncIntents(transaction.objectStore(DOCUMENTS_STORE), updated, [{ entityType: "balloon-document", entityId: documentId, operation: "UPSERT" }], scope); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId, "UPSERT", scope); this.notify(); return updated; } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "WRITE_FAILED"); } }
+  async deleteDocument(documentId: string): Promise<void> { const scope = getRuntimeDataScope(); if (!scope) throw new BalloonDocumentStorageError("UNAVAILABLE", "Scope local indisponible."); const current = await this.getDocument(documentId, scope); if (!current) return; const database = await this.database(scope); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { transaction.objectStore(FILES_STORE).delete(documentId); if (scope === "GUEST") transaction.objectStore(DOCUMENTS_STORE).delete(documentId); else putIndexedDbWithSyncIntents(transaction.objectStore(DOCUMENTS_STORE), { id: documentId, balloonId: current.balloonId, [LOCAL_SYNC_DELETED]: true }, [{ entityType: "balloon-document", entityId: documentId, operation: "DELETE" }], scope); await transactionDone(transaction); enqueueLocalSyncMutation("balloon-document", documentId, "DELETE", scope); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }
+  async countByBalloonId(balloonId: string): Promise<number> { return (await this.listByBalloonId(balloonId)).length; }
+  async deleteByBalloonId(balloonId: string): Promise<void> { const scope = getRuntimeDataScope(); if (!scope) throw new BalloonDocumentStorageError("UNAVAILABLE", "Scope local indisponible."); const documents = await this.listByBalloonId(balloonId, scope); const database = await this.database(scope); const transaction = database.transaction([DOCUMENTS_STORE, FILES_STORE], "readwrite"); try { for (const document of documents) { transaction.objectStore(FILES_STORE).delete(document.id); if (scope === "GUEST") transaction.objectStore(DOCUMENTS_STORE).delete(document.id); else putIndexedDbWithSyncIntents(transaction.objectStore(DOCUMENTS_STORE), { id: document.id, balloonId: document.balloonId, [LOCAL_SYNC_DELETED]: true }, [{ entityType: "balloon-document", entityId: document.id, operation: "DELETE" }], scope); } await transactionDone(transaction); for (const document of documents) enqueueLocalSyncMutation("balloon-document", document.id, "DELETE", scope); this.notify(); } catch (error) { try { transaction.abort(); } catch {} throw storageError(error, "DELETE_FAILED"); } }
+  async recoverSyncIntents(scope: `USER:${string}`, outbox: SyncOutboxStorage): Promise<void> {
+    if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
+    if (outbox.getScope?.() !== scope) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
+    const database = await this.database(scope);
+    if (database.name && database.name !== scopedIndexedDbName(scope, BALLOON_DOCUMENT_DB_NAME)) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
+    await recoverIndexedDbSyncIntents(database, DOCUMENTS_STORE, scope, outbox);
+  }
   private notify() { if (typeof window !== "undefined") window.dispatchEvent(new Event(BALLOON_DOCUMENTS_CHANGED_EVENT)); }
 }
 

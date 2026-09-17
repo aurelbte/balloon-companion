@@ -16,5 +16,12 @@ export function scopedBusinessStorageKey(scope: `USER:${string}`, legacyKey: str
 export function guestBusinessStorageKey(legacyKey: string): string { return `${GUEST_STORAGE_PREFIX}:${legacyKey}`; }
 export function scopedIndexedDbName(scope: LocalDataScope, legacyName: string): string { return scope === "GUEST" ? `${legacyName}:guest` : `${legacyName}:user:${encodeURIComponent(scope.slice(5))}`; }
 export function readScopedBusinessValue(storage: Storage, legacyKey: string): string | null { const scope = getRuntimeDataScope(); return !scope ? null : storage.getItem(scope === "GUEST" ? guestBusinessStorageKey(legacyKey) : scopedBusinessStorageKey(scope, legacyKey)); }
-export function writeScopedBusinessValue(storage: Storage, legacyKey: string, value: string): boolean { const scope = getRuntimeDataScope(); if (!scope) return false; storage.setItem(scope === "GUEST" ? guestBusinessStorageKey(legacyKey) : scopedBusinessStorageKey(scope, legacyKey), value); return true; }
+export function writeScopedBusinessValue(storage: Storage, legacyKey: string, value: string): boolean { const scope = getRuntimeDataScope(); if (!scope) return false; const key = scope === "GUEST" ? guestBusinessStorageKey(legacyKey) : scopedBusinessStorageKey(scope, legacyKey);
+  const rawPrevious = storage.getItem(key);
+  if (rawPrevious?.includes("\"__balloonPendingSync\"")) {
+    const previous = JSON.parse(rawPrevious);
+    const next = JSON.parse(value);
+    value = JSON.stringify({ ...next, __balloonPendingSync: previous.__balloonPendingSync });
+  }
+  storage.setItem(key, value); return true; }
 export function removeScopedBusinessValue(storage: Storage, legacyKey: string): boolean { const scope = getRuntimeDataScope(); if (!scope) return false; storage.removeItem(scope === "GUEST" ? guestBusinessStorageKey(legacyKey) : scopedBusinessStorageKey(scope, legacyKey)); return true; }

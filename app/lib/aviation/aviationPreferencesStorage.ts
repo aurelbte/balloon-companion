@@ -1,4 +1,5 @@
-import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "../auth/dataScopeRuntime.ts";
+import { writeBusinessValueWithSync } from "../durableSyncIntent.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey } from "../auth/dataScopeRuntime.ts";
 import { normalizeAirportIcao } from "./aviationWeather.ts";
 import { enqueueLocalSyncMutation } from "../syncOutbox.ts";
 
@@ -21,7 +22,9 @@ export function saveAviationPreferences(airportIcao: string | null, favorites: r
   const normalizedAirport = normalizeAirportIcao(airportIcao);
   const normalizedFavorites = favorites.flatMap(({ icao, name }) => { const code = normalizeAirportIcao(icao); return code && name.trim() ? [{ icao: code, name: name.trim() }] : []; }).filter((item, index, all) => all.findIndex(({ icao }) => icao === item.icao) === index);
   const value: AviationPreferences = { airportIcao: normalizedAirport, favorites: normalizedFavorites, initialized: true };
-  if (typeof window !== "undefined" && writeScopedBusinessValue(window.localStorage, AVIATION_PREFERENCES_STORAGE_KEY, JSON.stringify(value))) enqueueLocalSyncMutation("aviation-preferences", "singleton");
+  if (typeof window === "undefined") throw new Error("Préférences locales indisponibles");
+  if (writeBusinessValueWithSync(window.localStorage, AVIATION_PREFERENCES_STORAGE_KEY, JSON.stringify(value), [{ entityType: "aviation-preferences", entityId: "singleton", operation: "UPSERT" }])) enqueueLocalSyncMutation("aviation-preferences", "singleton");
+  else throw new Error("Préférences non enregistrées");
   return value;
 }
 
