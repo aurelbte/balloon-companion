@@ -17,7 +17,7 @@ export default function LocalDataMigrationDialog() {
     return () => { document.body.style.overflow = previousOverflow; };
   }, [visible]);
 
-  if (!visible) return null;
+  if (!visible) return auth.localDataImportNotice ? <p role="status">{auth.localDataImportNotice}</p> : null;
   if (collisions.length > 0) return <div className={styles.backdrop}>
     <section className={styles.sheet} role="dialog" aria-modal="true" aria-labelledby="local-data-title">
       <div className={styles.handle} aria-hidden="true" />

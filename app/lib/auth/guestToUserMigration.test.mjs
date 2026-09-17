@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { guestBusinessStorageKey, scopedBusinessStorageKey } from "./dataScopeRuntime.ts";
-import { GUEST_TO_USER_MIGRATION_KEY, migrateGuestAndLegacyToUser, selectAbsentMigrationRecords } from "./guestToUserMigration.ts";
+import { setRuntimeAuthSnapshot, guestBusinessStorageKey, scopedBusinessStorageKey } from "./dataScopeRuntime.ts";
+import { GUEST_TO_USER_MIGRATION_KEY, migrateGuestAndLegacyToUser as protectedMigration, selectAbsentMigrationRecords } from "./guestToUserMigration.ts";
+
+import { inspectGuestSources, makeGuestManifest } from "./guestImportManifest.ts";
+import { acquireGuestImportClaim } from "./guestImportClaim.ts";
+import { memoryFactory } from "./guestImportTestHarness.mjs";
+const factories = new WeakMap();
+function migrateGuestAndLegacyToUser(input) {
+  setRuntimeAuthSnapshot({ state: "SIGNED_IN", user: { id: input.userId } });
+  if (!factories.has(input.storage)) factories.set(input.storage, memoryFactory());
+  return protectedMigration({ ...input, factory: factories.get(input.storage) });
+}
 
 function memoryStorage(entries = {}) { const values = new Map(Object.entries(entries)); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key), snapshot: () => Object.fromEntries(values) }; }
 function outbox(options = {}) { const mutations = []; let calls = 0; return { mutations, enqueue: async (value) => { calls += 1; if (calls === options.failAt) throw new Error("interrupted"); const existing = mutations.find((item) => item.entityType === value.entityType && item.entityId === value.entityId); if (!existing) mutations.push({ ...value, mutationId: `m-${calls}` }); return existing ?? mutations.at(-1); } }; }
@@ -36,6 +46,8 @@ test("merge additif protège IDs USER, sourceFlightId dupliqué et collisions", 
     [key("balloon-companion-flight-completion-v1")]: JSON.stringify({ openingBalance: { confirmed: true, ascensions: 1, officialDurationMinutes: 10 }, journalFlights: [{ id: "user-j", sourceFlightId: "same", departure: "USER" }], officialAscensions: [] }),
     [guest("balloon-companion-flight-completion-v1")]: JSON.stringify({ openingBalance: { confirmed: true, ascensions: 2, officialDurationMinutes: 20 }, journalFlights: [{ id: "guest-j", sourceFlightId: "same", departure: "GUEST" }, { id: "new", sourceFlightId: "new" }], officialAscensions: [] }),
   });
+  const factory = memoryFactory(); factories.set(storage, factory);
+  await acquireGuestImportClaim(factory, await makeGuestManifest((await inspectGuestSources(storage, factory, () => {})).entries), "user-1", "device-1", () => {});
   const result = await migrateGuestAndLegacyToUser({ userId: "user-1", deviceId: "device-1", storage, outbox: outbox() });
   assert.equal(result.state, "COMPLETE_WITH_COLLISIONS");
   assert.deepEqual(JSON.parse(storage.getItem(key("balloon-companion-balloons"))).balloons.map(({ id }) => id), ["user-balloon", "guest-balloon"]);

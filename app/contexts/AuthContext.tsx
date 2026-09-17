@@ -11,7 +11,7 @@ import type { PendingLocalDataMigration } from "../lib/auth/dataScope.ts";
 import { getOrCreateDeviceIdentity } from "../lib/auth/deviceIdentity.ts";
 import { saveLocalDataMigrationDecision, type LocalDataMigrationDecision } from "../lib/auth/localDataMigrationDecision.ts";
 import type { LocalDataMigrationState } from "../lib/auth/localDataMigration.ts";
-import { migrateGuestAndLegacyToUser, type GuestToUserMigrationCollision } from "../lib/auth/guestToUserMigration.ts";
+import { migrateGuestAndLegacyToUser, type GuestToUserMigrationCollision, type GuestToUserMigrationReport } from "../lib/auth/guestToUserMigration.ts";
 import { DATA_SCOPE_CHANGED_EVENT, setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "../lib/auth/dataScopeRuntime.ts";
 import { isIsolatedAuthCallbackPath } from "../lib/auth/authCallbackPath.ts";
 
@@ -23,6 +23,8 @@ type AuthContextValue = AuthSnapshot & Readonly<{
   requestPasswordReset(email: string): Promise<void>;
   recoverPassword(code: string, password: string): Promise<void>;
   pendingLocalDataMigration: PendingLocalDataMigration | null;
+  localDataImportNotice: string | null;
+  localDataImportState: GuestToUserMigrationReport["state"] | null;
   decideLocalDataMigration(decision: LocalDataMigrationDecision): void;
   localDataMigrationState: LocalDataMigrationState | null;
   localDataMigrationCollisions: readonly GuestToUserMigrationCollision[];
@@ -36,6 +38,8 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const provider = useMemo(() => new SupabaseAuthProvider(createBrowserSupabaseClient()), []);
   const pathname = usePathname();
   const [snapshot, setSnapshot] = useState<AuthSnapshot>(UNKNOWN_AUTH_SNAPSHOT);
+  const [localDataImportState, setLocalDataImportState] = useState<GuestToUserMigrationReport["state"] | null>(null);
+  const [importNotice, setImportNotice] = useState<Readonly<{ userId: string; message: string }> | null>(null);
   const [pendingLocalDataMigration, setPendingLocalDataMigration] = useState<PendingLocalDataMigration | null>(null);
   const [localDataMigrationState, setLocalDataMigrationState] = useState<LocalDataMigrationState | null>(null);
   const [localDataMigrationCollisions, setLocalDataMigrationCollisions] = useState<readonly GuestToUserMigrationCollision[]>([]);
@@ -44,6 +48,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const isolatedAuthCallback = isIsolatedAuthCallbackPath(pathname);
   const effectiveSnapshot = isolatedAuthCallback ? UNKNOWN_AUTH_SNAPSHOT : snapshot;
   const migrationUserId = snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION" ? snapshot.user?.id ?? null : null;
+  const localDataImportNotice = !isolatedAuthCallback && importNotice?.userId === migrationUserId ? importNotice.message : null;
   setRuntimeAuthSnapshot(effectiveSnapshot);
   setRuntimeGuestModeActive(authChoiceState === "GUEST_ACTIVE");
 
@@ -53,7 +58,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     if (isolatedAuthCallback) return;
     let active = true;
     void restoreAuthSnapshot({ provider, storage: window.localStorage, online: navigator.onLine })
-      .then((restored) => { if (active) setSnapshot(restored); });
+      .then((restored) => { if (active) { setRuntimeAuthSnapshot(restored); setSnapshot(restored); } });
     return () => { active = false; };
   }, [isolatedAuthCallback, pathname, provider]);
 
@@ -65,11 +70,28 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
       setPendingLocalDataMigration(null); setDataReadyUserId(null); setLocalDataMigrationCollisions([]); return;
     }
     let active = true; const userId = migrationUserId;
+    const controller = new AbortController();
     setDataReadyUserId(null); setLocalDataMigrationState("MIGRATION_COPYING");
     const deviceId = getOrCreateDeviceIdentity(window.localStorage).deviceId;
-    void migrateGuestAndLegacyToUser({ userId, deviceId, storage: window.localStorage, factory: window.indexedDB })
+    void migrateGuestAndLegacyToUser({ userId, deviceId, storage: window.localStorage, factory: window.indexedDB, signal: controller.signal })
       .then((report) => {
         if (!active) return;
+        if (report.state === "OBSOLETE") return;
+        setLocalDataImportState(report.state);
+        if (report.state === "REVIEW_REQUIRED" || report.state === "DEFERRED" || report.state === "CLAIMED_OTHER") {
+          const message = report.state === "REVIEW_REQUIRED" ? "Import local suspendu : propriété ou consentement des anciennes données à vérifier. Ces données ne sont pas importées ni couvertes par la synchronisation du compte."
+            : report.state === "DEFERRED" ? "Import des données locales reporté. La synchronisation des données du compte reste disponible."
+              : "Les données invité déjà revendiquées par un autre compte ne sont pas importées.";
+          setImportNotice({ userId, message });
+          setLocalDataMigrationCollisions([]); setLocalDataMigrationState("MIGRATION_IMPORT_SKIPPED");
+          setDataReadyUserId(userId); window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT)); return;
+        }
+        if (report.state === "IMPORT_BLOCKED" || report.state === "SOURCE_CHANGED") {
+          setImportNotice({ userId, message: report.state === "SOURCE_CHANGED" ? "Import local suspendu : les sources ont changé. Une nouvelle tentative est nécessaire." : "Import local suspendu : sources ou stockage indisponibles ou invalides." });
+          setLocalDataMigrationState({ state: "MIGRATION_FAILED", collection: "preferences", id: "GUEST_IMPORT_CLAIM", reason: "VERIFY_FAILED" });
+          setDataReadyUserId(userId); return;
+        }
+        setImportNotice(null);
         setLocalDataMigrationCollisions(report.collisions); setLocalDataMigrationState("MIGRATION_COMPLETE");
         setDataReadyUserId(userId); window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT));
       })
@@ -78,7 +100,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
         setLocalDataMigrationState({ state: "MIGRATION_FAILED", collection: "preferences", id: "GUEST_OR_LEGACY", reason: "COPY_FAILED" });
         setDataReadyUserId(userId);
       });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [isolatedAuthCallback, migrationUserId]);
 
   const decideLocalDataMigration = useCallback((decision: LocalDataMigrationDecision) => {
@@ -100,6 +122,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     const user = await provider.signIn(input);
     saveLocalAuthSession(window.localStorage, user);
     setAuthChoiceState("AUTH_CHOICE_PENDING");
+    setRuntimeAuthSnapshot({ state: "SIGNED_IN", user });
     setSnapshot({ state: "SIGNED_IN", user });
   }, [provider]);
 
@@ -107,6 +130,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     await provider.signOut();
     clearLocalAuthSession(window.localStorage);
     setAuthChoiceState("AUTH_CHOICE_PENDING");
+    setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
     setSnapshot({ state: "SIGNED_OUT", user: null });
   }, [provider]);
 
@@ -121,13 +145,16 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     try {
       const user = await provider.confirmEmail(code);
       if (!user) {
+        setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
         setSnapshot({ state: "SIGNED_OUT", user: null });
         return false;
       }
       saveLocalAuthSession(window.localStorage, user);
+      setRuntimeAuthSnapshot({ state: "SIGNED_IN", user });
       setSnapshot({ state: "SIGNED_IN", user });
       return true;
     } catch {
+      setRuntimeAuthSnapshot({ state: "SIGNED_OUT", user: null });
       setSnapshot({ state: "SIGNED_OUT", user: null });
       return false;
     }
@@ -139,7 +166,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const runtimeKey = effectiveSnapshot.state === "SIGNED_IN" || effectiveSnapshot.state === "OFFLINE_SESSION" ? `USER:${effectiveSnapshot.user?.id}` : `${effectiveSnapshot.state}:${authChoiceState}`;
   const userWaitingForMigration = !isolatedAuthCallback && (snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION") && snapshot.user && dataReadyUserId !== snapshot.user.id;
   const runtimeChildren = (effectiveSnapshot.state === "UNKNOWN" && !isolatedAuthCallback) || userWaitingForMigration ? null : <Fragment key={runtimeKey}>{children}</Fragment>;
-  return <AuthContext.Provider value={{ ...effectiveSnapshot, signUp, signIn, signOut, confirmEmail, requestPasswordReset, recoverPassword, pendingLocalDataMigration, decideLocalDataMigration, localDataMigrationState, localDataMigrationCollisions, authChoiceState, activateGuestMode }}>{runtimeChildren}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ ...effectiveSnapshot, signUp, signIn, signOut, confirmEmail, requestPasswordReset, recoverPassword, pendingLocalDataMigration, localDataImportNotice, localDataImportState, decideLocalDataMigration, localDataMigrationState, localDataMigrationCollisions, authChoiceState, activateGuestMode }}>{runtimeChildren}</AuthContext.Provider>;
 }
 
 export function useBalloonAuth(): AuthContextValue {

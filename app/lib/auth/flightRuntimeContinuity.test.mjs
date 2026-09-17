@@ -28,7 +28,7 @@ function harness(t) {
     t.after(() => previous ? Object.defineProperty(globalThis, name, previous) : delete globalThis[name]);
   }
   let pathname = "/flight", restored = signed(), signInUser = user();
-  const migrations = [], pendingMigrations = [];
+  const migrations = [], pendingMigrations = [], identityTransitions = [];
   const mocks = {
     react, "next/navigation": { usePathname: () => pathname },
     "../lib/auth/session.ts": { restoreAuthSnapshot: async () => ({ ...restored, user: restored.user && { ...restored.user } }), saveLocalAuthSession: () => {}, clearLocalAuthSession: () => {} },
@@ -36,7 +36,7 @@ function harness(t) {
     "../lib/supabase/client.ts": { createBrowserSupabaseClient: () => null },
     "../lib/auth/deviceIdentity.ts": { getOrCreateDeviceIdentity: () => ({ deviceId: "device" }) },
     "../lib/auth/guestToUserMigration.ts": { migrateGuestAndLegacyToUser: (input) => { migrations.push(input.userId); const pending = deferred(); pendingMigrations.push(pending); return pending.promise; } },
-    "../lib/auth/dataScopeRuntime.ts": { setRuntimeAuthSnapshot: () => {}, setRuntimeGuestModeActive: () => {}, DATA_SCOPE_CHANGED_EVENT: "scope" },
+    "../lib/auth/dataScopeRuntime.ts": { setRuntimeAuthSnapshot: snapshot => identityTransitions.push(snapshot.user?.id ?? snapshot.state), setRuntimeGuestModeActive: () => {}, DATA_SCOPE_CHANGED_EVENT: "scope" },
   };
   const path = new URL("../../contexts/AuthContext.tsx", import.meta.url);
   const { outputText } = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } });
@@ -61,10 +61,10 @@ function harness(t) {
   };
   t.after(() => slots.forEach((slot) => slot?.cleanup?.()));
   return {
-    render, migrations, transitions, get auth() { return auth; },
+    render, migrations, transitions, identityTransitions, get auth() { return auth; },
     restore(next, path) { restored = next; pathname = path; },
     setSignInUser(next) { signInUser = next; },
-    finishMigration(index = pendingMigrations.length - 1) { pendingMigrations[index].resolve({ collisions: [] }); },
+    finishMigration(index = pendingMigrations.length - 1, report = { collisions: [] }) { pendingMigrations[index].resolve(report); },
     async start() { render(); await flush(); render(); render(); this.finishMigration(); await flush(); return render(); },
   };
 }
@@ -162,4 +162,38 @@ test("logout direct pendant un vol : frontière remplacée, invité ensuite sans
   assert.notEqual(guest, previous);
   assert.deepEqual(guest.points, []);
   assert.deepEqual(h.migrations, ["pilot-a"]);
+});
+
+
+test("lot revendiqué par A : B accède à ses données avec gate bootstrap SKIPPED", async (t) => {
+  const h = harness(t); await h.start();
+  h.restore(signed("pilot-b"), "/weather"); h.render(); await flush(); h.render();
+  h.finishMigration(undefined, { state: "CLAIMED_OTHER", collisions: [] }); await flush();
+  assert.ok(h.render()); assert.equal(h.auth.user.id, "pilot-b");
+  assert.equal(h.auth.localDataMigrationState, "MIGRATION_IMPORT_SKIPPED");
+  assert.equal(h.auth.localDataMigrationCollisions.length, 0);
+  assert.match(h.auth.localDataImportNotice, /revendiquées par un autre compte/);
+});
+
+
+test("A->B->A avant rerender : les transitions runtime sont publiées immédiatement", async (t) => {
+  const h = harness(t); await h.start(); const before = h.identityTransitions.length;
+  h.setSignInUser(user("pilot-b")); await h.auth.signIn({ email: "b", password: "test" });
+  h.setSignInUser(user("pilot-a")); await h.auth.signIn({ email: "a", password: "test" });
+  assert.deepEqual(h.identityTransitions.slice(before), ["pilot-b", "pilot-a"]);
+});
+
+
+for (const state of ["REVIEW_REQUIRED", "DEFERRED"]) test(`${state} : accès compte et gate cloud préservés après reconnexion`, async (t) => {
+  const h = harness(t); await h.start();
+  h.restore(signed("pilot-b"), "/weather"); h.render(); await flush(); h.render();
+  h.finishMigration(undefined, { state, collisions: [] }); await flush(); assert.ok(h.render());
+  assert.equal(h.auth.localDataMigrationState, "MIGRATION_IMPORT_SKIPPED"); assert.equal(h.auth.localDataImportState, state);
+  if (state === "REVIEW_REQUIRED") assert.match(h.auth.localDataImportNotice, /ne sont pas importées ni couvertes/);
+  assert.equal(h.auth.localDataMigrationCollisions.length, 0);
+  await h.auth.signOut(); h.render(); h.render();
+  h.setSignInUser(user("pilot-b")); await h.auth.signIn({ email: "b", password: "test" }); h.render();
+  h.finishMigration(undefined, { state, collisions: [] }); await flush(); assert.ok(h.render());
+  assert.equal(h.auth.localDataMigrationState, "MIGRATION_IMPORT_SKIPPED"); assert.equal(h.auth.localDataImportState, state);
+  if (state === "REVIEW_REQUIRED") assert.match(h.auth.localDataImportNotice, /ne sont pas importées ni couvertes/);
 });

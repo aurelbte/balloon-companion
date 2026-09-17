@@ -30,41 +30,24 @@ function memoryRepository(source = legacy, initial = []) {
   };
 }
 
-test("approve copie toutes les collections vers USER en conservant les IDs puis vérifie", async () => {
+test("ancien importeur bloqué sans aucune lecture ou copie métier", async () => {
   const memory = memoryRepository();
   const states = [];
-  const result = await migrateApprovedLegacyData({ userId: "user-1", deviceId: "device-1", repository: memory.repository, now: () => "2026-08-11T12:00:00.000Z", onState: (state) => states.push(state) });
-  assert.equal(result, "MIGRATION_COMPLETE");
-  assert.deepEqual(states, ["MIGRATION_COPYING", "MIGRATION_VERIFYING", "MIGRATION_COMPLETE"]);
-  assert.deepEqual([...memory.scoped.values()].map(({ id }) => id).sort(), legacy.map(({ id }) => id).sort());
-  assert.deepEqual(memory.markers, [{ userId: "user-1", deviceId: "device-1", completedAt: "2026-08-11T12:00:00.000Z" }]);
+  const repository = new Proxy(memory.repository, { get() { throw new Error("repository must not be accessed"); } });
+  const result = await migrateApprovedLegacyData({ userId: "user-1", deviceId: "device-1", repository, onState: state => states.push(state) });
+  assert.deepEqual(result, { state: "MIGRATION_FAILED", collection: "preferences", id: "B6_CLAIM_REQUIRED", reason: "VERIFY_FAILED" });
+  assert.deepEqual(states, [result]); assert.equal(memory.writes(), 0); assert.equal(memory.markers.length, 0);
+});
+
+test("relance ancienne et compte différent restent bloqués, données conservées", async () => {
+  const existing = legacy[0], memory = memoryRepository(legacy, [existing]);
+  for (const userId of ["user-1", "user-1", "user-2"]) {
+    const result = await migrateApprovedLegacyData({ userId, deviceId: "device-1", repository: memory.repository });
+    assert.equal(result.id, "B6_CLAIM_REQUIRED");
+  }
+  assert.equal(memory.writes(), 0); assert.equal(memory.markers.length, 0);
+  assert.deepEqual(memory.scoped.get("USER:user-1:flights:flight-1"), existing);
   assert.deepEqual(legacy, memory.legacySnapshot);
-});
-
-test("une relance identique est idempotente et ne crée aucun doublon", async () => {
-  const memory = memoryRepository();
-  await migrateApprovedLegacyData({ userId: "user-1", deviceId: "device-1", repository: memory.repository });
-  assert.equal(memory.writes(), legacy.length);
-  await migrateApprovedLegacyData({ userId: "user-1", deviceId: "device-1", repository: memory.repository });
-  assert.equal(memory.writes(), legacy.length);
-  assert.equal(memory.scoped.size, legacy.length);
-});
-
-test("un même ID au contenu différent produit CONFLICT sans écrasement", async () => {
-  const conflicting = { collection: "flights", id: "flight-1", value: { id: "flight-1", points: [99] } };
-  const memory = memoryRepository(legacy, [conflicting]);
-  const result = await migrateApprovedLegacyData({ userId: "user-1", deviceId: "device-1", repository: memory.repository });
-  assert.deepEqual(result, { state: "MIGRATION_FAILED", collection: "flights", id: "flight-1", reason: "CONFLICT" });
-  assert.deepEqual(memory.scoped.get("USER:user-1:flights:flight-1"), conflicting);
-  assert.equal(memory.markers.length, 0);
-});
-
-test("COMPLETE est impossible si la vérification des IDs échoue", async () => {
-  const memory = memoryRepository();
-  const repository = { ...memory.repository, listScoped: async () => [] };
-  const result = await migrateApprovedLegacyData({ userId: "user-1", deviceId: "device-1", repository });
-  assert.deepEqual(result, { state: "MIGRATION_FAILED", collection: "flights", id: "flight-1", reason: "VERIFY_FAILED" });
-  assert.equal(memory.markers.length, 0);
 });
 
 test("la migration locale exclut session, météo, debug et Supabase", () => {

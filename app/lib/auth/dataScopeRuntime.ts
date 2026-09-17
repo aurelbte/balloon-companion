@@ -9,9 +9,11 @@ const USER_STORAGE_PREFIX = "balloon-companion-user-data-v1";
 const GUEST_STORAGE_PREFIX = "balloon-companion-guest-data-v2";
 let activeSnapshot: AuthSnapshot = { state: "UNKNOWN", user: null };
 let guestModeActive = false;
+let scopeGeneration = 0;
+export function getRuntimeDataScopeGeneration(): number { return scopeGeneration; }
 
-export function setRuntimeAuthSnapshot(snapshot: AuthSnapshot): void { const previous = getRuntimeDataScope(); activeSnapshot = snapshot; if (previous !== getRuntimeDataScope()) invalidateCloudSyncVerdict(false, true); }
-export function setRuntimeGuestModeActive(active: boolean): void { const previous = getRuntimeDataScope(); guestModeActive = active; if (previous !== getRuntimeDataScope()) invalidateCloudSyncVerdict(false, true); }
+export function setRuntimeAuthSnapshot(snapshot: AuthSnapshot): void { const previous = getRuntimeDataScope(); activeSnapshot = snapshot; if (previous !== getRuntimeDataScope()) { scopeGeneration += 1; invalidateCloudSyncVerdict(false, true); } }
+export function setRuntimeGuestModeActive(active: boolean): void { const previous = getRuntimeDataScope(); guestModeActive = active; if (previous !== getRuntimeDataScope()) { scopeGeneration += 1; invalidateCloudSyncVerdict(false, true); } }
 export function getRuntimeAuthState(): AuthSnapshot["state"] { return activeSnapshot.state; }
 export function getRuntimeDataScope(): LocalDataScope | null { if (activeSnapshot.state === "UNKNOWN" || (activeSnapshot.state === "SIGNED_OUT" && !guestModeActive)) return null; return getCurrentDataScope(activeSnapshot); }
 export function scopedBusinessStorageKey(scope: `USER:${string}`, legacyKey: string): string { return `${USER_STORAGE_PREFIX}:${encodeURIComponent(scope.slice(5))}:${legacyKey}`; }

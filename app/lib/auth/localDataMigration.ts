@@ -11,7 +11,7 @@ import { scopedBusinessStorageKey, scopedIndexedDbName } from "./dataScopeRuntim
 export type MigrationCollection = "flights" | "journal" | "balloons" | "documents" | "preferences";
 export type MigrationRecord = Readonly<{ collection: MigrationCollection; id: string; value: unknown }>;
 export type MigrationFailure = Readonly<{ state: "MIGRATION_FAILED"; collection: MigrationCollection; id: string; reason: "CONFLICT" | "COPY_FAILED" | "VERIFY_FAILED" }>;
-export type LocalDataMigrationState = "MIGRATION_APPROVED" | "MIGRATION_COPYING" | "MIGRATION_VERIFYING" | "MIGRATION_COMPLETE" | MigrationFailure;
+export type LocalDataMigrationState = "MIGRATION_APPROVED" | "MIGRATION_COPYING" | "MIGRATION_VERIFYING" | "MIGRATION_COMPLETE" | "MIGRATION_IMPORT_SKIPPED" | MigrationFailure;
 
 export type LocalDataMigrationRepository = Readonly<{
   listLegacy(): Promise<readonly MigrationRecord[]>;
@@ -21,27 +21,6 @@ export type LocalDataMigrationRepository = Readonly<{
   markComplete(input: Readonly<{ userId: string; deviceId: string; completedAt: string }>): void;
 }>;
 
-async function contentEqual(left: unknown, right: unknown): Promise<boolean> {
-  if (Object.is(left, right)) return true;
-  if (typeof Blob !== "undefined" && left instanceof Blob && right instanceof Blob) {
-    if (left.size !== right.size || left.type !== right.type) return false;
-    const [a, b] = await Promise.all([left.arrayBuffer(), right.arrayBuffer()]);
-    return new Uint8Array(a).every((value, index) => value === new Uint8Array(b)[index]);
-  }
-  if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) return false;
-    return (await Promise.all(left.map((value, index) => contentEqual(value, right[index])))).every(Boolean);
-  }
-  if (left && right && typeof left === "object" && typeof right === "object") {
-    const leftRecord = left as Record<string, unknown>;
-    const rightRecord = right as Record<string, unknown>;
-    const keys = Object.keys(leftRecord).sort();
-    if (keys.join("\0") !== Object.keys(rightRecord).sort().join("\0")) return false;
-    return (await Promise.all(keys.map((key) => contentEqual(leftRecord[key], rightRecord[key])))).every(Boolean);
-  }
-  return false;
-}
-
 export async function migrateApprovedLegacyData(input: Readonly<{
   userId: string;
   deviceId: string;
@@ -49,46 +28,11 @@ export async function migrateApprovedLegacyData(input: Readonly<{
   now?: () => string;
   onState?: (state: LocalDataMigrationState) => void;
 }>): Promise<LocalDataMigrationState> {
-  const scope = `USER:${input.userId}` as const;
-  input.onState?.("MIGRATION_COPYING");
-  const legacy = await input.repository.listLegacy();
-
-  for (const record of legacy) {
-    try {
-      const existing = await input.repository.getScoped(scope, record.collection, record.id);
-      if (existing) {
-        if (!await contentEqual(existing.value, record.value)) {
-          const failure = { state: "MIGRATION_FAILED", collection: record.collection, id: record.id, reason: "CONFLICT" } as const;
-          input.onState?.(failure);
-          return failure;
-        }
-        continue;
-      }
-      await input.repository.putScoped(scope, record);
-    } catch {
-      const failure = { state: "MIGRATION_FAILED", collection: record.collection, id: record.id, reason: "COPY_FAILED" } as const;
-      input.onState?.(failure);
-      return failure;
-    }
-  }
-
-  input.onState?.("MIGRATION_VERIFYING");
-  for (const collection of ["flights", "journal", "balloons", "documents", "preferences"] as const) {
-    const expected = legacy.filter((record) => record.collection === collection);
-    const scoped = await input.repository.listScoped(scope, collection);
-    for (const record of expected) {
-      const copied = scoped.find(({ id }) => id === record.id);
-      if (!copied || !await contentEqual(copied.value, record.value)) {
-        const failure = { state: "MIGRATION_FAILED", collection, id: record.id, reason: "VERIFY_FAILED" } as const;
-        input.onState?.(failure);
-        return failure;
-      }
-    }
-  }
-
-  input.repository.markComplete({ userId: input.userId, deviceId: input.deviceId, completedAt: (input.now ?? (() => new Date().toISOString()))() });
-  input.onState?.("MIGRATION_COMPLETE");
-  return "MIGRATION_COMPLETE";
+  // Dormant entry point: cannot copy retained sources outside the B6 claim gate.
+  // Use migrateGuestAndLegacyToUser, which owns claim acquisition and identity checks.
+  const failure = { state: "MIGRATION_FAILED", collection: "preferences", id: "B6_CLAIM_REQUIRED", reason: "VERIFY_FAILED" } as const;
+  input.onState?.(failure);
+  return failure;
 }
 
 export const LEGACY_MIGRATION_COMPLETIONS_KEY = "balloon-companion-auth-legacy-migration-completions-v1";

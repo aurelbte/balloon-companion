@@ -1402,7 +1402,7 @@ export default function CloudSyncRuntime(): null {
       automaticCloudSyncController.setUser(null);
       return releaseBeforeScope;
     }
-    if (auth.localDataMigrationState !== "MIGRATION_COMPLETE" || auth.localDataMigrationCollisions.length > 0) {
+    if ((auth.localDataMigrationState !== "MIGRATION_COMPLETE" && auth.localDataMigrationState !== "MIGRATION_IMPORT_SKIPPED") || auth.localDataMigrationCollisions.length > 0) {
       automaticCloudSyncController.setUser(null);
       return releaseBeforeScope;
     }
