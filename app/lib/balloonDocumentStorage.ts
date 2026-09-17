@@ -1,3 +1,4 @@
+import { invalidateCloudSyncVerdict } from "./cloudSyncVerdict.ts";
 import { withSyncIntents, putIndexedDbWithSyncIntents, recoverIndexedDbSyncIntents, isLocalSyncDeleted, LOCAL_SYNC_DELETED } from "./durableSyncIntent.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import type { SyncOutboxStorage } from "./syncOutbox.ts";
@@ -31,7 +32,7 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
 }
 
 function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error ?? new Error("Transaction interrompue")); });
+  return new Promise((resolve, reject) => { transaction.oncomplete = () => { if (transaction.mode === "readwrite") invalidateCloudSyncVerdict(); resolve(); }; transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error ?? new Error("Transaction interrompue")); });
 }
 
 function storageError(error: unknown, fallback: "WRITE_FAILED" | "DELETE_FAILED"): BalloonDocumentStorageError {

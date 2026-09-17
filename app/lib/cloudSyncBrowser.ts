@@ -1,3 +1,4 @@
+import { invalidateCloudSyncObservation } from "./cloudSyncVerdict.ts";
 import { recoverBrowserLocalSyncIntents } from "./browserLocalSyncRecovery.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LocalDataScope } from "./auth/dataScope.ts";
@@ -33,6 +34,7 @@ const CLOUD_SYNC_ISSUES_STORAGE_KEY = "balloon-companion-cloud-sync-issues-v1";
 export const CLOUD_SYNC_ISSUES_CHANGED_EVENT = "balloon-companion:cloud-sync-issues-changed";
 
 function notifyIssuesChanged(): void {
+  invalidateCloudSyncObservation();
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_ISSUES_CHANGED_EVENT));
 }
 

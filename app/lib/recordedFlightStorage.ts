@@ -1,3 +1,4 @@
+import { invalidateCloudSyncVerdict } from "./cloudSyncVerdict.ts";
 import { withSyncIntents, recoverIndexedDbSyncIntents, isLocalSyncDeleted, LOCAL_SYNC_DELETED } from "./durableSyncIntent.ts";
 import type { SyncOutboxStorage } from "./syncOutbox.ts";
 import {
@@ -233,7 +234,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       request.onsuccess = () => {
         if (request.result?.flight?.id === flight.id) active.delete(ACTIVE_FLIGHT_KEY);
       };
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -266,7 +267,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
         updated = withSyncIntents({ ...request.result, ...labels, updatedAt: Date.now() }, [{ entityType: "flight", entityId: id, operation: "UPSERT" }], request.result, scope);
         store.put(updated);
       };
-      transaction.oncomplete = () => resolve(updated);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(updated); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -316,7 +317,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
       if (value) transaction.objectStore(FLIGHTS_STORE).put(value);
       else transaction.objectStore(FLIGHTS_STORE).delete(id);
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -333,7 +334,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(FLIGHTS_STORE, "readwrite");
       transaction.objectStore(FLIGHTS_STORE).put({ ...existing, points: points.map((point) => ({ ...point })) });
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -355,7 +356,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
         else delete updated.notes;
         store.put(updated);
       };
-      transaction.oncomplete = () => resolve(updated);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(updated); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -381,7 +382,7 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       const store = transaction.objectStore(FLIGHTS_STORE);
       if (scope === "GUEST") store.delete(id);
       else store.put(withSyncIntents({ id, [LOCAL_SYNC_DELETED]: true }, [{ entityType: "flight", entityId: id, operation: "DELETE" }], previous, scope));
-      transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); }; transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error);
     });
     await enqueueLocalSyncMutation("flight", id, "DELETE", scope);
     await enqueueTrackJobForCurrentUser(id, "DELETE", scope);

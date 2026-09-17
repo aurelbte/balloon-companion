@@ -1,3 +1,4 @@
+import { invalidateCloudSyncVerdict } from "./cloudSyncVerdict.ts";
 import { hasLocalStorageSyncIntent, recoverLocalStorageSyncIntents } from "./durableSyncIntent.ts";
 import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
@@ -275,7 +276,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       };
       mutationsRequest.onsuccess = write;
       metadataRequest.onsuccess = write;
-      transaction.oncomplete = () => resolve(mutation);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(mutation); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -287,7 +288,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
       transaction.objectStore(SYNC_MUTATIONS_STORE).add(mutation);
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -331,7 +332,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
         const receipts = (request.result as StoredSyncMetadata | undefined)?.acknowledgedLocalIntentIds;
         store.put({ ...metadata, ...(receipts ? { acknowledgedLocalIntentIds: receipts } : {}) });
       };
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -350,7 +351,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
         updated = { ...current, attempts: current.attempts + 1, ...input };
         store.put(updated);
       };
-      transaction.oncomplete = () => resolve(updated);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(updated); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -371,7 +372,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
         updated = current.payloadSnapshot ? current : { ...current, payloadSnapshot: snapshot };
         store.put(updated);
       };
-      transaction.oncomplete = () => resolve(updated);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(updated); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -402,7 +403,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       };
       mutationsRequest.onsuccess = commit;
       metadataRequest.onsuccess = commit;
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -421,7 +422,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
         updated = { ...current, ...input };
         store.put(updated);
       };
-      transaction.oncomplete = () => resolve(updated);
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(updated); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -432,7 +433,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
       transaction.objectStore(SYNC_MUTATIONS_STORE).delete(mutationIdValue);
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
     });
   }
@@ -443,7 +444,7 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
       const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
       for (const mutationIdValue of mutationIds) store.delete(mutationIdValue);
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });

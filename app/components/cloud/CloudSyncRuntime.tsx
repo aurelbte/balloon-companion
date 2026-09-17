@@ -1,5 +1,7 @@
 "use client";
 
+import { cloudSyncVerdictGeneration, invalidateCloudSyncObservation } from "../../lib/cloudSyncVerdict.ts";
+
 import { useEffect } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { getRuntimeDataScope, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
@@ -30,7 +32,7 @@ import { IndexedDbRecordedFlightStorage } from "../../lib/recordedFlightStorage.
 import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBackupRestore.ts";
 import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
 import { migrateFlightTrackSupabaseToR2Targeted, migrateLegacyFlightTrackToR2Targeted, replayFlightTrackSupabaseToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
-import { drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
+import { discoverAndDrainFlightTracks, drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import {
   loadFlightCompletionState,
   persistJournalFlight,
@@ -141,6 +143,14 @@ function controlledTestMode(search = typeof window !== "undefined" ? window.loca
   );
 }
 
+let manualCloudSyncScope: string | null = null;
+const traceVerdictEvidence = new Map<string, { complete: boolean; generation: number | null; downloadsChecked?: boolean; discoveryError?: string | null }>();
+export function inspectCloudSyncTraceEvidence() {
+  const scope = getRuntimeDataScope();
+  const evidence = scope ? traceVerdictEvidence.get(scope) : undefined;
+  return { complete: evidence?.complete ?? false, generation: evidence?.generation ?? null, downloadsChecked: evidence?.downloadsChecked ?? false, discoveryError: evidence?.discoveryError ?? null, active: (manualCloudSyncInProgress && manualCloudSyncScope === scope) || Boolean(scope?.startsWith("USER:") && isFlightTrackQueueRunning(scope as `USER:${string}`)) };
+}
+
 const automaticCloudSyncController = new CloudSyncRuntimeController({
   isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
   bootstrap: async (userId) => {
@@ -166,12 +176,18 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     const scope = `USER:${userId}` as const;
     const client = createBrowserSupabaseClient();
     const report = await createBrowserCloudSyncService({ client, storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
-    if (report.state !== "COMPLETED" || report.conflicts > 0) return;
+    if (report.state !== "COMPLETED" || report.conflicts > 0) return report;
     const tracks = new BrowserFlightTrackCloudService(client, scope);
     const queue = new IndexedDbFlightTrackQueueStorage(scope);
-    try { await tracks.discoverPendingJobs(queue); }
-    catch (error) { if (process.env.NODE_ENV === "development") console.error("[Cloud Sync] Découverte trace différée", error); }
-    await drainFlightTrackQueue({ scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
+    traceVerdictEvidence.set(scope, { complete: false, generation: null });
+    try {
+      const result = await discoverAndDrainFlightTracks({
+        discover: () => tracks.discoverPendingJobs(queue),
+        drain: () => drainFlightTrackQueue({ scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } }),
+      });
+      if (getRuntimeDataScope() === scope) traceVerdictEvidence.set(scope, { complete: result.discoveryComplete && !result.drain.stoppedForUserSwitch, discoveryError: result.discoveryError, generation: cloudSyncVerdictGeneration() });
+    } catch { /* Missing trace coverage is exposed as UNVERIFIABLE, never success. */ }
+    return report;
   },
   getNextEligibleRetryAt: async (userId) => {
     const scope = `USER:${userId}` as const;
@@ -182,6 +198,7 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     return [mutationRetry, trackRetry].filter((value): value is string => Boolean(value)).sort()[0] ?? null;
   },
   onDiagnosticChange: (snapshot) => {
+    invalidateCloudSyncObservation();
     if (process.env.NODE_ENV === "development" && !suppressRuntimeDiagnosticPersistence && typeof sessionStorage !== "undefined") {
       sessionStorage.setItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY, JSON.stringify(snapshot));
     }
@@ -190,13 +207,6 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
 });
 
 export function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeControllerSnapshot {
-  if (typeof sessionStorage !== "undefined") {
-    const stored = sessionStorage.getItem(CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY);
-    if (stored) {
-      try { return JSON.parse(stored) as CloudSyncRuntimeControllerSnapshot; }
-      catch { /* Fall back to the live, read-only snapshot. */ }
-    }
-  }
   return automaticCloudSyncController.inspect();
 }
 
@@ -207,17 +217,22 @@ export function retryCloudSyncThroughRuntimeController(): void {
 export function synchronizeCloudNowThroughRuntimeController(): Promise<CloudSyncRuntimeControllerSnapshot> {
   if (manualCloudSyncOperation) return manualCloudSyncOperation;
   manualCloudSyncInProgress = true;
+  manualCloudSyncScope = getRuntimeDataScope();
   const operation = (async () => {
     await automaticCloudSyncController.synchronizeNow();
     const snapshot = automaticCloudSyncController.inspect();
     if (!snapshot.scope || getRuntimeDataScope() !== snapshot.scope) throw new Error("SYNC_USER_SWITCH");
     const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), snapshot.scope);
     const queue = new IndexedDbFlightTrackQueueStorage(snapshot.scope);
+    const discoveryError = traceVerdictEvidence.get(snapshot.scope)?.discoveryError ?? null;
+    const uploadsDiscovered = traceVerdictEvidence.get(snapshot.scope)?.complete ?? false;
+    traceVerdictEvidence.set(snapshot.scope, { complete: false, generation: null });
     await tracks.discoverMissingDownloadJobs(queue);
     const trackReport = await drainFlightTrackQueue({ scope: snapshot.scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
     if (trackReport.failed > 0 || trackReport.stoppedForUserSwitch) throw new Error("SYNC_TRACKS_INCOMPLETE");
+    traceVerdictEvidence.set(snapshot.scope, { complete: uploadsDiscovered, discoveryError, downloadsChecked: true, generation: cloudSyncVerdictGeneration() });
     return automaticCloudSyncController.inspect();
-  })().finally(() => { manualCloudSyncInProgress = false; manualCloudSyncOperation = null; });
+  })().finally(() => { manualCloudSyncInProgress = false; manualCloudSyncScope = null; manualCloudSyncOperation = null; if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_RUNTIME_CHANGED_EVENT)); });
   manualCloudSyncOperation = operation;
   return operation;
 }

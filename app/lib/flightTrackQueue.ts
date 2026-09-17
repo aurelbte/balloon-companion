@@ -1,3 +1,4 @@
+import { invalidateCloudSyncVerdict, invalidateCloudSyncObservation } from "./cloudSyncVerdict.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 
@@ -77,7 +78,7 @@ export class IndexedDbFlightTrackQueueStorage implements FlightTrackQueueStorage
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(FLIGHT_TRACK_QUEUE_STORE, "readwrite");
       action(transaction.objectStore(FLIGHT_TRACK_QUEUE_STORE));
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -114,6 +115,7 @@ export type FlightTrackQueueTransport = Readonly<{
 }>;
 
 export type FlightTrackQueueDrainResult = Readonly<{ processed: number; succeeded: number; failed: number; stoppedForUserSwitch: boolean }>;
+function notifyTrackActivity(): void { invalidateCloudSyncObservation(); }
 const activeDrains = new Map<string, Promise<FlightTrackQueueDrainResult>>();
 export function isFlightTrackQueueRunning(scope: `USER:${string}`): boolean { return activeDrains.has(scope); }
 
@@ -160,12 +162,21 @@ export function drainFlightTrackQueue(input: Readonly<{
       }
     }
     return result;
-  })().finally(() => activeDrains.delete(input.scope));
+  })().finally(() => { activeDrains.delete(input.scope); notifyTrackActivity(); });
   activeDrains.set(input.scope, promise);
+  notifyTrackActivity();
   return promise;
 }
 
 export async function nextFlightTrackRetryAt(storage: FlightTrackQueueStorage): Promise<string | null> {
   const dates = (await storage.list()).flatMap(({ nextEligibleRetryAt }) => nextEligibleRetryAt ? [Date.parse(nextEligibleRetryAt)] : [0]).filter(Number.isFinite);
   return dates.length ? new Date(Math.min(...dates)).toISOString() : null;
+}
+
+/** Discovery failure never starves already durable jobs; coverage remains explicitly incomplete. */
+export async function discoverAndDrainFlightTracks(input: Readonly<{ discover(): Promise<unknown>; drain(): Promise<FlightTrackQueueDrainResult> }>): Promise<Readonly<{ discoveryComplete: boolean; discoveryError: "TRACE_DISCOVERY_FAILED" | null; drain: FlightTrackQueueDrainResult }>> {
+  let discoveryComplete = true;
+  try { await input.discover(); } catch { discoveryComplete = false; }
+  const drain = await input.drain();
+  return { discoveryComplete, discoveryError: discoveryComplete ? null : "TRACE_DISCOVERY_FAILED", drain };
 }

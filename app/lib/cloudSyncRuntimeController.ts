@@ -22,6 +22,8 @@ export type CloudSyncRuntimeControllerSnapshot = Readonly<{
   lastCompletedAt: string | null;
   lastPushAuthorized: boolean | null;
   lastPushExecuted: boolean;
+  lastPushState: string | null;
+  lastPushCompletedAt: string | null;
   lastPushRefusalReason: string | null;
   deduplicatedRequests: number;
   cancelledExecutions: number;
@@ -67,6 +69,8 @@ export class CloudSyncRuntimeController {
   private lastCompletedAt: string | null = null;
   private lastPushAuthorized: boolean | null = null;
   private lastPushExecuted = false;
+  private lastPushState: string | null = null;
+  private lastPushCompletedAt: string | null = null;
   private lastPushRefusalReason: string | null = null;
   private deduplicatedRequests = 0;
   private cancelledExecutions = 0;
@@ -85,6 +89,12 @@ export class CloudSyncRuntimeController {
     const previous = this.userId;
     this.userId = userId;
     this.generation += 1;
+    this.lastBootstrapState = null;
+    this.lastCompletedAt = null;
+    this.lastPushExecuted = false;
+    this.lastPushState = null;
+    this.lastPushCompletedAt = null;
+    this.lastError = null;
     this.cancelRetryTimer();
     this.retryDue = false;
     if (this.running && previous) this.cancelledExecutions += 1;
@@ -160,6 +170,8 @@ export class CloudSyncRuntimeController {
       lastCompletedAt: this.lastCompletedAt,
       lastPushAuthorized: this.lastPushAuthorized,
       lastPushExecuted: this.lastPushExecuted,
+      lastPushState: this.lastPushState,
+      lastPushCompletedAt: this.lastPushCompletedAt,
       lastPushRefusalReason: this.lastPushRefusalReason,
       deduplicatedRequests: this.deduplicatedRequests,
       cancelledExecutions: this.cancelledExecutions,
@@ -219,6 +231,7 @@ export class CloudSyncRuntimeController {
       let report: AutomaticBootstrapResult;
       try { report = await this.dependencies.bootstrap(userId); }
       catch (error) {
+        if (generation !== this.generation || userId !== this.userId) return;
         this.lastBootstrapState = "STOPPED_ERROR";
         this.lastError = this.safeError(error);
         this.lastPushAuthorized = false;
@@ -251,8 +264,22 @@ export class CloudSyncRuntimeController {
       this.pushRequested = false;
       this.pushInProgress = true;
       this.record("PUSH_STARTED", userId);
-      try { await this.dependencies.push(userId); this.lastPushExecuted = true; this.record("PUSH_COMPLETED", userId); }
-      catch { /* A later enqueue/online event can safely retry the preserved outbox. */ }
+      try {
+        const result = await this.dependencies.push(userId);
+        if (generation !== this.generation || userId !== this.userId) return;
+        this.lastPushExecuted = true;
+        this.lastPushState = result && typeof result === "object" && "state" in result ? String(result.state) : null;
+        this.lastError = this.lastPushState === "STOPPED_ERROR" ? { code: "PUSH_STOPPED_ERROR", message: "Synchronisation interrompue" } : null;
+        this.lastPushCompletedAt = this.lastPushState === "COMPLETED" ? this.now() : null;
+        this.record("PUSH_COMPLETED", userId, this.lastPushState ?? "UNVERIFIED");
+      }
+      catch (error) {
+        if (generation !== this.generation || userId !== this.userId) return;
+        this.lastPushState = "STOPPED_ERROR";
+        this.lastPushCompletedAt = null;
+        this.lastError = this.safeError(error);
+        this.record("PUSH_ERROR", userId, "STOPPED_ERROR");
+      }
       finally { this.pushInProgress = false; this.publish(); }
     } else if (this.pushRequested && !bootstrapSucceeded && this.readyGeneration !== generation) {
       this.record("PUSH_SKIPPED", userId, this.lastPushRefusalReason ?? "BOOTSTRAP_NOT_READY");

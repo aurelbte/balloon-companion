@@ -1,3 +1,4 @@
+import { invalidateCloudSyncVerdict, invalidateCloudSyncObservation } from "./cloudSyncVerdict.ts";
 import { getRuntimeDataScope, scopedBusinessStorageKey, guestBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import type { SyncOperation, SyncOutboxStorage } from "./syncOutbox.ts";
@@ -13,6 +14,7 @@ export function pendingSyncIntents(value: unknown): LocalSyncIntent[] {
 }
 export function withSyncIntents<T extends object>(value: T, changes: readonly LocalSyncChange[], previous: unknown = value, scope: LocalDataScope | null = getRuntimeDataScope()): T {
   if (!scope?.startsWith("USER:")) return value;
+  if (changes.length) invalidateCloudSyncVerdict();
   const intents = [...pendingSyncIntents(previous), ...changes.map((change) => ({ ...change, mutationId: crypto.randomUUID() }))];
   const next = { ...value, [LOCAL_SYNC_INTENTS]: intents };
   if (!intents.length) delete (next as Record<string, unknown>)[LOCAL_SYNC_INTENTS];
@@ -61,7 +63,7 @@ async function recoverLocalStorageSyncIntentsUnlocked(storage: Storage, scope: `
     if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
     // Re-read: another local write may have occurred during the enqueue.
     const latest = JSON.parse(storage.getItem(key) ?? "null") as IntentRecord | null;
-    if (latest) storage.setItem(key, JSON.stringify(withoutIntents(latest, transferred)));
+    if (latest) { storage.setItem(key, JSON.stringify(withoutIntents(latest, transferred))); invalidateCloudSyncVerdict(); }
   }
   return found;
 }
@@ -90,20 +92,27 @@ async function recoverIndexedDbSyncIntentsUnlocked(database: IDBDatabase, storeN
         const latest = withoutIntents(request.result, transferred);
         if (isLocalSyncDeleted(latest) && !pendingSyncIntents(latest).length) store.delete(value.id as IDBValidKey); else store.put(latest);
       };
-      tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+      tx.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); }; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
     });
   }
 }
 
 let recoveryChain: Promise<unknown> = Promise.resolve();
-function serialize<T>(work: () => Promise<T>): Promise<T> {
-  const result = recoveryChain.catch(() => undefined).then(work); recoveryChain = result; return result;
+const activeRecoveries = new Set<LocalDataScope>();
+export function isLocalSyncRecoveryRunning(scope: LocalDataScope): boolean { return activeRecoveries.has(scope); }
+function notifyRecoveryActivity(): void { invalidateCloudSyncObservation(); }
+function serialize<T>(work: () => Promise<T>, scope: LocalDataScope): Promise<T> {
+  const result = recoveryChain.catch(() => undefined).then(async () => {
+    activeRecoveries.add(scope); notifyRecoveryActivity();
+    try { return await work(); }
+    finally { activeRecoveries.delete(scope); notifyRecoveryActivity(); }
+  }); recoveryChain = result; return result;
 }
 export function recoverLocalStorageSyncIntents(...args: Parameters<typeof recoverLocalStorageSyncIntentsUnlocked>): Promise<boolean> {
-  return serialize(() => recoverLocalStorageSyncIntentsUnlocked(...args));
+  return serialize(() => recoverLocalStorageSyncIntentsUnlocked(...args), args[1]);
 }
 export function recoverIndexedDbSyncIntents(...args: Parameters<typeof recoverIndexedDbSyncIntentsUnlocked>): Promise<void> {
-  return serialize(() => recoverIndexedDbSyncIntentsUnlocked(...args));
+  return serialize(() => recoverIndexedDbSyncIntentsUnlocked(...args), args[2]);
 }
 export function putIndexedDbWithSyncIntents<T extends { id: string }>(store: IDBObjectStore, value: T, changes: readonly LocalSyncChange[], scope: LocalDataScope): void {
   const request = store.get(value.id);

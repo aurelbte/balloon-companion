@@ -2,26 +2,21 @@
 
 import { ChevronRight, RefreshCw, Users } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import NavigationBar from "../components/NavigationBar";
-import { CLOUD_SYNC_RUNTIME_CHANGED_EVENT, inspectCloudSyncRuntimeControllerState, synchronizeCloudNowThroughRuntimeController } from "../components/cloud/CloudSyncRuntime";
+import { synchronizeCloudNowThroughRuntimeController } from "../components/cloud/CloudSyncRuntime";
 import { useBalloonAuth } from "../contexts/AuthContext";
 import { AUTH_SIGN_IN_ROUTE, AUTH_SIGN_UP_ROUTE } from "../lib/auth/entry";
+import { useCloudSyncVerdict } from "../lib/useCloudSyncVerdict.ts";
+import { CLOUD_SYNC_VERDICT_LABELS } from "../lib/cloudSyncVerdict.ts";
 import styles from "./More.module.css";
 
 export default function MorePage() {
   const auth = useBalloonAuth();
   const [signingOut, setSigningOut] = useState(false);
-  const [syncState, setSyncState] = useState<"idle" | "syncing" | "success" | "error" | "offline">("idle");
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const verdict = useCloudSyncVerdict(auth.user?.id ? `USER:${auth.user.id}` : null);
+  const [actionError, setActionError] = useState(false);
   const displayName = [auth.user?.firstName, auth.user?.lastName].filter(Boolean).join(" ");
-
-  useEffect(() => {
-    const refresh = () => setLastSyncAt(inspectCloudSyncRuntimeControllerState().lastCompletedAt);
-    refresh();
-    window.addEventListener(CLOUD_SYNC_RUNTIME_CHANGED_EVENT, refresh);
-    return () => window.removeEventListener(CLOUD_SYNC_RUNTIME_CHANGED_EVENT, refresh);
-  }, []);
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -33,14 +28,10 @@ export default function MorePage() {
   }
 
   async function handleSynchronizeNow() {
-    if (syncState === "syncing") return;
-    if (!navigator.onLine) { setSyncState("offline"); return; }
-    setSyncState("syncing");
-    try {
-      const result = await synchronizeCloudNowThroughRuntimeController();
-      setLastSyncAt(result.lastCompletedAt);
-      setSyncState(result.lastBootstrapState === "SUCCESS" && result.lastPushExecuted && !result.lastError ? "success" : "error");
-    } catch { setSyncState(navigator.onLine ? "error" : "offline"); }
+    if (verdict.state === "SYNCING") return;
+    setActionError(false);
+    try { await synchronizeCloudNowThroughRuntimeController(); }
+    catch { setActionError(true); }
   }
 
   return <main className={styles.screen}><div className={styles.layout}>
@@ -71,13 +62,16 @@ export default function MorePage() {
     <Link href="/more/profile/balloons" className={styles.card}><div><h2>Mes ballons</h2><p>Matériel utilisé dans Balloon Companion</p></div><ChevronRight size={18} aria-hidden="true" /></Link>
     <Link href="/more/settings" className={styles.card}><div><h2>Réglages</h2><p>Comportement de l’application</p></div><ChevronRight size={18} aria-hidden="true" /></Link>
     <section className={styles.syncNow} aria-live="polite">
-      <button type="button" disabled={syncState === "syncing" || auth.state !== "SIGNED_IN"} onClick={() => void handleSynchronizeNow()}>
-        <RefreshCw size={19} aria-hidden="true" className={syncState === "syncing" ? styles.syncingIcon : undefined} />
-        {syncState === "syncing" ? "Synchronisation…" : "Synchroniser maintenant"}
+      <button type="button" disabled={verdict.state === "SYNCING" || auth.state !== "SIGNED_IN"} onClick={() => void handleSynchronizeNow()}>
+        <RefreshCw size={19} aria-hidden="true" className={verdict.state === "SYNCING" ? styles.syncingIcon : undefined} />
+        {verdict.state === "SYNCING" ? "Synchronisation…" : "Synchroniser maintenant"}
       </button>
-      {syncState === "success" && <p>Dernière synchro : à l’instant</p>}
-      {syncState === "idle" && lastSyncAt && <p>Dernière synchro : {new Date(lastSyncAt).toLocaleString("fr-FR")}</p>}
-      {(syncState === "error" || syncState === "offline") && <p className={styles.syncError}>Synchronisation incomplète. Réessayez lorsque la connexion est disponible.</p>}
+      <p>{CLOUD_SYNC_VERDICT_LABELS[verdict.state]}</p>
+      {verdict.verifiedAt && <p>Dernière synchronisation vérifiée : {new Date(verdict.verifiedAt).toLocaleString("fr-FR")}</p>}
+      {verdict.bootstrapAt && <p>Dernier bootstrap : {new Date(verdict.bootstrapAt).toLocaleString("fr-FR")}</p>}
+      {actionError && <p className={styles.syncError}>La tentative n’a pas abouti.</p>}
+      <p>Fichiers des documents stockés uniquement sur cet appareil.</p>
+      <Link href="/more/cloud-sync">Détails de synchronisation</Link>
     </section>
   </div><NavigationBar activeItem="Plus" /></main>;
 }
