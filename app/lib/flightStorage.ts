@@ -2,8 +2,7 @@ import type { LaunchSite } from "./trajectory/types.ts";
 import type { AltitudeOption } from "./trajectory/integration.ts";
 
 /**
- * Vue historique encore consommée par les écrans Prépa, Briefing et Carte.
- * Elle reste disponible pendant la migration progressive vers la préparation V2.
+ * Format historique reconnu par la migration pure des drafts modernes.
  */
 export interface Flight {
   terrain: string;
@@ -43,7 +42,6 @@ export interface StoredFlightPreparationV2 {
   updatedAt: number;
 }
 
-const STORAGE_KEY = "balloon_companion_flight";
 
 const LEGACY_TO_PROVIDER_MODEL: Record<string, string> = {
   AROME: "arome_seamless",
@@ -51,12 +49,6 @@ const LEGACY_TO_PROVIDER_MODEL: Record<string, string> = {
   GFS: "gfs_seamless",
 };
 
-const PROVIDER_TO_LEGACY_MODEL: Record<string, string> = Object.fromEntries(
-  Object.entries(LEGACY_TO_PROVIDER_MODEL).map(([legacy, provider]) => [
-    provider,
-    legacy,
-  ]),
-);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -87,24 +79,6 @@ function legacyDateTimeToIso(date: string, time: string): string | null {
   return Number.isFinite(localDate.getTime()) ? localDate.toISOString() : null;
 }
 
-function isoToLegacyDateTime(value: string | null): {
-  date: string;
-  time: string;
-} {
-  if (!value) return { date: "", time: "" };
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return { date: "", time: "" };
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return {
-    date: `${year}-${month}-${day}`,
-    time: `${hours}:${minutes}`,
-  };
-}
 
 function parseLaunchSite(value: unknown): LaunchSite | null {
   if (!isRecord(value)) return null;
@@ -267,105 +241,4 @@ export function migrateStoredPreparation(
     createdAt,
     updatedAt,
   };
-}
-
-export function saveFlightPreparation(
-  preparation: StoredFlightPreparationV2,
-): boolean {
-  if (typeof window === "undefined") return false;
-  const validated = migrateStoredPreparation(preparation);
-  if (!validated) return false;
-
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(validated));
-    return true;
-  } catch (error) {
-    console.error("Erreur lors de la sauvegarde de la préparation:", error);
-    return false;
-  }
-}
-
-export function getFlightPreparation(): StoredFlightPreparationV2 | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? migrateStoredPreparation(JSON.parse(stored)) : null;
-  } catch (error) {
-    console.error("Erreur lors de la lecture de la préparation:", error);
-    return null;
-  }
-}
-
-/**
- * Compatibilité temporaire avec l’interface actuelle.
- * Une modification du nom de terrain invalide tout ancien point résolu.
- */
-export function saveCurrentFlight(flight: Flight): boolean {
-  const existing = getFlightPreparation();
-  const now = Date.now();
-  const terrainName = flight.terrain.trim();
-  const preservedLaunchSite =
-    existing?.launchSite?.name === terrainName ? existing.launchSite : null;
-
-  return saveFlightPreparation({
-    storageVersion: PREPARATION_STORAGE_VERSION,
-    launchSite: preservedLaunchSite,
-    ...(!preservedLaunchSite && terrainName
-      ? { unresolvedLaunchSiteName: terrainName }
-      : {}),
-    departureTime: legacyDateTimeToIso(flight.date, flight.heure),
-    durationMinutes: parseDurationMinutes(flight.duree),
-    weatherModel:
-      LEGACY_TO_PROVIDER_MODEL[flight.meteo] ?? flight.meteo.trim(),
-    targetAltitudeAmslM: existing?.targetAltitudeAmslM ?? null,
-    ...(existing?.ascentRateMps
-      ? { ascentRateMps: existing.ascentRateMps }
-      : {}),
-    ...(existing?.descentRateMps
-      ? { descentRateMps: existing.descentRateMps }
-      : {}),
-    ...(flight.ballon.trim() ? { balloonName: flight.ballon.trim() } : {}),
-    ...(existing?.occupantsWeightKg !== undefined
-      ? { occupantsWeightKg: existing.occupantsWeightKg }
-      : {}),
-    createdAt: existing?.createdAt ?? flight.createdAt ?? now,
-    updatedAt: now,
-  });
-}
-
-export function getCurrentFlight(): Flight | null {
-  const preparation = getFlightPreparation();
-  if (!preparation) return null;
-
-  const departure = isoToLegacyDateTime(preparation.departureTime);
-  return {
-    terrain:
-      preparation.launchSite?.name ??
-      preparation.unresolvedLaunchSiteName ??
-      "",
-    date: departure.date,
-    heure: departure.time,
-    duree:
-      preparation.durationMinutes === null
-        ? ""
-        : `${preparation.durationMinutes} min`,
-    ballon: preparation.balloonName ?? "",
-    meteo:
-      PROVIDER_TO_LEGACY_MODEL[preparation.weatherModel] ??
-      preparation.weatherModel,
-    createdAt: preparation.createdAt,
-    updatedAt: preparation.updatedAt,
-  };
-}
-
-export function clearCurrentFlight(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-    return true;
-  } catch (error) {
-    console.error("Erreur lors de l’effacement de la préparation:", error);
-    return false;
-  }
 }

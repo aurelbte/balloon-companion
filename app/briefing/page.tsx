@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { getCurrentFlight, type Flight } from "../lib/flightStorage";
+import type { StoredFlightPreparationV2 } from "../lib/flightStorage";
+import { loadPreparationDraft } from "../lib/preparationDraftStorage";
+import { PREPARATION_SESSION_CHANGED_EVENT } from "../lib/preparationSession";
+import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 import NavigationBar from "../components/NavigationBar";
 import Button from "../components/Button";
 
@@ -28,11 +31,23 @@ const conditions = [
   { label: "NOTAM", value: "Non chargés" },
 ];
 
-export default function BriefingPage() {
-  const flight = useState<Flight | null>(() => getCurrentFlight())[0];
+function subscribePreparation(refresh: () => void) {
+  const events = [DATA_SCOPE_CHANGED_EVENT, PREPARATION_SESSION_CHANGED_EVENT, "storage", "pageshow", "focus"];
+  events.forEach((event) => window.addEventListener(event, refresh));
+  return () => events.forEach((event) => window.removeEventListener(event, refresh));
+}
+function preparationSnapshot(): string | null {
+  const preparation = loadPreparationDraft();
+  return preparation ? JSON.stringify(preparation) : null;
+}
+const serverSnapshot = () => null;
 
-  // Afficher un message si aucun vol n'est enregistré
-  if (!flight) {
+export default function BriefingPage() {
+  const snapshot = useSyncExternalStore(subscribePreparation, preparationSnapshot, serverSnapshot);
+  const preparation = useMemo<StoredFlightPreparationV2 | null>(() => snapshot ? JSON.parse(snapshot) : null, [snapshot]);
+
+  // No persisted preparation is restored without current session authority.
+  if (!preparation) {
     return (
       <main className="min-h-screen px-4 pb-28 pt-6 sm:px-6">
         <div className="mx-auto w-full max-w-md">
@@ -45,7 +60,7 @@ export default function BriefingPage() {
             </p>
 
             <h1 className="text-3xl font-bold tracking-tight">
-              Aucune préparation
+              Aucune préparation en cours
             </h1>
 
             <p
@@ -115,7 +130,7 @@ export default function BriefingPage() {
                   className="font-semibold"
                   style={{ color: "var(--bc-text-primary)" }}
                 >
-                  {flight?.terrain || "À renseigner"}
+                  {(preparation.launchSite?.name ?? preparation.unresolvedLaunchSiteName) || "À renseigner"}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -129,8 +144,8 @@ export default function BriefingPage() {
                   className="font-semibold"
                   style={{ color: "var(--bc-text-primary)" }}
                 >
-                  {flight?.date || flight?.heure
-                    ? `${formatDate(flight.date || "")} · ${flight.heure || ""}`
+                  {preparation.departureTime
+                    ? `${formatDate(preparation.departureTime)} · ${new Date(preparation.departureTime).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`
                     : "À renseigner"}
                 </span>
               </div>
@@ -145,7 +160,7 @@ export default function BriefingPage() {
                   className="font-semibold"
                   style={{ color: "var(--bc-text-primary)" }}
                 >
-                  {flight?.ballon || "À renseigner"}
+                  {preparation.balloonName || "À renseigner"}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -159,7 +174,7 @@ export default function BriefingPage() {
                   className="font-semibold"
                   style={{ color: "var(--bc-text-primary)" }}
                 >
-                  {flight?.duree || "À renseigner"}
+                  {preparation.durationMinutes === null ? "À renseigner" : `${preparation.durationMinutes} min`}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -173,7 +188,7 @@ export default function BriefingPage() {
                   className="font-semibold"
                   style={{ color: "var(--bc-text-primary)" }}
                 >
-                  {flight?.meteo || "À renseigner"}
+                  {preparation.weatherModel || "À renseigner"}
                 </span>
               </div>
             </div>
