@@ -49,11 +49,12 @@ export default function CloudSyncPage() {
     if (issue.entityType === "balloon") name = loadBalloonRegistry().balloons.find(({ id }) => id === issue.entityId)?.registration;
     return `${DOMAIN_LABEL[issue.entityType] ?? "Donnée"}${name ? ` — ${name}` : ""}`;
   };
-  const resolve = async (issue: CloudSyncIssue, strategy: "LOCAL" | "SERVER") => {
+  const resolve = async (issue: CloudSyncIssue, strategy: "LOCAL" | "SERVER" | "BUSINESS") => {
     if (!resolver) return;
     setResolving(`${issue.entityType}:${issue.entityId}`); setActionError(null);
     try {
-      if (strategy === "LOCAL") await resolver.resolveLocalWins(issue.entityType, issue.entityId);
+      if (strategy === "BUSINESS") await resolver.retryDuplicateRegistration(issue.entityId);
+      else if (strategy === "LOCAL") await resolver.resolveLocalWins(issue.entityType, issue.entityId);
       else await resolver.resolveServerWins(issue.entityType, issue.entityId);
       await refresh();
     } catch { setActionError("La résolution n’a pas abouti. Réessayez lorsque la connexion est stable."); }
@@ -74,13 +75,17 @@ export default function CloudSyncPage() {
       {(["ERROR", "PENDING", "UNVERIFIABLE"].includes(verdict.state) || actionError) && <><p className="mt-2 text-sm text-red-700">{actionError ?? "Vérifiez les détails du statut avant de réessayer."}</p><button className="mt-3 rounded-xl border px-4 py-2" type="button" onClick={retryCloudSyncThroughRuntimeController}>Réessayer</button></>}
     </section>
     {issues.length > 0 && <section className="mt-5 space-y-3" aria-label="Conflits Cloud">
-      <p className="text-sm text-slate-700">Une donnée a été modifiée sur un autre appareil.</p>
+      <p className="text-sm text-slate-700">Des conflits nécessitent votre attention.</p>
       {issues.map((issue) => { const key = `${issue.entityType}:${issue.entityId}`; return <article key={key} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
         <h2 className="font-semibold">{label(issue)}</h2>
-        <div className="mt-4 flex flex-wrap gap-2">
+        {issue.kind === "BUSINESS_CONFLICT" ? <>
+          <p className="mt-2 text-sm">Un ballon avec cette immatriculation existe déjà dans le compte Cloud. Vérifiez les fiches existantes. Après résolution, réessayez l’envoi enregistré.</p>
+          <Link className="mt-2 inline-block underline" href="/more/profile/balloons">Voir mes ballons</Link>
+          <button className="mt-3 rounded-xl border px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "BUSINESS")}>Réessayer après résolution</button>
+        </> : <div className="mt-4 flex flex-wrap gap-2">
           <button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "LOCAL")}>Garder ma version</button>
           <button className="rounded-xl border border-slate-400 bg-white px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "SERVER")}>Utiliser la version Cloud</button>
-        </div>
+        </div>}
       </article>; })}
     </section>}
   </main>;

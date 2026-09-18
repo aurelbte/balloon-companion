@@ -10,10 +10,10 @@ import styles from "../../more/More.module.css";
 
 const OTHER = "__other__";
 type CylinderDraft = { id: string; label: string; weight: string };
-type Props = { balloon?: Balloon; submitLabel: string; onSubmit: (input: BalloonInput) => void; onCancel: () => void };
+type Props = { balloon?: Balloon; submitLabel: string; onSubmit: (input: BalloonInput) => void; onCancel: () => void; submissionError?: string | null };
 function parseDecimal(value: string): number | undefined { if (!value.trim()) return undefined; const number = Number(value.replace(",", ".")); return Number.isFinite(number) ? number : undefined; }
 function decimalInput(value: string): string { return value.replace(/[^0-9.,]/g, "").replace(/([.,].*)[.,]/g, "$1"); }
-export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }: Props) {
+export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, submissionError }: Props) {
   const initialMassDraft = balloonMassFormDraft(balloon);
   const sectionDefaults = balloonFormSectionDefaults(balloon?.applicableMtowKg !== undefined, balloon?.configurationLimitsConfirmed === true);
   const knownManufacturer = balloon && catalogManufacturers().includes(balloon.manufacturer);
@@ -143,6 +143,6 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel }
       <summary>Détails facultatifs <ChevronDown size={17} aria-hidden /></summary>
       <div className={styles.sectionGrid}><label><span>Catégorie</span><select value={category} onChange={(e) => setCategory(e.target.value as BalloonCategory)}><option>Libre à air chaud</option><option>Libre à gaz</option></select></label><label><span>Couleur</span><input value={color} onChange={(e) => setColor(e.target.value)} /></label></div>
     </details>
-    <div className={styles.balloonFormActions}><button type="submit" disabled={!canSubmitHydratedBalloonForm(hydrationReady, valid)}>{hydrationReady ? submitLabel : "Chargement…"}</button><button type="button" className={styles.later} onClick={onCancel}>Annuler</button></div>
+    {submissionError && <p role="alert">{submissionError}</p>}<div className={styles.balloonFormActions}><button type="submit" disabled={!canSubmitHydratedBalloonForm(hydrationReady, valid)}>{hydrationReady ? submitLabel : "Chargement…"}</button><button type="button" className={styles.later} onClick={onCancel}>Annuler</button></div>
   </form>;
 }

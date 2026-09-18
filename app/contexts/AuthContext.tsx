@@ -79,7 +79,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
         if (report.state === "OBSOLETE") return;
         setLocalDataImportState(report.state);
         if (report.state === "REVIEW_REQUIRED" || report.state === "DEFERRED" || report.state === "CLAIMED_OTHER") {
-          const message = report.state === "REVIEW_REQUIRED" ? "Import local suspendu : propriété ou consentement des anciennes données à vérifier. Ces données ne sont pas importées ni couvertes par la synchronisation du compte."
+          const message = report.collisions.some(c => c.reason === "DUPLICATE_REGISTRATION") ? "Import de ballons suspendu : une immatriculation existe plusieurs fois. Les données invité sont conservées pour résolution. La synchronisation du compte reste disponible." : report.state === "REVIEW_REQUIRED" ? "Import local suspendu : propriété ou consentement des anciennes données à vérifier. Ces données ne sont pas importées ni couvertes par la synchronisation du compte."
             : report.state === "DEFERRED" ? "Import des données locales reporté. La synchronisation des données du compte reste disponible."
               : "Les données invité déjà revendiquées par un autre compte ne sont pas importées.";
           setImportNotice({ userId, message });

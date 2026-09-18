@@ -14,7 +14,7 @@ export const PHASE_3A_SYNC_ENTITY_TYPES = Object.freeze([
 export type Phase3ASyncEntityType = typeof PHASE_3A_SYNC_ENTITY_TYPES[number];
 export const AUTOMATIC_SYNC_ENTITY_TYPES = Object.freeze([...PHASE_3A_SYNC_ENTITY_TYPES, "balloon", "balloon-preferences", "flight", "logbook-entry", "balloon-document"] as const);
 export const PHASE_3B_TARGETED_SYNC_ENTITY_TYPES = AUTOMATIC_SYNC_ENTITY_TYPES;
-export type CloudMutationStatus = "APPLIED" | "ALREADY_APPLIED" | "CONFLICT" | "NOT_FOUND";
+export type CloudMutationStatus = "APPLIED" | "ALREADY_APPLIED" | "CONFLICT" | "BUSINESS_CONFLICT" | "NOT_FOUND";
 
 export type CloudMutationRequest = Readonly<{
   mutationId: string;
@@ -27,6 +27,7 @@ export type CloudMutationRequest = Readonly<{
 
 export type CloudMutationResult = Readonly<{
   status: CloudMutationStatus;
+  businessCode?: "DUPLICATE_REGISTRATION";
   entityId: string;
   revision: number | null;
   serverUpdatedAt: string | null;
@@ -34,7 +35,8 @@ export type CloudMutationResult = Readonly<{
 }>;
 
 export type CloudSyncIssue = Readonly<{
-  kind: "CONFLICT" | "NOT_FOUND";
+  kind: "CONFLICT" | "BUSINESS_CONFLICT" | "NOT_FOUND";
+  businessCode?: "DUPLICATE_REGISTRATION";
   entityType: string;
   entityId: string;
   mutation: SyncMutation;
@@ -107,7 +109,7 @@ export function inspectAutomaticMutationEligibility(mutation: SyncMutation, now 
   reason: "ELIGIBLE" | "ENTITY_TYPE_NOT_ALLOWED" | "CONFLICT_BLOCKED" | "BACKOFF_NOT_DUE" | "INVALID_NEXT_ATTEMPT_AT";
 }> {
   if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType)) return { allowed: false, eligible: false, reason: "ENTITY_TYPE_NOT_ALLOWED" };
-  if (mutation.lastErrorCode === "CONFLICT") return { allowed: true, eligible: false, reason: "CONFLICT_BLOCKED" };
+  if ((mutation.lastErrorCode === "CONFLICT" || mutation.lastErrorCode === "DUPLICATE_REGISTRATION")) return { allowed: true, eligible: false, reason: "CONFLICT_BLOCKED" };
   if (!mutation.nextAttemptAt) return { allowed: true, eligible: true, reason: "ELIGIBLE" };
   const nextAttemptAt = Date.parse(mutation.nextAttemptAt);
   if (!Number.isFinite(nextAttemptAt)) return { allowed: true, eligible: false, reason: "INVALID_NEXT_ATTEMPT_AT" };
@@ -123,7 +125,7 @@ function isEligible(mutation: SyncMutation, now: Date): boolean {
 export function nextEligibleRetryAt(mutations: readonly SyncMutation[]): string | null {
   let next: number | null = null;
   for (const mutation of mutations) {
-    if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType) || mutation.lastErrorCode === "CONFLICT" || !mutation.nextAttemptAt) continue;
+    if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType) || (mutation.lastErrorCode === "CONFLICT" || mutation.lastErrorCode === "DUPLICATE_REGISTRATION") || !mutation.nextAttemptAt) continue;
     const timestamp = Date.parse(mutation.nextAttemptAt);
     if (Number.isFinite(timestamp) && (next === null || timestamp < next)) next = timestamp;
   }
@@ -137,9 +139,18 @@ export class CloudSyncService {
   async syncPendingMutations(): Promise<CloudSyncPassResult> {
     const authorization = await this.authorizePass();
     if ("state" in authorization) return authorization;
-    const mutations = (await this.dependencies.outbox.list()).map((mutation, index) => ({ mutation, index }))
+    const pending = await this.dependencies.outbox.list();
+    // Defer UPSERTs without their own DELETE behind balloon deletion chains.
+    // Do not infer cloud existence from a sidecar: revision 0 is also local-only.
+    // Per-entity order (including UPSERT then DELETE) remains unchanged.
+    const deferredBalloonUpserts = new Set(pending.filter(m => m.entityType === "balloon" && m.operation === "UPSERT"
+      && !pending.some(other => other.entityType === "balloon" && other.entityId === m.entityId && other.operation === "DELETE"))
+      .map(m => m.entityId));
+    const mutations = pending.map((mutation, index) => ({ mutation, index }))
       .sort((left, right) => (AUTOMATIC_TYPE_PRIORITY.get(left.mutation.entityType) ?? Number.MAX_SAFE_INTEGER)
-        - (AUTOMATIC_TYPE_PRIORITY.get(right.mutation.entityType) ?? Number.MAX_SAFE_INTEGER) || left.index - right.index)
+        - (AUTOMATIC_TYPE_PRIORITY.get(right.mutation.entityType) ?? Number.MAX_SAFE_INTEGER) || (left.mutation.entityType === "balloon" && right.mutation.entityType === "balloon"
+          ? Number(deferredBalloonUpserts.has(left.mutation.entityId)) - Number(deferredBalloonUpserts.has(right.mutation.entityId)) : 0)
+        || left.index - right.index)
       .map(({ mutation }) => mutation);
     return this.processMutations(mutations, authorization, AUTOMATIC_ALLOWED_TYPES, true);
   }
@@ -150,6 +161,19 @@ export class CloudSyncService {
     const mutation = (await this.dependencies.outbox.list()).find((candidate) => candidate.mutationId === mutationId);
     if (!mutation) return this.result("COMPLETED");
     return this.processMutations([mutation], authorization, TARGETED_ALLOWED_TYPES);
+  }
+
+  /** Explicit retry after resolving the occupied registration; never rebase or replace the snapshot. */
+  async retryDuplicateRegistration(entityId: string): Promise<CloudSyncPassResult> {
+    const authorization = await this.authorizePass();
+    if ("state" in authorization) return authorization;
+    const issue = (await this.dependencies.issues.list()).find(i => i.kind === "BUSINESS_CONFLICT" && i.entityType === "balloon" && i.entityId === entityId && i.businessCode === "DUPLICATE_REGISTRATION");
+    if (!issue || !this.sameUser(authorization.scope, authorization.userId)) return this.result("PENDING");
+    const mutation = (await this.dependencies.outbox.list()).find(m => m.mutationId === issue.mutation.mutationId && m.lastErrorCode === "DUPLICATE_REGISTRATION");
+    if (!mutation || !this.sameUser(authorization.scope, authorization.userId)) return this.result("PENDING");
+    await this.dependencies.outbox.updateMutation(mutation.mutationId, { lastErrorCode: undefined, nextAttemptAt: undefined });
+    if (!this.sameUser(authorization.scope, authorization.userId)) return this.result("STOPPED_USER_SWITCH");
+    return this.syncMutationById(mutation.mutationId);
   }
 
   private async authorizePass(): Promise<Readonly<{ scope: `USER:${string}`; userId: string }> | CloudSyncPassResult> {
@@ -181,6 +205,12 @@ export class CloudSyncService {
       if (!isEligible(candidate, now)) continue;
       if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
 
+      if (candidate.entityType === "balloon" && candidate.operation === "UPSERT") {
+        const remaining = await this.dependencies.outbox.list();
+        const ownDelete = remaining.some(m => m.entityType === "balloon" && m.entityId === candidate.entityId && m.operation === "DELETE");
+        if (!ownDelete && remaining.some(m => m.entityType === "balloon" && m.entityId !== candidate.entityId && m.operation === "DELETE")) continue;
+      }
+      if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
       // Reserve before any asynchronous local read: subsequent edits cannot coalesce here.
       let attempted = await this.dependencies.outbox.markAttempt(candidate.mutationId);
       if (!attempted) continue;
@@ -230,6 +260,7 @@ export class CloudSyncService {
 
         await this.dependencies.issues.save({
           kind: response.status,
+          ...(response.businessCode ? { businessCode: response.businessCode } : {}),
           entityType: attempted.entityType,
           entityId: attempted.entityId,
           mutation: attempted,
@@ -238,6 +269,12 @@ export class CloudSyncService {
           serverDeletedAt: response.deletedAt,
           recordedAt: now.toISOString(),
         });
+        if (response.status === "BUSINESS_CONFLICT") {
+          if (response.businessCode !== "DUPLICATE_REGISTRATION") throw new CloudSyncTransportError("SERVER", "Unknown business conflict");
+          await this.dependencies.outbox.updateMutation(attempted.mutationId, { lastErrorCode: response.businessCode, nextAttemptAt: undefined });
+          counters.conflicts += 1;
+          continue;
+        }
         if (response.status === "CONFLICT") {
           await this.dependencies.outbox.updateMutation(attempted.mutationId, { lastErrorCode: "CONFLICT" });
           counters.conflicts += 1;

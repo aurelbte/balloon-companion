@@ -49,3 +49,19 @@ export function calculateBalloonWeight(weights: BalloonWeights): number | null {
 export function calculateBalloonEmptyWeight(balloon: Balloon): number | null { return calculateBalloonWeight(balloon.weights); }
 export function officialFieldsForBalloon(balloon: Balloon): { registration: string; balloonModel: string; balloonManufacturer: string; category: BalloonCategory } { return { registration: balloon.registration, balloonModel: `${balloon.manufacturer} ${balloon.model}`, balloonManufacturer: balloon.manufacturer, category: balloon.category }; }
 export function resolveBalloonForFlight(balloons: readonly Balloon[], selectedBalloonId: string | undefined, activeBalloonId: string | null): Balloon | null { return balloons.find(({ id }) => id === selectedBalloonId) ?? balloons.find(({ id }) => id === activeBalloonId) ?? null; }
+
+/** Compare stored values without rewriting historical separators. */
+export function balloonRegistrationKey(value: string): string { return value.trim().toUpperCase(); }
+export class DuplicateBalloonRegistrationError extends Error {
+  readonly code = "DUPLICATE_REGISTRATION";
+  constructor() { super("Un ballon avec cette immatriculation existe déjà."); this.name = "DuplicateBalloonRegistrationError"; }
+}
+export function assertUniqueBalloonRegistration(balloons: readonly Pick<Balloon, "id" | "registration">[], savedRegistration: string, excludedId?: string): void {
+  const key = balloonRegistrationKey(savedRegistration);
+  if (balloons.some(balloon => balloon.id !== excludedId && balloonRegistrationKey(balloon.registration) === key)) throw new DuplicateBalloonRegistrationError();
+}
+export function duplicateBalloonRegistrationKeys(balloons: readonly Pick<Balloon, "id" | "registration">[]): readonly string[] {
+  const seen = new Set<string>(), duplicates = new Set<string>();
+  for (const balloon of balloons) { const key = balloonRegistrationKey(balloon.registration); if (seen.has(key)) duplicates.add(key); seen.add(key); }
+  return [...duplicates];
+}

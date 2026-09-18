@@ -84,3 +84,30 @@ test("le login attend la migration avant les enfants et le runtime refuse collis
   assert.match(runtime, /localDataMigrationState !== "MIGRATION_COMPLETE"[\s\S]*localDataMigrationCollisions\.length > 0/);
   assert.doesNotMatch(migration, /removeItem|deleteDatabase|\.clear\(|supabase|fetch\s*\(|\.rpc\s*\(/i);
 });
+
+test("C11 collision account preserves claim/snapshot and resumes after correction", async () => {
+  const base="balloon-companion-balloons";
+  const source=JSON.stringify({balloons:[{id:"incoming",registration:" f-abcd "}]});
+  const storage=memoryStorage({[key(base)]:JSON.stringify({balloons:[{id:"existing",registration:"F-ABCD"}]}),[guest(base)]:source,[guest("balloon-companion-weather-preferences-v1")]:JSON.stringify({weatherModel:"gfs"})});
+  const queue=outbox();const result=await migrateGuestAndLegacyToUser({userId:"user-1",deviceId:"device-1",storage,outbox:queue});
+  assert.equal(result.state,"REVIEW_REQUIRED");assert.equal(result.collisions[0].reason,"DUPLICATE_REGISTRATION");
+  assert.deepEqual(JSON.parse(storage.getItem(key(base))).balloons.map(x=>x.id),["existing"]);
+  assert.equal(queue.mutations.some(x=>x.entityType==="balloon"),false);
+  assert.ok(storage.getItem(key("balloon-companion-weather-preferences-v1")));
+  assert.equal(storage.getItem(guest(base)),source);
+  const history=JSON.parse(storage.getItem(GUEST_TO_USER_MIGRATION_KEY));const marker=Object.values(history)[0];assert.equal(marker.completedAt,undefined);assert.equal(marker.completedDomains.includes(base),false);
+  const {readGuestImportClaims}=await import('./guestImportClaim.ts');const claims=await readGuestImportClaims(factories.get(storage),()=>{});assert.equal(claims[0].userId,"user-1");
+  storage.setItem(key(base),JSON.stringify({balloons:[{id:"existing",registration:"F-EFGH"}]}));
+  const retry=await migrateGuestAndLegacyToUser({userId:"user-1",deviceId:"device-1",storage,outbox:queue});assert.equal(retry.state,"COMPLETE");assert.equal(retry.manifestId,result.manifestId);
+  assert.deepEqual(JSON.parse(storage.getItem(key(base))).balloons.map(x=>x.id),["existing","incoming"]);
+});
+test("C11 duplicate guest IDs by registration are all preserved for review, not arbitrarily chosen",async()=>{
+ const base="balloon-companion-balloons";const source=JSON.stringify({balloons:[{id:"one",registration:"F-ABCD"},{id:"two",registration:" f-abcd "},{id:"independent",registration:"F-EFGH"}]});
+ const storage=memoryStorage({[guest(base)]:source}),queue=outbox();
+ for(let i=0;i<2;i++){
+ const result=await migrateGuestAndLegacyToUser({userId:"user-1",deviceId:"device-1",storage,outbox:queue});
+ assert.equal(result.state,"REVIEW_REQUIRED");assert.equal(result.collisions.filter(x=>x.reason==="DUPLICATE_REGISTRATION").length,2);
+ assert.deepEqual(JSON.parse(storage.getItem(key(base))).balloons.map(x=>x.id),["independent"]);
+ }
+ assert.deepEqual(queue.mutations.filter(x=>x.entityType==="balloon").map(x=>x.entityId),["independent"]);assert.equal(storage.getItem(guest(base)),source);
+});

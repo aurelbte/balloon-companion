@@ -265,13 +265,15 @@ type RpcRow = Readonly<{
   deleted_at?: unknown;
 }>;
 
-function mutationResult(value: unknown): CloudMutationResult {
+export function mutationResult(value: unknown): CloudMutationResult {
   const row = (Array.isArray(value) ? value[0] : value) as RpcRow | null;
-  if (!row || !["APPLIED", "ALREADY_APPLIED", "CONFLICT", "NOT_FOUND"].includes(String(row.status))) {
+  const duplicate = row?.status === "BUSINESS_CONFLICT:DUPLICATE_REGISTRATION";
+  if (!row || (!duplicate && !["APPLIED", "ALREADY_APPLIED", "CONFLICT", "NOT_FOUND"].includes(String(row.status)))) {
     throw new CloudSyncTransportError("SERVER", "Invalid mutation response");
   }
   return {
-    status: row.status as CloudMutationResult["status"],
+    status: duplicate ? "BUSINESS_CONFLICT" : row.status as CloudMutationResult["status"],
+    ...(duplicate ? { businessCode: "DUPLICATE_REGISTRATION" as const } : {}),
     entityId: typeof row.entity_id === "string" ? row.entity_id : "",
     revision: typeof row.revision === "number" ? row.revision : null,
     serverUpdatedAt: typeof row.server_updated_at === "string" ? row.server_updated_at : null,

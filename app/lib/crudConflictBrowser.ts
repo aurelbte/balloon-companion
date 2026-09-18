@@ -80,7 +80,8 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     syncMutationById: (mutationId) => service.syncMutationById(mutationId),
   };
   return {
-    listConflicts: async () => (await issues.list()).filter((issue) => issue.kind === "CONFLICT" && issue.entityType in DOMAIN),
+    listConflicts: async () => (await issues.list()).filter((issue) => (issue.kind === "CONFLICT" || issue.kind === "BUSINESS_CONFLICT") && issue.entityType in DOMAIN),
+    retryDuplicateRegistration: (entityId: string) => service.retryDuplicateRegistration(entityId),
     resolveLocalWins: (entityType: string, entityId: string) => resolveCrudConflictLocalWins(entityType, entityId, dependencies),
     resolveServerWins: (entityType: string, entityId: string) => resolveCrudConflictServerWins(entityType, entityId, dependencies),
   } as const;

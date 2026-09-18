@@ -1,3 +1,4 @@
+import { balloonRegistrationKey } from "../balloons.ts";
 import { BALLOON_DOCUMENT_DB_NAME, BALLOON_DOCUMENT_FILES_STORE, BALLOON_DOCUMENTS_STORE } from "../balloonDocumentStorage.ts";
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "../flightCompletionStorage.ts";
 import { RECORDED_FLIGHT_DB_NAME, RECORDED_FLIGHTS_STORE } from "../recordedFlightStorage.ts";
@@ -10,7 +11,7 @@ import { getLocalDataMigrationDecision } from "./localDataMigrationDecision.ts";
 
 export const GUEST_TO_USER_MIGRATION_KEY = "balloon-companion-guest-to-user-migration-v1";
 
-export type GuestToUserMigrationCollision = Readonly<{ domain: string; entityId: string; source: "GUEST" | "LEGACY" }>;
+export type GuestToUserMigrationCollision = Readonly<{ domain: string; entityId: string; source: "GUEST" | "LEGACY"; reason?: "DUPLICATE_REGISTRATION" }>;
 export type GuestToUserMigrationReport = Readonly<{
   state: "COMPLETE" | "COMPLETE_WITH_COLLISIONS" | "CLAIMED_OTHER" | "REVIEW_REQUIRED" | "IMPORT_BLOCKED" | "OBSOLETE" | "SOURCE_CHANGED" | "DEFERRED";
   manifestId?: string;
@@ -212,7 +213,14 @@ export async function migrateGuestAndLegacyToUser(input: Readonly<{ userId: stri
   const enqueue: MigrationOutbox["enqueue"] = async (mutation) => { assertCurrent(); const result = await outbox.enqueue(mutation); assertCurrent(); return result; };
   const guardedOutbox = { enqueue };
   const sourceValues = (_storage: Storage, key: string) => manifestSourceValues(manifest, key);
-  const completed = new Set(previous?.completedDomains ?? []), collisions = [...accountCollisions]; let imported = 0;
+  const completed = new Set(previous?.completedDomains ?? []), collisions = accountCollisions.filter(c => c.reason !== "DUPLICATE_REGISTRATION" || !previous?.collisions.some(old => old.reason === c.reason && old.domain === c.domain && old.entityId === c.entityId && old.source === c.source)); let imported = 0;
+  const incomingBalloons = sourceValues(input.storage, "balloon-companion-balloons").flatMap(source => records(parsed(source.raw), "balloons"));
+  const registrationIds = new Map<string, Set<string>>();
+  for (const item of incomingBalloons) {
+    if (typeof item.registration !== "string") continue;
+    const key = balloonRegistrationKey(item.registration), ids = registrationIds.get(key) ?? new Set<string>();
+    ids.add(String(item.id)); registrationIds.set(key, ids);
+  }
   const checkpoint = (domain: string) => { assertCurrent(); completed.add(domain); saveMarker(input.storage, { userId: input.userId, deviceId: input.deviceId, completedDomains: [...completed], collisions, manifestId: manifest.id }); };
 
   try {
@@ -232,7 +240,19 @@ export async function migrateGuestAndLegacyToUser(input: Readonly<{ userId: stri
       if (completed.has(key)) continue;
       const destinationKey = scopedBusinessStorageKey(scope, key); let destination = parsed(input.storage.getItem(destinationKey));
       for (const source of sourceValues(input.storage, key)) {
-        const result = mergeList(destination, parsed(source.raw), property, entityType ?? "pilot-qualifications", source.source, collisions);
+        let incoming = parsed(source.raw);
+        if (entityType === "balloon") {
+          const existing = records(destination, property);
+          const accepted = records(incoming, property).filter(item => {
+            if (typeof item.registration !== "string") return true;
+            const key = balloonRegistrationKey(item.registration);
+            const duplicate = (registrationIds.get(key)?.size ?? 0) > 1 || existing.some(other => other.id !== item.id && typeof other.registration === "string" && balloonRegistrationKey(other.registration) === key);
+            if (duplicate) collisions.push({ domain: "balloon", entityId: String(item.id), source: source.source, reason: "DUPLICATE_REGISTRATION" });
+            return !duplicate;
+          });
+          incoming = { ...object(incoming), [property]: accepted };
+        }
+        const result = mergeList(destination, incoming, property, entityType ?? "pilot-qualifications", source.source, collisions);
         if (!entityType && object(parsed(source.raw)).profile) {
           const incomingProfile = object(parsed(source.raw)).profile, currentProfile = object(destination).profile;
           if (!meaningful(currentProfile)) result.value.profile = incomingProfile;
@@ -243,7 +263,7 @@ export async function migrateGuestAndLegacyToUser(input: Readonly<{ userId: stri
           destination = result.value; input.storage.setItem(destinationKey, JSON.stringify(destination)); imported += result.additions.length;
         }
       }
-      checkpoint(key);
+      if (entityType !== "balloon" || !collisions.some(c => c.reason === "DUPLICATE_REGISTRATION")) checkpoint(key);
     }
     if (!completed.has(FLIGHT_COMPLETION_STORAGE_KEY)) {
       const destinationKey = scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY); let destination = parsed(input.storage.getItem(destinationKey));
@@ -279,9 +299,9 @@ export async function migrateGuestAndLegacyToUser(input: Readonly<{ userId: stri
       }
     }
     assertCurrent();
-    const marker = { manifestId: manifest.id, userId: input.userId, deviceId: input.deviceId, completedDomains: [...completed], collisions, completedAt: new Date().toISOString() };
+    const marker = { manifestId: manifest.id, userId: input.userId, deviceId: input.deviceId, completedDomains: [...completed], collisions, ...(collisions.some(c => c.reason === "DUPLICATE_REGISTRATION") ? {} : { completedAt: new Date().toISOString() }) };
     saveMarker(input.storage, marker);
-    return { state: collisions.length ? "COMPLETE_WITH_COLLISIONS" : "COMPLETE", imported, collisions, completedDomains: marker.completedDomains, manifestId: manifest.id };
+    return { state: collisions.some(c => c.reason === "DUPLICATE_REGISTRATION") ? "REVIEW_REQUIRED" : collisions.length ? "COMPLETE_WITH_COLLISIONS" : "COMPLETE", imported, collisions, completedDomains: marker.completedDomains, manifestId: manifest.id };
   } catch (error) {
     if (error instanceof Error && error.message === "IMPORT_OBSOLETE") return report("OBSOLETE");
     throw error;

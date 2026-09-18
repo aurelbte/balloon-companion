@@ -177,3 +177,12 @@ test('diagnostic modifié/supprimé pendant inspection : observation invalide au
 test('version runtime détecte bootstrap démarré/terminé pendant inspection',async()=>{
  const {invalidateCloudSyncObservation}=await import('./cloudSyncVerdict.ts');const f=await observedFixture();f.input.read=async()=>{invalidateCloudSyncObservation();invalidateCloudSyncObservation();return evidence({passGeneration:cloudSyncVerdictGeneration()});};assert.equal((await inspectCloudSyncVerdict(f.input)).state,'UNVERIFIABLE');
 });
+
+test('C11 business diagnostics are readable and keep central verdict CONFLICT',async t=>{
+ const {readBrowserCloudSyncEvidence}=await import('./cloudSyncVerdictBrowser.ts');
+ const issue={kind:'BUSINESS_CONFLICT',businessCode:'DUPLICATE_REGISTRATION',entityType:'balloon',entityId:'b'};
+ browserFixture(t,new Map([[storedKey('balloon-companion-cloud-sync-issues-v1'),JSON.stringify([issue])]]));
+ const e=await readBrowserCloudSyncEvidence('USER:A',runtime(),{complete:true,generation:0,active:false});
+ assert.deepEqual(e.issues,[issue]);assert.equal(await state({},e),'CONFLICT');
+ assert.equal(await state({}, {mutations:[mutation({entityType:'balloon',lastErrorCode:'DUPLICATE_REGISTRATION'})]}),'CONFLICT');
+});
