@@ -15,21 +15,22 @@ import { cockpitWindDirection, cockpitWindSpeed } from "./weatherCardPresentatio
 export default function ConditionsCard({ href }: { href: string }) {
   const preferences = useWeatherPreferences();
   const units = useUnitPreferences();
-  const point = preferences.selectedPoint;
+  const point = preferences.currentWeather.point;
   return (
     <Link className={styles.cardLink} href={href} aria-label="Ouvrir la météo">
       <Card className={`${styles.card} ${styles.weatherCard}`}>
         <div className={styles.weatherHeader}>
           <h2 className={styles.cardTitle}>Météo</h2>
           <div className={styles.sunTimes} aria-label="Lever et coucher du soleil">
-            <span><Sunrise size={11} aria-hidden="true" />{preferences.sunTimes?.sunrise ?? "—"}</span>
-            <span><Moon size={10} aria-hidden="true" />{preferences.sunTimes?.sunset ?? "—"}</span>
+            <span><Sunrise size={11} aria-hidden="true" />{preferences.currentSunTimes?.sunrise ?? "—"}</span>
+            <span><Moon size={10} aria-hidden="true" />{preferences.currentSunTimes?.sunset ?? "—"}</span>
           </div>
         </div>
         <div className={styles.weatherLocation}>
           {point && <WeatherIcon code={point.weatherCode} size={22} />}
           <div><span>Lieu favori <Star size={11} fill="currentColor" aria-hidden="true" /></span><strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}</strong><small>{preferences.modelName || "Aucun modèle"}</small></div>
         </div>
+        <p role="status">{preferences.currentWeather.validAt ? `Prévision pour le ${new Date(preferences.currentWeather.validAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}` : "Prévision pour l’heure actuelle indisponible"}</p>
         <div className={styles.cockpitWeatherMetrics}>
           <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" style={{ transform: `rotate(${windArrowRotationDegrees(point?.windDirectionDeg)}deg)` }} /><strong>{cockpitWindDirection(point?.windDirectionDeg)}</strong><b>{cockpitWindSpeed(point?.windSpeedKmh, units.weather.windSpeedUnit)}</b></div>
           <div><span>Rafales</span><strong>{cockpitWindSpeed(point?.windGustKmh, units.weather.windSpeedUnit)}</strong></div>

@@ -9,6 +9,7 @@ import type { OpenMeteoWeatherModel, WeatherHourlyPoint } from "../lib/weather/o
 import { availableDays, availableTimes, closestAvailableDay, closestAvailableTime, dayKey, timeKey } from "../lib/weather/weatherSelection";
 import { EMPTY_WEATHER_PREFERENCES, loadWeatherPreferences, saveWeatherPreferences, WEATHER_PREFERENCES_EVENT, type WeatherPreferences } from "../lib/weatherPreferencesStorage";
 import { calculateSunTimes, type SunTimes } from "../lib/weather/sunTimes";
+import { currentWeatherSelection, watchCurrentWeather, type CurrentWeatherSelection } from "../lib/weather/currentWeather";
 import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 import { getRuntimeDataScope } from "../lib/auth/dataScopeRuntime";
 import { recordFavoriteWeatherUiHydration } from "../lib/favoriteWeatherPullDiagnostics";
@@ -20,6 +21,8 @@ type WeatherPreferencesContextValue = WeatherPreferences & {
   selectedDay?: string;
   selectedTime?: string;
   selectedPoint: WeatherHourlyPoint | null;
+  currentWeather: CurrentWeatherSelection;
+  currentSunTimes: SunTimes | null;
   sunTimes: SunTimes | null;
   days: readonly string[];
   times: readonly string[];
@@ -44,6 +47,9 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   const [favorites, setFavorites] = useState<FavoriteWeatherPlace[]>([]);
   const [points, setPoints] = useState<readonly WeatherHourlyPoint[]>([]);
   const [forecastTimeZone, setForecastTimeZone] = useState<string>();
+  const [currentClock, setCurrentClock] = useState<number | null>(null);
+  useEffect(() => watchCurrentWeather(points, forecastTimeZone, () => setCurrentClock(Date.now())), [points, forecastTimeZone]);
+  const currentWeather = useMemo(() => currentClock === null ? { point: null, validAt: null } : currentWeatherSelection(points, forecastTimeZone, currentClock).selection, [points, forecastTimeZone, currentClock]);
   const [selectedDay, setSelectedDay] = useState<string>();
   const [selectedTime, setSelectedTime] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -60,6 +66,8 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
       selectedFavoriteId: preferences.favoriteWeatherLocationId,
     });
   }, [favorites, preferences.favoriteWeatherLocationId]);
+  const currentDay = currentWeather.point ? dayKey(currentWeather.point.timestamp) : undefined;
+  const currentSunTimes = useMemo(() => calculateSunTimes(currentDay, activeFavorite?.latitude, activeFavorite?.longitude, forecastTimeZone), [currentDay, activeFavorite, forecastTimeZone]);
   const coordinates = useMemo(() => activeFavorite ? { latitude: activeFavorite.latitude, longitude: activeFavorite.longitude } : null, [activeFavorite]);
 
   useEffect(() => {
@@ -112,7 +120,7 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
     setPreferences((current) => ({ ...current, favoriteWeatherLocationId: nextSelectedId }));
     return true;
   }, [favorites, preferences]);
-  const value = useMemo<WeatherPreferencesContextValue>(() => ({ ...preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, sunTimes, days, times, dayIndex, timeIndex, loading, error, setFavoriteWeatherLocationId: (id) => update({ favoriteWeatherLocationId: id }), addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, setWeatherModel: (model) => update({ weatherModel: model }), changeDay, changeTime, resetToCurrent, retry: () => setRetryKey((current) => current + 1) }), [preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, sunTimes, days, times, dayIndex, timeIndex, loading, error, update, addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, changeDay, changeTime, resetToCurrent]);
+  const value = useMemo<WeatherPreferencesContextValue>(() => ({ ...preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, currentWeather, currentSunTimes, sunTimes, days, times, dayIndex, timeIndex, loading, error, setFavoriteWeatherLocationId: (id) => update({ favoriteWeatherLocationId: id }), addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, setWeatherModel: (model) => update({ weatherModel: model }), changeDay, changeTime, resetToCurrent, retry: () => setRetryKey((current) => current + 1) }), [preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, currentWeather, currentSunTimes, sunTimes, days, times, dayIndex, timeIndex, loading, error, update, addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, changeDay, changeTime, resetToCurrent]);
   return <WeatherPreferencesContext.Provider value={value}>{children}</WeatherPreferencesContext.Provider>;
 }
 

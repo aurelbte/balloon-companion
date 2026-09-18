@@ -25,7 +25,8 @@ test("persiste et restaure les préférences séparément pour USER et GUEST", (
 test("cockpit et page météo consomment le même contexte", () => {
   const sources = ["../weather/page.tsx", "../components/cockpit/ConditionsCard.tsx"].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
   assert.ok(sources.every((source) => source.includes("useWeatherPreferences")));
-  assert.ok(sources.every((source) => source.includes("selectedPoint")));
+  assert.ok(sources[0].includes("selectedPoint"));
+  assert.ok(sources[1].includes("currentWeather.point"));
 });
 
 test("le contexte expose la remise au créneau météo courant sans requête dédiée", () => {
