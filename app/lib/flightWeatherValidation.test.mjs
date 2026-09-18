@@ -19,7 +19,7 @@ function fixture() {
   const windProfile = [{ levelM: 300, altitudeAmslM: 300, directionFromDeg: 120, speedMps: 4 }];
   const trace = { traceId: "arome:300", model, calculatedAtIso, forecastAtIso, terrainAltitudeAmslM: 20, altitudeKey: "300", altitudeAmslM: 300, predictedWindProfile: windProfile, projection: { points: [{ latitude: 50.6, longitude: 3.1 }, { latitude: 50.7, longitude: 3.2 }] } };
   const analysis = { version: 1, analysisKey: createTrajectoryAnalysisKey(request, ["arome"], [300]), updatedAtIso: calculatedAtIso, selectedModelIds: ["arome"], selectedAltitudes: [300], traces: [trace], failures: [], layers: DEFAULT_ANALYSIS_LAYERS };
-  const snapshot = { version: 1, weatherModel: model.providerModelId, modelLabel: model.label, referenceLocation: { ...site, terrainAltitudeAmslM: 20 }, forecastAtIso, sourceUpdatedAt: calculatedAtIso, windProfile };
+  const snapshot = { version: 1, weatherModel: model.providerModelId, modelLabel: model.label, referenceLocation: { ...site, terrainAltitudeAmslM: 20 }, forecastAtIso, sourceUpdatedAt: calculatedAtIso, calculatedAtIso, modelRunAt: null, windProfile };
   const exported = { version: 1, traceId: trace.traceId, modelId: model.id, providerModelId: model.providerModelId, altitudeKey: "300", altitudeAmslM: 300, calculatedAtIso, forecastAtIso, geometry: [[3.1, 50.6], [3.2, 50.7]] };
   return { preparation, request, analysis, snapshot, trajectories: [exported], now: Date.parse("2026-09-10T06:15:00Z") };
 }

@@ -24,6 +24,8 @@ export type AnalysisLayerSettings = {
 export type WeatherAnalysisTrace = AltitudeProjectionResult & {
   traceId: string;
   model: WeatherModelDefinition;
+  weatherFetchedAt?: string;
+  modelRunAt?: string | null;
   calculatedAtIso: string;
   forecastAtIso: string;
   terrainAltitudeAmslM: number;
@@ -48,7 +50,11 @@ export type FlightWeatherSnapshot = {
     terrainAltitudeAmslM: number;
   };
   forecastAtIso: string;
+  /** Legacy field is not evidence of retrieval; use weatherFetchedAt. */
   sourceUpdatedAt: string;
+  weatherFetchedAt?: string;
+  calculatedAtIso?: string;
+  modelRunAt?: string | null;
   windProfile: PredictedWindProfileLevel[];
 };
 

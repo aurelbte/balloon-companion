@@ -1,4 +1,10 @@
 "use client";
+import { authorizeWeatherLaunch, launchNeedsWeatherConfirmation } from "../lib/weather/weatherLaunch";
+import { getTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
+import { refreshCurrentWeatherAnalysis } from "../lib/trajectory/refreshWeatherAnalysis";
+import { DATA_SCOPE_CHANGED_EVENT, getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
+import { ANALYSIS_POLICY, classifyWeatherFreshness, freshnessLabel, retrievalLabel, type WeatherFreshness } from "../lib/weather/weatherFreshness";
+import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -116,6 +122,17 @@ export default function FlightPage() {
   const [plannedTrajectories, setPlannedTrajectories] = useState<
     ExportedPlannedTrajectory[]
   >([]);
+  const [weatherLaunchConfirmation, setWeatherLaunchConfirmation] = useState<{ snapshot: FlightWeatherSnapshot | null; status: WeatherFreshness; resolve: (accepted: boolean) => void } | null>(null);
+  const weatherDecisionRef = useRef<((accepted: boolean) => void) | null>(null);
+  const weatherLaunchBusyRef = useRef(false);
+  const weatherLaunchMountedRef = useRef(false);
+  const [weatherLaunchNotice, setWeatherLaunchNotice] = useState<string | null>(null);
+  useEffect(() => {
+    weatherLaunchMountedRef.current = true;
+    const invalidate = () => { weatherDecisionRef.current?.(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); setWeatherLaunchNotice(null); };
+    window.addEventListener(DATA_SCOPE_CHANGED_EVENT, invalidate);
+    return () => { weatherLaunchMountedRef.current = false; window.removeEventListener(DATA_SCOPE_CHANGED_EVENT, invalidate); weatherDecisionRef.current?.(false); };
+  }, []);
   const [validatedWeatherSnapshot, setValidatedWeatherSnapshot] =
     useState<FlightWeatherSnapshot | null>(null);
   const [airspaceViewport, setAirspaceViewport] =
@@ -277,6 +294,14 @@ export default function FlightPage() {
     markAcquiring,
     markReady,
   } = tracking;
+  const latestLaunchPositionRef = useRef<{ position: typeof currentPosition; available: boolean; recording: boolean } | null>(null);
+  useEffect(() => { latestLaunchPositionRef.current = { position: currentPosition, recording: isTracking || activeFlight !== null, available: (geoState === "active" || geoState === "simulation") && !isStale && currentPosition !== null }; }, [currentPosition, geoState, isStale, isTracking, activeFlight]);
+  const weatherFlightAlreadyActive = isTracking || activeFlight !== null;
+  useEffect(() => {
+    if (!weatherFlightAlreadyActive) return;
+    const timer = setTimeout(() => { weatherDecisionRef.current?.(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }, 0);
+    return () => clearTimeout(timer);
+  }, [weatherFlightAlreadyActive]);
   const livePublisherControlsEnabled = typeof window !== "undefined"
     && canUseLiveFlightPublisherControls(window.location.search, isTracking, targetedLiveTestFlightActive);
   const flightControlActive = isTracking || targetedLiveTestFlightActive;
@@ -336,8 +361,8 @@ export default function FlightPage() {
     setFitProjectionRequest((request) => request + 1);
   }, [currentPosition]);
 
-  const handleStartTracking = useCallback(() => {
-    if (!storageReady) return;
+  const handleStartTracking = useCallback(async () => {
+    if (!storageReady || isTracking || activeFlight || weatherLaunchBusyRef.current) return;
     const hasFreshLocalPosition = (geoState === "active" || geoState === "simulation") && !isStale && currentPosition !== null;
     if (shouldStartGpslessTargetedLiveFlight(window.location.search, hasFreshLocalPosition)) {
       setTargetedLiveTestFlightActive(true);
@@ -347,19 +372,44 @@ export default function FlightPage() {
       const preparation = loadPreparationDraft();
       const selectedBalloonId = preparation?.balloonName;
       const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
-      const weather = loadValidatedFlightWeather();
-      const weatherSnapshot = weather.snapshot;
-      setValidatedWeatherSnapshot(weatherSnapshot);
-      setPlannedTrajectories(weather.trajectories);
-      void startTracking(currentPosition, {
-        ...(selectedBalloon?.registration ? { balloonRegistration: selectedBalloon.registration } : {}),
-        ...(weatherSnapshot
-          ? {
-              weatherModel: weatherSnapshot.weatherModel,
-              weatherSnapshot,
-            }
-          : {}),
-      });
+      weatherLaunchBusyRef.current = true;
+      const scope = getRuntimeDataScope(), generation = getRuntimeDataScopeGeneration();
+      const preparationIdentity = JSON.stringify(preparation), requestIdentity = JSON.stringify(getTrajectoryAnalysisRequest()?.request);
+      const current = () => weatherLaunchMountedRef.current && !latestLaunchPositionRef.current?.recording && getRuntimeDataScope() === scope && getRuntimeDataScopeGeneration() === generation && JSON.stringify(loadPreparationDraft()) === preparationIdentity && JSON.stringify(getTrajectoryAnalysisRequest()?.request) === requestIdentity;
+      try {
+        let refreshFailed = false;
+        setWeatherLaunchNotice(navigator.onLine ? "Vérification des données météo…" : "Hors ligne — actualisation impossible.");
+        const launchOptions = {
+          read: () => loadValidatedFlightWeather().snapshot,
+          refresh: async () => {
+            const refreshed = await refreshCurrentWeatherAnalysis();
+            refreshFailed = !refreshed;
+            if (current()) setWeatherLaunchNotice(refreshed ? "Données météo actualisées." : "Actualisation impossible.");
+            return refreshed;
+          },
+          online: () => navigator.onLine,
+          current,
+          confirm: (snapshot: FlightWeatherSnapshot | null, status: WeatherFreshness) => new Promise<boolean>(resolve => {
+            weatherDecisionRef.current = resolve;
+            setWeatherLaunchConfirmation({ snapshot, status, resolve });
+          }),
+        };
+        let decision = await authorizeWeatherLaunch(launchOptions);
+        if (decision.allowed && !decision.confirmed && launchNeedsWeatherConfirmation(classifyWeatherFreshness(Date.now(), decision.snapshot?.weatherFetchedAt, ANALYSIS_POLICY))) decision = await authorizeWeatherLaunch({ ...launchOptions, online: () => false });
+        if (!decision.allowed || !current()) { if (current()) setWeatherLaunchNotice("Lancement annulé. Les données météo n’ont pas été modifiées par la confirmation."); return; }
+        const weatherSnapshot = decision.snapshot;
+        setValidatedWeatherSnapshot(weatherSnapshot);
+        setPlannedTrajectories(loadValidatedFlightWeather().trajectories);
+        const status = classifyWeatherFreshness(Date.now(), weatherSnapshot?.weatherFetchedAt, ANALYSIS_POLICY);
+        setWeatherLaunchNotice(status === "FRESH" ? null : `${freshnessLabel(status)} · ${retrievalLabel(weatherSnapshot?.weatherFetchedAt)}${refreshFailed ? " · Actualisation impossible" : !navigator.onLine ? " · Hors ligne — actualisation impossible" : ""}`);
+        const latestPosition = latestLaunchPositionRef.current;
+        if (!latestPosition?.available || !latestPosition.position) { setWeatherLaunchNotice("Position GPS indisponible. Réessayez le lancement lorsque le GPS est disponible."); return; }
+        await startTracking(latestPosition.position, {
+          ...(selectedBalloon?.registration ? { balloonRegistration: selectedBalloon.registration } : {}),
+          ...(weatherSnapshot ? { weatherModel: weatherSnapshot.weatherModel, weatherSnapshot } : {}),
+        });
+      } finally { weatherLaunchBusyRef.current = false; }
+
     } else {
       markAcquiring();
       requestPermission();
@@ -373,6 +423,8 @@ export default function FlightPage() {
     startTracking,
     storageReady,
     balloonRegistry.balloons,
+    isTracking,
+    activeFlight,
   ]);
 
   const handleDemoFlightEnd = useCallback(() => {
@@ -671,11 +723,13 @@ export default function FlightPage() {
   const flightWeatherSnapshot = selectFlightWeatherSnapshot(
     validatedWeatherSnapshot, activeFlight ?? recoverableFlight,
   );
+  const historicalWeatherSnapshot = activeFlight ? activeFlight.weatherSnapshot ?? null : flightWeatherSnapshot;
+  const historicalFreshness = useWeatherFreshness(historicalWeatherSnapshot?.weatherFetchedAt, ANALYSIS_POLICY);
   const predictedWinds = useMemo(
-    () => snapshotWindProfile(flightWeatherSnapshot),
-    [flightWeatherSnapshot],
+    () => snapshotWindProfile(historicalWeatherSnapshot),
+    [historicalWeatherSnapshot],
   );
-  const predictedModelLabel = flightWeatherSnapshot?.modelLabel ?? null;
+  const predictedModelLabel = historicalWeatherSnapshot?.modelLabel ?? null;
 
   if (auth.state === "SIGNED_OUT" && auth.authChoiceState === "AUTH_CHOICE_PENDING") return (
     <main style={{ padding: "32px 20px" }}>
@@ -771,7 +825,8 @@ export default function FlightPage() {
         observed={observedWindProfile}
         predicted={predictedWinds}
         predictedModelLabel={predictedModelLabel}
-        predictedForecastAt={flightWeatherSnapshot?.forecastAtIso ?? null}
+        predictedForecastAt={historicalWeatherSnapshot?.forecastAtIso ?? null}
+        predictedWeatherStatus={`${activeFlight ? "Référence historique du vol · " : ""}${freshnessLabel(historicalFreshness)} · ${retrievalLabel(historicalWeatherSnapshot?.weatherFetchedAt)} · ${historicalWeatherSnapshot?.calculatedAtIso ? `Calcul commencé le ${new Date(historicalWeatherSnapshot.calculatedAtIso).toLocaleString("fr-FR")} · ` : ""}Run du modèle inconnu`}
         onToggle={() => { setIsLiveSharingOpen(false); setIsMapOptionsOpen(false); setIsWindProfileOpen((open) => !open); }}
         onClose={() => setIsWindProfileOpen(false)}
       />
@@ -977,6 +1032,16 @@ export default function FlightPage() {
         />
       )}
 
+      {weatherLaunchNotice && <p role="status" style={{ position: "fixed", bottom: "110px", left: "16px", zIndex: 60, background: "#101c2c", color: "white", padding: "12px" }}>{weatherLaunchNotice}</p>}
+      {weatherLaunchConfirmation && !weatherFlightAlreadyActive && <div role="dialog" aria-modal="true" aria-labelledby="weather-launch-title" style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.8)", display: "grid", placeItems: "center", padding: "24px" }}>
+        <section style={{ background: "#101c2c", color: "white", padding: "24px", maxWidth: "420px" }}>
+          <h2 id="weather-launch-title">{weatherLaunchConfirmation.status === "EXPIRED" ? "Données météo périmées" : "La fraîcheur de ces données météo ne peut pas être vérifiée"}</h2>
+          <p>{retrievalLabel(weatherLaunchConfirmation.snapshot?.weatherFetchedAt)}</p>{weatherLaunchNotice && <p>{weatherLaunchNotice}</p>}<p>Continuer avec ces données ?</p>
+          <Button onClick={() => { weatherLaunchConfirmation.resolve(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }}>Annuler</Button>
+          {typeof navigator !== "undefined" && navigator.onLine && <Button onClick={() => { weatherLaunchConfirmation.resolve(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); router.push("/map"); }}>Actualiser l’analyse</Button>}
+          <Button onClick={() => { weatherLaunchConfirmation.resolve(true); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }}>Continuer avec ces données</Button>
+        </section>
+      </div>}
       {pendingNavigationTarget && isTracking && (
         <ActiveFlightNavigationDialog
           busy={flightActionBusy}

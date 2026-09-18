@@ -1,6 +1,9 @@
 "use client";
+import { getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
+import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
+import { ANALYSIS_POLICY, classifyWeatherFreshness, freshnessLabel, oldestWeatherRetrieval, retrievalLabel } from "../lib/weather/weatherFreshness";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -116,6 +119,18 @@ export default function MapPage() {
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
+  const displayedSignatureRef = useRef("");
+  const [weatherRefreshToken, setWeatherRefreshToken] = useState(0);
+  const analysisFetchedAt = oldestWeatherRetrieval(traces);
+  const analysisFreshness = useWeatherFreshness(analysisFetchedAt, ANALYSIS_POLICY);
+  const analysisBusyRef = useRef(false);
+  const lastWeatherAttemptRef = useRef(0);
+  const refreshAnalysis = useCallback(() => {
+    if (!navigator.onLine || analysisBusyRef.current || Date.now() - lastWeatherAttemptRef.current < 60_000) return;
+    lastWeatherAttemptRef.current = Date.now();
+    signatureRef.current = "";
+    setWeatherRefreshToken(token => token + 1);
+  }, []);
   const desiredSignatureRef = useRef("");
   const [analysisSessionId, setAnalysisSessionId] = useState("");
   const [recenterToken, setRecenterToken] = useState(0);
@@ -163,6 +178,7 @@ export default function MapPage() {
         setVisibleTraceIds(usableOfflineCache?.traces.map(({ traceId }) => traceId) ?? []);
         setLayers(newAnalysisLayerSettings());
         signatureRef.current = usableOfflineCache?.analysisKey ?? "";
+        displayedSignatureRef.current = signatureRef.current;
         desiredSignatureRef.current = "";
         if (usableOfflineCache) {
           setNotice(`Hors ligne — analyse en cache du ${new Date(usableOfflineCache.updatedAtIso).toLocaleString("fr-FR")}.`);
@@ -249,6 +265,16 @@ export default function MapPage() {
   }, [config, preparation]);
 
   useEffect(() => {
+    if (!ready || !config || !traces.length || analysisFreshness === "FRESH") return;
+    const refresh = () => { if (classifyWeatherFreshness(Date.now(), analysisFetchedAt, ANALYSIS_POLICY) !== "FRESH") refreshAnalysis(); };
+    const visible = () => { if (document.visibilityState === "visible") refresh(); };
+    const timer = setTimeout(refresh, 0);
+    window.addEventListener("online", refresh); window.addEventListener("focus", refresh); window.addEventListener("pageshow", refresh);
+    document.addEventListener("visibilitychange", visible);
+    return () => { clearTimeout(timer); window.removeEventListener("online", refresh); window.removeEventListener("focus", refresh); window.removeEventListener("pageshow", refresh); document.removeEventListener("visibilitychange", visible); };
+  }, [ready, config, traces.length, analysisFetchedAt, analysisFreshness, refreshAnalysis]);
+
+  useEffect(() => {
     if (!ready || !config) return;
     if (selectedModels.length === 0 || selectedAltitudes.length === 0) {
       requestAbortRef.current?.abort();
@@ -267,6 +293,7 @@ export default function MapPage() {
         setFailures(cached.failures);
         setVisibleTraceIds(cached.traces.map(({ traceId }) => traceId));
         signatureRef.current = signature;
+        displayedSignatureRef.current = signature;
         setNotice(`Hors ligne — analyse en cache du ${new Date(cached.updatedAtIso).toLocaleString("fr-FR")}.`);
       } else {
         setTraces([]);
@@ -277,13 +304,16 @@ export default function MapPage() {
       setLoading(false);
       return;
     }
+    const scope = getRuntimeDataScope(), generation = getRuntimeDataScopeGeneration();
     const controller = new AbortController();
     requestAbortRef.current?.abort();
     requestAbortRef.current = controller;
     signatureRef.current = "";
-    setTraces([]);
-    setVisibleTraceIds([]);
-    setFailures([]);
+    // A refresh keeps the same analysis visible until its replacement succeeds.
+    if (displayedSignatureRef.current !== signature) {
+      setTraces([]); setVisibleTraceIds([]);
+    }
+    analysisBusyRef.current = true;
     setLoading(true);
     setNotice(null);
     const timer = window.setTimeout(async () => {
@@ -330,8 +360,8 @@ export default function MapPage() {
           }
         }),
       );
-      if (controller.signal.aborted || desiredSignatureRef.current !== signature) return;
-      const nextTraces = results.flatMap((result) => {
+      if (controller.signal.aborted || desiredSignatureRef.current !== signature || getRuntimeDataScope() !== scope || getRuntimeDataScopeGeneration() !== generation) return;
+      const nextTraces: WeatherAnalysisTrace[] = results.flatMap((result) => {
         if (!result?.payload.ok) return [];
         const payload = result.payload;
         return payload.layerProjections.map((trace) => ({
@@ -342,6 +372,8 @@ export default function MapPage() {
                 : {}),
               traceId: `${result.model.id}:${trace.altitudeKey}`,
               model: result.model,
+              weatherFetchedAt: payload.weatherFetchedAt,
+              modelRunAt: null,
               calculatedAtIso,
               forecastAtIso: config.request.launchDateTimeIso,
               terrainAltitudeAmslM: payload.terrainAltitudeAmslM,
@@ -365,6 +397,10 @@ export default function MapPage() {
           modelId: result.model.id,
         }));
       });
+      const previous = displayedSignatureRef.current === signature ? loadWeatherAnalysis() : null;
+      if (previous?.analysisKey === signature && nextFailures.length) {
+        nextTraces.push(...previous.traces.filter(trace => nextFailures.some(failure => failure.modelId === trace.model.id) && !nextTraces.some(next => next.traceId === trace.traceId)));
+      }
       if (nextTraces.length > 0) {
         setTraces(nextTraces);
         setVisibleTraceIds(nextTraces.map((trace) => trace.traceId));
@@ -374,6 +410,7 @@ export default function MapPage() {
           ),
         );
         signatureRef.current = signature;
+        displayedSignatureRef.current = signature;
         saveWeatherAnalysis({
           version: 1,
           updatedAtIso: calculatedAtIso,
@@ -384,6 +421,7 @@ export default function MapPage() {
           failures: nextFailures,
           analysisKey: signature,
         });
+        if (nextFailures.length) setNotice("Actualisation incomplète — dernières données disponibles conservées pour les sources en échec.");
         const verticalProfileFailure = nextFailures.find(
           (failure) =>
             failure.code === "INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE",
@@ -407,13 +445,15 @@ export default function MapPage() {
       if (desiredSignatureRef.current === signature) {
         setFailures(nextFailures);
         setLoading(false);
+        analysisBusyRef.current = false;
       }
     }, 450);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
+      analysisBusyRef.current = false;
     };
-  }, [config, ready, selectedAltitudes, selectedModels]);
+  }, [config, ready, selectedAltitudes, selectedModels, weatherRefreshToken]);
 
   const airspaceCoverage = useAirspaceCoverage({
     position: null,
@@ -639,6 +679,9 @@ export default function MapPage() {
           },
           forecastAtIso: referenceTrace.forecastAtIso,
           sourceUpdatedAt: referenceTrace.calculatedAtIso,
+          weatherFetchedAt: oldestWeatherRetrieval(exportedTraces),
+          calculatedAtIso: referenceTrace.calculatedAtIso,
+          modelRunAt: null,
           windProfile: referenceTrace.predictedWindProfile,
         })
       : false;
@@ -706,6 +749,11 @@ export default function MapPage() {
         </div>
       </header>
 
+      {traces.length > 0 && <section role="status" className="px-4 py-2 text-sm">
+        <p>{freshnessLabel(analysisFreshness)} · {retrievalLabel(analysisFetchedAt)} · Run du modèle inconnu</p>
+        <p>Prévision pour le {new Date(traces[0].forecastAtIso).toLocaleString("fr-FR")} · Calcul commencé le {new Date(traces[0].calculatedAtIso).toLocaleString("fr-FR")}</p>
+        {analysisFreshness !== "FRESH" && <button type="button" disabled={loading} onClick={refreshAnalysis}>Actualiser l’analyse</button>}
+      </section>}
       <div className="relative h-[clamp(430px,68dvh,700px)]">
           <PreparationMap
             traces={displayedTraces}

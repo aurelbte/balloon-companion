@@ -1,9 +1,12 @@
+import { oldestWeatherRetrieval } from "./weather/weatherFreshness.ts";
 import type { WeatherHourlyForecast, WeatherHourlyPoint } from "./weather/openMeteo/types.ts";
 import type { WeatherAnalysisTrace } from "./trajectory/weatherAnalysisStorage.ts";
 
 export const LANDING_WEATHER_RADIUS_M = 3_000;
 
 export type LandingWeatherSummary = {
+  weatherFetchedAt?: string;
+  forecastAtIso?: string;
   averageWindKmh: number | null;
   maximumWindKmh: number | null;
   maximumGustKmh: number | null;
@@ -48,6 +51,8 @@ export function summarizeLandingWeather(forecasts: readonly WeatherHourlyForecas
   const gusts = points.map(({ windGustKmh }) => windGustKmh).filter((value): value is number => value !== undefined);
   const directions = [...new Set(points.map(({ windDirectionDeg }) => windDirectionDeg === undefined ? null : cardinal(windDirectionDeg)).filter((value): value is Cardinal => value !== null))];
   return {
+    weatherFetchedAt: oldestWeatherRetrieval(points.map(point => ({ weatherFetchedAt: point.sourceUpdatedAt }))),
+    forecastAtIso: etaIso,
     averageWindKmh: winds.length ? winds.reduce((sum, value) => sum + value, 0) / winds.length : null,
     maximumWindKmh: winds.length ? Math.max(...winds) : null,
     maximumGustKmh: gusts.length ? Math.max(...gusts) : null,

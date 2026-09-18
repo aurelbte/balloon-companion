@@ -45,12 +45,13 @@ test("jour et heure ont des contrôles indépendants et une carte météo unique
   assert.match(weatherContext, /setSelectedTime/);
   assert.match(page, /<Stepper label="Jour"/);
   assert.match(page, /<Stepper label="Heure"/);
-  assert.match(page, /<SelectedWeatherCard slot=\{preferences\.selectedPoint\}/);
+  assert.match(page, /<SelectedWeatherCard freshness=\{preferences\.freshness\} slot=\{preferences\.selectedPoint\}/);
   assert.doesNotMatch(page, /Heure par heure/);
 });
 
 test("la page consomme le service normalisé sans appeler Open-Meteo", () => {
-  assert.match(weatherContext, /loadHourlyWeatherForecast/);
+  assert.match(weatherContext, /startHourlyForecastRuntime/);
+  assert.match(readFileSync(new URL("./weather/hourlyForecastRuntime.ts", import.meta.url), "utf8"), /loadHourlyWeatherForecast/);
   assert.match(page, /WeatherHourlyPoint/);
   assert.doesNotMatch(page, /open-meteo\.com/);
 });

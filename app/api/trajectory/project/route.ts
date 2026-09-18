@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const retrievals: string[] = [];
   const client = createOpenMeteoClient(getOpenMeteoServerConfig());
   const result = await orchestrateMultiAltitudeProjection(payload, {
     async getTerrainAltitude(latitude, longitude) {
@@ -31,8 +32,9 @@ export async function POST(request: Request) {
       );
     },
     createWindProvider(terrainAltitudeAmslM) {
-      return new OpenMeteoWindProvider(client, terrainAltitudeAmslM);
+      return new OpenMeteoWindProvider(client, terrainAltitudeAmslM, timestamp => retrievals.push(timestamp));
     },
   });
+  if (result.body.ok && retrievals.length) result.body.weatherFetchedAt = retrievals.sort()[0];
   return Response.json(result.body, { status: result.status });
 }

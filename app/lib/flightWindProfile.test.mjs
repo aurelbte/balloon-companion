@@ -150,6 +150,6 @@ test("le panneau lit le snapshot du vol après validation, sans reconstituer les
   assert.equal(snapshotWindProfile(null).size, 0);
   const page = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
   assert.match(page, /selectFlightWeatherSnapshot\(\s*validatedWeatherSnapshot, activeFlight \?\? recoverableFlight/);
-  assert.match(page, /snapshotWindProfile\(flightWeatherSnapshot\)/);
+  assert.match(page, /snapshotWindProfile\(historicalWeatherSnapshot\)/);
   assert.doesNotMatch(page, /predictedWindProfile\(plannedTrajectories/);
 });

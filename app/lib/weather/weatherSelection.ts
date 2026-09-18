@@ -1,3 +1,4 @@
+import { retrievalLabel } from "./weatherFreshness.ts";
 import type { WeatherHourlyPoint } from "./openMeteo/types.ts";
 
 export function dayKey(timestamp: string): string { return timestamp.slice(0, 10); }
@@ -17,8 +18,5 @@ export function closestAvailableTime(times: readonly string[], preferred: string
   return [...times].sort((left, right) => Math.abs(minutes(left) - minutes(preferred)) - Math.abs(minutes(right) - minutes(preferred)))[0];
 }
 export function relativeUpdateLabel(sourceUpdatedAt: string, now = Date.now()): string {
-  const elapsedMinutes = Math.max(0, Math.floor((now - Date.parse(sourceUpdatedAt)) / 60_000));
-  if (elapsedMinutes < 60) return `Il y a ${elapsedMinutes} min`;
-  const updatedAt = new Date(sourceUpdatedAt);
-  return `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(updatedAt)}`;
+  return retrievalLabel(sourceUpdatedAt, now);
 }

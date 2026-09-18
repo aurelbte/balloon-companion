@@ -5,5 +5,10 @@ export async function loadHourlyWeatherForecast(query: { latitude: number; longi
   const response = await fetch(`/api/weather/hourly?${params}`, { signal });
   const payload: unknown = await response.json();
   if (!response.ok || typeof payload !== "object" || payload === null || !("data" in payload)) throw new Error("Prévisions météo indisponibles.");
-  return (payload as { data: WeatherHourlyForecast }).data;
+  const data = (payload as { data: WeatherHourlyForecast }).data;
+  if (!data || data.model !== query.weatherModel || !Array.isArray(data.points) || !Number.isFinite(data.latitude) || !Number.isFinite(data.longitude) ||
+      data.points.some(point => !point || typeof point.timestamp !== "string" || point.model !== query.weatherModel || point.sourceUpdatedAt !== data.sourceUpdatedAt || typeof point.weatherCode !== "string")) {
+    throw new Error("Réponse météo horaire invalide.");
+  }
+  return data;
 }

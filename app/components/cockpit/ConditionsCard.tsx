@@ -9,6 +9,7 @@ import { formatWeatherTemperature } from "../../lib/unitPreferences";
 import { WeatherIcon } from "../../weather/presentation";
 import { relativeUpdateLabel } from "../../lib/weather/weatherSelection";
 import { windArrowRotationDegrees } from "../../weather/windArrow";
+import { freshnessLabel } from "../../lib/weather/weatherFreshness";
 import styles from "./Cockpit.module.css";
 import { cockpitWindDirection, cockpitWindSpeed } from "./weatherCardPresentation";
 
@@ -36,6 +37,7 @@ export default function ConditionsCard({ href }: { href: string }) {
           <div><span>Rafales</span><strong>{cockpitWindSpeed(point?.windGustKmh, units.weather.windSpeedUnit)}</strong></div>
           <div><span>Température</span><strong>{point?.temperatureC === undefined ? "—" : formatWeatherTemperature(point.temperatureC, units.weather.temperatureUnit)}</strong></div>
         </div>
+        <p role="status">{freshnessLabel(preferences.freshness)}{preferences.error && (point ? " · Actualisation impossible — dernières données conservées" : " · Actualisation impossible")}{preferences.loading && " · Actualisation…"} · Run du modèle inconnu</p>
         <div className={styles.weatherFooter}><span className={styles.cardAction}>Voir le détail météo →</span>{point && <small>{relativeUpdateLabel(point.sourceUpdatedAt)}</small>}</div>
       </Card>
     </Link>

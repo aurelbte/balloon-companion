@@ -113,9 +113,11 @@ function sampleWindColumn(
 export class OpenMeteoWindProvider implements WindProvider {
   private readonly client: OpenMeteoClient;
   private readonly terrainAltitudeAmslM?: number;
+  private readonly onRetrieved?: (timestamp: string) => void;
 
-  constructor(client: OpenMeteoClient, terrainAltitudeAmslM?: number) {
+  constructor(client: OpenMeteoClient, terrainAltitudeAmslM?: number, onRetrieved?: (timestamp: string) => void) {
     this.client = client;
+    this.onRetrieved = onRetrieved;
     this.terrainAltitudeAmslM = terrainAltitudeAmslM;
   }
 
@@ -142,6 +144,7 @@ export class OpenMeteoWindProvider implements WindProvider {
       query.weatherModel,
       this.terrainAltitudeAmslM,
     );
+    this.onRetrieved?.(new Date().toISOString());
     column.slices.sort(
       (left, right) => Date.parse(left.validAt) - Date.parse(right.validAt),
     );
@@ -167,6 +170,7 @@ export class OpenMeteoWindProvider implements WindProvider {
       query.weatherModel,
       this.terrainAltitudeAmslM,
     );
+    this.onRetrieved?.(new Date().toISOString());
     column.slices.sort(
       (left, right) => Date.parse(left.validAt) - Date.parse(right.validAt),
     );

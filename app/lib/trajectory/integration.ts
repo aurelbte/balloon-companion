@@ -107,6 +107,8 @@ export type AltitudeProjectionFailure = {
 };
 
 export type MultiAltitudeProjectionSuccess = {
+  /** Server receipt after successful weather payload validation; never a model run. */
+  weatherFetchedAt?: string;
   ok: true;
   version: 2;
   model: WeatherModelDefinition;

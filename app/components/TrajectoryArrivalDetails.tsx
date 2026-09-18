@@ -1,4 +1,6 @@
 "use client";
+import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
+import { HOURLY_POLICY, freshnessLabel, retrievalLabel } from "../lib/weather/weatherFreshness";
 
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
@@ -19,6 +21,7 @@ export default function TrajectoryArrivalDetails({ trace, airspaces, onClose }: 
   const [tab, setTab] = useState<"weather" | "airspaces">("weather");
   const units = useUnitPreferences();
   const [landing, setLanding] = useState<LandingWeatherSummary | null>(null);
+  const landingFreshness = useWeatherFreshness(landing?.weatherFetchedAt, HOURLY_POLICY);
   const [landingPending, setLandingPending] = useState(true);
   const end = trace.projection.points.at(-1)!;
   const crossedAirspaces = useMemo(() => selectTrajectoryAirspaces(trace, airspaces), [airspaces, trace]);
@@ -45,7 +48,7 @@ export default function TrajectoryArrivalDetails({ trace, airspaces, onClose }: 
     <div className={styles.tabs}><button type="button" aria-pressed={tab === "weather"} onClick={() => setTab("weather")}>Météo vol</button><button type="button" aria-pressed={tab === "airspaces"} onClick={() => setTab("airspaces")}>Espaces aériens</button></div>
     {tab === "weather" ? <div className={styles.content}>
       <dl className={styles.metrics}><div><dt>Distance prévue</dt><dd>{formatFlightDistance(trajectoryDistanceKm(trace), units.flightInstruments.distanceUnit)}</dd></div><div><dt>Vent max</dt><dd>{speed(trajectoryMaximumWindKmh(trace))}</dd></div></dl>
-      <section className={styles.landing}><h3>Atterrissage · rayon 3 km</h3>{landingPending ? <p>Analyse…</p> : <dl className={styles.metrics}><div><dt>Vent moyen</dt><dd>{speed(landing?.averageWindKmh ?? null)}</dd></div><div><dt>Vent max</dt><dd>{speed(landing?.maximumWindKmh ?? null)}</dd></div><div><dt>Rafale max</dt><dd>{speed(landing?.maximumGustKmh ?? null)}</dd></div><div><dt>Direction</dt><dd>{landing?.directionLabel ?? "—"}</dd></div></dl>}</section>
+      <section className={styles.landing}><h3>Atterrissage · rayon 3 km</h3>{landing && <p role="status">Prévision autour de l’arrivée du {new Date(landing.forecastAtIso ?? end.timestamp).toLocaleString("fr-FR")} · {freshnessLabel(landingFreshness)} · {retrievalLabel(landing.weatherFetchedAt)} · Run du modèle inconnu</p>}{landingPending ? <p>Analyse…</p> : <dl className={styles.metrics}><div><dt>Vent moyen</dt><dd>{speed(landing?.averageWindKmh ?? null)}</dd></div><div><dt>Vent max</dt><dd>{speed(landing?.maximumWindKmh ?? null)}</dd></div><div><dt>Rafale max</dt><dd>{speed(landing?.maximumGustKmh ?? null)}</dd></div><div><dt>Direction</dt><dd>{landing?.directionLabel ?? "—"}</dd></div></dl>}</section>
     </div> : <div className={styles.content}>{crossedAirspaces.length === 0 ? <p>Aucun espace aérien identifié sur cette trajectoire.</p> : crossedAirspaces.map((airspace) => <section className={styles.airspace} key={airspace.airspaceCompositeKey || airspace.airspaceId}><h3>{airspace.name}</h3><p>{airspace.typeLabel} · Classe {airspace.icaoClassLabel}</p><strong>{normalizeOpenAipAltitudeLimit(airspace.lowerLimit).displayLabel} → {normalizeOpenAipAltitudeLimit(airspace.upperLimit).displayLabel}</strong>{airspace.frequencies.filter(({ value }) => value.trim()).map((frequency) => <span key={`${frequency.value}-${frequency.name ?? ""}`}>{frequency.name ? `${frequency.name} · ` : "Fréquence · "}{frequency.value}</span>)}</section>)}</div>}
   </aside>;
 }

@@ -1,3 +1,4 @@
+import { oldestWeatherRetrieval } from "./weather/weatherFreshness.ts";
 import { currentPreparationValue } from "./preparationSession.ts";
 import type { StoredFlightPreparationV2 } from "./flightStorage.ts";
 import { loadPreparationDraft } from "./preparationDraftStorage.ts";
@@ -103,6 +104,9 @@ export function validateFlightWeather(input: {
       },
       forecastAtIso: reference.forecastAtIso,
       sourceUpdatedAt: reference.calculatedAtIso,
+      ...(oldestWeatherRetrieval(traces, now) ? { weatherFetchedAt: oldestWeatherRetrieval(traces, now) } : {}),
+      calculatedAtIso: reference.calculatedAtIso,
+      modelRunAt: null,
       windProfile: reference.predictedWindProfile!,
     } : null;
     return { snapshot, trajectories: validateExportedTrajectories(input.trajectories, traces), validUntil };

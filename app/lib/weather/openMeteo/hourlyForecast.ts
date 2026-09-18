@@ -53,8 +53,11 @@ export class OpenMeteoHourlyForecastProvider {
     const now = this.now();
     if (cached && cached.expiresAt > now) return cached.value;
     const payload = await this.client.fetchHourlyForecast(query);
-    const value = parseHourlyForecast(payload, query.weatherModel, new Date(now).toISOString());
-    cache.set(key, { expiresAt: now + CACHE_TTL_MS, value });
+    const value = parseHourlyForecast(payload, query.weatherModel);
+    const receivedAt = this.now();
+    value.sourceUpdatedAt = new Date(receivedAt).toISOString();
+    value.points.forEach(point => { point.sourceUpdatedAt = value.sourceUpdatedAt; });
+    cache.set(key, { expiresAt: receivedAt + CACHE_TTL_MS, value });
     return value;
   }
 }

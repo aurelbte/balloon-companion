@@ -15,11 +15,12 @@ interface WindProfilePanelProps {
   predicted: ReadonlyMap<FlightWindLevel, ObservedWind>;
   predictedModelLabel: string | null;
   predictedForecastAt?: string | null;
+  predictedWeatherStatus?: string;
   onToggle: () => void;
   onClose: () => void;
 }
 
-export default function WindProfilePanel({ open, observed, predicted, predictedModelLabel, predictedForecastAt, onToggle, onClose }: WindProfilePanelProps) {
+export default function WindProfilePanel({ open, observed, predicted, predictedModelLabel, predictedForecastAt, predictedWeatherStatus, onToggle, onClose }: WindProfilePanelProps) {
   const units = useUnitPreferences();
   const formatPredictedWind = (value: ObservedWind | undefined) => value ? `${String(Math.round(value.directionDeg) % 360).padStart(3, "0")}° / ${formatWeatherWind(knotsToKmh(value.speedKt), units.weather.windSpeedUnit)}` : "—";
   const formatObserved = (value: ObservedWind | undefined) => value ? `${String(Math.round(value.directionDeg) % 360).padStart(3, "0")}° / ${formatFlightSpeed(knotsToKmh(value.speedKt), units.flightInstruments.speedUnit)}` : "—";
@@ -30,6 +31,7 @@ export default function WindProfilePanel({ open, observed, predicted, predictedM
       {predicted.size === 0
         ? <p role="status" style={{ fontSize: "12px", marginBottom: "8px" }}>Prévision indisponible ou périmée</p>
         : predictedForecastAt && <p style={{ fontSize: "11px", marginBottom: "8px" }}>Prévision du {new Date(predictedForecastAt).toLocaleString("fr-FR")}</p>}
+      {predictedWeatherStatus && <p role="status" style={{ fontSize: "11px", marginBottom: "8px" }}>{predictedWeatherStatus}</p>}
       <p style={{ fontSize: "11px", marginBottom: "8px" }}>Observé : estimation basée sur la dérive GPS. Directions d’où vient le vent.</p>
       <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr", gap: "8px", alignItems: "center", fontSize: "11px", fontVariantNumeric: "tabular-nums" }}>
         <span /><strong style={{ color: "var(--bc-color-text-secondary)", fontSize: "9px", letterSpacing: ".06em", textTransform: "uppercase" }}>Observé</strong><strong style={{ color: "var(--bc-color-text-secondary)", fontSize: "9px", letterSpacing: ".06em", textTransform: "uppercase" }}>Prévu · {predictedModelLabel ?? "—"}</strong>
