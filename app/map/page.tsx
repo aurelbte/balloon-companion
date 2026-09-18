@@ -37,7 +37,7 @@ import { loadDisplayPolicy } from "../lib/loadPerformance/loadDisplayMode";
 import { loadCardBalloonCorrectionPath } from "../lib/loadPerformance/loadCardPolicy";
 import { formatDemoLoadDiagnostic } from "../lib/loadPerformance/demoDiagnostic";
 import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
-import { GROUND_TEMPERATURE_PROVIDER_ID, OpenMeteoGroundTemperatureProvider, canFetchGroundTemperature, groundTemperatureRequestKey } from "../lib/loadPerformance/groundTemperatureProvider";
+import { GROUND_TEMPERATURE_TTL_MS, usableGroundTemperature, type GroundTemperatureData, GROUND_TEMPERATURE_PROVIDER_ID, OpenMeteoGroundTemperatureProvider, canFetchGroundTemperature, groundTemperatureRequestKey } from "../lib/loadPerformance/groundTemperatureProvider";
 import type { GroundTemperature } from "../lib/loadPerformance/types";
 import { balloonDisplayName } from "../lib/balloons";
 import type { StoredFlightPreparationV2 } from "../lib/flightStorage";
@@ -198,20 +198,54 @@ export default function MapPage() {
     const controller = new AbortController();
     const key = groundTemperatureRequestKey(requestIdentity);
     const provider = new OpenMeteoGroundTemperatureProvider();
+    let latest: GroundTemperatureData | null = null;
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    let fetching = false;
     const fetchTemperature = async () => {
+      if (fetching || !active) return;
+      fetching = true;
       await Promise.resolve();
-      if (!active) return;
+      if (!active) { fetching = false; return; }
       setGroundTemperaturePendingKey(key);
       setGroundTemperatureErrorCode(null);
       try {
         const value = await provider.getGroundTemperature({ ...requestIdentity, weatherModel: GROUND_TEMPERATURE_PROVIDER_ID, signal: controller.signal });
-        if (active) { setGroundTemperatureState({ key, value }); setGroundTemperaturePendingKey(null); setGroundTemperatureErrorCode(null); }
+        if (active) {
+          latest = value;
+          setGroundTemperatureState({ key, value });
+          setGroundTemperaturePendingKey(null);
+          setGroundTemperatureErrorCode(null);
+          clearTimeout(expiryTimer);
+          expiryTimer = setTimeout(checkTemperature, Math.max(1, Date.parse(value.fetchedAt) + GROUND_TEMPERATURE_TTL_MS + 1 - Date.now()));
+        }
       } catch (error) {
-        if (active && !controller.signal.aborted) { setGroundTemperaturePendingKey(null); setGroundTemperatureErrorCode(error instanceof Error ? error.name : "INVALID_OPEN_METEO_RESPONSE"); }
-      }
+        if (active && !controller.signal.aborted) {
+          latest = null;
+          setGroundTemperatureState(null);
+          setGroundTemperaturePendingKey(null);
+          setGroundTemperatureErrorCode(error instanceof Error ? error.name : "INVALID_OPEN_METEO_RESPONSE");
+        }
+      } finally { fetching = false; }
     };
+    function checkTemperature() {
+      if (!active || (latest && usableGroundTemperature(latest, requestIdentity))) return;
+      setGroundTemperatureState(null);
+      setGroundTemperatureErrorCode("GROUND_TEMPERATURE_EXPIRED");
+      if (navigator.onLine) void fetchTemperature();
+    }
+    const resume = () => { if (document.visibilityState === "visible") checkTemperature(); };
+    window.addEventListener("online", checkTemperature);
+    window.addEventListener("focus", checkTemperature);
+    document.addEventListener("visibilitychange", resume);
     void fetchTemperature();
-    return () => { active = false; controller.abort(); };
+    return () => {
+      active = false;
+      controller.abort();
+      clearTimeout(expiryTimer);
+      window.removeEventListener("online", checkTemperature);
+      window.removeEventListener("focus", checkTemperature);
+      document.removeEventListener("visibilitychange", resume);
+    };
   }, [config, preparation]);
 
   useEffect(() => {
@@ -420,7 +454,8 @@ export default function MapPage() {
   const groundTemperatureRequest = temperatureLaunchSite && temperatureDateTime ? { latitude: temperatureLaunchSite.latitude, longitude: temperatureLaunchSite.longitude, dateTime: temperatureDateTime, provider: GROUND_TEMPERATURE_PROVIDER_ID } : null;
   const groundTemperatureFetchEnabled = groundTemperatureRequest !== null && canFetchGroundTemperature(groundTemperatureRequest);
   const groundTemperatureKey = groundTemperatureRequest ? groundTemperatureRequestKey(groundTemperatureRequest) : "";
-  const groundTemperature = groundTemperatureState?.key === groundTemperatureKey ? groundTemperatureState.value : null;
+  const groundTemperature = groundTemperatureRequest && groundTemperatureState?.key === groundTemperatureKey
+    ? usableGroundTemperature(groundTemperatureState.value, groundTemperatureRequest) : null;
   const groundTemperatureLoading = groundTemperatureFetchEnabled && groundTemperaturePendingKey === groundTemperatureKey;
   const loadInput = buildLoadCalculationInput({
     balloon: selectedBalloon,
@@ -920,6 +955,7 @@ export default function MapPage() {
                   <div><dt className="inline">mode DEMO : </dt><dd className="inline">{testLoadEnabled ? "ON" : "OFF"}</dd></div>
                 </dl>
               )}
+              {groundTemperature ? <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperature.provider} · Prévision {new Date(groundTemperature.validTime).toLocaleString("fr-FR")} · Récupérée {new Date(groundTemperature.fetchedAt).toLocaleString("fr-FR")}</p> : <p role="status" className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperatureLoading ? "Température sol : actualisation… Calcul indisponible." : "Température actuelle indisponible pour le calcul de charge."}</p>}
               {temperatureDebugEnabled && <div className="mt-1 text-[8px] font-semibold leading-tight text-[var(--bc-color-text-muted)]"><p>TEMP FETCH : {groundTemperatureFetchEnabled ? "ON" : "OFF"}</p><p>TEMP VALUE : {groundTemperature ? groundTemperature.temperatureC.toLocaleString("fr-FR") : "—"}</p><p>TEMP ERROR : {groundTemperatureErrorCode ?? "—"}</p></div>}
               <label className="mt-1.5 block">
                 <span className="block text-[9px] font-semibold leading-tight">Altitude max</span>

@@ -45,7 +45,7 @@ test("le fournisseur appelle le flux générique sans modèle de trajectoire", a
   let requestedUrl = "";
   globalThis.fetch = async (input) => {
     requestedUrl = String(input);
-    return new Response(JSON.stringify({ ok: true, temperatureC: 21.6, validTime: request.dateTime, sourceModel: "Open-Meteo", forecastRun: "n/a", provider: "Open-Meteo" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, temperatureC: 21.6, validTime: request.dateTime, sourceModel: "Open-Meteo", forecastRun: "n/a", provider: "Open-Meteo", requestedTime: request.dateTime, offsetMinutes: 0, fetchedAt: new Date().toISOString() }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
     const result = await new OpenMeteoGroundTemperatureProvider().getGroundTemperature({ ...request, weatherModel: "arome_seamless" });
