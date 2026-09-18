@@ -52,12 +52,9 @@ import {
   REFERENCE_ORIENTATION,
   TWO_DIMENSIONAL_MAP_OPTIONS,
 } from "../../lib/mapInteraction";
-import {
-  getPowerLineQueryBounds,
-  powerLineBoundsContain,
-  powerLineBoundsKey,
-  type PowerLineBounds,
-} from "../../lib/powerLines";
+import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../../lib/powerLinesRuntime";
+// Coverage is checked with powerLineBoundsContain in the shared reader.
+
 import {
   interpolateLiveCoordinate,
   canOpenSharedPilot,
@@ -88,13 +85,6 @@ const SATELLITE_ERROR_WINDOW_MS = 10_000;
 const SATELLITE_LOAD_TIMEOUT_MS = 12_000;
 const MAX_SATELLITE_ERRORS = 3;
 const FOLLOW_CAMERA_DURATION_MS = 180;
-const powerLinesCache = new Map<string, Promise<GeoJSON.FeatureCollection>>();
-const loadedPowerLineBounds: PowerLineBounds[] = [];
-const loadedPowerLineFeatures = new Map<string | number, GeoJSON.Feature>();
-
-function loadedPowerLinesGeoJson(): GeoJSON.FeatureCollection {
-  return { type: "FeatureCollection", features: [...loadedPowerLineFeatures.values()] };
-}
 
 interface ProjectionTimeMarker {
   minutes: number;
@@ -362,6 +352,23 @@ export default function FlightMap({
   const selectedAirspaceIdRef = useRef(selectedAirspaceId);
   const showAirspacesRef = useRef(showAirspaces);
   const showPowerLinesRef = useRef(showPowerLines);
+  const [powerLineState, setPowerLineState] = useState<PowerLineState | null>(null);
+  const powerLineRuntimeRef = useRef<PowerLineRuntime | null>(null);
+  useEffect(() => {
+    const runtime = new PowerLineRuntime(state => {
+      setPowerLineState(state);
+      (map.current?.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(state.data);
+    });
+    powerLineRuntimeRef.current = runtime;
+    const refresh = () => {
+      if (!showPowerLinesRef.current || !map.current) return;
+      const bounds = map.current.getBounds();
+      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+    };
+    window.addEventListener("online", refresh); window.addEventListener("offline", refresh);
+    return () => { runtime.stop(); powerLineRuntimeRef.current = null; window.removeEventListener("online", refresh); window.removeEventListener("offline", refresh); };
+  }, []);
+
   const baseMapRef = useRef(baseMap);
   const onSatelliteErrorRef = useRef(onSatelliteError);
   const satelliteErrorsRef = useRef<number[]>([]);
@@ -457,39 +464,9 @@ export default function FlightMap({
   const fetchPowerLinesForViewport = async () => {
     if (!showPowerLinesRef.current || !map.current) return;
     const bounds = map.current.getBounds();
-    const normalized = getPowerLineQueryBounds({
-      west: bounds.getWest(),
-      south: bounds.getSouth(),
-      east: bounds.getEast(),
-      north: bounds.getNorth(),
-    });
-    const source = map.current.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-    if (loadedPowerLineBounds.some((coverage) => powerLineBoundsContain(coverage, normalized))) {
-      source?.setData(loadedPowerLinesGeoJson());
-      return;
-    }
-    const key = powerLineBoundsKey(normalized);
-    let request = powerLinesCache.get(key);
-    if (!request) {
-      const params = new URLSearchParams(Object.entries(normalized).map(([name, value]) => [name, String(value)]));
-      request = fetch(`/api/osm/power-lines?${params}`).then((response) => {
-        if (!response.ok) throw new Error("Power lines unavailable");
-        return response.json() as Promise<GeoJSON.FeatureCollection>;
-      });
-      powerLinesCache.set(key, request);
-      request.catch(() => powerLinesCache.delete(key));
-    }
-    try {
-      const data = await request;
-      for (const feature of data.features) {
-        if (feature.id !== undefined) loadedPowerLineFeatures.set(feature.id, feature);
-      }
-      if (!loadedPowerLineBounds.some((coverage) => powerLineBoundsKey(coverage) === key)) loadedPowerLineBounds.push(normalized);
-      if (!showPowerLinesRef.current || !map.current) return;
-      (map.current.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(loadedPowerLinesGeoJson());
-    } catch {
-      // Le calque optionnel ne doit jamais interrompre le mode Vol.
-    }
+    await powerLineRuntimeRef.current?.update({
+      west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
+    }, navigator.onLine);
   };
 
   useEffect(() => {
@@ -498,6 +475,7 @@ export default function FlightMap({
     for (const layerId of [POWER_LINES_CASING_LAYER_ID, POWER_LINES_LAYER_ID]) {
       map.current.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
     }
+    if (!showPowerLines) powerLineRuntimeRef.current?.stop();
     if (!showPowerLines) return;
     void fetchPowerLinesForViewport();
   }, [showPowerLines]);
@@ -1707,6 +1685,7 @@ export default function FlightMap({
 
   return (
     <>
+      {showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "70px", left: "12px", right: "12px", zIndex: 15, margin: 0, padding: "6px 9px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: "11px", borderRadius: "8px", pointerEvents: "none" }}>{powerLineStatusLabel(powerLineState)}</p>}
       <style>{`
         .flight-map .maplibregl-ctrl-bottom-left {
           bottom: calc(max(6px, env(safe-area-inset-bottom)) + 124px);

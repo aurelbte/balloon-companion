@@ -1,7 +1,6 @@
 import {
   buildPowerLinesQuery,
-  toPowerLineGeoJson,
-  type OverpassPowerLineResponse,
+  parsePowerLines,
   type PowerLineBounds,
 } from "../../../lib/powerLines";
 
@@ -31,8 +30,9 @@ export async function GET(request: Request) {
       signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`Overpass ${response.status}`);
-    const data = await response.json() as OverpassPowerLineResponse;
-    return Response.json(toPowerLineGeoJson(data), { headers: { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" } });
+    const data = parsePowerLines(await response.json());
+    const result = { ...data, bounds, fetchedAt: new Date().toISOString() };
+    return Response.json(result, { headers: { "Cache-Control": data.complete ? "public, max-age=3600, stale-while-revalidate=86400" : "no-store" } });
   } catch {
     return Response.json({ error: "Données indisponibles" }, { status: 503 });
   }
