@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import OfficialAscensionForm from "../../../../components/journal/OfficialAscensionForm";
 import { useFlightCompletionState } from "../../../../hooks/useFlightCompletionState";
@@ -10,8 +11,27 @@ import styles from "../../../Journal.module.css";
 export default function EditAscensionPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const submitting = useRef(false);
+  const [postSaveError, setPostSaveError] = useState<string | null>(null);
   const state = useFlightCompletionState();
   const ascension = state.officialAscensions.find((item) => item.id === id);
+
+  const navigateAfterSave = () => {
+    try {
+      router.push(`/journal/ascension/${id}`);
+    } catch {
+      setPostSaveError("L’ascension est bien enregistrée. La navigation n’a pas pu se terminer. Réessayez le retour sans enregistrer à nouveau.");
+    }
+  };
+
+  if (postSaveError) return (
+    <main className="p-5">
+      <h1>Ascension enregistrée</h1>
+      <p role="alert">{postSaveError}</p>
+      <button type="button" onClick={navigateAfterSave}>Réessayer le retour</button>
+    </main>
+  );
 
   if (!ascension) {
     return (
@@ -27,6 +47,7 @@ export default function EditAscensionPage() {
 
   return (
     <OfficialAscensionForm
+      submissionError={saveError}
       mode="EDIT"
       ascensionId={id}
       title="Modifier l’ascension"
@@ -42,11 +63,21 @@ export default function EditAscensionPage() {
         }
       }}
       onSubmit={(input) => {
+        if (submitting.current) return false;
+        submitting.current = true;
         if (process.env.NODE_ENV === "development") console.debug("[EditAscensionPage] branch", { ascensionId: id, branch: "UPDATE" });
-        const updated = persistOfficialAscensionUpdate(id, input);
-        if (!updated) return false;
-        window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
-        returnToDetail();
+        try {
+          if (!persistOfficialAscensionUpdate(id, input)) throw new Error("Ascension introuvable");
+        } catch {
+          submitting.current = false;
+          setSaveError("Impossible de modifier l’ascension. Réessayez.");
+          return false;
+        }
+        setSaveError(null);
+        try {
+          window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
+        } catch { /* Optional UI markers must not block navigation after saving. */ }
+        navigateAfterSave();
         return true;
       }}
     />

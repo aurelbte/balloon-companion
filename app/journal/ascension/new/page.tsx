@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import OfficialAscensionForm, {
   type OfficialAscensionFormValues,
@@ -32,8 +33,28 @@ const EMPTY_VALUES: OfficialAscensionFormValues = {
 
 export default function NewAscensionPage() {
   const router = useRouter();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const submitting = useRef(false);
+  const [postSaveError, setPostSaveError] = useState<string | null>(null);
+  const navigateAfterSave = () => {
+    try {
+      router.push("/journal");
+    } catch {
+      setPostSaveError("L’ascension est bien enregistrée. La navigation n’a pas pu se terminer. Réessayez le retour sans enregistrer à nouveau.");
+    }
+  };
+
+  if (postSaveError) return (
+    <main className="p-5">
+      <h1>Ascension enregistrée</h1>
+      <p role="alert">{postSaveError}</p>
+      <button type="button" onClick={navigateAfterSave}>Réessayer le retour</button>
+    </main>
+  );
+
   return (
     <OfficialAscensionForm
+      submissionError={saveError}
       mode="CREATE"
       title="Nouvelle ascension"
       subtitle="Saisie manuelle sans trace GPS"
@@ -48,10 +69,22 @@ export default function NewAscensionPage() {
         }
       }}
       onSubmit={(input) => {
-        persistManualOfficialAscension(input);
-        window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
-        window.sessionStorage.setItem("balloon-companion-ascension-added", "1");
-        router.push("/journal");
+        if (submitting.current) return false;
+        submitting.current = true;
+        try {
+          persistManualOfficialAscension(input);
+        } catch {
+          submitting.current = false;
+          setSaveError("Impossible d’enregistrer l’ascension. Réessayez.");
+          return false;
+        }
+        setSaveError(null);
+        try {
+          window.sessionStorage.setItem("balloon-companion-journal-view", "logbook");
+          window.sessionStorage.setItem("balloon-companion-ascension-added", "1");
+        } catch { /* Optional UI markers must not block navigation after saving. */ }
+        navigateAfterSave();
+        return true;
       }}
     />
   );

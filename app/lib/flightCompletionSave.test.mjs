@@ -71,10 +71,10 @@ function dispatcher() {
 function loadComponent(relative, mocks) {
   const path = resolve(dirname(new URL(import.meta.url).pathname), relative);
   const { outputText } = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } });
-  const module = { exports: {} };
+  const componentModule = { exports: {} };
   const localRequire = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id === "../../contexts/AuthContext" ? { useBalloonAuth: () => ({ state: "SIGNED_IN" }) } : id.endsWith(".css") ? { default: {} } : id.startsWith(".") ? require(resolve(dirname(path), id.endsWith(".ts") ? id : `${id}.ts`)) : require(id);
-  new Function("require", "module", "exports", outputText)(localRequire, module, module.exports);
-  return module.exports.default;
+  new Function("require", "module", "exports", outputText)(localRequire, componentModule, componentModule.exports);
+  return componentModule.exports.default;
 }
 function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
@@ -223,4 +223,170 @@ test("finalisation après rechargement invité : choix explicite puis vol local 
   assert.equal(activations, 1);
   assert.equal(nodes(tree).some((node) => node.props?.children === "Vol enregistré"), true);
   assert.deepEqual(navigations, []);
+});
+
+for (const mode of ['CREATE', 'UPDATE']) test(`B8 ${mode}: quota visible, retry, no success before persistence, synchronous duplicate blocked`, (t) => {
+  const hooks = dispatcher(); t.after(() => hooks.unmount());
+  const { localStorage, sessionStorage } = browser(t);
+  const initial = persistence.persistManualOfficialAscension({ ...defaultOfficialAscensionInput(), observations: 'OLD' });
+  const id = initial.officialAscensions[0].id, navigations = [];
+  const Page = loadComponent(mode === 'CREATE' ? '../journal/ascension/new/page.tsx' : '../journal/ascension/[id]/edit/page.tsx', {
+    react: hooks.react,
+    'next/navigation': { useRouter: () => ({ push: path => navigations.push(path) }), useParams: () => ({ id }) },
+    '../../../../hooks/useFlightCompletionState': { useFlightCompletionState: () => persistence.loadFlightCompletionState() },
+    '../../../components/journal/OfficialAscensionForm': { default: 'FORM' },
+    '../../../../components/journal/OfficialAscensionForm': { default: 'FORM' },
+  });
+  const input = { ...defaultOfficialAscensionInput(), observations: 'NEW' };
+  localStorage.fail(true);
+  let tree = hooks.render(Page);
+  assert.equal(tree.props.onSubmit(input), false);
+  tree = hooks.render(Page);
+  assert.match(tree.props.submissionError, /Impossible.*Réessayez/);
+  assert.equal(navigations.length, 0);
+  assert.equal(sessionStorage.getItem('balloon-companion-ascension-added'), null);
+  assert.equal(persistence.loadFlightCompletionState().officialAscensions[0].observations, 'OLD');
+  localStorage.fail(false);
+  assert.equal(tree.props.onSubmit(input), true);
+  assert.equal(tree.props.onSubmit(input), false);
+  assert.equal(navigations.length, 1);
+  const saved = persistence.loadFlightCompletionState().officialAscensions;
+  assert.equal(saved.length, mode === 'CREATE' ? 2 : 1);
+  assert.equal(saved.at(-1).observations, 'NEW');
+  assert.equal(hooks.render(Page).props.submissionError, null);
+});
+
+test('B8 UPDATE: null is visible and retry stays possible', t => {
+  const hooks = dispatcher(); t.after(() => hooks.unmount()); browser(t);
+  let result = null; const navigations = [];
+  const Page = loadComponent('../journal/ascension/[id]/edit/page.tsx', {
+    react: hooks.react,
+    'next/navigation': { useRouter: () => ({ push: x => navigations.push(x) }), useParams: () => ({id:'a'}) },
+    '../../../../hooks/useFlightCompletionState': { useFlightCompletionState: () => ({officialAscensions:[{id:'a', departure:'A', arrival:'B'}]}) },
+    '../../../../lib/officialAscensionEditing': { officialAscensionToEditValues: x => x },
+    '../../../../lib/flightCompletionStorage': { persistOfficialAscensionUpdate: () => result },
+    '../../../../components/journal/OfficialAscensionForm': {default:'FORM'},
+  });
+  assert.equal(hooks.render(Page).props.onSubmit(defaultOfficialAscensionInput()), false);
+  assert.match(hooks.render(Page).props.submissionError, /Impossible de modifier/);
+  assert.equal(navigations.length, 0);
+  result = {id:'a'};
+  assert.equal(hooks.render(Page).props.onSubmit(defaultOfficialAscensionInput()), true);
+  assert.equal(navigations.length, 1);
+});
+
+for (const failure of ['false','throw']) test(`B8 DELETE ${failure}: dialog retains ascension, visible error, retry succeeds`, t => {
+  const hooks = dispatcher(); t.after(() => hooks.unmount()); browser(t);
+  let state = persistence.persistManualOfficialAscension(defaultOfficialAscensionInput()), fail = true;
+  const Log = loadComponent('../components/journal/AscensionLog.tsx', {
+    react: hooks.react,
+    '../../hooks/useFlightCompletionState': {useFlightCompletionState: () => state},
+    './DeleteFlightDialog': {default:'DIALOG'},
+    '../../hooks/useJournalCardSwipe': {useJournalCardSwipe: () => ({})},
+    '../../lib/flightCompletionStorage': {saveFlightCompletionState(next) {if (fail) {if (failure === 'throw') throw Error('storage'); return false;} state=next; return true;}},
+  });
+  let tree = hooks.render(Log);
+  find(tree, n => typeof n.props?.onDelete === 'function').props.onDelete();
+  tree = hooks.render(Log); find(tree, n => n.type === 'DIALOG').props.onConfirm();
+  tree = hooks.render(Log);
+  const dialog = find(tree, n => n.type === 'DIALOG');
+  assert.match(dialog.props.error, /Impossible de supprimer/);
+  assert.equal(state.officialAscensions.length, 1);
+  fail=false; dialog.props.onConfirm(); tree=hooks.render(Log);
+  assert.equal(state.officialAscensions.length, 0);
+  assert.equal(nodes(tree).some(n => n.type === 'DIALOG'), false);
+});
+
+test('B8 delete dialog renders its error inside the modal', t => {
+  const hooks=dispatcher(); t.after(() => hooks.unmount());
+  const Dialog=loadComponent('../components/journal/DeleteFlightDialog.tsx', {react:hooks.react});
+  const tree=hooks.render(() => Dialog({flightName:'Test', entityLabel:'ascension', error:'Impossible de supprimer l’ascension. Réessayez.', onCancel(){}, onConfirm(){}}));
+  assert.match(find(tree,n => n.props?.role === 'alert').props.children,/Impossible de supprimer/);
+});
+
+for (const mode of ['CREATE','UPDATE']) test(`B8 ${mode}: actual form retains edits and dirty after page storage exception`, async t => {
+  const pageHooks=dispatcher(), formHooks=dispatcher(); t.after(() => {pageHooks.unmount(); formHooks.unmount();});
+  const {localStorage}=browser(t); t.mock.timers.enable({apis:['setTimeout']});
+  const initial=persistence.persistManualOfficialAscension({...defaultOfficialAscensionInput(), observations:'OLD'}), id=initial.officialAscensions[0].id;
+  const Page=loadComponent(mode === 'CREATE' ? '../journal/ascension/new/page.tsx' : '../journal/ascension/[id]/edit/page.tsx', {
+    react:pageHooks.react, 'next/navigation':{useRouter:()=>({push(){assert.fail('no navigation after failure')}}),useParams:()=>({id})},
+    '../../../../hooks/useFlightCompletionState':{useFlightCompletionState:()=>initial},
+    '../../../components/journal/OfficialAscensionForm':{default:'FORM'}, '../../../../components/journal/OfficialAscensionForm':{default:'FORM'},
+  });
+  const Form=loadComponent('../components/journal/OfficialAscensionForm.tsx', {react:formHooks.react, 'next/navigation':{useRouter:()=>({push(){}}),usePathname:()=>'/journal/ascension'}, '../../hooks/useBalloons':{useBalloons:()=>[]}});
+  const initialValues={...defaultOfficialAscensionInput(),dateIso:'2026-09-10',balloonModel:'Ballon',balloonManufacturer:'',registration:'F-TEST',departure:'Terrain',arrival:'Champ',category:'Libre à air chaud',pilotFunction:'PIC',regulatoryRole:'PIC',supervisedByFiB:false,officialDurationMinutes:60,maximumAltitudeM:'300',flightNature:'STANDARD',takeoffCount:'1',landingCount:'1',instructorName:'',instructorLicenceNumber:'',examinerName:'',examinerLicenceNumber:'',observations:''};
+  let dirty;
+  const render=()=>formHooks.render(()=>Form({...pageHooks.render(Page).props, initialValues,onCancel:value=>{dirty=value}}));
+  let tree=render();t.mock.timers.tick(0);tree=render();
+  find(tree,n=>n.type==='textarea').props.onChange({target:{value:'Texte à conserver'}});tree=render();localStorage.fail(true);
+  find(tree,n=>n.type==='form').props.onSubmit({preventDefault(){}});await flush();tree=render();
+  assert.equal(find(tree,n=>n.type==='textarea').props.value,'Texte à conserver');
+  assert.match(find(tree,n=>n.props?.role==='alert').props.children,/Impossible/);
+  find(tree,n=>n.type==='button' && n.props.children==='Annuler').props.onClick();assert.equal(dirty,true);
+});
+
+test('B8 C2: failed CREATE/UPDATE/DELETE persist no new intent and never open the outbox', async t => {
+  const {localStorage}=browser(t);
+  const original=persistence.persistManualOfficialAscension(defaultOfficialAscensionInput()), id=original.officialAscensions[0].id;
+  const {scopedBusinessStorageKey}=await import('./auth/dataScopeRuntime.ts');
+  const {removeOfficialAscension}=await import('./flightCompletion.ts');
+  setRuntimeAuthSnapshot({state:'SIGNED_IN',user:{id:'B8'}});
+  localStorage.setItem(scopedBusinessStorageKey('USER:B8',persistence.FLIGHT_COMPLETION_STORAGE_KEY),JSON.stringify(original));
+  const before=localStorage.snapshot();let opens=0;
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'indexedDB');
+  Object.defineProperty(globalThis,'indexedDB',{configurable:true,value:{open(){opens++;throw Error('unexpected enqueue')}}});
+  t.after(()=>previous?Object.defineProperty(globalThis,'indexedDB',previous):delete globalThis.indexedDB);
+  localStorage.fail(true);
+  assert.throws(()=>persistence.persistManualOfficialAscension(defaultOfficialAscensionInput()),/Enregistrement local/);
+  assert.throws(()=>persistence.persistOfficialAscensionUpdate(id,defaultOfficialAscensionInput()),/Enregistrement local/);
+  assert.equal(persistence.saveFlightCompletionState(removeOfficialAscension(original,id)),false);
+  await flush();assert.equal(opens,0);assert.deepEqual(localStorage.snapshot(),before);
+});
+
+for (const mode of ['CREATE', 'UPDATE']) for (const scenario of ['session', 'navigation', 'both']) test(`B8 post-save ${mode} ${scenario}: one write, safe navigation retry`, t => {
+  const hooks=dispatcher();t.after(()=>hooks.unmount());
+  const {sessionStorage}=browser(t);
+  const initial=persistence.persistManualOfficialAscension(defaultOfficialAscensionInput()), id=initial.officialAscensions[0].id;
+  let writes=0, navFails=scenario!=='session'; const attempts=[];
+  sessionStorage.fail(scenario!=='navigation');
+  const wrapped={...persistence,
+    persistManualOfficialAscension(input){writes++;return persistence.persistManualOfficialAscension(input);},
+    persistOfficialAscensionUpdate(...args){writes++;return persistence.persistOfficialAscensionUpdate(...args);},
+  };
+  const Page=loadComponent(mode==='CREATE'?'../journal/ascension/new/page.tsx':'../journal/ascension/[id]/edit/page.tsx',{
+    react:hooks.react,
+    'next/navigation':{useRouter:()=>({push(path){attempts.push(path);if(navFails)throw Error('navigation failed');}}),useParams:()=>({id})},
+    '../../../../hooks/useFlightCompletionState':{useFlightCompletionState:()=>persistence.loadFlightCompletionState()},
+    '../../../lib/flightCompletionStorage':wrapped,'../../../../lib/flightCompletionStorage':wrapped,
+    '../../../components/journal/OfficialAscensionForm':{default:'FORM'},'../../../../components/journal/OfficialAscensionForm':{default:'FORM'},
+  });
+  const handler=hooks.render(Page).props.onSubmit;
+  assert.equal(handler({...defaultOfficialAscensionInput(),observations:'SAVED'}),true);
+  assert.equal(handler(defaultOfficialAscensionInput()),false);
+  assert.equal(writes,1);assert.equal(attempts.length,1);
+  assert.equal(persistence.loadFlightCompletionState().officialAscensions.length,mode==='CREATE'?2:1);
+  if(navFails){
+    let tree=hooks.render(Page);
+    assert.match(find(tree,n=>n.props?.role==='alert').props.children,/bien enregistrée/);
+    assert.equal(nodes(tree).some(n=>n.type==='FORM'),false);
+    find(tree,n=>n.type==='button').props.onClick();
+    assert.equal(writes,1);assert.equal(attempts.length,2);
+    tree=hooks.render(Page);assert.match(find(tree,n=>n.props?.role==='alert').props.children,/bien enregistrée/);
+    navFails=false;find(tree,n=>n.type==='button').props.onClick();
+    assert.equal(writes,1);assert.equal(attempts.length,3);
+  }else assert.equal(hooks.render(Page).props.submissionError,null);
+});
+
+for(const mode of ['CREATE','UPDATE']) test(`B8 ${mode} synchronous reentrant submit blocked during persistence`,t=>{
+  const hooks=dispatcher();t.after(()=>hooks.unmount());browser(t);
+  let handler,writes=0,nested;
+  const wrapped={persistManualOfficialAscension(){writes++;nested=handler(defaultOfficialAscensionInput());return {};},persistOfficialAscensionUpdate(){writes++;nested=handler(defaultOfficialAscensionInput());return {id:'a'};}};
+  const Page=loadComponent(mode==='CREATE'?'../journal/ascension/new/page.tsx':'../journal/ascension/[id]/edit/page.tsx',{
+    react:hooks.react,'next/navigation':{useRouter:()=>({push(){}}),useParams:()=>({id:'a'})},
+    '../../../../hooks/useFlightCompletionState':{useFlightCompletionState:()=>({officialAscensions:[{id:'a',departure:'A',arrival:'B'}]})},
+    '../../../../lib/officialAscensionEditing':{officialAscensionToEditValues:x=>x},
+    '../../../lib/flightCompletionStorage':wrapped,'../../../../lib/flightCompletionStorage':wrapped,
+    '../../../components/journal/OfficialAscensionForm':{default:'FORM'},'../../../../components/journal/OfficialAscensionForm':{default:'FORM'},
+  });
+  handler=hooks.render(Page).props.onSubmit;assert.equal(handler(defaultOfficialAscensionInput()),true);assert.equal(nested,false);assert.equal(writes,1);
 });

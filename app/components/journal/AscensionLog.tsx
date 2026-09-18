@@ -148,6 +148,7 @@ export default function AscensionLog() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Ascension | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [addedToast, setAddedToast] = useState(false);
 
   useEffect(() => {
@@ -258,12 +259,19 @@ export default function AscensionLog() {
       </div>}
 
       <div className={styles.ascensionList} aria-label="Ascensions">
-        {filtered.map((ascension) => <AscensionCard key={ascension.id} ascension={ascension} title={getAscensionAutomaticName(ascension)} menuOpen={menuId === ascension.id} swipeOpen={openSwipeId === ascension.id} onSetSwipeOpen={(open) => { setOpenSwipeId(open ? ascension.id : null); if (open) setMenuId(null); }} onOpenMenu={() => { setOpenSwipeId(null); setMenuId(ascension.id); }} onCloseMenu={() => setMenuId(null)} onDelete={() => { setDeleting(ascension); setOpenSwipeId(null); setMenuId(null); }} />)}
+        {filtered.map((ascension) => <AscensionCard key={ascension.id} ascension={ascension} title={getAscensionAutomaticName(ascension)} menuOpen={menuId === ascension.id} swipeOpen={openSwipeId === ascension.id} onSetSwipeOpen={(open) => { setOpenSwipeId(open ? ascension.id : null); if (open) setMenuId(null); }} onOpenMenu={() => { setOpenSwipeId(null); setMenuId(ascension.id); }} onCloseMenu={() => setMenuId(null)} onDelete={() => { setDeleteError(null); setDeleting(ascension); setOpenSwipeId(null); setMenuId(null); }} />)}
         {filtered.length === 0 && <p className={styles.emptyState}>Aucune ascension trouvée.</p>}
       </div>
 
-      {deleting && <DeleteFlightDialog entityLabel="ascension" flightName={getAscensionAutomaticName(deleting)} linkedAscension={Boolean(completionState.officialAscensions.find(({ id }) => id === deleting.id)?.sourceFlightId)} returnFocusTo={null} onCancel={() => setDeleting(null)} onConfirm={() => {
-        if (saveFlightCompletionState(removeOfficialAscension(completionState, deleting.id))) setDeleting(null);
+      {deleting && <DeleteFlightDialog entityLabel="ascension" flightName={getAscensionAutomaticName(deleting)} linkedAscension={Boolean(completionState.officialAscensions.find(({ id }) => id === deleting.id)?.sourceFlightId)} returnFocusTo={null} error={deleteError} onCancel={() => { setDeleteError(null); setDeleting(null); }} onConfirm={() => {
+        try {
+          if (!saveFlightCompletionState(removeOfficialAscension(completionState, deleting.id))) throw new Error("Suppression non enregistrée");
+        } catch {
+          setDeleteError("Impossible de supprimer l’ascension. Réessayez.");
+          return;
+        }
+        setDeleteError(null);
+        setDeleting(null);
       }} />}
       <p role="status" aria-live="polite" className={`${styles.toast} ${addedToast ? styles.toastVisible : ""}`}>Ascension ajoutée</p>
     </section>

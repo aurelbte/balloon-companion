@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 type DeleteFlightDialogProps = {
   flightName: string;
+  error?: string | null;
   entityLabel?: "vol" | "ascension";
   linkedAscension?: boolean;
   returnFocusTo: HTMLElement | null;
@@ -12,6 +13,7 @@ type DeleteFlightDialogProps = {
 
 export default function DeleteFlightDialog({
   flightName,
+  error,
   entityLabel = "vol",
   linkedAscension = false,
   returnFocusTo,
@@ -55,6 +57,7 @@ export default function DeleteFlightDialog({
         {entityLabel === "ascension" && linkedAscension && " Le vol enregistré et sa trace resteront dans le Journal."}
         {entityLabel === "vol" && linkedAscension && " Une ascension officielle est liée : choisissez explicitement de la conserver ou de la supprimer."}
       </p>
+      {error && <p role="alert" className="mt-2 text-sm text-[var(--bc-danger)]">{error}</p>}
       <div className={`mt-5 grid gap-2 ${linkedAscension && entityLabel === "vol" ? "grid-cols-1" : "grid-cols-2"}`}>
         <button
           ref={cancelRef}
