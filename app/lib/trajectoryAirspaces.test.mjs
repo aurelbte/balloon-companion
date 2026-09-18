@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { selectIntersectedAirspaces } from "./trajectoryAirspaces.ts";
+import { selectTrajectoryAirspaces, selectIntersectedAirspaces } from "./trajectoryAirspaces.ts";
 
 function properties(id, name = id) {
   return {
@@ -96,4 +96,12 @@ test("retourne une liste vide sans trajectoire", () => {
     }),
     [],
   );
+});
+
+test("uncertain planned vertical separation retains horizontally crossed zones",()=>{
+ const flight=trace("a",[[0,2],[4,2]]);flight.projection.points.forEach(point=>point.altitudeAmslM=800);
+ for(const lower of [{value:10000,unit:0,referenceDatum:1},{value:1500,unit:1,referenceDatum:0},{value:65,unit:6,referenceDatum:2},null]){
+ const zone=feature("potential",square);zone.properties.lowerLimit=lower;zone.properties.upperLimit={value:2500,unit:1,referenceDatum:1};
+ assert.equal(selectTrajectoryAirspaces(flight,{type:"FeatureCollection",features:[zone]}).length,1);
+ }
 });

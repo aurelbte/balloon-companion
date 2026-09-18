@@ -56,7 +56,7 @@ test("supprime le remplissage si le plancher AMSL est clairement très supérieu
   const style = getAirspaceMapStyle(
     airspace(7, "TMA HAUTE", { value: 1500, unit: 0, referenceDatum: 1 }),
     9,
-    { currentAltitudeMeters: 200, verticalAccuracyMeters: 30 },
+    { currentAltitudeMeters: 200, verticalAccuracyMeters: 30, altitudeReference: "AMSL" },
   );
   assert.equal(style.verticalRelevance, "ABOVE_FAR");
   assert.equal(style.fillOpacity, 0);
@@ -118,4 +118,11 @@ test("applique les seuils national, régional et local", () => {
   assert.equal(getAirspaceMapStyle(airspace(4, "CTR"), 7, { currentAltitudeMeters: null }).visible, false);
   assert.equal(getAirspaceMapStyle(airspace(4, "CTR"), 9, { currentAltitudeMeters: null }).visible, true);
   assert.equal(getAirspaceMapStyle(airspace(34, "LTA"), 9, { currentAltitudeMeters: null }).visible, false);
+});
+
+test("GPS datum or missing accuracy never attenuates a high AMSL floor",()=>{
+ for(const context of [{currentAltitudeMeters:200,verticalAccuracyMeters:30},{currentAltitudeMeters:200,altitudeReference:"AMSL"},{currentAltitudeMeters:200,verticalAccuracyMeters:-1,altitudeReference:"AMSL"}]){
+ const style=getAirspaceMapStyle(airspace(7,"TMA",{value:1500,unit:0,referenceDatum:1}),9,context);
+ assert.equal(style.verticalRelevance,"UNKNOWN");assert.ok(style.fillOpacity>0);
+ }
 });

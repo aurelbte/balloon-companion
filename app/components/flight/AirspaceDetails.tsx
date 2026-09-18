@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   normalizeOpenAipAltitudeLimit,
+  airspaceVerticalNotice,
 } from "../../lib/airspaceAltitude";
 import type {
   AirspaceGeoJsonProperties,
@@ -119,6 +120,7 @@ export default function AirspaceDetails({
         </button>
       </div>
 
+      <p role="status" style={{ fontSize: "11px", margin: "10px 0" }}>{airspaceVerticalNotice(airspace.lowerLimit, airspace.upperLimit)}</p>
       <dl
         style={{
           display: "grid",

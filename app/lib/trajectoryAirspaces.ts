@@ -165,6 +165,8 @@ export function selectTrajectoryAirspaces(
         normalizeOpenAipAltitudeLimit(feature.properties.lowerLimit),
         normalizeOpenAipAltitudeLimit(feature.properties.upperLimit),
         altitude,
+        null, // No demonstrated vertical uncertainty for this planned segment.
+        "AMSL",
       );
       if (vertical.state === "BELOW" || vertical.state === "ABOVE") continue;
       firstIndex = index;

@@ -12,3 +12,9 @@ test("la fiche ne contient plus le bloc de position verticale", () => {
   for (const label of ["ÉCART JUSQU’AU PLAFOND", "Dans les limites verticales", "Altitude GPS indicative", "MARGE VERTICALE", "POSITION VERTICALE"]) assert.doesNotMatch(details, new RegExp(label));
   assert.doesNotMatch(details, /verticalContext/);
 });
+
+test("airspace details and trajectory details disclose vertical non-comparability",()=>{
+ const arrival=readFileSync(new URL("../components/TrajectoryArrivalDetails.tsx",import.meta.url),"utf8");
+ assert.match(details,/airspaceVerticalNotice\(airspace.lowerLimit, airspace.upperLimit\)/);
+ assert.match(arrival,/airspaceVerticalNotice\(airspace.lowerLimit, airspace.upperLimit\)/);
+});

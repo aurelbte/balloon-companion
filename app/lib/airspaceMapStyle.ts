@@ -20,6 +20,7 @@ export type AirspaceZoomContext = "NATIONAL" | "REGIONAL" | "LOCAL";
 export interface AirspaceMapContext {
   currentAltitudeMeters: number | null;
   verticalAccuracyMeters?: number | null;
+  altitudeReference?: "AMSL" | "UNKNOWN";
 }
 
 export interface AirspaceMapStyle {
@@ -190,7 +191,7 @@ export function getAirspaceVerticalRelevance(
   context: AirspaceMapContext,
 ): AirspaceVerticalRelevance {
   const altitude = context.currentAltitudeMeters;
-  if (altitude === null || !Number.isFinite(altitude)) return "UNKNOWN";
+  if (context.altitudeReference !== "AMSL" || altitude === null || !Number.isFinite(altitude)) return "UNKNOWN";
 
   const floor = normalizeOpenAipAltitudeLimit(airspace.lowerLimit);
   if (floor.metersAMSL === null) return "UNKNOWN";
@@ -199,8 +200,10 @@ export function getAirspaceVerticalRelevance(
     context.verticalAccuracyMeters !== null &&
     context.verticalAccuracyMeters !== undefined &&
     Number.isFinite(context.verticalAccuracyMeters)
-      ? Math.abs(context.verticalAccuracyMeters)
-      : 0;
+      && context.verticalAccuracyMeters >= 0
+      ? context.verticalAccuracyMeters
+      : null;
+  if (accuracy === null) return "UNKNOWN";
 
   return floor.metersAMSL - (altitude + accuracy) >=
     CLEARLY_ABOVE_MARGIN_METERS

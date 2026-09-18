@@ -1,19 +1,23 @@
 import type { OpenAipAltitudeLimit } from "./openaip";
 
 export type AltitudeReference = "AMSL" | "AGL" | "SFC" | "FL" | "UNKNOWN";
+export type VerticalComparability = "COMPARABLE" | "ESTIMATED" | "NOT_COMPARABLE" | "UNKNOWN";
 
 export interface NormalizedAltitudeLimit {
+  raw: OpenAipAltitudeLimit | null;
   value: number | null;
   unit: "FT" | "M" | "FL" | null;
   reference: AltitudeReference;
+  /** Conversion of the published limit only; does not qualify pilot altitude. */
   metersAMSL: number | null;
+  comparability: VerticalComparability;
   displayLabel: string;
 }
 
 export type VerticalAirspaceState = "BELOW" | "INSIDE" | "ABOVE" | "UNKNOWN";
-
 export interface AirspaceVerticalContext {
   state: VerticalAirspaceState;
+  comparability: VerticalComparability;
   currentAltitudeMeters: number | null;
   verticalAccuracyMeters: number | null;
   distanceToFloorMeters: number | null;
@@ -22,127 +26,61 @@ export interface AirspaceVerticalContext {
   isCeilingComparable: boolean;
 }
 
-const FEET_TO_METERS = 0.3048;
-
-const UNKNOWN_LIMIT: NormalizedAltitudeLimit = {
-  value: null,
-  unit: null,
-  reference: "UNKNOWN",
-  metersAMSL: null,
-  displayLabel: "—",
-};
-
-export function normalizeOpenAipAltitudeLimit(
-  limit: OpenAipAltitudeLimit | null | undefined
-): NormalizedAltitudeLimit {
-  if (!limit || !Number.isFinite(limit.value)) return { ...UNKNOWN_LIMIT };
-
-  if (limit.unit === 6) {
-    return {
-      value: limit.value,
-      unit: "FL",
-      reference: "FL",
-      metersAMSL: null,
-      displayLabel: `FL ${limit.value}`,
-    };
-  }
-
-  const unit = limit.unit === 0 ? "M" : limit.unit === 1 ? "FT" : null;
-  if (!unit) return { ...UNKNOWN_LIMIT, value: limit.value };
-
-  if (limit.referenceDatum === 0) {
-    if (limit.value === 0) {
-      return {
-        value: 0,
-        unit,
-        reference: "SFC",
-        metersAMSL: null,
-        displayLabel: "SFC",
-      };
-    }
-
-    return {
-      value: limit.value,
-      unit,
-      reference: "AGL",
-      metersAMSL: null,
-      displayLabel: `${limit.value} ${unit === "FT" ? "ft" : "m"} AGL`,
-    };
-  }
-
-  if (limit.referenceDatum === 1) {
-    return {
-      value: limit.value,
-      unit,
-      reference: "AMSL",
-      metersAMSL: unit === "FT" ? limit.value * FEET_TO_METERS : limit.value,
-      displayLabel: `${limit.value} ${unit === "FT" ? "ft" : "m"} AMSL`,
-    };
-  }
-
-  return {
-    value: limit.value,
-    unit,
-    reference: "UNKNOWN",
-    metersAMSL: null,
-    displayLabel: `${limit.value} ${unit === "FT" ? "ft" : "m"} STD`,
+export function normalizeOpenAipAltitudeLimit(limit: OpenAipAltitudeLimit | null | undefined): NormalizedAltitudeLimit {
+  const unit = limit?.unit === 0 ? "M" : limit?.unit === 1 ? "FT" : limit?.unit === 6 ? "FL" : null;
+  const base: NormalizedAltitudeLimit = {
+    raw: limit ? { ...limit } : null,
+    value: limit && Number.isFinite(limit.value) ? limit.value : null,
+    unit, reference: "UNKNOWN", metersAMSL: null, comparability: "UNKNOWN",
+    displayLabel: limit ? `${String(limit.value)} ${unit === "FT" ? "ft" : unit === "M" ? "m" : unit ?? `unité inconnue (${String(limit.unit)})`} · référence verticale inconnue (${String(limit.referenceDatum)})` : "Limite verticale inconnue",
   };
+  if (!limit || !Number.isFinite(limit.value)) return base;
+  if (unit === "FL") return { ...base, reference: "FL", comparability: "NOT_COMPARABLE", displayLabel: `FL ${String(limit.value).padStart(3, "0")}` };
+  if (!unit) return base;
+  const published = `${limit.value} ${unit === "FT" ? "ft" : "m"}`;
+  if (limit.referenceDatum === 0) return { ...base, reference: limit.value === 0 ? "SFC" : "AGL", comparability: "NOT_COMPARABLE", displayLabel: limit.value === 0 ? "SFC" : `${published} AGL` };
+  if (limit.referenceDatum === 1) {
+    const meters = unit === "FT" ? limit.value * 0.3048 : limit.value;
+    if (!Number.isFinite(meters)) return base;
+    return { ...base, reference: "AMSL", metersAMSL: meters, comparability: "COMPARABLE", displayLabel: `${published} AMSL` };
+  }
+  return base;
 }
 
+/** GPS callers have no demonstrated AMSL datum and must retain UNKNOWN. */
 export function calculateAirspaceVerticalContext(
   lowerLimit: NormalizedAltitudeLimit,
   upperLimit: NormalizedAltitudeLimit,
   currentAltitudeMeters: number | null,
-  verticalAccuracyMeters: number | null = null
+  verticalAccuracyMeters: number | null = null,
+  altitudeReference: "AMSL" | "UNKNOWN" = "UNKNOWN",
 ): AirspaceVerticalContext {
-  const altitude =
-    currentAltitudeMeters !== null && Number.isFinite(currentAltitudeMeters)
-      ? currentAltitudeMeters
-      : null;
-  const accuracy =
-    verticalAccuracyMeters !== null && Number.isFinite(verticalAccuracyMeters)
-      ? Math.abs(verticalAccuracyMeters)
-      : null;
-  const floorMeters = lowerLimit.metersAMSL;
-  const ceilingMeters = upperLimit.metersAMSL;
-  const isSurfaceFloor = lowerLimit.reference === "SFC";
-  const isFloorComparable = floorMeters !== null || isSurfaceFloor;
-  const isCeilingComparable = ceilingMeters !== null;
-
-  const baseContext = {
-    currentAltitudeMeters: altitude,
-    verticalAccuracyMeters: accuracy,
-    distanceToFloorMeters:
-      altitude !== null && floorMeters !== null
-        ? Math.abs(altitude - floorMeters)
-        : null,
-    distanceToCeilingMeters:
-      altitude !== null && ceilingMeters !== null
-        ? Math.abs(ceilingMeters - altitude)
-        : null,
-    isFloorComparable,
-    isCeilingComparable,
+  const altitude = currentAltitudeMeters !== null && Number.isFinite(currentAltitudeMeters) ? currentAltitudeMeters : null;
+  const accuracy = verticalAccuracyMeters !== null && Number.isFinite(verticalAccuracyMeters) && verticalAccuracyMeters >= 0 ? verticalAccuracyMeters : null;
+  const compatible = altitudeReference === "AMSL" && altitude !== null && accuracy !== null && Number.isFinite(altitude - accuracy) && Number.isFinite(altitude + accuracy);
+  const floor = lowerLimit.comparability === "COMPARABLE" && compatible ? lowerLimit.metersAMSL : null;
+  const ceiling = upperLimit.comparability === "COMPARABLE" && compatible ? upperLimit.metersAMSL : null;
+  const surface = lowerLimit.reference === "SFC";
+  const base: AirspaceVerticalContext = {
+    state: "UNKNOWN",
+    comparability: lowerLimit.comparability === "UNKNOWN" || upperLimit.comparability === "UNKNOWN" ? "UNKNOWN" : floor !== null && ceiling !== null ? "COMPARABLE" : "NOT_COMPARABLE",
+    currentAltitudeMeters: altitude, verticalAccuracyMeters: accuracy,
+    distanceToFloorMeters: floor !== null ? Math.abs(altitude! - floor) : null,
+    distanceToCeilingMeters: ceiling !== null ? Math.abs(ceiling - altitude!) : null,
+    isFloorComparable: floor !== null, isCeilingComparable: ceiling !== null,
   };
+  if (!compatible) return base;
+  if (floor !== null && ceiling !== null && floor > ceiling) return { ...base, comparability: "UNKNOWN" };
+  const low = altitude! - accuracy!, high = altitude! + accuracy!;
+  if (floor !== null && high < floor) return { ...base, state: "BELOW" };
+  if (ceiling !== null && low > ceiling) return { ...base, state: "ABOVE" };
+  // SFC is only a potential-presence convention, never a measured floor.
+  if (!surface && floor !== null && ceiling !== null && low > floor && high < ceiling) return { ...base, state: "INSIDE" };
+  return base;
+}
 
-  if (altitude === null) return { state: "UNKNOWN", ...baseContext };
-
-  if (floorMeters !== null && altitude < floorMeters) {
-    return { state: "BELOW", ...baseContext };
-  }
-
-  if (ceilingMeters !== null && altitude > ceilingMeters) {
-    return { state: "ABOVE", ...baseContext };
-  }
-
-  if (
-    isFloorComparable &&
-    isCeilingComparable &&
-    (isSurfaceFloor || (floorMeters !== null && altitude >= floorMeters)) &&
-    ceilingMeters !== null &&
-    altitude <= ceilingMeters
-  ) {
-    return { state: "INSIDE", ...baseContext };
-  }
-
-  return { state: "UNKNOWN", ...baseContext };
+export function airspaceVerticalNotice(lower: OpenAipAltitudeLimit | null, upper: OpenAipAltitudeLimit | null): string {
+  return [lower, upper].some(limit => normalizeOpenAipAltitudeLimit(limit).comparability === "UNKNOWN")
+    ? "Référence verticale inconnue"
+    : "Référence verticale non comparable à l’altitude actuelle";
 }

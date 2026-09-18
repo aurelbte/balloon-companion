@@ -156,7 +156,7 @@ test("classe une zone réglementée avant une CTR", () => {
   assert.ok(getAirspaceDisplayPriority(1) < getAirspaceDisplayPriority(4));
 });
 
-test("conserve horizontalement un espace lorsque le pilote est sous le plancher", () => {
+test("conserve un espace au plancher élevé sans qualifier le référentiel GPS", () => {
   const [match] = findContainingAirspaces({
     position,
     airspaces: collection(
@@ -170,7 +170,7 @@ test("conserve horizontalement un espace lorsque le pilote est sous le plancher"
     altitudeMeters: 200,
     verticalAccuracyMeters: 10,
   });
-  assert.equal(match.verticalContext.state, "BELOW");
+  assert.equal(match.verticalContext.state, "UNKNOWN");
   assert.equal(match.isVerticallyConfirmed, false);
 });
 
@@ -313,4 +313,12 @@ test("la sélection manuelle contextuelle ne modifie pas l’espace actuel", () 
   assert.equal(selected.airspace.airspaceId, "siv");
   assert.equal(before.airspace.current.airspace.airspaceId, "ctr");
   assert.equal(after.airspace.current.airspace.airspaceId, "ctr");
+});
+
+test("unqualified GPS altitude cannot remove or confirm an AMSL candidate",()=>{
+ const zone=feature(properties({id:"potential",lowerLimit:{value:1000,unit:0,referenceDatum:1},upperLimit:{value:1500,unit:0,referenceDatum:1}}));
+ for(const altitudeMeters of [200,1200,2000]){
+ const context=buildFlightContext({gps:{latitude:50,longitude:3,altitudeMeters,horizontalAccuracyMeters:5,verticalAccuracyMeters:10,timestamp:1000,status:"ACTIVE"},airspaces:collection(zone),loadedCoverage:[{latitude:50,longitude:3,radiusMeters:45000}],airspaceDataAvailable:true});
+ assert.equal(context.airspace.current?.airspace.airspaceId,"potential");assert.equal(context.airspace.status,"HORIZONTAL_MATCH");assert.equal(context.airspace.current.isVerticallyConfirmed,false);
+ }
 });
