@@ -1,7 +1,7 @@
 "use client";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
 import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
-import { ANALYSIS_POLICY, classifyWeatherFreshness, freshnessLabel, oldestWeatherRetrieval, retrievalLabel } from "../lib/weather/weatherFreshness";
+import { ANALYSIS_POLICY, classifyWeatherFreshness, oldestWeatherRetrieval } from "../lib/weather/weatherFreshness";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -750,10 +750,8 @@ export default function MapPage() {
         </div>
       </header>
 
-      {traces.length > 0 && <section role="status" className="px-4 py-2 text-sm">
-        <p>{freshnessLabel(analysisFreshness)} · {retrievalLabel(analysisFetchedAt)} · Run du modèle inconnu</p>
-        <p>Prévision pour le {formatInTimeZone(traces[0].forecastAtIso, config?.request.launchTimeZone, { dateStyle: "short", timeStyle: "short" })} · Calcul commencé le {formatInTimeZone(traces[0].calculatedAtIso, config?.request.launchTimeZone, { dateStyle: "short", timeStyle: "short" })}</p>
-        {analysisFreshness !== "FRESH" && <button type="button" disabled={loading} onClick={refreshAnalysis}>Actualiser l’analyse</button>}
+      {traces.length > 0 && analysisFreshness !== "FRESH" && <section role="status" className="px-4 py-2 text-sm">
+        <button type="button" disabled={loading} onClick={refreshAnalysis}>Actualiser l’analyse</button>
       </section>}
       <div className="relative h-[clamp(430px,68dvh,700px)]">
           <PreparationMap
