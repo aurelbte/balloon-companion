@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CrudConflictResolutionError, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
+import { aggregateCrudConflicts, CrudConflictResolutionError, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
 import { MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -8,9 +8,10 @@ const scope = "USER:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 async function fixture(options = {}) {
   let id = 0, currentScope = options.scope ?? scope, onlineUser = Object.hasOwn(options, "onlineUser") ? options.onlineUser : scope.slice(5);
+  const entityId = options.entityId ?? "entity-1";
   const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => `m-${++id}`, now: () => `2026-08-25T10:00:0${id}.000Z` } });
   const issues = new MemoryCloudSyncIssueRepository();
-  const historical = await outbox.enqueue({ entityType: options.entityType ?? "favorite-launch-site", entityId: "entity-1", operation: options.operation ?? "UPSERT", baseRevision: 2 });
+  const historical = await outbox.enqueue({ entityType: options.entityType ?? "favorite-launch-site", entityId, operation: options.operation ?? "UPSERT", baseRevision: 2 });
   if (options.attempted !== false) { await outbox.markAttempt(historical.mutationId); await outbox.updateMutation(historical.mutationId, { lastErrorCode: "CONFLICT" }); }
   if (options.issue !== false) await issues.save({ kind: "CONFLICT", entityType: historical.entityType, entityId: historical.entityId, mutation: historical, serverRevision: 3, serverUpdatedAt: "2026-08-25T09:00:00.000Z", serverDeletedAt: null, recordedAt: "2026-08-25T09:01:00.000Z" });
   const cloud = options.cloud ?? { revision: 3, updatedAt: "2026-08-25T09:00:00.000Z", deletedAt: null, value: { name: "Cloud" } };
@@ -64,6 +65,34 @@ test("SERVER WINS ne nettoie rien si l'application locale durable échoue", asyn
   const ctx = await fixture({ applyFails: true });
   await rejectsCode(resolveCrudConflictServerWins("favorite-launch-site", "entity-1", ctx.dependencies), "LOCAL_APPLY_FAILED");
   assert.equal((await ctx.outbox.list()).length, 1); assert.equal((await ctx.issues.list()).length, 1);
+});
+
+test("pilot-qualifications CONFLICT sans diagnostic reste visible et résolvable explicitement", async () => {
+  const ctx = await fixture({ entityType: "pilot-qualifications", entityId: "singleton", issue: false });
+  const [visible] = aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list());
+  assert.equal(visible.entityType, "pilot-qualifications");
+  assert.equal(visible.entityId, "singleton");
+  assert.equal(visible.kind, "CONFLICT");
+  assert.equal((await ctx.outbox.list()).length, 1);
+
+  await resolveCrudConflictLocalWins("pilot-qualifications", "singleton", ctx.dependencies);
+  assert.equal((await ctx.outbox.list()).length, 0);
+  assert.equal((await ctx.issues.list()).length, 0);
+});
+
+test("diagnostic et mutation pilot-qualifications sont dédupliqués", async () => {
+  const ctx = await fixture({ entityType: "pilot-qualifications", entityId: "singleton" });
+  const visible = aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list());
+  assert.equal(visible.length, 1);
+  assert.equal(visible[0].serverRevision, 3);
+});
+
+test("échec concurrent sans diagnostic conserve la mutation pilot-qualifications CONFLICT", async () => {
+  const ctx = await fixture({ entityType: "pilot-qualifications", entityId: "singleton", issue: false, secondConflict: true });
+  await rejectsCode(resolveCrudConflictLocalWins("pilot-qualifications", "singleton", ctx.dependencies), "REBASED_SYNC_FAILED");
+  const mutations = await ctx.outbox.list();
+  assert.equal(mutations.some(mutation => mutation.mutationId === ctx.historical.mutationId && mutation.lastErrorCode === "CONFLICT"), true);
+  assert.equal(aggregateCrudConflicts(await ctx.issues.list(), mutations).length, 1);
 });
 
 test("sécurité: whitelist, session, USER switch, lecture, payload, conflit disparu", async () => {

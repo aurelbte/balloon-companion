@@ -7,7 +7,7 @@ import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
   parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
-import { resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
+import { aggregateCrudConflicts, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
@@ -67,7 +67,7 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   const payloads = new BrowserCloudSyncPayloadProvider(input.storage, input.scope);
-  const service = createBrowserCloudSyncService({ client: input.client, storage: input.storage, scope: input.scope, getScope: getRuntimeDataScope });
+  const service = createBrowserCloudSyncService({ client: input.client, storage: input.storage, scope: input.scope, getScope: getRuntimeDataScope, acknowledgeBeforeIssueRemoval: true });
   const dependencies: CrudConflictResolutionDependencies = {
     outbox, issues, getScope: getRuntimeDataScope,
     getOnlineUserId: async () => { const { data, error } = await input.client.auth.getUser(); return error ? null : data.user?.id ?? null; },
@@ -89,7 +89,7 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     syncMutationById: (mutationId) => service.syncMutationById(mutationId),
   };
   return {
-    listConflicts: async () => (await issues.list()).filter((issue) => (issue.kind === "CONFLICT" || issue.kind === "BUSINESS_CONFLICT") && issue.entityType in DOMAIN),
+    listConflicts: async () => aggregateCrudConflicts(await issues.list(), await outbox.list()),
     retryDuplicateRegistration: (entityId: string) => service.retryDuplicateRegistration(entityId),
     resolveLocalWins: (entityType: string, entityId: string) => resolveCrudConflictLocalWins(entityType, entityId, dependencies),
     resolveServerWins: (entityType: string, entityId: string) => resolveCrudConflictServerWins(entityType, entityId, dependencies),

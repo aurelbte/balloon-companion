@@ -56,7 +56,7 @@ function fixture(input = {}) {
     createId: (() => { let id = 1; return () => `00000000-0000-4000-8000-${String(id++).padStart(12, "0")}`; })(),
     now: () => NOW.toISOString(),
   } });
-  const issues = new MemoryCloudSyncIssueRepository();
+  const issues = input.issues ?? new MemoryCloudSyncIssueRepository();
   let scope = input.scope ?? `USER:${USER_A}`;
   let calls = 0;
   const requests = [];
@@ -72,6 +72,7 @@ function fixture(input = {}) {
       if (input.apply) return input.apply(request, { setScope: (value) => { scope = value; } });
       return { status: "APPLIED", entityId: request.entityId, revision: 0, serverUpdatedAt: NOW.toISOString(), deletedAt: null };
     },
+    acknowledgeBeforeIssueRemoval: input.acknowledgeBeforeIssueRemoval,
     now: () => NOW,
   });
   return { outbox, issues, service, calls: () => calls, requests, setScope: (value) => { scope = value; } };
@@ -110,6 +111,55 @@ test("ALREADY_APPLIED nettoie un replay après crash", async () => {
   assert.equal((await value.service.syncPendingMutations()).applied, 1);
   assert.equal((await value.outbox.list()).length, 0);
   assert.equal((await value.outbox.getMetadata("pilot-profile", "singleton")).revision, 4);
+});
+
+test("résolution ciblée acquitte avant de supprimer le diagnostic", async () => {
+  const order = [];
+  const baseOutbox = new MemorySyncOutboxStorage();
+  const outbox = new Proxy(baseOutbox, { get(target, property) {
+    if (property === "acknowledge") return async (...args) => { order.push("ACK"); return target.acknowledge(...args); };
+    const value = target[property]; return typeof value === "function" ? value.bind(target) : value;
+  } });
+  const baseIssues = new MemoryCloudSyncIssueRepository();
+  const issues = { save: issue => baseIssues.save(issue), list: () => baseIssues.list(), remove: async (...args) => { order.push("REMOVE_ISSUE"); return baseIssues.remove(...args); } };
+  const value = fixture({ outbox, issues, acknowledgeBeforeIssueRemoval: true });
+  const mutation = await outbox.enqueue({ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 3 });
+  await issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: 4, serverUpdatedAt: NOW.toISOString(), serverDeletedAt: null, recordedAt: NOW.toISOString() });
+
+  const result = await value.service.syncMutationById(mutation.mutationId);
+  assert.equal(result.applied, 1);
+  assert.deepEqual(order, ["ACK", "REMOVE_ISSUE"]);
+  assert.equal((await outbox.list()).length, 0);
+  assert.equal((await issues.list()).length, 0);
+});
+
+test("échec ACK ciblé conserve mutation et diagnostic et n'annonce aucun succès", async () => {
+  const baseOutbox = new MemorySyncOutboxStorage();
+  const outbox = new Proxy(baseOutbox, { get(target, property) {
+    if (property === "acknowledge") return async () => { throw new Error("ACK_FAILED"); };
+    const value = target[property]; return typeof value === "function" ? value.bind(target) : value;
+  } });
+  const value = fixture({ outbox, acknowledgeBeforeIssueRemoval: true });
+  const mutation = await outbox.enqueue({ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 3 });
+  await value.issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: 4, serverUpdatedAt: NOW.toISOString(), serverDeletedAt: null, recordedAt: NOW.toISOString() });
+
+  const result = await value.service.syncMutationById(mutation.mutationId);
+  assert.equal(result.state, "STOPPED_ERROR");
+  assert.equal(result.applied, 0);
+  assert.equal((await outbox.list()).length, 1);
+  assert.equal((await value.issues.list()).length, 1);
+});
+
+test("échec d'écriture ciblé conserve mutation et diagnostic", async () => {
+  const value = fixture({ acknowledgeBeforeIssueRemoval: true, apply: async () => { throw new CloudSyncTransportError("NETWORK", "offline"); } });
+  const mutation = await value.outbox.enqueue({ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 3 });
+  await value.issues.save({ kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: 4, serverUpdatedAt: NOW.toISOString(), serverDeletedAt: null, recordedAt: NOW.toISOString() });
+
+  const result = await value.service.syncMutationById(mutation.mutationId);
+  assert.equal(result.state, "STOPPED_ERROR");
+  assert.equal(result.applied, 0);
+  assert.equal((await value.outbox.list()).length, 1);
+  assert.equal((await value.issues.list()).length, 1);
 });
 
 test("CONFLICT conserve mutation et contexte serveur sans écraser le local", async () => {

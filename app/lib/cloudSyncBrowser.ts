@@ -286,6 +286,7 @@ export function createBrowserCloudSyncService(input: Readonly<{
   storage: Storage;
   scope: `USER:${string}`;
   getScope(): LocalDataScope | null;
+  acknowledgeBeforeIssueRemoval?: boolean;
 }>): CloudSyncService {
   const payloads = new BrowserCloudSyncPayloadProvider(input.storage, input.scope);
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
@@ -299,6 +300,7 @@ export function createBrowserCloudSyncService(input: Readonly<{
       return error ? null : data.user?.id ?? null;
     },
     buildPayload: (mutation) => payloads.build(mutation),
+    acknowledgeBeforeIssueRemoval: input.acknowledgeBeforeIssueRemoval,
     applyMutation: async (request) => {
       const { data, error } = await input.client.rpc("apply_cloud_sync_mutation", {
         p_mutation_id: request.mutationId,

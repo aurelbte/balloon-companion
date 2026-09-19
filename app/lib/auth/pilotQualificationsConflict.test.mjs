@@ -174,7 +174,7 @@ test("pilot-qualifications singleton est exposé par le résolveur Cloud sans é
   const resolver = await readFile(new URL("../crudConflictBrowser.ts", import.meta.url), "utf8");
   assert.match(resolver, /"pilot-qualifications": \["user_preferences"/);
   assert.match(resolver, /entityType === "pilot-qualifications" \? "qualifications" : entityId/);
-  assert.match(resolver, /issue\.entityType in DOMAIN/);
+  assert.match(resolver, /aggregateCrudConflicts\(await issues\.list\(\), await outbox\.list\(\)\)/);
 });
 
 test("la page conserve le dernier conflit pendant refresh et réinspecte C1 après résolution explicite", async () => {

@@ -78,6 +78,7 @@ export type CloudSyncDependencies = Readonly<{
   recoverLocalMutations?(): Promise<void>;
   buildPayload(mutation: SyncMutation): Promise<CloudSyncPayload | null>;
   applyMutation(request: CloudMutationRequest): Promise<CloudMutationResult>;
+  acknowledgeBeforeIssueRemoval?: boolean;
   now?: () => Date;
 }>;
 
@@ -252,8 +253,13 @@ export class CloudSyncService {
             updatedAt: response.serverUpdatedAt,
             ...(response.deletedAt ? { deletedAt: response.deletedAt } : {}),
           };
-          await this.dependencies.issues.remove(attempted.entityType, attempted.entityId);
-          await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
+          if (this.dependencies.acknowledgeBeforeIssueRemoval) {
+            await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
+            await this.dependencies.issues.remove(attempted.entityType, attempted.entityId);
+          } else {
+            await this.dependencies.issues.remove(attempted.entityType, attempted.entityId);
+            await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
+          }
           counters.applied += 1;
           continue;
         }

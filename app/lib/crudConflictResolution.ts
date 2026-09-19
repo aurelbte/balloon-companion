@@ -1,5 +1,5 @@
 import type { LocalDataScope } from "./auth/dataScope.ts";
-import type { CloudSyncIssueRepository, CloudSyncPassResult, CloudSyncPayload } from "./cloudSyncService.ts";
+import type { CloudSyncIssue, CloudSyncIssueRepository, CloudSyncPassResult, CloudSyncPayload } from "./cloudSyncService.ts";
 import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./syncOutbox.ts";
 
 export const CRUD_CONFLICT_ENTITY_TYPES = Object.freeze([
@@ -30,6 +30,21 @@ function assertScope(dependencies: CrudConflictResolutionDependencies, scope: `U
   if (dependencies.getScope() !== scope) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
 }
 
+export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutations: readonly SyncMutation[]): readonly CloudSyncIssue[] {
+  const conflicts = new Map(issues
+    .filter(issue => (issue.kind === "CONFLICT" || issue.kind === "BUSINESS_CONFLICT") && allowed(issue.entityType))
+    .map(issue => [`${issue.entityType}\u0000${issue.entityId}`, issue]));
+  for (const mutation of mutations) {
+    if (mutation.entityType !== "pilot-qualifications" || mutation.entityId !== "singleton" || mutation.lastErrorCode !== "CONFLICT") continue;
+    const key = `${mutation.entityType}\u0000${mutation.entityId}`;
+    if (!conflicts.has(key)) conflicts.set(key, {
+      kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation,
+      serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: mutation.createdAt,
+    });
+  }
+  return [...conflicts.values()];
+}
+
 async function confirmedContext(entityType: string, entityId: string, dependencies: CrudConflictResolutionDependencies) {
   if (!allowed(entityType)) throw new CrudConflictResolutionError("DOMAIN_NOT_ALLOWED", "Domaine CRUD non autorisé");
   const scope = dependencies.getScope();
@@ -38,7 +53,8 @@ async function confirmedContext(entityType: string, entityId: string, dependenci
   assertScope(dependencies, scope);
   const issue = (await dependencies.issues.list()).find((candidate) => candidate.kind === "CONFLICT" && candidate.entityType === entityType && candidate.entityId === entityId);
   const historical = (await dependencies.outbox.list()).filter((mutation) => mutation.entityType === entityType && mutation.entityId === entityId);
-  if (!issue || historical.length === 0) throw new CrudConflictResolutionError("CONFLICT_NOT_FOUND", "Ce conflit n’est plus présent");
+  const durableMutationConflict = entityType === "pilot-qualifications" && entityId === "singleton" && historical.some(mutation => mutation.lastErrorCode === "CONFLICT");
+  if ((!issue && !durableMutationConflict) || historical.length === 0) throw new CrudConflictResolutionError("CONFLICT_NOT_FOUND", "Ce conflit n’est plus présent");
   const cloud = await dependencies.readCloud(entityType, entityId).catch(() => { throw new CrudConflictResolutionError("CLOUD_READ_FAILED", "Lecture Cloud impossible"); });
   assertScope(dependencies, scope);
   if (!cloud || !Number.isInteger(cloud.revision) || cloud.revision < 0 || !cloud.updatedAt) throw new CrudConflictResolutionError("CLOUD_STATE_INVALID", "État Cloud invalide");
