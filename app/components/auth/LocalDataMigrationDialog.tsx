@@ -2,15 +2,17 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useBalloonAuth } from "../../contexts/AuthContext";
 import styles from "./LocalDataMigrationDialog.module.css";
 
 export default function LocalDataMigrationDialog() {
   const auth = useBalloonAuth();
+  const pathname = usePathname();
   const migration = auth.pendingLocalDataMigration;
   const collisions = auth.localDataMigrationCollisions;
-  const visible = auth.state === "SIGNED_IN" && (migration?.state === "PENDING_LOCAL_DATA_MIGRATION" || collisions.length > 0);
-  const actionRequired = auth.localDataImportNotice && (auth.localDataImportState === "REVIEW_REQUIRED" || auth.localDataImportState === "IMPORT_BLOCKED" || auth.localDataImportState === "SOURCE_CHANGED");
+  const visible = auth.state === "SIGNED_IN" && (migration?.state === "PENDING_LOCAL_DATA_MIGRATION" || (collisions.length > 0 && pathname !== "/more/cloud-sync"));
+  const actionRequired = pathname !== "/more/cloud-sync" && auth.localDataImportNotice && (auth.localDataImportReviewPending || collisions.length > 0 || auth.localDataImportState === "IMPORT_BLOCKED" || auth.localDataImportState === "SOURCE_CHANGED");
 
   useEffect(() => {
     if (!visible) return;

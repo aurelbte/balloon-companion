@@ -25,6 +25,7 @@ export default function CloudSyncPage() {
   const [issues, setIssues] = useState<readonly CloudSyncIssue[]>([]);
   const [resolving, setResolving] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [importDecisionBusy, setImportDecisionBusy] = useState(false);
   const scope = auth.user?.id ? `USER:${auth.user.id}` as const : null;
   const verdict = useCloudSyncVerdict(scope);
   const resolver = useMemo(() => scope && typeof window !== "undefined" ? createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }) : null, [scope]);
@@ -60,11 +61,19 @@ export default function CloudSyncPage() {
     } catch { setActionError("La résolution n’a pas abouti. Réessayez lorsque la connexion est stable."); }
     finally { setResolving(null); }
   };
+  const decideLocalImport = (decision: "MIGRATION_APPROVED" | "MIGRATION_DEFERRED") => {
+    setImportDecisionBusy(true); setActionError(null);
+    if (!auth.decideReviewedLocalDataImport(decision)) {
+      setImportDecisionBusy(false);
+      setActionError("La décision n’a pas pu être enregistrée sur cet appareil.");
+    }
+  };
 
   return <main className="mx-auto min-h-screen max-w-2xl px-5 py-8 pb-24">
     <Link href="/more" className="text-sm text-slate-600">← Plus</Link>
     <h1 className="mt-5 text-2xl font-semibold">Synchronisation Cloud</h1>
-    {auth.localDataImportNotice && <section className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4" role="status"><h2 className="font-semibold">Données locales sur cet appareil</h2><p className="mt-1 text-sm text-amber-950">{auth.localDataImportNotice}</p></section>}
+    {auth.localDataImportNotice && <section className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4" role="status"><h2 className="font-semibold">Données locales sur cet appareil</h2><p className="mt-1 text-sm text-amber-950">{auth.localDataImportNotice}</p>{auth.localDataImportReviewPending && <><p className="mt-3 text-sm text-amber-950">Confirmez uniquement si ces données locales vous appartiennent.</p><div className="mt-3 flex flex-wrap gap-2"><button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" type="button" disabled={importDecisionBusy} onClick={() => decideLocalImport("MIGRATION_APPROVED")}>Ce sont mes données — les rattacher</button><button className="rounded-xl border border-amber-500 bg-white px-4 py-2 disabled:opacity-50" type="button" disabled={importDecisionBusy} onClick={() => decideLocalImport("MIGRATION_DEFERRED")}>Ne pas importer</button></div></>}</section>}
+    {auth.localDataMigrationCollisions.length > 0 && <section className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-4" role="alert"><h2 className="font-semibold">Conflits de données locales</h2><p className="mt-1 text-sm text-red-900">Certaines données n’ont pas été rattachées automatiquement.</p><ul className="mt-3 list-disc pl-5 text-sm text-red-900">{auth.localDataMigrationCollisions.map((collision, index) => <li key={`${collision.domain}:${collision.entityId}:${index}`}>{collision.reason === "DUPLICATE_REGISTRATION" ? `Immatriculation en double pour le ballon ${collision.entityId}` : `${collision.domain} — ${collision.entityId}`}</li>)}</ul>{auth.localDataMigrationCollisions.some(collision => collision.reason === "DUPLICATE_REGISTRATION") && <Link className="mt-3 inline-block underline" href="/more/profile/balloons">Voir mes ballons</Link>}</section>}
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5">
       <h2 className="font-semibold">{CLOUD_SYNC_VERDICT_LABELS[verdict.state]}</h2>
       <p className="mt-1 text-sm text-slate-600">{verdict.reason}</p>

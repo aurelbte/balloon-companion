@@ -40,17 +40,19 @@ test("la décision Auth ne modifie aucune donnée métier", () => {
 
 test("la modal dépend strictement de SIGNED_IN et du pending, avec résumé réel", () => {
   const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
-  assert.match(dialog, /auth\.state === "SIGNED_IN" && migration\?\.state === "PENDING_LOCAL_DATA_MIGRATION"/);
+  assert.match(dialog, /auth\.state === "SIGNED_IN" && \(migration\?\.state === "PENDING_LOCAL_DATA_MIGRATION"/);
   assert.match(dialog, /Données trouvées sur cet appareil/);
   for (const field of ["summary.flights", "summary.journalEntries", "summary.balloons", "summary.documents", "summary.otherBusinessStorages"]) assert.match(dialog, new RegExp(field.replace(".", "\\.")));
   assert.match(dialog, /MIGRATION_APPROVED/);
   assert.equal((dialog.match(/MIGRATION_DEFERRED/g) ?? []).length, 2);
 });
 
-test("une décision existante empêche de recréer la question", () => {
+test("une décision liée au manifest pilote la reprise sans attribution automatique", () => {
+  const migration = readFileSync(new URL("./guestToUserMigration.ts", import.meta.url), "utf8");
   const context = readFileSync(new URL("../../contexts/AuthContext.tsx", import.meta.url), "utf8");
-  assert.match(context, /getLocalDataMigrationDecision\([\s\S]*setPendingLocalDataMigration\(null\);[\s\S]*return;/);
-  assert.match(context, /saveLocalDataMigrationDecision\([\s\S]*setPendingLocalDataMigration\(null\)/);
+  assert.match(migration, /getLocalDataMigrationDecision\(input\.storage, input\.userId, input\.deviceId, manifest\.id\)/);
+  assert.match(migration, /decision\?\.decision !== "MIGRATION_APPROVED"[\s\S]*REVIEW_REQUIRED/);
+  assert.match(context, /saveLocalDataMigrationDecision\(window\.localStorage, \{ \.\.\.review, decision \}\)/);
 });
 
 test("aucune requête Supabase métier ni opération destructive n'est ajoutée", () => {
@@ -63,11 +65,15 @@ test("les états B6 actionnables utilisent une alerte compacte hors du flux", ()
   const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
   const styles = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.module.css", import.meta.url), "utf8");
   const cloud = readFileSync(new URL("../../more/cloud-sync/page.tsx", import.meta.url), "utf8");
-  assert.match(dialog, /REVIEW_REQUIRED[\s\S]*IMPORT_BLOCKED[\s\S]*SOURCE_CHANGED/);
+  assert.match(dialog, /localDataImportReviewPending[\s\S]*IMPORT_BLOCKED[\s\S]*SOURCE_CHANGED/);
   assert.match(dialog, /Données locales à vérifier[\s\S]*href="\/more\/cloud-sync"/);
+  assert.match(dialog, /pathname !== "\/more\/cloud-sync"/);
   assert.doesNotMatch(dialog, /return auth\.localDataImportNotice \? <p/);
   assert.match(styles, /\.notice \{[\s\S]*position: fixed/);
   assert.match(cloud, /auth\.localDataImportNotice[\s\S]*Données locales sur cet appareil/);
+  assert.match(cloud, /Ce sont mes données — les rattacher[\s\S]*Ne pas importer/);
+  assert.match(cloud, /decideReviewedLocalDataImport/);
+  assert.match(cloud, /Conflits de données locales[\s\S]*DUPLICATE_REGISTRATION/);
 });
 
 test("les états B6 sans action ne créent aucun bloc global", () => {

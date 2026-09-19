@@ -191,8 +191,11 @@ export async function migrateGuestAndLegacyToUser(input: Readonly<{ userId: stri
         return report(inspection.state === "EMPTY_VALID" ? "COMPLETE" : "CLAIMED_OTHER");
       }
       manifest = await makeGuestManifest(available); assertCurrent();
-      if (await hasHistoricalEvidence(input.storage, input.factory, manifest, inspection.names, claims, assertCurrent)) return report("REVIEW_REQUIRED");
       const decision = getLocalDataMigrationDecision(input.storage, input.userId, input.deviceId, manifest.id);
+      if (await hasHistoricalEvidence(input.storage, input.factory, manifest, inspection.names, claims, assertCurrent)) {
+        if (decision?.decision === "MIGRATION_DEFERRED") return { ...report("DEFERRED"), manifestId: manifest.id };
+        if (decision?.decision !== "MIGRATION_APPROVED") return { ...report("REVIEW_REQUIRED"), manifestId: manifest.id };
+      }
       if (decision?.decision === "MIGRATION_DEFERRED") return { ...report(decision.manifestId === manifest.id ? "DEFERRED" : "REVIEW_REQUIRED"), manifestId: manifest.id };
       const verified = await inspectGuestSources(input.storage, input.factory, assertCurrent);
       if (verified.signature !== inspection.signature) return report("SOURCE_CHANGED");

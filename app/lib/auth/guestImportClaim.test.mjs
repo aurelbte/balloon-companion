@@ -68,6 +68,17 @@ for (const owners of [['A'], ['A', 'B']]) test(`historical ${owners.join('+')} m
  assert.equal((await run(env)).state, 'REVIEW_REQUIRED'); assert.equal(claims(env).length, 0); assert.equal(env.storage.getItem(accountKey('A')), null);
 });
 test('copy without historical checkpoint is ambiguous', async () => { const env = setup(); env.storage.setItem(accountKey('B'), env.storage.getItem(guestBusinessStorageKey(profile))); assert.equal((await run(env)).state, 'REVIEW_REQUIRED'); assert.equal(claims(env).length, 0); });
+test('explicit manifest-bound approval claims and imports historical local data', async () => {
+ const { saveLocalDataMigrationDecision } = await import('./localDataMigrationDecision.ts'); const env = setup(); env.storage.setItem(accountKey('B'), env.storage.getItem(guestBusinessStorageKey(profile)));
+ const review = await run(env); assert.equal(review.state, 'REVIEW_REQUIRED'); assert.ok(review.manifestId); assert.equal(claims(env).length, 0);
+ saveLocalDataMigrationDecision(env.storage, { userId: 'A', deviceId: 'D', manifestId: review.manifestId, decision: 'MIGRATION_APPROVED' });
+ const outbox = queue(); const imported = await run(env, 'A', outbox); assert.equal(imported.state, 'COMPLETE'); assert.equal(imported.manifestId, review.manifestId); assert.equal(claims(env)[0].userId, 'A'); assert.equal(JSON.parse(env.storage.getItem(accountKey('A'))).firstName, 'Guest');
+});
+test('explicit refusal keeps historical local data unclaimed and unimported', async () => {
+ const { saveLocalDataMigrationDecision } = await import('./localDataMigrationDecision.ts'); const env = setup(); env.storage.setItem(accountKey('B'), env.storage.getItem(guestBusinessStorageKey(profile)));
+ const review = await run(env); saveLocalDataMigrationDecision(env.storage, { userId: 'A', deviceId: 'D', manifestId: review.manifestId, decision: 'MIGRATION_DEFERRED' });
+ const outbox = queue(); assert.equal((await run(env, 'A', outbox)).state, 'DEFERRED'); assert.equal(claims(env).length, 0); assert.equal(outbox.values.length, 0); assert.equal(env.storage.getItem(accountKey('A')), null);
+});
 test('recorded flights preserve GPS points; restart resumes and B gets no flights', async () => {
  const env = setup(); env.storage.removeItem(guestBusinessStorageKey(profile)); const source = env.factory.db(scopedIndexedDbName('GUEST', RECORDED_FLIGHT_DB_NAME));
  const flight = { id: 'f1', points: [{ latitude: 48, longitude: 2, timestamp: 1 }, { latitude: 49, longitude: 3, timestamp: 2 }] }; source.seed(RECORDED_FLIGHTS_STORE, flight);
