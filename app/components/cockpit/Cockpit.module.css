@@ -1272,7 +1272,7 @@
   }
 }
 
-@media (max-height: 880px) {
+@media (max-height: 970px) {
   .layout {
     gap: 5px;
   }
