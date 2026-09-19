@@ -35,3 +35,11 @@ test("le dernier vol du cockpit vient du carnet scoped et non du mock", () => {
   assert.match(cockpit, /completion\.journalFlights/);
   assert.doesNotMatch(cockpit, /MOCK_COCKPIT_DATA\.lastFlight/);
 });
+
+test("l'accueil commence par son en-tête sans bloc global qui étend le document", () => {
+  const styles = readFileSync(new URL("../../components/cockpit/Cockpit.module.css", import.meta.url), "utf8");
+  const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
+  assert.match(cockpit, /<main className=\{styles\.screen\}>[\s\S]*<header className=\{styles\.header\}>/);
+  assert.match(styles, /\.screen \{[\s\S]*height: 100dvh;[\s\S]*overflow: hidden;/);
+  assert.doesNotMatch(dialog, /<p role="status">\{auth\.localDataImportNotice\}<\/p>/);
+});

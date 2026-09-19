@@ -323,7 +323,7 @@
 
 .weatherCard {
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr auto;
   min-height: 176px;
   height: 100%;
   padding-block: 13px;
@@ -400,6 +400,8 @@
 
 .weatherLocation small { overflow: hidden; color: var(--bc-color-text-muted); font-size: .54rem; text-overflow: ellipsis; white-space: nowrap; }
 
+.weatherForecastTime { overflow: hidden; margin-bottom: 5px; color: var(--bc-color-text-muted); font-size: .52rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+
 .cockpitWeatherMetrics { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 4px 8px; padding-top: 6px; border-top: 1px solid rgb(59 88 120 / 38%); }
 .cockpitWeatherMetrics > div { display: grid; gap: 1px; }
 .cockpitWeatherMetrics span { color: var(--bc-color-text-muted); font-size: .52rem; }
@@ -408,8 +410,8 @@
 .cockpitWind svg { grid-row: span 2; color: var(--bc-color-action); }
 .cockpitWind strong { font-size: .8rem; }
 .cockpitWind b { font-size: .88rem; line-height: 1; }
-.weatherFooter { display: flex; align-items: end; justify-content: space-between; gap: 6px; }
-.weatherFooter small { color: var(--bc-color-text-muted); font-size: .48rem; line-height: 1.1; text-align: right; white-space: nowrap; }
+.weatherFooter { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.weatherFooter small { overflow: hidden; color: var(--bc-color-text-muted); font-size: .48rem; line-height: 1.1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 
 .hourlyForecast {
   display: grid;

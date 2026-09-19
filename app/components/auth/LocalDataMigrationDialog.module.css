@@ -37,6 +37,31 @@
 .actions button:first-child { border-color: transparent; background: var(--bc-accent); color: var(--bc-accent-foreground); }
 .actions button:last-child { min-height: 40px; border: 0; color: var(--bc-text-secondary); font-size: .72rem; }
 
+.notice {
+  position: fixed;
+  z-index: 220;
+  right: 12px;
+  bottom: calc(74px + max(8px, env(safe-area-inset-bottom)));
+  left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(calc(100% - 24px), 440px);
+  min-height: 42px;
+  margin-inline: auto;
+  padding: 8px 10px 8px 13px;
+  border: 1px solid var(--bc-color-warning);
+  border-radius: 14px;
+  background: var(--bc-surface);
+  color: var(--bc-text-primary);
+  box-shadow: var(--bc-shadow-panel);
+  font-size: .72rem;
+}
+
+.notice span { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.notice a { flex: none; min-height: 30px; padding: 6px 9px; border-radius: 999px; background: var(--bc-canvas-elevated); color: var(--bc-accent); font-weight: 700; text-decoration: none; }
+
 @media (min-width: 600px) {
   .backdrop {
     place-items: center;

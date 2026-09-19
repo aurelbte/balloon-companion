@@ -46,7 +46,8 @@ test('timer ponctuel, reprise, offline et nettoyage des anciens timers', t => {
 test('UI affiche échéance distincte de récupération et ne consomme pas selectedPoint', () => {
   const card = readFileSync(new URL('../components/cockpit/ConditionsCard.tsx', import.meta.url), 'utf8');
   assert.match(card, /Prévision pour le/); assert.match(card, /currentWeather.validAt/);
-  assert.match(card, /relativeUpdateLabel\(point.sourceUpdatedAt\)/);
+  assert.match(card, /cockpitWeatherFreshnessLabel/);
+  assert.doesNotMatch(card, /Run du modèle|Récupération météo récente|relativeUpdateLabel/);
   assert.doesNotMatch(card, /selectedPoint/);
 });
 

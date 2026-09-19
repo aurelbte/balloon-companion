@@ -64,6 +64,7 @@ export default function CloudSyncPage() {
   return <main className="mx-auto min-h-screen max-w-2xl px-5 py-8 pb-24">
     <Link href="/more" className="text-sm text-slate-600">← Plus</Link>
     <h1 className="mt-5 text-2xl font-semibold">Synchronisation Cloud</h1>
+    {auth.localDataImportNotice && <section className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4" role="status"><h2 className="font-semibold">Données locales sur cet appareil</h2><p className="mt-1 text-sm text-amber-950">{auth.localDataImportNotice}</p></section>}
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5">
       <h2 className="font-semibold">{CLOUD_SYNC_VERDICT_LABELS[verdict.state]}</h2>
       <p className="mt-1 text-sm text-slate-600">{verdict.reason}</p>

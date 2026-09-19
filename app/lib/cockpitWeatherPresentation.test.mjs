@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { cockpitWindDirection, cockpitWindSpeed } from "../components/cockpit/weatherCardPresentation.ts";
+import { cockpitWeatherFreshnessLabel, cockpitWindDirection, cockpitWindSpeed } from "../components/cockpit/weatherCardPresentation.ts";
 
 test("convertit les angles dans les 16 secteurs en conservant l'angle exact", () => {
   const expected = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"];
@@ -15,4 +15,11 @@ test("arrondit uniquement les vitesses affichées sur le Cockpit", () => {
   const weatherPage = readFileSync(new URL("../weather/page.tsx", import.meta.url), "utf8");
   assert.match(weatherPage, /formatWeatherWind\(slot\.windSpeedKmh, windUnit\)/);
   assert.doesNotMatch(weatherPage, /cockpitWindSpeed/);
+});
+
+test("la fraîcheur météo du Cockpit reste compacte et explicite", () => {
+  assert.equal(cockpitWeatherFreshnessLabel("FRESH", { loading: false, error: false }), "À jour");
+  assert.equal(cockpitWeatherFreshnessLabel("STALE", { loading: false, error: false }), "Données anciennes");
+  assert.equal(cockpitWeatherFreshnessLabel("EXPIRED", { loading: false, error: true }), "Données périmées · actualisation impossible");
+  assert.equal(cockpitWeatherFreshnessLabel("UNKNOWN", { loading: true, error: false }), "Fraîcheur inconnue · actualisation…");
 });

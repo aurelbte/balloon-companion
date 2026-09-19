@@ -58,3 +58,20 @@ test("aucune requête Supabase métier ni opération destructive n'est ajoutée"
   const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(`${decision}\n${dialog}`, /supabase|fetch\s*\(|removeItem\s*\(|localStorage\.clear|indexedDB\.deleteDatabase/i);
 });
+
+test("les états B6 actionnables utilisent une alerte compacte hors du flux", () => {
+  const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.module.css", import.meta.url), "utf8");
+  const cloud = readFileSync(new URL("../../more/cloud-sync/page.tsx", import.meta.url), "utf8");
+  assert.match(dialog, /REVIEW_REQUIRED[\s\S]*IMPORT_BLOCKED[\s\S]*SOURCE_CHANGED/);
+  assert.match(dialog, /Données locales à vérifier[\s\S]*href="\/more\/cloud-sync"/);
+  assert.doesNotMatch(dialog, /return auth\.localDataImportNotice \? <p/);
+  assert.match(styles, /\.notice \{[\s\S]*position: fixed/);
+  assert.match(cloud, /auth\.localDataImportNotice[\s\S]*Données locales sur cet appareil/);
+});
+
+test("les états B6 sans action ne créent aucun bloc global", () => {
+  const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
+  const actionRequired = dialog.slice(dialog.indexOf("const actionRequired"), dialog.indexOf("useEffect", dialog.indexOf("const actionRequired")));
+  assert.doesNotMatch(actionRequired, /DEFERRED|CLAIMED_OTHER/);
+});

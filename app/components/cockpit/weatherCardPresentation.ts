@@ -9,4 +9,20 @@ export function cockpitWindDirection(degrees: number | undefined): string {
 export function cockpitWindSpeed(speedKmh: number | undefined, unit: WeatherWindSpeedUnit = "km/h"): string {
   return speedKmh === undefined || !Number.isFinite(speedKmh) ? "—" : formatWeatherWind(speedKmh, unit);
 }
+
+export function cockpitWeatherFreshnessLabel(
+  freshness: WeatherFreshness,
+  state: Readonly<{ loading: boolean; error: boolean }>,
+): string {
+  const label = {
+    FRESH: "À jour",
+    STALE: "Données anciennes",
+    EXPIRED: "Données périmées",
+    UNKNOWN: "Fraîcheur inconnue",
+  }[freshness];
+  if (state.loading) return `${label} · actualisation…`;
+  if (state.error) return `${label} · actualisation impossible`;
+  return label;
+}
 import { formatWeatherWind, type WeatherWindSpeedUnit } from "../../lib/unitPreferences.ts";
+import type { WeatherFreshness } from "../../lib/weather/weatherFreshness.ts";

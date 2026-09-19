@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useBalloonAuth } from "../../contexts/AuthContext";
 import styles from "./LocalDataMigrationDialog.module.css";
 
@@ -9,6 +10,7 @@ export default function LocalDataMigrationDialog() {
   const migration = auth.pendingLocalDataMigration;
   const collisions = auth.localDataMigrationCollisions;
   const visible = auth.state === "SIGNED_IN" && (migration?.state === "PENDING_LOCAL_DATA_MIGRATION" || collisions.length > 0);
+  const actionRequired = auth.localDataImportNotice && (auth.localDataImportState === "REVIEW_REQUIRED" || auth.localDataImportState === "IMPORT_BLOCKED" || auth.localDataImportState === "SOURCE_CHANGED");
 
   useEffect(() => {
     if (!visible) return;
@@ -17,7 +19,7 @@ export default function LocalDataMigrationDialog() {
     return () => { document.body.style.overflow = previousOverflow; };
   }, [visible]);
 
-  if (!visible) return auth.localDataImportNotice ? <p role="status">{auth.localDataImportNotice}</p> : null;
+  if (!visible) return actionRequired ? <aside className={styles.notice} role="status" title={auth.localDataImportNotice ?? undefined}><span>Données locales à vérifier</span><Link href="/more/cloud-sync">Voir les détails</Link></aside> : null;
   if (collisions.length > 0) return <div className={styles.backdrop}>
     <section className={styles.sheet} role="dialog" aria-modal="true" aria-labelledby="local-data-title">
       <div className={styles.handle} aria-hidden="true" />
