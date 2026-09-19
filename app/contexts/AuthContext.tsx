@@ -16,6 +16,7 @@ import { DATA_SCOPE_CHANGED_EVENT, setRuntimeAuthSnapshot, setRuntimeGuestModeAc
 import { isIsolatedAuthCallbackPath } from "../lib/auth/authCallbackPath.ts";
 import { readPilotQualificationsProfileFromCloud } from "../lib/pilotQualificationsCloudReader.ts";
 import { persistPilotQualificationsB6Choice } from "../lib/pilotQualificationsB6Persistence.ts";
+import { BrowserCloudSyncIssueRepository } from "../lib/cloudSyncBrowser.ts";
 
 type AuthContextValue = AuthSnapshot & Readonly<{
   signUp(input: SignUpInput): Promise<void>;
@@ -144,7 +145,7 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
       const remaining = await resolvePilotQualificationsProfileConflict({
         userId, conflictId, strategy, storage: window.localStorage, factory: window.indexedDB,
         readCloudQualifications: () => readPilotQualificationsProfileFromCloud({ client: createBrowserSupabaseClient(), userId }),
-        persistChoice: (conflict, selectedStrategy) => persistPilotQualificationsB6Choice({ scope: `USER:${userId}`, storage: window.localStorage, strategy: selectedStrategy, deviceProfile: conflict.deviceProfile, cloud: conflict.cloud }),
+        persistChoice: (conflict, selectedStrategy) => persistPilotQualificationsB6Choice({ scope: `USER:${userId}`, storage: window.localStorage, strategy: selectedStrategy, deviceProfile: conflict.deviceProfile, cloud: conflict.cloud, issues: new BrowserCloudSyncIssueRepository(window.localStorage, `USER:${userId}`) }),
       });
       if (snapshot.user.id !== userId) return false;
       setLocalDataMigrationCollisions(remaining);

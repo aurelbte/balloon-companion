@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
-import { retryCloudSyncThroughRuntimeController } from "../../components/cloud/CloudSyncRuntime.tsx";
+import { inspectCloudSyncRuntimeControllerState, retryCloudSyncThroughRuntimeController, synchronizeCloudNowThroughRuntimeController } from "../../components/cloud/CloudSyncRuntime.tsx";
 import { getRuntimeDataScope } from "../../lib/auth/dataScopeRuntime.ts";
 import { useCloudSyncVerdict } from "../../lib/useCloudSyncVerdict.ts";
 import { CLOUD_SYNC_VERDICT_LABELS } from "../../lib/cloudSyncVerdict.ts";
@@ -62,7 +62,6 @@ export default function CloudSyncPage() {
   const refreshSequence = useRef(0);
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
-    setIssues([]);
     try { const next = resolver ? await resolver.listConflicts() : []; if (sequence === refreshSequence.current && getRuntimeDataScope() === scope) setIssues(next); } catch { /* The central verdict reports unreadable diagnostics. */ }
   }, [resolver, scope]);
   useEffect(() => {
@@ -102,6 +101,7 @@ export default function CloudSyncPage() {
       else if (strategy === "LOCAL") await resolver.resolveLocalWins(issue.entityType, issue.entityId);
       else await resolver.resolveServerWins(issue.entityType, issue.entityId);
       await refresh();
+      if (issue.entityType === "pilot-qualifications" && inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController();
     } catch { setActionError("La résolution n’a pas abouti. Réessayez lorsque la connexion est stable."); }
     finally { setResolving(null); }
   };

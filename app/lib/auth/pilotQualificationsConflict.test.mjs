@@ -14,7 +14,9 @@ import { pendingSyncIntents } from "../durableSyncIntent.ts";
 import { readPilotQualificationsProfileFromCloud } from "../pilotQualificationsCloudReader.ts";
 import { persistPilotQualificationsB6Choice } from "../pilotQualificationsB6Persistence.ts";
 import { MemorySyncOutboxStorage } from "../syncOutbox.ts";
+import { MemoryCloudSyncIssueRepository } from "../cloudSyncService.ts";
 import { CloudSyncRuntimeController } from "../cloudSyncRuntimeController.ts";
+import { inspectCloudSyncVerdict } from "../cloudSyncVerdict.ts";
 import { CRUD_CONFLICT_ENTITY_TYPES } from "../crudConflictResolution.ts";
 import { parsePilotQualificationsCloudRow } from "../cloudPullBrowser.ts";
 import { inspectGuestSources, makeGuestManifest } from "./guestImportManifest.ts";
@@ -45,8 +47,9 @@ async function setup() {
   assert.equal(conflicts[0].deviceProfile.licenceType, "LOCAL");
   assert.equal(conflicts[0].cloudProfile.licenceType, "SERVER");
   const outbox = new MemorySyncOutboxStorage(scope);
-  const persistChoice = (conflict, strategy) => persistPilotQualificationsB6Choice({ scope, storage, strategy, deviceProfile: conflict.deviceProfile, cloud: conflict.cloud, outbox });
-  return { storage, factory, conflict: conflicts[0], readCloudQualifications, persistChoice, outbox };
+  const issues = new MemoryCloudSyncIssueRepository();
+  const persistChoice = (conflict, strategy) => persistPilotQualificationsB6Choice({ scope, storage, strategy, deviceProfile: conflict.deviceProfile, cloud: conflict.cloud, outbox, issues });
+  return { storage, factory, conflict: conflicts[0], readCloudQualifications, persistChoice, outbox, issues };
 }
 
 test("choix appareil persiste le profil local, conserve les événements et retire seulement ce conflit", async () => {
@@ -71,6 +74,35 @@ test("choix Cloud persiste exactement le profil serveur relu et retire le confli
   assert.equal(pendingSyncIntents(saved).length, 0);
   assert.equal((await env.outbox.list()).length, 0);
   assert.deepEqual(remaining, []);
+});
+
+test("conflit Cloud préexistant + choix appareil conserve diagnostic et mutation bloquée sans nouveau PUSH", async () => {
+  const env = await setup();
+  const mutation = await env.outbox.enqueue({ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 3 });
+  await env.outbox.markAttempt(mutation.mutationId);
+  await env.outbox.updateMutation(mutation.mutationId, { lastErrorCode: "CONFLICT" });
+  await env.issues.save({ kind: "CONFLICT", entityType: "pilot-qualifications", entityId: "singleton", mutation, serverRevision: 7, serverUpdatedAt: env.conflict.cloud.updatedAt, serverDeletedAt: null, recordedAt: "2026-09-19T10:01:00.000Z" });
+
+  await resolvePilotQualificationsProfileConflict({ userId: "A", conflictId: env.conflict.id, strategy: "DEVICE", storage: env.storage, factory: env.factory, readCloudQualifications: env.readCloudQualifications, persistChoice: env.persistChoice });
+
+  assert.equal(JSON.parse(env.storage.getItem(accountKey)).profile.licenceType, "LOCAL");
+  assert.equal(pendingSyncIntents(JSON.parse(env.storage.getItem(accountKey))).length, 0);
+  assert.deepEqual((await env.outbox.list()).map(({ mutationId, baseRevision, lastErrorCode }) => ({ mutationId, baseRevision, lastErrorCode })), [{ mutationId: mutation.mutationId, baseRevision: 3, lastErrorCode: "CONFLICT" }]);
+  assert.equal((await env.issues.list()).length, 1);
+});
+
+test("conflit Cloud préexistant + choix Cloud ne nettoie pas le diagnostic avant le resolver explicite", async () => {
+  const env = await setup();
+  const mutation = await env.outbox.enqueue({ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT", baseRevision: 3 });
+  await env.outbox.markAttempt(mutation.mutationId);
+  await env.outbox.updateMutation(mutation.mutationId, { lastErrorCode: "CONFLICT" });
+  await env.issues.save({ kind: "CONFLICT", entityType: "pilot-qualifications", entityId: "singleton", mutation, serverRevision: 7, serverUpdatedAt: env.conflict.cloud.updatedAt, serverDeletedAt: null, recordedAt: "2026-09-19T10:01:00.000Z" });
+
+  await resolvePilotQualificationsProfileConflict({ userId: "A", conflictId: env.conflict.id, strategy: "CLOUD", storage: env.storage, factory: env.factory, readCloudQualifications: env.readCloudQualifications, persistChoice: env.persistChoice });
+
+  assert.equal(JSON.parse(env.storage.getItem(accountKey)).profile.licenceType, "SERVER");
+  assert.equal((await env.outbox.list()).length, 1);
+  assert.equal((await env.issues.list()).length, 1);
 });
 
 test("annulation UI ne déclenche aucune résolution et aucune option n'est présélectionnée", async () => {
@@ -143,6 +175,38 @@ test("pilot-qualifications singleton est exposé par le résolveur Cloud sans é
   assert.match(resolver, /"pilot-qualifications": \["user_preferences"/);
   assert.match(resolver, /entityType === "pilot-qualifications" \? "qualifications" : entityId/);
   assert.match(resolver, /issue\.entityType in DOMAIN/);
+});
+
+test("la page conserve le dernier conflit pendant refresh et réinspecte C1 après résolution explicite", async () => {
+  const page = await readFile(new URL("../../more/cloud-sync/page.tsx", import.meta.url), "utf8");
+  const refreshStart = page.indexOf("const refresh = useCallback");
+  const refreshEnd = page.indexOf("useEffect(() =>", refreshStart);
+  assert.doesNotMatch(page.slice(refreshStart, refreshEnd), /setIssues\(\[\]\)/);
+  assert.match(page, /await refresh\(\);\s*if \(issue\.entityType === "pilot-qualifications" && inspectCloudSyncRuntimeControllerState\(\)\.scope === scope\) await synchronizeCloudNowThroughRuntimeController\(\)/);
+});
+
+test("résolution explicite suivie d'une nouvelle génération obtient un passage vérifié stable", async () => {
+  let generation = 1;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => ({ state: "SUCCESS", resumable: false }),
+    push: async () => ({ state: "COMPLETED", applied: 0, conflicts: 0, notFound: 0, ignored: 0 }),
+  });
+  controller.setUser("A");
+  await controller.whenIdle();
+  generation += 1;
+  await controller.synchronizeNow();
+  const runtime = controller.inspect();
+  const verdict = await inspectCloudSyncVerdict({
+    getScope: () => scope,
+    getGeneration: () => generation,
+    runtime: () => runtime,
+    online: () => true,
+    read: async () => ({ mutations: [], intents: 0, issues: [], tracks: [], traceActive: false, traceDiscoveryComplete: true, coverageComplete: true, passGeneration: generation }),
+  });
+  assert.equal(runtime.lastBootstrapState, "SUCCESS");
+  assert.equal(runtime.lastPushState, "COMPLETED");
+  assert.equal(verdict.state, "SYNCED");
 });
 
 test("résolution B6 ne simule pas un changement de scope et le runtime reprend seulement après setUser", async () => {
