@@ -147,7 +147,6 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
       if (snapshot.user.id !== userId) return false;
       setLocalDataMigrationCollisions(remaining);
       setLocalDataImportState(remaining.length ? "COMPLETE_WITH_COLLISIONS" : "COMPLETE");
-      window.dispatchEvent(new Event(DATA_SCOPE_CHANGED_EVENT));
       return true;
     } catch { return false; }
   }, [snapshot]);

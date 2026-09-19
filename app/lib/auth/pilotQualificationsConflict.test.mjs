@@ -12,6 +12,7 @@ import {
 import { PILOT_QUALIFICATIONS_STORAGE_KEY } from "../pilotQualificationsStorage.ts";
 import { pendingSyncIntents } from "../durableSyncIntent.ts";
 import { readPilotQualificationsProfileFromCloud } from "../pilotQualificationsCloudReader.ts";
+import { CloudSyncRuntimeController } from "../cloudSyncRuntimeController.ts";
 import { inspectGuestSources, makeGuestManifest } from "./guestImportManifest.ts";
 import { acquireGuestImportClaim } from "./guestImportClaim.ts";
 
@@ -121,4 +122,29 @@ test("le lecteur Cloud utilise la ligne serveur qualifications authentifiée, ja
 test("le lecteur Cloud refuse une session d'un autre compte", async () => {
   const client = { auth: { getUser: async () => ({ data: { user: { id: "B" } }, error: null }) }, from() { throw new Error("query must not run"); } };
   await assert.rejects(readPilotQualificationsProfileFromCloud({ client, userId: "A" }), /AUTH_UNAVAILABLE/);
+});
+
+test("résolution B6 ne simule pas un changement de scope et le runtime reprend seulement après setUser", async () => {
+  const auth = await readFile(new URL("../../contexts/AuthContext.tsx", import.meta.url), "utf8");
+  const start = auth.indexOf("const resolvePilotQualificationsConflict = useCallback");
+  const end = auth.indexOf("const signUp = useCallback", start);
+  const resolution = auth.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.doesNotMatch(resolution, /DATA_SCOPE_CHANGED_EVENT|retryCloudSyncThroughRuntimeController|notifyOnline/);
+  assert.match(resolution, /setLocalDataMigrationCollisions\(remaining\)/);
+
+  let bootstrap = 0, push = 0;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    bootstrap: async () => { bootstrap += 1; return { state: "SUCCESS", resumable: false }; },
+    push: async () => { push += 1; return { state: "COMPLETED" }; },
+  });
+  controller.notifyOnline();
+  await controller.whenIdle();
+  assert.deepEqual([bootstrap, push], [0, 0]);
+  controller.setUser("A");
+  await controller.whenIdle();
+  assert.deepEqual([bootstrap, push], [1, 1]);
+  assert.equal(controller.inspect().scope, "USER:A");
+  assert.equal(controller.inspect().lastPushState, "COMPLETED");
 });
