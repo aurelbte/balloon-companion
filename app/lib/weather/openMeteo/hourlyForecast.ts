@@ -1,7 +1,9 @@
 import type { NormalizedWeatherCode, OpenMeteoClient, OpenMeteoWeatherModel, WeatherHourlyForecast, WeatherHourlyPoint } from "./types.ts";
+import { setBoundedTtlCacheEntry } from "../../boundedTtlCache.ts";
 
 type RecordValue = Record<string, unknown>;
 const CACHE_TTL_MS = 15 * 60_000;
+const MAX_CACHE_ENTRIES = 256;
 const cache = new Map<string, { expiresAt: number; value: WeatherHourlyForecast }>();
 
 function record(value: unknown): RecordValue | null { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as RecordValue : null; }
@@ -57,9 +59,10 @@ export class OpenMeteoHourlyForecastProvider {
     const receivedAt = this.now();
     value.sourceUpdatedAt = new Date(receivedAt).toISOString();
     value.points.forEach(point => { point.sourceUpdatedAt = value.sourceUpdatedAt; });
-    cache.set(key, { expiresAt: receivedAt + CACHE_TTL_MS, value });
+    setBoundedTtlCacheEntry(cache, key, { expiresAt: receivedAt + CACHE_TTL_MS, value }, receivedAt, MAX_CACHE_ENTRIES);
     return value;
   }
 }
 
 export function clearHourlyForecastCacheForTests(): void { cache.clear(); }
+export function hourlyForecastCacheSizeForTests(): number { return cache.size; }

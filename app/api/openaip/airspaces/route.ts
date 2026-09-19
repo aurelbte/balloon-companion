@@ -45,8 +45,9 @@ export async function GET(request: Request) {
     lon < -180 ||
     lon > 180 ||
     dist <= 0 ||
+    dist > 100_000 ||
     (searchParams.has("page") &&
-      (page === null || !Number.isInteger(page) || page < 1))
+      (page === null || !Number.isInteger(page) || page < 1 || page > 100))
   ) {
     return Response.json(
       { error: "Valid lat, lon and positive dist parameters are required" },
@@ -60,13 +61,22 @@ export async function GET(request: Request) {
   if (page !== null) openAipUrl.searchParams.set("page", String(page));
 
   try {
-    const openAipResponse = await fetch(openAipUrl, {
-      headers: {
-        "x-openaip-api-key": apiKey,
-      },
-      cache: "no-store",
-    });
-    const responseBody = await openAipResponse.arrayBuffer();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    let openAipResponse: Response;
+    let responseBody: ArrayBuffer;
+    try {
+      openAipResponse = await fetch(openAipUrl, {
+        headers: {
+          "x-openaip-api-key": apiKey,
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      responseBody = await openAipResponse.arrayBuffer();
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (
       !openAipResponse.ok &&

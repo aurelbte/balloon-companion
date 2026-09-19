@@ -16,6 +16,7 @@ export type LandingWeatherSummary = {
 const CARDINALS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"] as const;
 type Cardinal = (typeof CARDINALS)[number];
 const radians = (value: number) => value * Math.PI / 180;
+const normalizeLongitude = (value: number) => ((value + 540) % 360) - 180;
 
 export function landingWeatherSamplePoints(latitude: number, longitude: number) {
   const earthRadiusM = 6_371_000;
@@ -26,7 +27,7 @@ export function landingWeatherSamplePoints(latitude: number, longitude: number) 
     const bearingRad = radians(bearing);
     const sampledLatitude = Math.asin(Math.sin(latitudeRad) * Math.cos(angular) + Math.cos(latitudeRad) * Math.sin(angular) * Math.cos(bearingRad));
     const sampledLongitude = radians(longitude) + Math.atan2(Math.sin(bearingRad) * Math.sin(angular) * Math.cos(latitudeRad), Math.cos(angular) - Math.sin(latitudeRad) * Math.sin(sampledLatitude));
-    return { latitude: sampledLatitude * 180 / Math.PI, longitude: sampledLongitude * 180 / Math.PI };
+    return { latitude: sampledLatitude * 180 / Math.PI, longitude: normalizeLongitude(sampledLongitude * 180 / Math.PI) };
   });
 }
 

@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     north: Number(params.get("north")),
   };
   const values = Object.values(bounds);
-  if (values.some((value) => !Number.isFinite(value)) || bounds.east <= bounds.west || bounds.north <= bounds.south || bounds.east - bounds.west > 2 || bounds.north - bounds.south > 2) {
+  if (values.some((value) => !Number.isFinite(value)) || bounds.west < -180 || bounds.east > 180 || bounds.south < -90 || bounds.north > 90 || bounds.east <= bounds.west || bounds.north <= bounds.south || bounds.east - bounds.west > 2 || bounds.north - bounds.south > 2) {
     return Response.json({ error: "Emprise invalide" }, { status: 400 });
   }
 

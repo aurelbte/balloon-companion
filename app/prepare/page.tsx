@@ -365,8 +365,8 @@ export default function PreparePage() {
       setError("La date ou l’heure est invalide.");
       return null;
     }
-    if (durationMinutes === null || durationMinutes <= 0) {
-      setError("La durée doit être strictement positive.");
+    if (durationMinutes === null || durationMinutes <= 0 || durationMinutes > 180) {
+      setError("La durée doit être comprise entre 1 et 180 minutes.");
       return null;
     }
     const numericAltitudes = form.selectedAltitudes.filter(

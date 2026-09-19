@@ -47,8 +47,10 @@ function hourlyVariables(): string {
 async function fetchJson(
   fetchImpl: typeof fetch,
   url: URL,
+  timeoutMs: number,
 ): Promise<unknown> {
-  let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const isGroundTemperatureRequest = url.searchParams.get("hourly") === "temperature_2m";
   try {
     if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) {
@@ -56,46 +58,59 @@ async function fetchJson(
       safeUrl.searchParams.delete("apikey");
       console.info("[ground-weather] Open-Meteo request", safeUrl.toString());
     }
-    response = await fetchImpl(url, {
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
-  } catch (error) {
-    throw new TrajectoryDomainError(
-      "UPSTREAM_UNAVAILABLE",
-      "Le service Open-Meteo est inaccessible.",
-      { cause: error instanceof Error ? error.name : "UnknownError" },
-    );
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw new TrajectoryDomainError(
+        "UPSTREAM_UNAVAILABLE",
+        "Le service Open-Meteo est inaccessible.",
+        { cause: error instanceof Error ? error.name : "UnknownError" },
+      );
+    }
+
+    if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) console.info("[ground-weather] Open-Meteo status", response.status);
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new TrajectoryDomainError(
+          "UPSTREAM_UNAVAILABLE",
+          "Le service Open-Meteo est inaccessible.",
+          { cause: error instanceof Error ? error.name : "AbortError" },
+        );
+      }
+      throw new TrajectoryDomainError(
+        "INVALID_PROVIDER_RESPONSE",
+        "Open-Meteo n’a pas renvoyé de JSON valide.",
+        { status: response.status },
+      );
+    }
+
+    if (!response.ok) {
+      const reason =
+        typeof payload === "object" &&
+        payload !== null &&
+        "reason" in payload &&
+        typeof payload.reason === "string"
+          ? payload.reason
+          : `Open-Meteo a répondu avec le statut ${response.status}.`;
+      if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) console.error("[ground-weather] Open-Meteo error", { status: response.status, reason });
+      throw new TrajectoryDomainError("UPSTREAM_UNAVAILABLE", reason, {
+        status: response.status,
+      });
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) console.info("[ground-weather] Open-Meteo status", response.status);
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new TrajectoryDomainError(
-      "INVALID_PROVIDER_RESPONSE",
-      "Open-Meteo n’a pas renvoyé de JSON valide.",
-      { status: response.status },
-    );
-  }
-
-  if (!response.ok) {
-    const reason =
-      typeof payload === "object" &&
-      payload !== null &&
-      "reason" in payload &&
-      typeof payload.reason === "string"
-        ? payload.reason
-        : `Open-Meteo a répondu avec le statut ${response.status}.`;
-    if (process.env.NODE_ENV === "development" && isGroundTemperatureRequest) console.error("[ground-weather] Open-Meteo error", { status: response.status, reason });
-    throw new TrajectoryDomainError("UPSTREAM_UNAVAILABLE", reason, {
-      status: response.status,
-    });
-  }
-
-  return payload;
 }
 
 export function createOpenMeteoClient(
@@ -109,6 +124,7 @@ export function createOpenMeteoClient(
   }
 
   const fetchImpl = config.fetchImpl ?? fetch;
+  const timeoutMs = config.timeoutMs ?? 10_000;
   const forecastUrl =
     config.tier === "commercial" ? COMMERCIAL_FORECAST_URL : FREE_FORECAST_URL;
   const elevationUrl =
@@ -135,7 +151,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("end_date", datePart(addUtcDays(requestedAt, 1)));
       url.searchParams.set("models", request.weatherModel);
       addApiKey(url);
-      return fetchJson(fetchImpl, url);
+      return fetchJson(fetchImpl, url, timeoutMs);
     },
 
     async fetchGroundTemperature(request) {
@@ -150,7 +166,7 @@ export function createOpenMeteoClient(
       // Le flux de température DEMO utilise la prévision générique Open-Meteo,
       // indépendamment du modèle vertical choisi pour les trajectoires.
       addApiKey(url);
-      return fetchJson(fetchImpl, url);
+      return fetchJson(fetchImpl, url, timeoutMs);
     },
 
     async fetchHourlyForecast(request) {
@@ -163,7 +179,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("forecast_days", "7");
       url.searchParams.set("models", request.weatherModel);
       addApiKey(url);
-      return fetchJson(fetchImpl, url);
+      return fetchJson(fetchImpl, url, timeoutMs);
     },
 
     async fetchHourlyForecastBatch(requests) {
@@ -177,7 +193,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("forecast_days", "7");
       url.searchParams.set("models", requests[0].weatherModel);
       addApiKey(url);
-      return fetchJson(fetchImpl, url);
+      return fetchJson(fetchImpl, url, timeoutMs);
     },
 
     async fetchElevation(latitude: number, longitude: number) {
@@ -185,7 +201,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("latitude", String(latitude));
       url.searchParams.set("longitude", String(longitude));
       addApiKey(url);
-      return fetchJson(fetchImpl, url);
+      return fetchJson(fetchImpl, url, timeoutMs);
     },
 
     async fetchElevationBatch(points: Array<{ latitude: number; longitude: number }>) {
@@ -194,7 +210,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("latitude", points.map(({ latitude }) => latitude).join(","));
       url.searchParams.set("longitude", points.map(({ longitude }) => longitude).join(","));
       addApiKey(url);
-      return fetchJson(fetchImpl, url);
+      return fetchJson(fetchImpl, url, timeoutMs);
     },
   };
 }

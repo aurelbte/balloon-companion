@@ -148,7 +148,7 @@ export function validateWindQuery(
       "L’heure météo demandée doit être une date ISO avec fuseau horaire.",
     );
   }
-  if (!Number.isFinite(query.altitudeAmslM) || query.altitudeAmslM < 0) {
+  if (!Number.isFinite(query.altitudeAmslM) || query.altitudeAmslM < 0 || query.altitudeAmslM > 9_000) {
     throw new TrajectoryDomainError(
       "INVALID_TARGET_ALTITUDE",
       "L’altitude météo demandée est invalide.",

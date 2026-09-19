@@ -33,6 +33,9 @@ export const DEFAULT_ALTITUDE_OPTIONS: readonly AltitudeOption[] = [
   600,
   1000,
 ];
+export const MAX_PROJECTION_DURATION_SECONDS = 10_800;
+export const MAX_PROJECTION_ALTITUDES = 9;
+export const MAX_LAUNCH_SITE_NAME_LENGTH = 200;
 
 export const ALTITUDE_COLORS: Record<string, string> = {
   ...ALTITUDE_ANALYSIS_COLORS,
@@ -205,6 +208,9 @@ export function validateMultiAltitudeProjectionRequest(
   if (!isRecord(value) || !Array.isArray(value.altitudesAmslM)) {
     throw new Error("INVALID_REQUEST");
   }
+  if (value.altitudesAmslM.length > MAX_PROJECTION_ALTITUDES) {
+    throw new Error("INVALID_ALTITUDES");
+  }
   const altitudesAmslM = normalizeAltitudeOptions(value.altitudesAmslM);
   if (
     altitudesAmslM.length === 0 ||
@@ -309,6 +315,7 @@ export function validateTrajectoryProjectionRequest(
   if (
     typeof launchSite.name !== "string" ||
     !launchSite.name.trim() ||
+    launchSite.name.trim().length > MAX_LAUNCH_SITE_NAME_LENGTH ||
     !finiteNumber(launchSite.latitude) ||
     !finiteNumber(launchSite.longitude) ||
     !isValidCoordinate({
@@ -324,7 +331,11 @@ export function validateTrajectoryProjectionRequest(
   ) {
     throw new Error("INVALID_DATE");
   }
-  if (!finiteNumber(value.durationSeconds) || value.durationSeconds <= 0) {
+  if (
+    !finiteNumber(value.durationSeconds) ||
+    value.durationSeconds <= 0 ||
+    value.durationSeconds > MAX_PROJECTION_DURATION_SECONDS
+  ) {
     throw new Error("INVALID_DURATION");
   }
   if (

@@ -1,20 +1,14 @@
 import type { GeocodingResult } from "../../../lib/trajectory/integration";
-
-type NominatimItem = {
-  place_id?: number;
-  display_name?: string;
-  lat?: string;
-  lon?: string;
-};
+import { parseNominatimResults } from "../../../lib/geocodingSearch";
 
 let lastUpstreamRequestAt = 0;
 const MIN_UPSTREAM_INTERVAL_MS = 1_000;
 
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams.get("q")?.trim();
-  if (!query || query.length < 2) {
+  if (!query || query.length < 2 || query.length > 120) {
     return Response.json(
-      { error: { code: "INVALID_QUERY", message: "Saisissez au moins 2 caractères." } },
+      { error: { code: "INVALID_QUERY", message: "La recherche doit contenir entre 2 et 120 caractères." } },
       { status: 400 },
     );
   }
@@ -43,34 +37,27 @@ export async function GET(request: Request) {
   url.searchParams.set("addressdetails", "0");
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        accept: "application/json",
-        "accept-language": "fr",
-        referer: new URL(request.url).origin,
-        "user-agent": "Balloon-Companion/1.0 (geocoding for flight preparation)",
-      },
-      cache: "force-cache",
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const payload: unknown = await response.json();
-    const results: GeocodingResult[] = Array.isArray(payload)
-      ? payload.flatMap((item: NominatimItem) => {
-          const latitude = Number(item.lat);
-          const longitude = Number(item.lon);
-          return item.place_id !== undefined &&
-            typeof item.display_name === "string" &&
-            Number.isFinite(latitude) &&
-            Number.isFinite(longitude)
-            ? [{
-                id: String(item.place_id),
-                name: item.display_name,
-                latitude,
-                longitude,
-              }]
-            : [];
-        })
-      : [];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    let response: Response;
+    let payload: unknown;
+    try {
+      response = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "accept-language": "fr",
+          referer: new URL(request.url).origin,
+          "user-agent": "Balloon-Companion/1.0 (geocoding for flight preparation)",
+        },
+        cache: "force-cache",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      payload = await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+    const results: GeocodingResult[] = parseNominatimResults(payload);
     return Response.json({
       results,
       attribution: "© OpenStreetMap contributors",

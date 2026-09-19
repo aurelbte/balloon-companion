@@ -13,7 +13,7 @@ export function normalizeTimeInput(raw: string, finalize = false): NormalizedTim
 
 export function validDurationMinutes(raw: string): boolean {
   const value = Number(raw);
-  return /^\d+$/.test(raw) && Number.isInteger(value) && value > 0;
+  return /^\d+$/.test(raw) && Number.isInteger(value) && value > 0 && value <= 180;
 }
 
 export const VERTICAL_RATE_STEP_MPS = 0.5;

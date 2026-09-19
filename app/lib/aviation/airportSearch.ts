@@ -42,8 +42,18 @@ async function stationPayload(response: Response): Promise<unknown> {
   return JSON.parse(decoded);
 }
 
-export async function searchAviationAirports(query: string, fetchImpl: typeof fetch = fetch, now = Date.now()): Promise<AviationAirportSearchResult[]> {
-  if (!cache || cache.expiresAt <= now) { const response = await fetchImpl(STATIONS_URL, { headers: { accept: "application/json", "user-agent": "Balloon-Companion/1.0 (aviation station search)" }, cache: "force-cache" }); if (!response.ok) throw new Error("Station metadata unavailable"); cache = { expiresAt: now + CACHE_TTL_MS, stations: normalizeStations(await stationPayload(response)) }; }
+export async function searchAviationAirports(query: string, fetchImpl: typeof fetch = fetch, now = Date.now(), timeoutMs = 15_000): Promise<AviationAirportSearchResult[]> {
+  if (!cache || cache.expiresAt <= now) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(STATIONS_URL, { headers: { accept: "application/json", "user-agent": "Balloon-Companion/1.0 (aviation station search)" }, cache: "force-cache", signal: controller.signal });
+      if (!response.ok) throw new Error("Station metadata unavailable");
+      cache = { expiresAt: now + CACHE_TTL_MS, stations: normalizeStations(await stationPayload(response)) };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   return searchStations(cache.stations, query);
 }
 export function clearAirportSearchCacheForTests(): void { cache = null; }

@@ -72,6 +72,7 @@ export type OpenMeteoClientConfig = {
   tier: OpenMeteoApiTier;
   apiKey?: string;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 };
 
 export interface OpenMeteoClient {

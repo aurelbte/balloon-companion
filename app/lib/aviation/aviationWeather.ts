@@ -1,7 +1,9 @@
 import type { AviationWeather, AviationWeatherResult } from "./types.ts";
+import { setBoundedTtlCacheEntry } from "../boundedTtlCache.ts";
 
 const BASE_URL = "https://aviationweather.gov/api/data";
 const CACHE_TTL_MS = 10 * 60_000;
+const MAX_CACHE_ENTRIES = 256;
 const cache = new Map<string, { expiresAt: number; data: AviationWeather }>();
 
 export function normalizeAirportIcao(value: string | null | undefined): string | null {
@@ -18,25 +20,31 @@ function issuedAtFromRaw(raw: string | null, now: Date): string | null {
   return Number.isFinite(candidate.getTime()) ? candidate.toISOString() : null;
 }
 
-async function fetchRaw(fetchImpl: typeof fetch, product: "metar" | "taf", airport: string): Promise<string | null> {
+async function fetchRaw(fetchImpl: typeof fetch, product: "metar" | "taf", airport: string, timeoutMs: number): Promise<string | null> {
   const url = new URL(`${BASE_URL}/${product}`);
   url.searchParams.set("ids", airport);
   url.searchParams.set("format", "raw");
-  const response = await fetchImpl(url, { headers: { accept: "text/plain", "user-agent": "Balloon-Companion/1.0" }, cache: "no-store" });
-  if (response.status === 204) return null;
-  if (!response.ok) throw new Error(`AviationWeather.gov ${response.status}`);
-  const raw = (await response.text()).trim();
-  return raw || null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(url, { headers: { accept: "text/plain", "user-agent": "Balloon-Companion/1.0" }, cache: "no-store", signal: controller.signal });
+    if (response.status === 204) return null;
+    if (!response.ok) throw new Error(`AviationWeather.gov ${response.status}`);
+    const raw = (await response.text()).trim();
+    return raw || null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-export async function loadAviationWeather(input: { airport: string; fetchImpl?: typeof fetch; now?: () => number }): Promise<AviationWeatherResult> {
+export async function loadAviationWeather(input: { airport: string; fetchImpl?: typeof fetch; now?: () => number; timeoutMs?: number }): Promise<AviationWeatherResult> {
   const airport = normalizeAirportIcao(input.airport);
   if (!airport) return { data: null, error: { code: "NO_AIRPORT", message: "Aucun aérodrome associé au favori météo." } };
   const nowMs = (input.now ?? Date.now)();
   const cached = cache.get(airport);
   if (cached && cached.expiresAt > nowMs) return { data: cached.data, error: null };
   try {
-    const [metar, taf] = await Promise.allSettled([fetchRaw(input.fetchImpl ?? fetch, "metar", airport), fetchRaw(input.fetchImpl ?? fetch, "taf", airport)]);
+    const [metar, taf] = await Promise.allSettled([fetchRaw(input.fetchImpl ?? fetch, "metar", airport, input.timeoutMs ?? 10_000), fetchRaw(input.fetchImpl ?? fetch, "taf", airport, input.timeoutMs ?? 10_000)]);
     const metarRaw = metar.status === "fulfilled" ? metar.value : cached?.data.metarRaw ?? null;
     const tafRaw = taf.status === "fulfilled" ? taf.value : cached?.data.tafRaw ?? null;
     if (!metarRaw && !tafRaw) {
@@ -46,7 +54,7 @@ export async function loadAviationWeather(input: { airport: string; fetchImpl?: 
     const updatedAt = new Date(nowMs);
     const sourceFailed = metar.status === "rejected" || taf.status === "rejected";
     const data: AviationWeather = { airport, metarRaw, tafRaw, metarIssuedAt: issuedAtFromRaw(metarRaw, updatedAt), tafIssuedAt: issuedAtFromRaw(tafRaw, updatedAt), sourceUpdatedAt: sourceFailed && cached ? cached.data.sourceUpdatedAt : updatedAt.toISOString(), status: sourceFailed && cached ? "STALE" : metarRaw && tafRaw ? "AVAILABLE" : "PARTIAL" };
-    cache.set(airport, { expiresAt: nowMs + CACHE_TTL_MS, data });
+    setBoundedTtlCacheEntry(cache, airport, { expiresAt: nowMs + CACHE_TTL_MS, data }, nowMs, MAX_CACHE_ENTRIES);
     return { data, error: null };
   } catch {
     if (cached) return { data: { ...cached.data, status: "STALE" }, error: null };
@@ -55,3 +63,4 @@ export async function loadAviationWeather(input: { airport: string; fetchImpl?: 
 }
 
 export function clearAviationWeatherCacheForTests(): void { cache.clear(); }
+export function aviationWeatherCacheSizeForTests(): number { return cache.size; }
