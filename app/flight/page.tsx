@@ -151,6 +151,8 @@ export default function FlightPage() {
   const qnhFreshness = qnhWeather && qnhNow !== null ? aviationFreshness(qnhWeather, "metar", qnhNow) : null;
   const lastQnhHpa = qnhHpaFromMetar(qnhWeather?.metarRaw ?? null);
   const qnhHpa = qnhFreshness?.usable ? lastQnhHpa : null;
+  const qnhIssuedAt = Date.parse(qnhWeather?.metarIssuedAt ?? "");
+  const qnhAgeMinutes = qnhNow !== null && Number.isFinite(qnhIssuedAt) && qnhIssuedAt <= qnhNow ? Math.floor((qnhNow - qnhIssuedAt) / 60_000) : null;
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -839,7 +841,7 @@ export default function FlightPage() {
       />
       <FlightInstruments
         session={flightSession}
-        qnhStatus={qnhWeather ? `${qnhWeather.airport} · ${qnhFreshness?.label ?? "Fraîcheur non vérifiable"}` : "QNH Aviation indisponible"}
+        qnhStatus={qnhWeather ? `${qnhWeather.airport} · ${qnhAgeMinutes === null ? "âge inconnu" : `il y a ${qnhAgeMinutes} min`}` : "QNH Aviation indisponible"}
         staleQnhHpa={qnhFreshness?.usable ? null : lastQnhHpa}
         highContrast={layerSettings.highContrast}
         geolocationState={geoState}
