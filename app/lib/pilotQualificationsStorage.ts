@@ -63,12 +63,13 @@ export function loadPilotQualifications(storage: QualificationStorage | null = b
 export function savePilotQualifications(
   state: Pick<PilotQualificationsState, "profile" | "events">,
   storage: QualificationStorage | null = browserStorage(),
+  options: Readonly<{ enqueue?: boolean }> = {},
 ): boolean {
   if (!storage) return false;
   const normalized = normalizeStored({ version: PILOT_QUALIFICATIONS_VERSION, ...state });
   const saved = writeBusinessValueWithSync(storage as Storage, PILOT_QUALIFICATIONS_STORAGE_KEY, JSON.stringify(normalized), [{ entityType: "pilot-qualifications", entityId: "singleton", operation: "UPSERT" }]);
   if (saved && typeof window !== "undefined" && storage === window.localStorage) {
-    void enqueueLocalSyncMutation("pilot-qualifications", "singleton");
+    if (options.enqueue !== false) void enqueueLocalSyncMutation("pilot-qualifications", "singleton");
     window.dispatchEvent(new Event(PILOT_QUALIFICATIONS_EVENT));
   }
   return saved;

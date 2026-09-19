@@ -5,14 +5,14 @@ import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "./cloudSyncBrowser.ts";
 import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
-  parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow,
+  parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
 import { resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
 import type { OfficialAscension } from "./flightCompletion.ts";
-import { loadPilotQualifications } from "./pilotQualificationsStorage.ts";
+import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { IndexedDbSyncOutboxStorage } from "./syncOutbox.ts";
@@ -25,11 +25,16 @@ const DOMAIN = {
   flight: ["flights", "id,user_id,revision,created_at,updated_at,deleted_at,schema_version,status,started_at,ended_at,balloon_id,balloon_registration,start_location_label,end_location_label,generated_title,custom_title,notes,origin,logbook_status,recovered,summary,weather_model,weather_snapshot,ground_calibration", parseFlightCloudRow],
   "logbook-entry": ["logbook_entries", "id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,regulatory_role,supervised_by_fi_b,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner", parseLogbookEntryCloudRow],
   "balloon-document": ["documents", "id,user_id,revision,created_at,updated_at,deleted_at,balloon_id,category,title,original_filename,mime_type,size_bytes,notes,issue_date,expiry_date", parseDocumentCloudRow],
+  "pilot-qualifications": ["user_preferences", "id,user_id,revision,created_at,updated_at,deleted_at,preferences,schema_version", parsePilotQualificationsCloudRow],
 } satisfies Record<CrudConflictEntityType, readonly [string, string, (value: unknown) => { id: string; userId: string; revision: number; updatedAt: string; deletedAt: string | null; value?: unknown }] >;
 
 type FlightValue = Readonly<{ flight: RecordedFlight; journal: CloudFlightJournalMetadata }>;
 
 async function applyCloud(scope: `USER:${string}`, storage: Storage, entityType: CrudConflictEntityType, row: ReturnType<(typeof DOMAIN)[CrudConflictEntityType][2]>): Promise<boolean> {
+  if (entityType === "pilot-qualifications") {
+    const value = row as ReturnType<typeof parsePilotQualificationsCloudRow>;
+    return applyPilotQualificationsFromCloudWithoutEnqueue(scope, value.value, Boolean(value.deletedAt), storage);
+  }
   if (entityType === "favorite-weather-place") {
     const value = row as unknown as ReturnType<typeof parseFavoriteWeatherPlaceCloudRow>;
     return applyFavoriteWeatherPlaceFromCloudWithoutEnqueue(scope, { id: value.id, ...(value.syncId ? { syncId: value.syncId } : {}), name: value.name, latitude: value.latitude, longitude: value.longitude, createdAt: value.createdAt, updatedAt: value.updatedAt, deletedAt: value.deletedAt }, storage);
@@ -68,11 +73,15 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     getOnlineUserId: async () => { const { data, error } = await input.client.auth.getUser(); return error ? null : data.user?.id ?? null; },
     readCloud: async (entityType, entityId): Promise<CrudCloudState | null> => {
       const [table, select, parse] = DOMAIN[entityType];
-      const { data, error } = await input.client.from(table).select(select).eq("id", entityId).maybeSingle();
+      const cloudId = entityType === "pilot-qualifications" ? "qualifications" : entityId;
+      const { data, error } = await input.client.from(table).select(select).eq("id", cloudId).maybeSingle();
       if (error) throw new Error(`Cloud conflict read failed: ${error.code ?? "UNKNOWN"}`);
       if (!data) return null;
       const row = parse(data);
-      if (row.userId !== input.scope.slice(5) || row.id !== entityId) throw new Error("Cloud conflict scope mismatch");
+      const localEntityMatches = entityType === "pilot-qualifications"
+        ? (row as ReturnType<typeof parsePilotQualificationsCloudRow>).entityId === entityId
+        : row.id === entityId;
+      if (row.userId !== input.scope.slice(5) || row.id !== cloudId || !localEntityMatches) throw new Error("Cloud conflict scope mismatch");
       return { revision: row.revision, updatedAt: row.updatedAt, deletedAt: row.deletedAt, value: row };
     },
     applyCloudLocally: (entityType, _entityId, cloud) => applyCloud(input.scope, input.storage, entityType, cloud.value as ReturnType<(typeof DOMAIN)[CrudConflictEntityType][2]>),

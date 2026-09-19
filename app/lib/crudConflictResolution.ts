@@ -3,7 +3,7 @@ import type { CloudSyncIssueRepository, CloudSyncPassResult, CloudSyncPayload } 
 import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./syncOutbox.ts";
 
 export const CRUD_CONFLICT_ENTITY_TYPES = Object.freeze([
-  "favorite-weather-place", "favorite-launch-site", "balloon", "flight", "logbook-entry", "balloon-document",
+  "favorite-weather-place", "favorite-launch-site", "balloon", "flight", "logbook-entry", "balloon-document", "pilot-qualifications",
 ] as const);
 export type CrudConflictEntityType = typeof CRUD_CONFLICT_ENTITY_TYPES[number];
 export type CrudCloudState = Readonly<{ revision: number; updatedAt: string; deletedAt: string | null; value: unknown }>;

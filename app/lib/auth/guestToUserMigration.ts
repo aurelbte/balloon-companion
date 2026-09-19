@@ -3,8 +3,9 @@ import { BALLOON_DOCUMENT_DB_NAME, BALLOON_DOCUMENT_FILES_STORE, BALLOON_DOCUMEN
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "../flightCompletionStorage.ts";
 import { RECORDED_FLIGHT_DB_NAME, RECORDED_FLIGHTS_STORE } from "../recordedFlightStorage.ts";
 import { IndexedDbSyncOutboxStorage } from "../syncOutbox.ts";
-import { loadPilotQualifications, PILOT_QUALIFICATIONS_STORAGE_KEY, savePilotQualifications } from "../pilotQualificationsStorage.ts";
+import { PILOT_QUALIFICATIONS_STORAGE_KEY } from "../pilotQualificationsStorage.ts";
 import { normalizeQualificationProfile, type QualificationProfile } from "../pilotQualifications.ts";
+import type { PilotQualificationsCloudSnapshot } from "../pilotQualificationsCloudReader.ts";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration, scopedBusinessStorageKey, scopedIndexedDbName } from "./dataScopeRuntime.ts";
 
 import { acquireGuestImportClaim, readGuestImportClaims, type GuestImportClaim } from "./guestImportClaim.ts";
@@ -64,10 +65,11 @@ export type PilotQualificationsProfileConflict = Readonly<{
   source: "GUEST" | "LEGACY";
   deviceProfile: QualificationProfile;
   cloudProfile: QualificationProfile;
+  cloud: PilotQualificationsCloudSnapshot;
 }>;
 
-async function qualificationConflictId(manifestId: string, source: "GUEST" | "LEGACY", deviceProfile: QualificationProfile, cloudProfile: QualificationProfile): Promise<string> {
-  return `${manifestId}:${source}:pilot-qualifications-profile:singleton:${await fingerprint({ deviceProfile, cloudProfile })}`;
+async function qualificationConflictId(manifestId: string, source: "GUEST" | "LEGACY", deviceProfile: QualificationProfile, cloud: PilotQualificationsCloudSnapshot): Promise<string> {
+  return `${manifestId}:${source}:pilot-qualifications-profile:singleton:${await fingerprint({ deviceProfile, cloud })}`;
 }
 
 /** Reads only the frozen B6 claim and the current account-scoped value. */
@@ -75,7 +77,7 @@ export async function listPilotQualificationsProfileConflicts(input: Readonly<{
   userId: string;
   storage: Storage;
   factory: IDBFactory;
-  readCloudProfile(): Promise<QualificationProfile>;
+  readCloudQualifications(): Promise<PilotQualificationsCloudSnapshot>;
 }>): Promise<readonly PilotQualificationsProfileConflict[]> {
   const scope = `USER:${input.userId}` as const;
   const generation = getRuntimeDataScopeGeneration();
@@ -85,7 +87,8 @@ export async function listPilotQualificationsProfileConflicts(input: Readonly<{
   assertCurrent();
   const claims = await readGuestImportClaims(input.factory, assertCurrent);
   const stored = markers(input.storage);
-  const cloudProfile = normalizeQualificationProfile(await input.readCloudProfile());
+  const cloud = await input.readCloudQualifications();
+  const cloudProfile = normalizeQualificationProfile(cloud.value.profile);
   assertCurrent();
   const conflicts: PilotQualificationsProfileConflict[] = [];
   for (const marker of Object.values(stored)) {
@@ -99,11 +102,12 @@ export async function listPilotQualificationsProfileConflicts(input: Readonly<{
       if (!profile || typeof profile !== "object") throw new Error("INVALID_QUALIFICATION_CONFLICT");
       const deviceProfile = normalizeQualificationProfile(profile);
       conflicts.push({
-        id: await qualificationConflictId(claim.id, collision.source, deviceProfile, cloudProfile),
+        id: await qualificationConflictId(claim.id, collision.source, deviceProfile, cloud),
         manifestId: claim.id,
         source: collision.source,
         deviceProfile,
         cloudProfile,
+        cloud,
       });
     }
   }
@@ -117,14 +121,15 @@ export async function resolvePilotQualificationsProfileConflict(input: Readonly<
   strategy: "DEVICE" | "CLOUD";
   storage: Storage;
   factory: IDBFactory;
-  readCloudProfile(): Promise<QualificationProfile>;
+  readCloudQualifications(): Promise<PilotQualificationsCloudSnapshot>;
+  persistChoice(conflict: PilotQualificationsProfileConflict, strategy: "DEVICE" | "CLOUD"): Promise<void>;
 }>): Promise<readonly GuestToUserMigrationCollision[]> {
   const scope = `USER:${input.userId}` as const;
   const generation = getRuntimeDataScopeGeneration();
   const assertCurrent = () => {
     if (getRuntimeDataScope() !== scope || getRuntimeDataScopeGeneration() !== generation) throw new Error("IMPORT_OBSOLETE");
   };
-  const available = await listPilotQualificationsProfileConflicts({ userId: input.userId, storage: input.storage, factory: input.factory, readCloudProfile: input.readCloudProfile });
+  const available = await listPilotQualificationsProfileConflicts({ userId: input.userId, storage: input.storage, factory: input.factory, readCloudQualifications: input.readCloudQualifications });
   assertCurrent();
   const selected = available.find(conflict => conflict.id === input.conflictId);
   if (!selected) throw new Error("QUALIFICATION_CONFLICT_NOT_FOUND");
@@ -136,9 +141,7 @@ export async function resolvePilotQualificationsProfileConflict(input: Readonly<
   });
   if (!key) throw new Error("QUALIFICATION_CONFLICT_NOT_FOUND");
 
-  const current = loadPilotQualifications(input.storage);
-  const chosenProfile = input.strategy === "DEVICE" ? selected.deviceProfile : selected.cloudProfile;
-  if (!savePilotQualifications({ profile: chosenProfile, events: current.events }, input.storage)) throw new Error("QUALIFICATION_SAVE_FAILED");
+  await input.persistChoice(selected, input.strategy);
   assertCurrent();
 
   const latest = markers(input.storage);

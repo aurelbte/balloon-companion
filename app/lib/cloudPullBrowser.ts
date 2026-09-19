@@ -107,6 +107,12 @@ function preferenceRow(value: unknown, domain: PreferencePullDomain): Preference
   return { id: row.id, entityId: "singleton", userId: row.user_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at, value: valueForLocal };
 }
 
+export function parsePilotQualificationsCloudRow(value: unknown): PreferenceCloudRow {
+  const row = preferenceRow(value, "pilot-qualifications");
+  if (row.id !== "qualifications") throw new Error("Invalid pilot qualifications cloud row");
+  return row;
+}
+
 type CloudPilotProfileLocalValue = Readonly<{
   profile: PilotProfile;
   openingBalance: Readonly<{ confirmed: boolean; ascensions: number | null; officialDurationMinutes: number | null }>;

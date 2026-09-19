@@ -20,7 +20,7 @@ import { readPilotQualificationsProfileFromCloud } from "../../lib/pilotQualific
 
 const DOMAIN_LABEL: Record<string, string> = {
   "favorite-weather-place": "Lieu météo favori", "favorite-launch-site": "Terrain favori",
-  balloon: "Ballon", flight: "Vol", "logbook-entry": "Ascension officielle", "balloon-document": "Document ballon",
+  balloon: "Ballon", flight: "Vol", "logbook-entry": "Ascension officielle", "balloon-document": "Document ballon", "pilot-qualifications": "Qualifications pilote",
 };
 
 function yesNo(value: boolean): string { return value ? "Oui" : "Non"; }
@@ -80,7 +80,7 @@ export default function CloudSyncPage() {
     const userId = scope.slice(5), client = createBrowserSupabaseClient();
     void listPilotQualificationsProfileConflicts({
       userId, storage: window.localStorage, factory: window.indexedDB,
-      readCloudProfile: () => readPilotQualificationsProfileFromCloud({ client, userId }),
+      readCloudQualifications: () => readPilotQualificationsProfileFromCloud({ client, userId }),
     })
       .then(conflicts => { if (active && getRuntimeDataScope() === scope) { setQualificationConflicts(conflicts); setQualificationDetailsScope(scope); setQualificationCloudState("AVAILABLE"); } })
       .catch(() => { if (active) setQualificationCloudState("UNAVAILABLE"); });

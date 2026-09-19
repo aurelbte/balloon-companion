@@ -15,6 +15,7 @@ import { migrateGuestAndLegacyToUser, resolvePilotQualificationsProfileConflict,
 import { DATA_SCOPE_CHANGED_EVENT, setRuntimeAuthSnapshot, setRuntimeGuestModeActive } from "../lib/auth/dataScopeRuntime.ts";
 import { isIsolatedAuthCallbackPath } from "../lib/auth/authCallbackPath.ts";
 import { readPilotQualificationsProfileFromCloud } from "../lib/pilotQualificationsCloudReader.ts";
+import { persistPilotQualificationsB6Choice } from "../lib/pilotQualificationsB6Persistence.ts";
 
 type AuthContextValue = AuthSnapshot & Readonly<{
   signUp(input: SignUpInput): Promise<void>;
@@ -142,7 +143,8 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
     try {
       const remaining = await resolvePilotQualificationsProfileConflict({
         userId, conflictId, strategy, storage: window.localStorage, factory: window.indexedDB,
-        readCloudProfile: () => readPilotQualificationsProfileFromCloud({ client: createBrowserSupabaseClient(), userId }),
+        readCloudQualifications: () => readPilotQualificationsProfileFromCloud({ client: createBrowserSupabaseClient(), userId }),
+        persistChoice: (conflict, selectedStrategy) => persistPilotQualificationsB6Choice({ scope: `USER:${userId}`, storage: window.localStorage, strategy: selectedStrategy, deviceProfile: conflict.deviceProfile, cloud: conflict.cloud }),
       });
       if (snapshot.user.id !== userId) return false;
       setLocalDataMigrationCollisions(remaining);
