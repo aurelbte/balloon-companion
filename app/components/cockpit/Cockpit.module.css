@@ -5,12 +5,11 @@
   padding:
     max(var(--bc-space-3), env(safe-area-inset-top))
     var(--bc-space-4)
-    calc(76px + max(var(--bc-space-3), env(safe-area-inset-bottom)));
+    calc(60px + max(var(--bc-space-4), env(safe-area-inset-bottom)));
 }
 
 :global(body):has(.screen) {
   min-height: 100dvh;
-  overflow-y: hidden;
 }
 
 .layout {
