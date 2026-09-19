@@ -10,8 +10,12 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '77777777-7777-4777-8777-777777777777', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
+-- Parent fixture is installed by the migration owner; C13 intentionally
+-- forbids authenticated clients from inserting flights directly.
+reset role;
 insert into public.flights (id, user_id, status, started_at)
 values ('flight-logbook', '77777777-7777-4777-8777-777777777777', 'COMPLETED', '2026-08-23T06:00:00Z');
+set local role authenticated;
 
 select results_eq(
   $$ select status, revision from public.apply_cloud_sync_mutation(

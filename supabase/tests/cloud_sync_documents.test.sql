@@ -10,8 +10,12 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '88888888-8888-4888-8888-888888888888', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
+-- Parent fixture is installed by the migration owner; C13 intentionally
+-- forbids authenticated clients from inserting balloons directly.
+reset role;
 insert into public.balloons (id, user_id, registration, display_name, manufacturer, model, category, volume_m3, configuration_limits_confirmed, weights)
 values ('balloon-document-parent', '88888888-8888-4888-8888-888888888888', 'F-DOCS', 'F-DOCS', 'Cameron', 'Z105', 'Libre à air chaud', 2973, true, '{}'::jsonb);
+set local role authenticated;
 
 select results_eq(
   $$ select status, revision from public.apply_cloud_sync_mutation(

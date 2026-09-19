@@ -35,7 +35,13 @@ select results_eq(
  $$values ('APPLIED'::text,1::bigint)$$,'business edit after upload succeeds at old base N');
 select ok((select updated_at > (select updated_at from c3_before) from public.flights where id='trace-c3'),'business update advances updated_at');
 
+-- C13 forbids this mixed statement to authenticated clients. Execute it as
+-- the migration owner here only to retain coverage of the C3 trigger branch.
+reset role;
 update public.flights set notes='mixed',checksum=repeat('b',64) where id='trace-c3';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '77777777-7777-4777-8777-777777777777', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 select is((select revision from public.flights where id='trace-c3'),2::bigint,'mixed update is business N to N+1');
 
 -- Exercise the exact cleanup metadata patch on a live fixture to test the
@@ -56,8 +62,12 @@ select is((select revision from public.flights where id='trace-c3'),3::bigint,'l
 update public.flights set track_generation=2 where id='trace-c3';
 select is((select revision from public.flights where id='trace-c3'),3::bigint,'track generation is technical');
 
--- A concurrent business writer must still invalidate the old base revision.
-update public.flights set notes='concurrent writer' where id='trace-c3';
+-- A concurrent business writer through the mutation protocol must still
+-- invalidate the old base revision. Direct business UPDATE is forbidden by C13.
+select results_eq(
+ $$select status,revision from public.apply_cloud_sync_mutation(
+ 'cccccccc-0000-4000-8000-000000000007','flight','trace-c3','UPSERT',3,'{"notes":"concurrent writer"}'::jsonb)$$,
+ $$values ('APPLIED'::text,4::bigint)$$,'concurrent business writer advances revision');
 select results_eq(
  $$select status,revision from public.apply_cloud_sync_mutation(
  'cccccccc-0000-4000-8000-000000000004','flight','trace-c3','UPSERT',3,'{"notes":"stale edit"}'::jsonb)$$,
@@ -83,10 +93,10 @@ select results_eq(
  'cccccccc-0000-4000-8000-000000000006','flight','trace-c3','UPSERT',5,'{"notes":"resurrect"}'::jsonb)$$,
  $$values ('CONFLICT'::text,5::bigint)$$,'tombstone resurrection remains refused');
 
--- Direct changes to protocol metadata are never considered blob-only.
-update public.flights set revision=99,updated_at='2000-01-01Z' where id='trace-c3';
-select is((select revision from public.flights where id='trace-c3'),6::bigint,'explicit revision write cannot bypass increment');
-select ok((select updated_at > (select updated_at from c3_before) from public.flights where id='trace-c3'),'explicit date write cannot force business date');
+-- Direct changes to protocol metadata are forbidden by C13.
+select throws_ok(
+ $$update public.flights set revision=99,updated_at='2000-01-01Z' where id='trace-c3'$$,
+ '42501',null,'explicit revision and date writes are refused');
 
 select * from finish();
 rollback;

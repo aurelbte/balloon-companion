@@ -22,13 +22,13 @@ select ok(not has_function_privilege('authenticated','public.balloon_companion_a
 select ok(not has_function_privilege('anon','public.balloon_companion_apply_cloud_sync_mutation_before_c11(uuid,text,text,text,bigint,jsonb)','EXECUTE'),'delegate: anon no EXECUTE');
 select ok(not has_function_privilege('service_role','public.balloon_companion_apply_cloud_sync_mutation_before_c11(uuid,text,text,text,bigint,jsonb)','EXECUTE'),'delegate: service_role no EXECUTE');
 select ok(not exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where p.oid='public.balloon_companion_apply_cloud_sync_mutation_before_c11(uuid,text,text,text,bigint,jsonb)'::regprocedure and a.grantee=0 and a.privilege_type='EXECUTE'),'delegate: PUBLIC no EXECUTE');
-select ok(has_function_privilege('authenticated','public.balloon_companion_registration_key(text)','EXECUTE'),'index helper: authenticated EXECUTE required for direct writes');
+select ok(has_function_privilege('authenticated','public.balloon_companion_registration_key(text)','EXECUTE'),'index helper: C11 authenticated ACL preserved');
 select ok(not exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where p.oid='public.balloon_companion_registration_key(text)'::regprocedure and a.grantee not in (p.proowner,(select oid from pg_roles where rolname='authenticated'))),'index helper: only owner and authenticated ACL');
 select ok(not exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where p.oid='public.apply_cloud_sync_mutation(uuid,text,text,text,bigint,jsonb)'::regprocedure and a.grantee not in (p.proowner,(select oid from pg_roles where rolname='authenticated'))),'wrapper: only owner and authenticated ACL');
--- Reproduce PostgreSQL's actual expression-index EXECUTE requirement.
+-- Preserve and verify C11's explicit helper ACL independently from table DML.
 revoke execute on function public.balloon_companion_registration_key(text) from authenticated;
 set local role authenticated;
-select throws_ok($$insert into public.balloons(id,user_id,registration,manufacturer,model,category,volume_m3) values('no-helper-acl',auth.uid(),'F-NOACL','Cameron','Z105','Libre à air chaud',2973)$$,'42501','permission denied for function balloon_companion_registration_key','expression index needs helper EXECUTE for direct INSERT');
+select throws_ok($$select public.balloon_companion_registration_key('F-NOACL')$$,'42501','permission denied for function balloon_companion_registration_key','helper EXECUTE remains explicit');
 reset role;
 grant execute on function public.balloon_companion_registration_key(text) to authenticated;
 set local role anon;
@@ -36,9 +36,8 @@ select throws_ok($$select * from public.apply_cloud_sync_mutation(md5('anon')::u
 reset role;
 set local role authenticated;
 select throws_ok($$insert into public.balloons(id,user_id,registration,manufacturer,model,category,volume_m3) values('wrong-user','22222222-2222-4222-8222-222222222222','F-RLS','Cameron','Z105','Libre à air chaud',2973)$$,'42501',null,'direct INSERT remains isolated by RLS');
-select lives_ok($$insert into public.balloons(id,user_id,registration,manufacturer,model,category,volume_m3) values('direct-acl',auth.uid(),'F-DIRECT','Cameron','Z105','Libre à air chaud',2973)$$,'direct INSERT works with helper and index');
-select lives_ok($$update public.balloons set registration='F-DIRECT2' where id='direct-acl' and user_id=auth.uid()$$,'direct UPDATE maintains expression index');
-delete from public.balloons where id='direct-acl' and user_id=auth.uid();
+select throws_ok($$insert into public.balloons(id,user_id,registration,manufacturer,model,category,volume_m3) values('direct-acl',auth.uid(),'F-DIRECT','Cameron','Z105','Libre à air chaud',2973)$$,'42501',null,'C13 refuses direct INSERT even with helper ACL');
+select throws_ok($$update public.balloons set registration='F-DIRECT2' where id='direct-acl' and user_id=auth.uid()$$,'42501',null,'C13 refuses direct business UPDATE');
 select is(public.balloon_companion_registration_key(' f-abcd '),'F-ABCD','ASCII case/trim');
 select is(public.balloon_companion_registration_key(U&'\00A0\FEFFf-abcd\3000\0009'),'F-ABCD','ECMAScript Unicode whitespace');
 select is(public.balloon_companion_registration_key('ß-ı-ﬃ-é-σ-ς-𐐨'),'SS-I-FFI-É-Σ-Σ-𐐀','Unicode casing and expansions, independent of SQL collation');
@@ -58,14 +57,16 @@ select is((select revision from public.balloons where id='c' and user_id=auth.ui
 select is(pg_temp.c11_push('c','F-IJKL','update-c-ok',0),'APPLIED','noncollision UPDATE');
 select is(pg_temp.c11_push('c','F-ABCD','update-stale',0),'CONFLICT','real revision conflict remains distinct');
 select throws_ok($$insert into public.balloons(id,user_id,registration,manufacturer,model,category,volume_m3) values('old-client',auth.uid(),' f-abcd ','Cameron','Z105','Libre à air chaud',2973)$$,
- '23505',null,'old direct client is protected by unique index');
+ '42501',null,'old direct client cannot bypass the Cloud Sync RPC');
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select is(pg_temp.c11_push('a','F-ABCD','user-b-create'),'APPLIED','same registration allowed for another user');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+reset role;
 insert into public.documents(id,user_id,balloon_id,category,title,original_filename,mime_type,size_bytes)
- values('historic-doc',auth.uid(),'a','INSURANCE','Assurance','a.pdf','application/pdf',123);
+ values('historic-doc','11111111-1111-4111-8111-111111111111','a','INSURANCE','Assurance','a.pdf','application/pdf',123);
 insert into public.flights(id,user_id,status,started_at,balloon_id,balloon_registration)
- values('historic-flight',auth.uid(),'COMPLETED',now(),'a','F-ABCD');
+ values('historic-flight','11111111-1111-4111-8111-111111111111','COMPLETED',now(),'a','F-ABCD');
+set local role authenticated;
 select is((select status from public.apply_cloud_sync_mutation(md5('delete-a')::uuid,'balloon','a','DELETE',0,'{}')),'APPLIED','DELETE succeeds');
 select ok((select deleted_at is not null from public.balloons where id='a' and user_id=auth.uid()),'historical identity remains tombstoned');
 select is(pg_temp.c11_push('b','F-ABCD','create-b'),'APPLIED','same rejected mutation retries after owner deletion');

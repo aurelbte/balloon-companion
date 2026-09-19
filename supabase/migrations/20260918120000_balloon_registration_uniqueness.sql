@@ -84,10 +84,11 @@ $function$;
 revoke all on function public.balloon_companion_registration_key(text) from public, anon, authenticated, service_role;
 grant execute on function public.balloon_companion_registration_key(text) to authenticated;
 
--- Prevent concurrent writers between the guard and index creation.
-lock table public.balloons in share row exclusive mode;
 do $guard$
 begin
+  -- Keep the duplicate guard and index creation under the same lock and
+  -- transaction even when the migration runner executes statements in autocommit.
+  lock table public.balloons in share row exclusive mode;
   if exists (
     select 1 from public.balloons
     where deleted_at is null
@@ -96,12 +97,13 @@ begin
   ) then
     raise exception using errcode = '23505', message = 'C11_PRECHECK_DUPLICATE_ACTIVE_REGISTRATION: resolve duplicates explicitly before deployment';
   end if;
+  execute $index$
+    create unique index balloons_user_registration_active_key
+      on public.balloons (user_id, (public.balloon_companion_registration_key(registration) collate "C"))
+      where deleted_at is null
+  $index$;
 end;
 $guard$;
-
-create unique index balloons_user_registration_active_key
-  on public.balloons (user_id, (public.balloon_companion_registration_key(registration) collate "C"))
-  where deleted_at is null;
 
 -- Keep the existing protocol, revision checks and receipts inside the delegate.
 alter function public.apply_cloud_sync_mutation(uuid, text, text, text, bigint, jsonb)
