@@ -40,7 +40,7 @@ test("la décision Auth ne modifie aucune donnée métier", () => {
 
 test("la modal dépend strictement de SIGNED_IN et du pending, avec résumé réel", () => {
   const dialog = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.tsx", import.meta.url), "utf8");
-  assert.match(dialog, /auth\.state === "SIGNED_IN" && \(migration\?\.state === "PENDING_LOCAL_DATA_MIGRATION"/);
+  assert.match(dialog, /auth\.state === "SIGNED_IN" && migration\?\.state === "PENDING_LOCAL_DATA_MIGRATION"/);
   assert.match(dialog, /Données trouvées sur cet appareil/);
   for (const field of ["summary.flights", "summary.journalEntries", "summary.balloons", "summary.documents", "summary.otherBusinessStorages"]) assert.match(dialog, new RegExp(field.replace(".", "\\.")));
   assert.match(dialog, /MIGRATION_APPROVED/);
@@ -66,7 +66,7 @@ test("les états B6 actionnables utilisent une alerte compacte hors du flux", ()
   const styles = readFileSync(new URL("../../components/auth/LocalDataMigrationDialog.module.css", import.meta.url), "utf8");
   const cloud = readFileSync(new URL("../../more/cloud-sync/page.tsx", import.meta.url), "utf8");
   assert.match(dialog, /localDataImportReviewPending[\s\S]*IMPORT_BLOCKED[\s\S]*SOURCE_CHANGED/);
-  assert.match(dialog, /Données locales à vérifier[\s\S]*href="\/more\/cloud-sync"/);
+  assert.match(dialog, /Données à vérifier[\s\S]*href="\/more\/cloud-sync"/);
   assert.match(dialog, /pathname !== "\/more\/cloud-sync"/);
   assert.doesNotMatch(dialog, /return auth\.localDataImportNotice \? <p/);
   assert.match(styles, /\.notice \{[\s\S]*position: fixed/);
@@ -74,6 +74,8 @@ test("les états B6 actionnables utilisent une alerte compacte hors du flux", ()
   assert.match(cloud, /Ce sont mes données — les rattacher[\s\S]*Ne pas importer/);
   assert.match(cloud, /decideReviewedLocalDataImport/);
   assert.match(cloud, /Conflits de données locales[\s\S]*DUPLICATE_REGISTRATION/);
+  assert.doesNotMatch(dialog, /Données différentes sur cet appareil|collisions\.length > 0\) return <div className=\{styles\.backdrop\}/);
+  assert.match(dialog, /const visible = auth\.state === "SIGNED_IN" && migration\?\.state === "PENDING_LOCAL_DATA_MIGRATION"/);
 });
 
 test("les états B6 sans action ne créent aucun bloc global", () => {
