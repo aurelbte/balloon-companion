@@ -15,13 +15,14 @@ function backend() {
   const calls = [];
   const messages = [];
   let nextSession = S1;
+  const heartbeatResults = [];
   const client = (userId) => ({
     realtime: { setAuth: async () => undefined },
     rpc: async (name, args = {}) => {
       calls.push({ userId, name, args });
       if (name === "start_live_share_session") { const id = nextSession; sessions.set(id, { ownerId: userId, recipients: [...args.p_recipient_ids], active: true }); return { data: id, error: null }; }
       if (name === "add_live_share_recipient") { sessions.get(args.p_session_id).recipients.push(args.p_recipient_id); return { data: null, error: null }; }
-      if (name === "heartbeat_live_share_session") return { data: new Date().toISOString(), error: null };
+      if (name === "heartbeat_live_share_session") return heartbeatResults.shift() ?? { data: new Date().toISOString(), error: null };
       if (name === "stop_live_share_session") { const session = sessions.get(args.p_session_id); if (session) session.active = false; return { data: null, error: null }; }
       if (name === "rotate_live_share_after_recipient_revocation") {
         const old = sessions.get(args.p_session_id); old.active = false;
@@ -46,7 +47,7 @@ function backend() {
     },
     removeChannel: async (channel) => { channels.get(channel.topic)?.delete(channel); return "ok"; },
   });
-  return { client, calls, sessions, channels, messages };
+  return { client, calls, sessions, channels, messages, heartbeatResults };
 }
 
 const source = () => ({ latitude: 50.6, longitude: 3.1, altitude: 620, groundSpeed: 4, heading: 245, durationSeconds: 120, distanceKm: 1.2, accuracy: 5, gpsTimestamp: Date.now(), fresh: true });
@@ -91,6 +92,35 @@ test("fermeture USER stoppe publication, canaux et ne reprend rien au reload", a
   const runtime = new LiveFlightRuntime(server.client(A), { onOutgoing() {}, onIncomingPilots() {}, onIncomingOwners() {} });
   await runtime.start(A); await runtime.addRecipient(B, null); runtime.stopOutgoingBestEffort();
   assert.equal(await runtime.publishSource(source(), true), false);
+  await runtime.close();
+});
+
+test("échecs heartbeat temporaires puis reprise conservent une seule session et le stop reste définitif", async () => {
+  const server = backend(), snapshots = [];
+  const runtime = new LiveFlightRuntime(server.client(A), { onOutgoing: value => snapshots.push(value), onIncomingPilots() {}, onIncomingOwners() {} });
+  await runtime.start(A); await runtime.addRecipient(B, null);
+  server.heartbeatResults.push({ data: null, error: { message: "fetch failed" } }, { data: null, error: { message: "fetch failed" } });
+  await runtime.resumeOutgoing(); await runtime.resumeOutgoing();
+  assert.deepEqual(snapshots.at(-1).recipientIds, [B]);
+  await runtime.resumeOutgoing();
+  assert.equal(server.calls.filter(({ name }) => name === "start_live_share_session").length, 1);
+  assert.equal((server.channels.get(`flight-share:${S1}`) ?? new Set()).size, 1);
+  runtime.stopOutgoingBestEffort(); await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(snapshots.at(-1).recipientIds, []);
+  await runtime.resumeOutgoing();
+  assert.equal(server.calls.filter(({ name }) => name === "start_live_share_session").length, 1);
+  await runtime.close();
+});
+
+test("expiration/refus serveur efface l'intention sans créer une nouvelle session", async () => {
+  const server = backend(), snapshots = [];
+  const runtime = new LiveFlightRuntime(server.client(A), { onOutgoing: value => snapshots.push(value), onIncomingPilots() {}, onIncomingOwners() {} });
+  await runtime.start(A); await runtime.addRecipient(B, null);
+  server.heartbeatResults.push({ data: null, error: { code: "42501", message: "LIVE_SESSION_NOT_HEARTBEATABLE" } });
+  await runtime.resumeOutgoing();
+  assert.deepEqual(snapshots.at(-1).recipientIds, []);
+  await runtime.resumeOutgoing();
+  assert.equal(server.calls.filter(({ name }) => name === "start_live_share_session").length, 1);
   await runtime.close();
 });
 

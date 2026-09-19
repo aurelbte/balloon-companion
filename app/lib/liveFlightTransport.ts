@@ -34,8 +34,17 @@ export function canPublishLiveFlight(input: Readonly<{
     && input.activeRecipientCount > 0;
 }
 
+export class LiveShareRpcError extends Error {
+  readonly code?: string;
+  constructor(error: { message: string; code?: string }) { super(error.message); this.name = "LiveShareRpcError"; this.code = error.code; }
+}
+
 function rpcFailure(error: { message: string; code?: string } | null): void {
-  if (error) throw new Error(error.code ? `${error.code}: ${error.message}` : error.message);
+  if (error) throw new LiveShareRpcError(error);
+}
+
+export function isTerminalLiveHeartbeatError(error: unknown): boolean {
+  return error instanceof LiveShareRpcError && ["AUTH_REQUIRED", "LIVE_SESSION_NOT_HEARTBEATABLE", "INVALID_LIVE_TTL"].includes(error.message);
 }
 
 export class LiveShareSessionService {
@@ -75,6 +84,7 @@ export class LiveFlightRealtimeTransport {
   private readonly sessions: LiveShareSessionService;
   private channel: RealtimeChannel | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private replacePromise: Promise<void> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly guard = new LiveFlightConnectionGuard();
   private readonly sequences = new LiveSequenceGate();
@@ -83,7 +93,9 @@ export class LiveFlightRealtimeTransport {
   private onState: ((state: LiveChannelState) => void) | null = null;
   private onReadyToPublish: (() => void) | null = null;
   private onEnded: (() => void) | null = null;
+  private onTerminated: (() => void) | null = null;
   private lifecycleAttached = false;
+  private stopping = false;
 
   constructor(client: SupabaseClient, sessions = new LiveShareSessionService(client)) { this.client = client; this.sessions = sessions; }
 
@@ -95,14 +107,17 @@ export class LiveFlightRealtimeTransport {
     onState?: (state: LiveChannelState) => void;
     onReadyToPublish?: () => void;
     onEnded?: () => void;
+    onTerminated?: () => void;
   }>): Promise<void> {
     await this.disconnect();
+    this.stopping = false;
     const generation = this.guard.activate(input.userId, input.sessionId);
     this.activeConfig = { userId: input.userId, sessionId: input.sessionId, mode: input.mode, generation };
     this.onPosition = input.onPosition ?? null;
     this.onState = input.onState ?? null;
     this.onReadyToPublish = input.onReadyToPublish ?? null;
     this.onEnded = input.onEnded ?? null;
+    this.onTerminated = input.onTerminated ?? null;
     this.attachLifecycle();
     await this.openCurrentChannel();
     if (input.mode === "PUBLISHER") this.heartbeatTimer = setInterval(() => { void this.heartbeat(); }, LIVE_HEARTBEAT_INTERVAL_MS);
@@ -110,14 +125,14 @@ export class LiveFlightRealtimeTransport {
 
   private async openCurrentChannel(): Promise<void> {
     const config = this.activeConfig;
-    if (!config || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+    if (!config || this.stopping || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) { this.onState?.("OFFLINE"); return; }
     this.onState?.("CONNECTING");
     await this.client.realtime.setAuth();
-    if (!this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+    if (this.stopping || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
     const channel = this.client.channel(liveShareTopic(config.sessionId), { config: { private: true, broadcast: { ack: true, self: false } } });
     channel.on("broadcast", { event: "position" }, (message: { payload?: unknown }) => {
-      if (!this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+      if (this.stopping || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
       const result = validateLiveFlightPayload(message.payload, config.sessionId);
       if (!result.ok || !this.sequences.accept(result.payload)) return;
       this.onPosition?.(result.payload, livePositionFreshness(result.payload.gpsTimestamp));
@@ -127,8 +142,8 @@ export class LiveFlightRealtimeTransport {
     });
     this.channel = channel;
     channel.subscribe((status) => {
-      if (!this.guard.valid(config.userId, config.sessionId, config.generation)) return;
-      if (status === "SUBSCRIBED") { this.guard.connected(); this.onState?.("SUBSCRIBED"); if (config.mode === "PUBLISHER") this.onReadyToPublish?.(); return; }
+      if (this.stopping || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+      if (status === "SUBSCRIBED") { this.guard.connected(); if (this.retryTimer) clearTimeout(this.retryTimer); this.retryTimer = null; this.onState?.("SUBSCRIBED"); if (config.mode === "PUBLISHER") this.onReadyToPublish?.(); return; }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") { this.onState?.("ERROR"); this.scheduleReconnect(); }
       if (status === "CLOSED") this.onState?.("CLOSED");
     });
@@ -136,7 +151,7 @@ export class LiveFlightRealtimeTransport {
 
   async publish(payload: LiveFlightPositionPayload, context: LivePublishContext): Promise<boolean> {
     const config = this.activeConfig;
-    if (!config || config.mode !== "PUBLISHER" || payload.sessionId !== config.sessionId || !this.channel || !this.guard.valid(config.userId, config.sessionId, config.generation)) return false;
+    if (!config || this.stopping || config.mode !== "PUBLISHER" || payload.sessionId !== config.sessionId || !this.channel || !this.guard.valid(config.userId, config.sessionId, config.generation)) return false;
     if (!canPublishLiveFlight({ authenticatedUserId: config.userId, sessionOwnerId: config.userId, ...context })) return false;
     const validation = validateLiveFlightPayload(payload, config.sessionId);
     if (!validation.ok) return false;
@@ -145,30 +160,62 @@ export class LiveFlightRealtimeTransport {
 
   async signalEnd(): Promise<void> {
     const config = this.activeConfig;
-    if (!config || config.mode !== "PUBLISHER" || !this.channel || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+    if (!config || this.stopping || config.mode !== "PUBLISHER" || !this.channel || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
     await this.channel.send({ type: "broadcast", event: "ended", payload: { sessionId: config.sessionId } });
   }
 
   private async heartbeat(): Promise<void> {
     const config = this.activeConfig;
-    if (!config || config.mode !== "PUBLISHER" || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+    if (!config || this.stopping || config.mode !== "PUBLISHER" || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
     try { await this.sessions.heartbeat(config.sessionId); }
-    catch { this.onState?.("ERROR"); await this.disconnect(); }
+    catch (error) {
+      if (this.stopping || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+      if (isTerminalLiveHeartbeatError(error)) { this.onTerminated?.(); await this.disconnect(); return; }
+      this.onState?.(typeof navigator !== "undefined" && navigator.onLine === false ? "OFFLINE" : "ERROR");
+      this.scheduleReconnect();
+    }
   }
 
   private scheduleReconnect(): void {
-    if (this.retryTimer || !this.activeConfig) return;
+    if (this.stopping || this.retryTimer || !this.activeConfig) return;
     const delay = this.guard.disconnected();
     this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.replaceChannel(); }, delay);
   }
 
-  private async replaceChannel(): Promise<void> {
+  private replaceChannel(): Promise<void> {
+    if (this.replacePromise) return this.replacePromise;
+    this.replacePromise = this.doReplaceChannel().finally(() => { this.replacePromise = null; });
+    return this.replacePromise;
+  }
+
+  private async doReplaceChannel(): Promise<void> {
     if (this.channel) { const previous = this.channel; this.channel = null; await this.client.removeChannel(previous); }
     await this.openCurrentChannel();
   }
 
+  async resume(): Promise<void> {
+    const config = this.activeConfig;
+    if (!config || this.stopping || !this.guard.valid(config.userId, config.sessionId, config.generation)) return;
+    if (config.mode === "PUBLISHER") await this.heartbeat();
+    if (this.activeConfig && this.guard.valid(config.userId, config.sessionId, config.generation)) await this.replaceChannel();
+  }
+
+  async stop(): Promise<void> {
+    if (this.stopping) return;
+    this.stopping = true;
+    const config = this.activeConfig, channel = this.channel;
+    this.guard.close(); this.activeConfig = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.retryTimer = null; this.heartbeatTimer = null;
+    this.channel = null; this.sequences.reset(); this.detachLifecycle();
+    this.onPosition = null; this.onState = null; this.onReadyToPublish = null; this.onEnded = null; this.onTerminated = null;
+    if (config?.mode === "PUBLISHER" && channel) await channel.send({ type: "broadcast", event: "ended", payload: { sessionId: config.sessionId } }).catch(() => undefined);
+    if (channel) await this.client.removeChannel(channel);
+  }
+
   private readonly handleOffline = () => { this.onState?.("OFFLINE"); void this.dropChannel(); };
-  private readonly handleOnline = () => { if (this.activeConfig) void this.replaceChannel(); };
+  private readonly handleOnline = () => { if (this.activeConfig) void this.resume(); };
   private readonly handleVisibility = () => { if (document.visibilityState === "visible" && this.activeConfig) void this.replaceChannel(); };
   private readonly handlePageHide = () => { void this.dropChannel(); };
   private readonly handlePageShow = () => { if (this.activeConfig) void this.replaceChannel(); };
@@ -206,9 +253,10 @@ export class LiveFlightRealtimeTransport {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.retryTimer = null; this.heartbeatTimer = null;
+    this.replacePromise = null;
     await this.dropChannel();
     this.detachLifecycle();
     this.onState?.("CLOSED");
-    this.onPosition = null; this.onState = null; this.onReadyToPublish = null; this.onEnded = null;
+    this.onPosition = null; this.onState = null; this.onReadyToPublish = null; this.onEnded = null; this.onTerminated = null;
   }
 }

@@ -72,16 +72,13 @@ export class LiveFlightRuntime {
   }
 
   private async refreshLifecycle(): Promise<void> {
-    const sessionId = this.outgoingSessionId;
-    if (sessionId) {
-      try { await this.sessions.heartbeat(sessionId); }
-      catch { this.stopOutgoingBestEffort(); }
-    }
+    if (this.outgoingSessionId) await this.outgoingTransport.resume();
     await this.refreshIncoming();
   }
   private readonly handleOnline = () => { void this.refreshLifecycle(); };
   private readonly handleVisibility = () => { if (document.visibilityState === "visible") void this.refreshLifecycle(); };
   private readonly handlePageShow = () => { void this.refreshLifecycle(); };
+  async resumeOutgoing(): Promise<void> { if (this.outgoingSessionId) await this.outgoingTransport.resume(); }
   private attachLifecycle(): void {
     if (this.lifecycleAttached || typeof window === "undefined") return;
     this.lifecycleAttached = true;
@@ -110,6 +107,10 @@ export class LiveFlightRuntime {
         this.emitOutgoing();
       },
       onReadyToPublish: () => { if (this.latestSource) void this.publishSource(this.latestSource, true); },
+      onTerminated: () => {
+        if (generation !== this.generation || sessionId !== this.outgoingSessionId) return;
+        this.clearOutgoingIntent();
+      },
     });
   }
 
@@ -212,13 +213,15 @@ export class LiveFlightRuntime {
   }
 
   stopOutgoingBestEffort(): void {
-    const stopEpoch = ++this.outgoingEpoch;
+    this.outgoingEpoch += 1;
     const sessionId = this.outgoingSessionId;
-    this.outgoingSessionId = null; this.recipientIds = []; this.pendingRecipientIds = []; this.sequence = 0; this.previousPayload = null; this.latestSource = null; this.outgoingChannelState = "IDLE"; this.emitOutgoing();
-    void this.outgoingTransport.signalEnd()
-      .catch(() => undefined)
-      .then(() => stopEpoch === this.outgoingEpoch ? this.outgoingTransport.disconnect() : undefined)
+    this.clearOutgoingIntent();
+    void this.outgoingTransport.stop()
       .then(() => sessionId ? this.sessions.stop(sessionId).catch(() => undefined) : undefined);
+  }
+
+  private clearOutgoingIntent(): void {
+    this.outgoingSessionId = null; this.recipientIds = []; this.pendingRecipientIds = []; this.sequence = 0; this.previousPayload = null; this.latestSource = null; this.outgoingChannelState = "IDLE"; this.emitOutgoing();
   }
 
   async close(): Promise<void> {

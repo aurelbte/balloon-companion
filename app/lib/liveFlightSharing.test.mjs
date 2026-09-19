@@ -12,7 +12,7 @@ import {
   validateLiveFlightPayload,
 } from "./liveFlightSharing.ts";
 import { canUseLiveFlightPublisherControls, createDevelopmentLiveFlightSimulator, createTargetedLiveFlightSimulator, isTargetedLiveFlightSimulator, livePublisherScenarioAction, shouldInvalidatePublisherSource, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight, simulateLiveFlightScenario, targetedLiveSimulatorUi } from "./liveFlightSimulator.ts";
-import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareSessionService, canPublishLiveFlight, liveShareTopic } from "./liveFlightTransport.ts";
+import { LiveFlightConnectionGuard, LiveFlightRealtimeTransport, LiveShareRpcError, LiveShareSessionService, canPublishLiveFlight, isTerminalLiveHeartbeatError, liveShareTopic } from "./liveFlightTransport.ts";
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SESSION_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -163,6 +163,61 @@ test("le publisher exige toutes les conditions métier et redemande une position
   assert.equal(await transport.publish(livePayload, { ...validContext, trackingActive: false }), false);
   assert.equal(await transport.publish(livePayload, validContext), true);
   assert.equal(fake.channels[0].sent.length, 1);
+  await transport.disconnect();
+});
+
+test("un heartbeat temporairement échoué conserve la cible et reprend sans doubler le canal", async () => {
+  const fake = fakeRealtimeClient(); let failures = 2; const states = [];
+  const sessions = { heartbeat: async () => { if (failures-- > 0) throw new Error("NETWORK"); return new Date(NOW).toISOString(); } };
+  const transport = new LiveFlightRealtimeTransport(fake.client, sessions);
+  await transport.connect({ userId: "a", sessionId: SESSION_A, mode: "PUBLISHER", onState: state => states.push(state) });
+  await transport.resume(); await transport.resume(); await transport.resume();
+  assert.equal(states.filter(state => state === "ERROR").length, 2);
+  assert.equal(fake.channels.length, 4);
+  assert.equal(fake.channels.length - fake.removed.length, 1);
+  await transport.disconnect();
+});
+
+test("révocation ou expiration termine la cible, contrairement à une erreur réseau", async () => {
+  assert.equal(isTerminalLiveHeartbeatError(new Error("NETWORK")), false);
+  for (const message of ["AUTH_REQUIRED", "LIVE_SESSION_NOT_HEARTBEATABLE", "INVALID_LIVE_TTL"]) assert.equal(isTerminalLiveHeartbeatError(new LiveShareRpcError({ code: "42501", message })), true);
+  const fake = fakeRealtimeClient(); let terminated = 0;
+  const transport = new LiveFlightRealtimeTransport(fake.client, { heartbeat: async () => { throw new LiveShareRpcError({ code: "42501", message: "LIVE_SESSION_NOT_HEARTBEATABLE" }); } });
+  await transport.connect({ userId: "a", sessionId: SESSION_A, mode: "PUBLISHER", onTerminated: () => { terminated += 1; } });
+  await transport.resume();
+  assert.equal(terminated, 1); assert.equal(fake.channels.length - fake.removed.length, 0);
+  await transport.resume(); assert.equal(terminated, 1);
+});
+
+test("un stop volontaire pendant un heartbeat en attente interdit toute reconnexion différée", async () => {
+  const fake = fakeRealtimeClient(); let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const transport = new LiveFlightRealtimeTransport(fake.client, { heartbeat: () => pending });
+  await transport.connect({ userId: "a", sessionId: SESSION_A, mode: "PUBLISHER" });
+  const resume = transport.resume();
+  await transport.stop(); release(new Date(NOW).toISOString()); await resume;
+  assert.equal(fake.channels.length, 1);
+  assert.equal(fake.channels.length - fake.removed.length, 0);
+  await transport.resume(); assert.equal(fake.channels.length, 1);
+});
+
+test("offline puis online suspend et reprend la même session avec un seul canal actif", async t => {
+  const previous = { window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator };
+  const eventWindow = new EventTarget(), eventDocument = new EventTarget(); eventDocument.visibilityState = "visible";
+  let online = true;
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: eventWindow },
+    document: { configurable: true, value: eventDocument },
+    navigator: { configurable: true, value: { get onLine() { return online; } } },
+  });
+  t.after(() => { for (const [key, value] of Object.entries(previous)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); });
+  const fake = fakeRealtimeClient(), states = [], transport = new LiveFlightRealtimeTransport(fake.client);
+  await transport.connect({ userId: "a", sessionId: SESSION_A, mode: "PUBLISHER", onState: state => states.push(state) });
+  online = false; eventWindow.dispatchEvent(new Event("offline")); await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(states.at(-1), "OFFLINE"); assert.equal(fake.channels.length - fake.removed.length, 0);
+  online = true; eventWindow.dispatchEvent(new Event("online")); await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(states.at(-1), "SUBSCRIBED"); assert.equal(fake.channels.length - fake.removed.length, 1);
+  assert.equal(fake.rpcCalls.filter(({ name }) => name === "heartbeat_live_share_session").length, 1);
   await transport.disconnect();
 });
 
