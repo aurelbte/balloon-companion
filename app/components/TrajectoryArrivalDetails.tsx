@@ -13,11 +13,12 @@ import { formatFlightDistance, formatWeatherWind } from "../lib/unitPreferences"
 import type { WeatherAnalysisTrace } from "../lib/trajectory/weatherAnalysisStorage";
 import type { WeatherHourlyForecast } from "../lib/weather/openMeteo/types";
 import styles from "./TrajectoryArrivalDetails.module.css";
+import { formatInTimeZone } from "../lib/timeZone.ts";
 
-const time = (iso: string) => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const time = (iso: string, timeZone?: string) => formatInTimeZone(iso, timeZone, { hour: "2-digit", minute: "2-digit" });
 const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
-export default function TrajectoryArrivalDetails({ trace, airspaces, onClose }: { trace: WeatherAnalysisTrace; airspaces: AirspaceFeatureCollection; onClose(): void }) {
+export default function TrajectoryArrivalDetails({ trace, airspaces, timeZone, onClose }: { trace: WeatherAnalysisTrace; airspaces: AirspaceFeatureCollection; timeZone?: string; onClose(): void }) {
   const [tab, setTab] = useState<"weather" | "airspaces">("weather");
   const units = useUnitPreferences();
   const [landing, setLanding] = useState<LandingWeatherSummary | null>(null);
@@ -44,11 +45,11 @@ export default function TrajectoryArrivalDetails({ trace, airspaces, onClose }: 
   }, [end.latitude, end.longitude, end.timestamp, trace.model.providerModelId]);
 
   return <aside className={styles.popup} aria-label="Détails de la trajectoire sélectionnée">
-    <div className={styles.top}><div><strong>{trace.label} · {trace.model.label}</strong><span>{time(trace.projection.startedAt)} → {time(end.timestamp)} · {duration(trace.projection.durationSeconds)}</span></div><button type="button" onClick={onClose} aria-label="Fermer"><X size={18} /></button></div>
+    <div className={styles.top}><div><strong>{trace.label} · {trace.model.label}</strong><span>{time(trace.projection.startedAt, timeZone)} → {time(end.timestamp, timeZone)} · {duration(trace.projection.durationSeconds)}</span></div><button type="button" onClick={onClose} aria-label="Fermer"><X size={18} /></button></div>
     <div className={styles.tabs}><button type="button" aria-pressed={tab === "weather"} onClick={() => setTab("weather")}>Météo vol</button><button type="button" aria-pressed={tab === "airspaces"} onClick={() => setTab("airspaces")}>Espaces aériens</button></div>
     {tab === "weather" ? <div className={styles.content}>
       <dl className={styles.metrics}><div><dt>Distance prévue</dt><dd>{formatFlightDistance(trajectoryDistanceKm(trace), units.flightInstruments.distanceUnit)}</dd></div><div><dt>Vent max</dt><dd>{speed(trajectoryMaximumWindKmh(trace))}</dd></div></dl>
-      <section className={styles.landing}><h3>Atterrissage · rayon 3 km</h3>{landing && <p role="status">Prévision autour de l’arrivée du {new Date(landing.forecastAtIso ?? end.timestamp).toLocaleString("fr-FR")} · {freshnessLabel(landingFreshness)} · {retrievalLabel(landing.weatherFetchedAt)} · Run du modèle inconnu</p>}{landingPending ? <p>Analyse…</p> : <dl className={styles.metrics}><div><dt>Vent moyen</dt><dd>{speed(landing?.averageWindKmh ?? null)}</dd></div><div><dt>Vent max</dt><dd>{speed(landing?.maximumWindKmh ?? null)}</dd></div><div><dt>Rafale max</dt><dd>{speed(landing?.maximumGustKmh ?? null)}</dd></div><div><dt>Direction</dt><dd>{landing?.directionLabel ?? "—"}</dd></div></dl>}</section>
+      <section className={styles.landing}><h3>Atterrissage · rayon 3 km</h3>{landing && <p role="status">Prévision autour de l’arrivée du {formatInTimeZone(landing.forecastAtIso ?? end.timestamp, timeZone, { dateStyle: "short", timeStyle: "short" })} · {freshnessLabel(landingFreshness)} · {retrievalLabel(landing.weatherFetchedAt)} · Run du modèle inconnu</p>}{landingPending ? <p>Analyse…</p> : <dl className={styles.metrics}><div><dt>Vent moyen</dt><dd>{speed(landing?.averageWindKmh ?? null)}</dd></div><div><dt>Vent max</dt><dd>{speed(landing?.maximumWindKmh ?? null)}</dd></div><div><dt>Rafale max</dt><dd>{speed(landing?.maximumGustKmh ?? null)}</dd></div><div><dt>Direction</dt><dd>{landing?.directionLabel ?? "—"}</dd></div></dl>}</section>
     </div> : <div className={styles.content}>{crossedAirspaces.length === 0 ? <p>Aucun espace aérien identifié sur cette trajectoire.</p> : crossedAirspaces.map((airspace) => <section className={styles.airspace} key={airspace.airspaceCompositeKey || airspace.airspaceId}><h3>{airspace.name}</h3><p>{airspace.typeLabel} · Classe {airspace.icaoClassLabel}</p><strong>{normalizeOpenAipAltitudeLimit(airspace.lowerLimit).displayLabel} → {normalizeOpenAipAltitudeLimit(airspace.upperLimit).displayLabel}</strong><p>{airspaceVerticalNotice(airspace.lowerLimit, airspace.upperLimit)}</p>{airspace.frequencies.filter(({ value }) => value.trim()).map((frequency) => <span key={`${frequency.value}-${frequency.name ?? ""}`}>{frequency.name ? `${frequency.name} · ` : "Fréquence · "}{frequency.value}</span>)}</section>)}</div>}
   </aside>;
 }

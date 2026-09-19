@@ -13,6 +13,7 @@ import {
   type WeatherModelDefinition,
 } from "../weather/models.ts";
 import { ALTITUDE_ANALYSIS_COLORS } from "./analysisStyles.ts";
+import { civilDateTimeToIso, isValidTimeZone } from "../timeZone.ts";
 
 export const ALTITUDE_OPTIONS = [
   "ground",
@@ -85,6 +86,7 @@ export type MultiAltitudeProjectionRequest = {
   version: 2;
   launchSite: TrajectoryProjectionRequest["launchSite"];
   launchDateTimeIso: string;
+  launchTimeZone?: string;
   durationSeconds: number;
   weatherModel: string;
   altitudesAmslM: AltitudeOption[];
@@ -162,6 +164,7 @@ export type TrajectoryFormState = {
   launchSearch: string;
   date: string;
   time: string;
+  launchTimeZone?: string;
   durationMinutes: string;
   targetAltitudeAmslM: string;
   selectedAltitudes: AltitudeOption[];
@@ -252,6 +255,7 @@ export function validateMultiAltitudeProjectionRequest(
     version: 2,
     launchSite: base.launchSite,
     launchDateTimeIso: base.launchDateTimeIso,
+    ...(typeof value.launchTimeZone === "string" && isValidTimeZone(value.launchTimeZone) ? { launchTimeZone: value.launchTimeZone } : {}),
     durationSeconds: base.durationSeconds,
     weatherModel: base.weatherModel,
     altitudesAmslM,
@@ -282,7 +286,9 @@ export function optionalVerticalRate(value: number): number | undefined {
 export function combineLocalDateAndTime(
   date: string,
   time: string,
+  timeZone?: string,
 ): string | null {
+  if (timeZone) return civilDateTimeToIso(date, time, timeZone);
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     !/^\d{2}:\d{2}$/.test(time)
@@ -367,6 +373,7 @@ export function validateTrajectoryProjectionRequest(
       longitude: launchSite.longitude,
     },
     launchDateTimeIso: value.launchDateTimeIso,
+    ...(typeof value.launchTimeZone === "string" && isValidTimeZone(value.launchTimeZone) ? { launchTimeZone: value.launchTimeZone } : {}),
     durationSeconds: value.durationSeconds,
     targetAltitudeAmslM: value.targetAltitudeAmslM,
     ...(finiteNumber(value.climbRateMps)

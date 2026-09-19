@@ -7,13 +7,16 @@ import { MODEL_LINE_STYLES } from "../../lib/trajectory/analysisStyles";
 import type { ExportedPlannedTrajectory } from "../../lib/trajectory/weatherAnalysisStorage";
 import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 import { formatFlightAltitude } from "../../lib/unitPreferences";
+import { formatInTimeZone } from "../../lib/timeZone.ts";
 
 interface PlannedTrajectoriesInfoProps {
   trajectories: readonly ExportedPlannedTrajectory[];
+  timeZone?: string;
 }
 
 export default function PlannedTrajectoriesInfo({
   trajectories,
+  timeZone,
 }: PlannedTrajectoriesInfoProps) {
   const units = useUnitPreferences();
   const [open, setOpen] = useState(false);
@@ -93,10 +96,10 @@ export default function PlannedTrajectoriesInfo({
           {forecastAtIso && (
             <p className="mt-2 text-[9px] text-white/55">
               Prévision :{" "}
-              {new Intl.DateTimeFormat("fr-FR", {
+              {formatInTimeZone(forecastAtIso, timeZone, {
                 dateStyle: "short",
                 timeStyle: "short",
-              }).format(new Date(forecastAtIso))}
+              })}
             </p>
           )}
         </FloatingPanel>

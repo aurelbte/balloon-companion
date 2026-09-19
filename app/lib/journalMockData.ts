@@ -23,6 +23,7 @@ export type JournalFlight = {
   generatedTitle?: string;
   customTitle?: string;
   startedAt?: number;
+  timeZone?: string;
   startLocationLabel?: string;
   endLocationLabel?: string;
   /** Ancien champ conservé uniquement pour la migration. */

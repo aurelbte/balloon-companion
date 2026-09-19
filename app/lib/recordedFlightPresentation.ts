@@ -46,15 +46,17 @@ export function getRecordedFlightPresentation(
       : formatFlightSpeed(value * 3.6, units.speedUnit, 1);
 
   return {
-    date: start.toLocaleDateString(locale),
+    date: start.toLocaleDateString(locale, flight.timeZone ? { timeZone: flight.timeZone } : undefined),
     startTime: start.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
+      ...(flight.timeZone ? { timeZone: flight.timeZone } : {}),
     }),
     endTime:
       end?.toLocaleTimeString(locale, {
         hour: "2-digit",
         minute: "2-digit",
+        ...(flight.timeZone ? { timeZone: flight.timeZone } : {}),
       }) ?? "—",
     duration: formatDuration(flight.summary.durationSeconds),
     distance: formatFlightDistance(flight.summary.distanceMeters / 1000, units.distanceUnit, 2),

@@ -9,6 +9,7 @@ export function createTrajectoryAnalysisKey(
     latitude: Number(request.launchSite.latitude.toFixed(6)),
     longitude: Number(request.launchSite.longitude.toFixed(6)),
     dateTime: request.launchDateTimeIso,
+    launchTimeZone: request.launchTimeZone ?? null,
     durationSeconds: request.durationSeconds,
     ascentRateMps: request.climbRateMps ?? 0,
     descentRateMps: request.descentRateMps === undefined

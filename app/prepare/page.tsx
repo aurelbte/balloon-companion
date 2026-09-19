@@ -46,11 +46,14 @@ import {
   validDurationMinutes,
 } from "../lib/preparationInputs";
 import { calculateSunTimes } from "../lib/weather/sunTimes";
+import { loadHourlyWeatherForecast } from "../lib/weather/hourlyForecastService";
+import { isValidTimeZone, zonedDateTimeParts } from "../lib/timeZone.ts";
 import styles from "./Prepare.module.css";
 
 const DURATION_PRESETS = [30, 45, 60, 75, 90] as const;
-function localDateParts(value: string | null): { date: string; time: string } {
+function localDateParts(value: string | null, timeZone?: string): { date: string; time: string } {
   if (!value) return { date: "", time: "" };
+  if (timeZone) return zonedDateTimeParts(value, timeZone) ?? { date: "", time: "" };
   const parsed = new Date(value);
   if (!Number.isFinite(parsed.getTime())) return { date: "", time: "" };
   return {
@@ -109,7 +112,8 @@ function preparationSnapshot(
     ...(!form.launchSite && form.launchSearch.trim()
       ? { unresolvedLaunchSiteName: form.launchSearch.trim() }
       : {}),
-    departureTime: combineLocalDateAndTime(form.date, form.time),
+    departureTime: combineLocalDateAndTime(form.date, form.time, form.launchTimeZone),
+    ...(form.launchTimeZone ? { launchTimeZone: form.launchTimeZone } : {}),
     durationMinutes: duration !== null && duration > 0 ? duration : null,
     weatherModel: form.weatherModel,
     targetAltitudeAmslM:
@@ -183,7 +187,7 @@ export default function PreparePage() {
     const stored = loadPreparationDraft();
     const timer = window.setTimeout(() => {
       if (stored) {
-        const departure = localDateParts(stored.departureTime);
+        const departure = localDateParts(stored.departureTime, stored.launchTimeZone);
         setTimeDigits(departure.time.replace(":", ""));
         setForm({
           launchSite: stored.launchSite
@@ -198,6 +202,7 @@ export default function PreparePage() {
             stored.launchSite?.name ?? stored.unresolvedLaunchSiteName ?? "",
           date: departure.date,
           time: departure.time,
+          launchTimeZone: stored.launchTimeZone,
           durationMinutes:
             stored.durationMinutes === null
               ? ""
@@ -239,6 +244,21 @@ export default function PreparePage() {
     return () => window.clearTimeout(timer);
   }, [form, formDirty, storageReady]);
 
+  useEffect(() => {
+    if (!form.launchSite || typeof navigator === "undefined" || !navigator.onLine) return;
+    const site = form.launchSite;
+    const timezoneLookupModel = form.weatherModel || "gfs_seamless";
+    const controller = new AbortController();
+    void loadHourlyWeatherForecast({ latitude: site.latitude, longitude: site.longitude, weatherModel: timezoneLookupModel }, controller.signal)
+      .then((forecast) => {
+        if (!forecast.timezone || !isValidTimeZone(forecast.timezone)) return;
+        setForm((current) => current.launchSite?.latitude === site.latitude && current.launchSite.longitude === site.longitude
+          ? { ...current, launchTimeZone: forecast.timezone }
+          : current);
+      }).catch(() => undefined);
+    return () => controller.abort();
+  }, [form.launchSite, form.weatherModel]);
+
   const update = <Key extends keyof TrajectoryFormState>(
     key: Key,
     value: TrajectoryFormState[Key],
@@ -261,9 +281,9 @@ export default function PreparePage() {
       form.date,
       form.launchSite.latitude,
       form.launchSite.longitude,
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      form.launchTimeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
-  }, [form.date, form.launchSite]);
+  }, [form.date, form.launchSite, form.launchTimeZone]);
 
   const updateTimeDigits = (value: string) => {
     const normalized = normalizeTimeInput(value);
@@ -337,6 +357,7 @@ export default function PreparePage() {
         setForm((current) => ({
           ...current,
           launchSite: site,
+          launchTimeZone: undefined,
           launchSearch: site.name,
         }));
         setFormDirty(true);
@@ -352,7 +373,7 @@ export default function PreparePage() {
   };
 
   const buildRequest = (): MultiAltitudeProjectionRequest | null => {
-    const launchDateTimeIso = combineLocalDateAndTime(form.date, form.time);
+    const launchDateTimeIso = combineLocalDateAndTime(form.date, form.time, form.launchTimeZone);
     const durationMinutes = parseNumber(form.durationMinutes);
     const altitude = parseNumber(form.targetAltitudeAmslM);
     const optionalClimbRate = optionalVerticalRate(form.ascentRateMps);
@@ -385,6 +406,7 @@ export default function PreparePage() {
         longitude: form.launchSite.longitude,
       },
       launchDateTimeIso,
+      ...(form.launchTimeZone ? { launchTimeZone: form.launchTimeZone } : {}),
       durationSeconds: durationMinutesToSeconds(durationMinutes),
       altitudesAmslM: form.selectedAltitudes,
       ...(primaryAltitude === undefined
@@ -477,6 +499,7 @@ export default function PreparePage() {
             onValueChange={(value) => {
               update("launchSearch", value);
               update("launchSite", null);
+              update("launchTimeZone", undefined);
               setSuggestions([]);
             }}
             onSearch={() => void searchLaunchSite()}
@@ -515,6 +538,7 @@ export default function PreparePage() {
               setForm((current) => ({
                 ...current,
                 launchSite: favorite,
+                launchTimeZone: undefined,
                 launchSearch: favorite.name,
               }));
               setFormDirty(true);
@@ -885,6 +909,7 @@ export default function PreparePage() {
             setForm((current) => ({
               ...current,
               launchSite: point,
+              launchTimeZone: undefined,
               launchSearch: point.name,
             }));
             setFormDirty(true);

@@ -156,13 +156,14 @@ export function createOpenMeteoClient(
 
     async fetchGroundTemperature(request) {
       const requestedAt = new Date(request.validAt);
+      const timeZone = request.timeZone ?? "UTC";
       const url = new URL(forecastUrl);
       url.searchParams.set("latitude", String(request.latitude));
       url.searchParams.set("longitude", String(request.longitude));
       url.searchParams.set("hourly", "temperature_2m");
-      url.searchParams.set("timezone", "Europe/Paris");
-      url.searchParams.set("start_date", datePartInTimeZone(requestedAt, "Europe/Paris"));
-      url.searchParams.set("end_date", datePartInTimeZone(addUtcDays(requestedAt, 1), "Europe/Paris"));
+      url.searchParams.set("timezone", timeZone);
+      url.searchParams.set("start_date", datePartInTimeZone(requestedAt, timeZone));
+      url.searchParams.set("end_date", datePartInTimeZone(addUtcDays(requestedAt, 1), timeZone));
       // Le flux de température DEMO utilise la prévision générique Open-Meteo,
       // indépendamment du modèle vertical choisi pour les trajectoires.
       addApiKey(url);

@@ -82,6 +82,7 @@ export interface OpenMeteoClient {
     longitude: number;
     validAt: string;
     weatherModel: OpenMeteoWeatherModel;
+    timeZone?: string;
   }): Promise<unknown>;
   fetchHourlyForecast(request: {
     latitude: number;

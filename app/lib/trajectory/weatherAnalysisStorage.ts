@@ -50,6 +50,7 @@ export type FlightWeatherSnapshot = {
     terrainAltitudeAmslM: number;
   };
   forecastAtIso: string;
+  launchTimeZone?: string;
   /** Legacy field is not evidence of retrieval; use weatherFetchedAt. */
   sourceUpdatedAt: string;
   weatherFetchedAt?: string;

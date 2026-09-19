@@ -222,6 +222,7 @@ export function parseFlightCloudRow(value: unknown): FlightCloudRow {
   const updatedAt = Date.parse(row.updated_at);
   if (![startedAt, createdAt, updatedAt, ...(endedAt === null ? [] : [endedAt])].every(Number.isFinite)) throw new Error("Invalid flight cloud dates");
   const optionalText = (field: string) => typeof row[field] === "string" && row[field] ? row[field] as string : undefined;
+  const weatherSnapshot = row.weather_snapshot && typeof row.weather_snapshot === "object" ? row.weather_snapshot as RecordedFlight["weatherSnapshot"] : undefined;
   const flight: RecordedFlight = {
     id: row.id,
     schemaVersion: row.schema_version,
@@ -238,7 +239,8 @@ export function parseFlightCloudRow(value: unknown): FlightCloudRow {
     ...(optionalText("generated_title") ? { generatedTitle: optionalText("generated_title") } : {}),
     ...(optionalText("notes") ? { notes: optionalText("notes") } : {}),
     ...(optionalText("weather_model") ? { weatherModel: optionalText("weather_model") } : {}),
-    ...(row.weather_snapshot && typeof row.weather_snapshot === "object" ? { weatherSnapshot: row.weather_snapshot as RecordedFlight["weatherSnapshot"] } : {}),
+    ...(weatherSnapshot ? { weatherSnapshot } : {}),
+    ...(weatherSnapshot?.launchTimeZone ? { timeZone: weatherSnapshot.launchTimeZone } : {}),
     ...(row.ground_calibration && typeof row.ground_calibration === "object" ? { groundCalibration: row.ground_calibration as RecordedFlight["groundCalibration"] } : {}),
   };
   const local: CloudFlightLocalValue = {

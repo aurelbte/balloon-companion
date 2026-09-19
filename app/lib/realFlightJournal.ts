@@ -60,15 +60,15 @@ function average(values: readonly number[]): number | null {
   return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 }
 
-function timeLabel(timestamp: number): string {
-  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(timestamp);
+function timeLabel(timestamp: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false, ...(timeZone ? { timeZone } : {}) }).format(timestamp);
 }
 
-function dateLabels(timestamp: number): { date: string; dateIso: string } {
-  const date = new Date(timestamp);
+function dateLabels(timestamp: number, timeZone?: string): { date: string; dateIso: string } {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...(timeZone ? { timeZone } : {}) }).formatToParts(timestamp).map(({ type, value }) => [type, value]));
   return {
-    date: new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(date),
-    dateIso: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+    date: new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", ...(timeZone ? { timeZone } : {}) }).format(timestamp),
+    dateIso: `${parts.year}-${parts.month}-${parts.day}`,
   };
 }
 
@@ -108,7 +108,7 @@ export function recordedFlightToJournalFlight(
   const endedAt = source.endedAt ?? source.points.at(-1)?.timestamp ?? source.updatedAt;
   const metadataOnly = source.points.length === 0;
   const summary = metadataOnly ? source.summary : recalculateFlightStatistics(source.points, source.startedAt, endedAt);
-  const date = dateLabels(source.startedAt);
+  const date = dateLabels(source.startedAt, source.timeZone);
   const statisticPoints = source.points.filter(({ quality }) => quality === undefined || quality === "VALID");
   const altitudes = finiteValues(statisticPoints.map(({ altitudeMeters }) => altitudeMeters));
   const speeds = finiteValues(statisticPoints.map(({ speedMetersPerSecond }) => speedMetersPerSecond));
@@ -118,11 +118,12 @@ export function recordedFlightToJournalFlight(
   const directDistanceKm = first && last ? distanceBetweenRecordedPoints(first, last) / 1000 : 0;
   const departure = source.startLocationLabel?.trim() || UNKNOWN_DEPARTURE;
   const arrival = source.endLocationLabel?.trim() || UNKNOWN_ARRIVAL;
-  const takeoffTime = timeLabel(source.startedAt);
+  const takeoffTime = timeLabel(source.startedAt, source.timeZone);
   return {
     id: source.id,
     sourceFlightId: source.id,
     startedAt: source.startedAt,
+    ...(source.timeZone ? { timeZone: source.timeZone } : {}),
     startLocationLabel: departure,
     endLocationLabel: arrival,
     departure,
@@ -133,7 +134,7 @@ export function recordedFlightToJournalFlight(
     durationMinutes: Math.max(0, Math.round(summary.durationSeconds / 60)),
     distanceKm: summary.distanceMeters / 1000,
     takeoffTime,
-    landingTime: timeLabel(endedAt),
+    landingTime: timeLabel(endedAt, source.timeZone),
     maxAltitudeM: roundJournalAltitudeMeters(summary.maxAltitudeMeters),
     maxSpeedKmh: summary.maxGroundSpeedMetersPerSecond === null ? null : summary.maxGroundSpeedMetersPerSecond * 3.6,
     notes: source.notes?.trim() || (options.recovered ? "Vol récupéré depuis une session GPS locale." : null),

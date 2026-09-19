@@ -7,6 +7,7 @@ import { loadPreparationDraft } from "../lib/preparationDraftStorage";
 import { PREPARATION_SESSION_CHANGED_EVENT } from "../lib/preparationSession";
 import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 import NavigationBar from "../components/NavigationBar";
+import { formatInTimeZone } from "../lib/timeZone.ts";
 import Button from "../components/Button";
 
 type WindLevel = {
@@ -81,20 +82,6 @@ export default function BriefingPage() {
     );
   }
 
-  // Formater la date si elle existe
-  const formatDate = (dateStr: string): string => {
-    if (!dateStr) return "À renseigner";
-    try {
-      const date = new Date(dateStr);
-      const day = String(date.getDate()).padStart(2, "0");
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const year = date.getFullYear();
-      return `${day}/${month}/${year}`;
-    } catch {
-      return dateStr;
-    }
-  };
-
   return (
     <main className="min-h-screen px-4 pb-28 pt-6 sm:px-6">
       <div className="mx-auto w-full max-w-md">
@@ -145,7 +132,7 @@ export default function BriefingPage() {
                   style={{ color: "var(--bc-text-primary)" }}
                 >
                   {preparation.departureTime
-                    ? `${formatDate(preparation.departureTime)} · ${new Date(preparation.departureTime).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`
+                    ? `${formatInTimeZone(preparation.departureTime, preparation.launchTimeZone, { day: "numeric", month: "long", year: "numeric" })} · ${formatInTimeZone(preparation.departureTime, preparation.launchTimeZone, { hour: "2-digit", minute: "2-digit" })}`
                     : "À renseigner"}
                 </span>
               </div>

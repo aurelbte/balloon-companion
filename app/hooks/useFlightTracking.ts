@@ -49,7 +49,7 @@ interface UseFlightTrackingResult {
   completedFlight: RecordedFlight | null;
   markAcquiring: () => void;
   markReady: () => void;
-  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot }) => Promise<boolean>;
+  startTracking: (initialPoint?: GeoPoint | null, context?: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot; timeZone?: string }) => Promise<boolean>;
   stopTracking: () => Promise<RecordedFlight | null>;
   resumeInterruptedFlight: () => void;
   completeInterruptedFlight: () => Promise<RecordedFlight | null>;
@@ -231,7 +231,7 @@ export function useFlightTracking(
   }, [updateStatus]);
 
   const startTracking = useCallback(
-    async (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot } = {}) => {
+    async (initialPoint: GeoPoint | null = null, context: { balloonRegistration?: string; weatherModel?: string; weatherSnapshot?: FlightWeatherSnapshot; timeZone?: string } = {}) => {
       if (
         !isEnabled ||
         !storageReady ||
@@ -254,6 +254,7 @@ export function useFlightTracking(
           balloonRegistration: context.balloonRegistration,
           weatherModel: context.weatherModel,
           weatherSnapshot: context.weatherSnapshot,
+          timeZone: context.timeZone,
         });
         const flight = {
           ...createdFlight,

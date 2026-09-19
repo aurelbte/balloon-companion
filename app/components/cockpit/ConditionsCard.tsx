@@ -12,6 +12,7 @@ import { windArrowRotationDegrees } from "../../weather/windArrow";
 import { freshnessLabel } from "../../lib/weather/weatherFreshness";
 import styles from "./Cockpit.module.css";
 import { cockpitWindDirection, cockpitWindSpeed } from "./weatherCardPresentation";
+import { formatInTimeZone } from "../../lib/timeZone.ts";
 
 export default function ConditionsCard({ href }: { href: string }) {
   const preferences = useWeatherPreferences();
@@ -31,7 +32,7 @@ export default function ConditionsCard({ href }: { href: string }) {
           {point && <WeatherIcon code={point.weatherCode} size={22} />}
           <div><span>Lieu favori <Star size={11} fill="currentColor" aria-hidden="true" /></span><strong>{preferences.activeFavorite?.name ?? "Aucun lieu sélectionné"}</strong><small>{preferences.modelName || "Aucun modèle"}</small></div>
         </div>
-        <p role="status">{preferences.currentWeather.validAt ? `Prévision pour le ${new Date(preferences.currentWeather.validAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}` : "Prévision pour l’heure actuelle indisponible"}</p>
+        <p role="status">{preferences.currentWeather.validAt ? `Prévision pour le ${formatInTimeZone(preferences.currentWeather.validAt, preferences.forecastTimeZone, { dateStyle: "short", timeStyle: "short" })}` : "Prévision pour l’heure actuelle indisponible"}</p>
         <div className={styles.cockpitWeatherMetrics}>
           <div className={styles.cockpitWind}><Navigation size={18} aria-hidden="true" style={{ transform: `rotate(${windArrowRotationDegrees(point?.windDirectionDeg)}deg)` }} /><strong>{cockpitWindDirection(point?.windDirectionDeg)}</strong><b>{cockpitWindSpeed(point?.windSpeedKmh, units.weather.windSpeedUnit)}</b></div>
           <div><span>Rafales</span><strong>{cockpitWindSpeed(point?.windGustKmh, units.weather.windSpeedUnit)}</strong></div>

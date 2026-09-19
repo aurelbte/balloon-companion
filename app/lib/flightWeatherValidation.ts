@@ -34,6 +34,7 @@ export function validateFlightWeather(input: {
         ? {
             version: 2, launchSite: preparation.launchSite,
             launchDateTimeIso: preparation.departureTime,
+            launchTimeZone: preparation.launchTimeZone,
             durationSeconds: preparation.durationMinutes * 60,
             weatherModel: preparation.weatherModel,
             altitudesAmslM: preparation.selectedAltitudes ?? input.request?.altitudesAmslM ?? [],
@@ -103,6 +104,7 @@ export function validateFlightWeather(input: {
         terrainAltitudeAmslM: reference.terrainAltitudeAmslM,
       },
       forecastAtIso: reference.forecastAtIso,
+      ...(request.launchTimeZone ? { launchTimeZone: request.launchTimeZone } : {}),
       sourceUpdatedAt: reference.calculatedAtIso,
       ...(oldestWeatherRetrieval(traces, now) ? { weatherFetchedAt: oldestWeatherRetrieval(traces, now) } : {}),
       calculatedAtIso: reference.calculatedAtIso,

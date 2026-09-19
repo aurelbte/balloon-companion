@@ -41,6 +41,7 @@ import { loadCardBalloonCorrectionPath } from "../lib/loadPerformance/loadCardPo
 import { formatDemoLoadDiagnostic } from "../lib/loadPerformance/demoDiagnostic";
 import { ApiElevationProvider } from "../lib/loadPerformance/elevationProvider";
 import { GROUND_TEMPERATURE_TTL_MS, usableGroundTemperature, type GroundTemperatureData, GROUND_TEMPERATURE_PROVIDER_ID, OpenMeteoGroundTemperatureProvider, canFetchGroundTemperature, groundTemperatureRequestKey } from "../lib/loadPerformance/groundTemperatureProvider";
+import { formatInTimeZone } from "../lib/timeZone.ts";
 import type { GroundTemperature } from "../lib/loadPerformance/types";
 import { balloonDisplayName } from "../lib/balloons";
 import type { StoredFlightPreparationV2 } from "../lib/flightStorage";
@@ -491,7 +492,7 @@ export default function MapPage() {
   const plannedMaximumAltitudeMslM = maximumAltitudeInput.trim() === "" ? undefined : Number(maximumAltitudeInput);
   const temperatureLaunchSite = config?.request.launchSite ?? preparation?.launchSite;
   const temperatureDateTime = config?.request.launchDateTimeIso ?? preparation?.departureTime;
-  const groundTemperatureRequest = temperatureLaunchSite && temperatureDateTime ? { latitude: temperatureLaunchSite.latitude, longitude: temperatureLaunchSite.longitude, dateTime: temperatureDateTime, provider: GROUND_TEMPERATURE_PROVIDER_ID } : null;
+  const groundTemperatureRequest = temperatureLaunchSite && temperatureDateTime ? { latitude: temperatureLaunchSite.latitude, longitude: temperatureLaunchSite.longitude, dateTime: temperatureDateTime, provider: GROUND_TEMPERATURE_PROVIDER_ID, ...(config?.request.launchTimeZone ?? preparation?.launchTimeZone ? { timeZone: config?.request.launchTimeZone ?? preparation?.launchTimeZone } : {}) } : null;
   const groundTemperatureFetchEnabled = groundTemperatureRequest !== null && canFetchGroundTemperature(groundTemperatureRequest);
   const groundTemperatureKey = groundTemperatureRequest ? groundTemperatureRequestKey(groundTemperatureRequest) : "";
   const groundTemperature = groundTemperatureRequest && groundTemperatureState?.key === groundTemperatureKey
@@ -751,7 +752,7 @@ export default function MapPage() {
 
       {traces.length > 0 && <section role="status" className="px-4 py-2 text-sm">
         <p>{freshnessLabel(analysisFreshness)} · {retrievalLabel(analysisFetchedAt)} · Run du modèle inconnu</p>
-        <p>Prévision pour le {new Date(traces[0].forecastAtIso).toLocaleString("fr-FR")} · Calcul commencé le {new Date(traces[0].calculatedAtIso).toLocaleString("fr-FR")}</p>
+        <p>Prévision pour le {formatInTimeZone(traces[0].forecastAtIso, config?.request.launchTimeZone, { dateStyle: "short", timeStyle: "short" })} · Calcul commencé le {formatInTimeZone(traces[0].calculatedAtIso, config?.request.launchTimeZone, { dateStyle: "short", timeStyle: "short" })}</p>
         {analysisFreshness !== "FRESH" && <button type="button" disabled={loading} onClick={refreshAnalysis}>Actualiser l’analyse</button>}
       </section>}
       <div className="relative h-[clamp(430px,68dvh,700px)]">
@@ -760,6 +761,7 @@ export default function MapPage() {
             visibleTraceIds={visibleTraceIds}
             launchSiteName={config.request.launchSite.name}
             launchSite={config.request.launchSite}
+            launchTimeZone={config.request.launchTimeZone}
             analysisKey={`${analysisSessionId}:${createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes)}`}
             baseMap={baseMap}
             layers={layers}
@@ -1003,7 +1005,7 @@ export default function MapPage() {
                   <div><dt className="inline">mode DEMO : </dt><dd className="inline">{testLoadEnabled ? "ON" : "OFF"}</dd></div>
                 </dl>
               )}
-              {groundTemperature ? <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperature.provider} · Prévision {new Date(groundTemperature.validTime).toLocaleString("fr-FR")} · Récupérée {new Date(groundTemperature.fetchedAt).toLocaleString("fr-FR")}</p> : <p role="status" className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperatureLoading ? "Température sol : actualisation… Calcul indisponible." : "Température actuelle indisponible pour le calcul de charge."}</p>}
+              {groundTemperature ? <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperature.provider} · Prévision {formatInTimeZone(groundTemperature.validTime, groundTemperature.requestIdentity.timeZone, { dateStyle: "short", timeStyle: "short" })} · Récupérée {new Date(groundTemperature.fetchedAt).toLocaleString("fr-FR")}</p> : <p role="status" className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperatureLoading ? "Température sol : actualisation… Calcul indisponible." : "Température actuelle indisponible pour le calcul de charge."}</p>}
               {temperatureDebugEnabled && <div className="mt-1 text-[8px] font-semibold leading-tight text-[var(--bc-color-text-muted)]"><p>TEMP FETCH : {groundTemperatureFetchEnabled ? "ON" : "OFF"}</p><p>TEMP VALUE : {groundTemperature ? groundTemperature.temperatureC.toLocaleString("fr-FR") : "—"}</p><p>TEMP ERROR : {groundTemperatureErrorCode ?? "—"}</p></div>}
               <label className="mt-1.5 block">
                 <span className="block text-[9px] font-semibold leading-tight">Altitude max</span>
@@ -1123,7 +1125,7 @@ export default function MapPage() {
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température utilisée</dt><dd>{formatWeatherTemperature(loadResult.groundTemperatureC, units.weather.temperatureUnit)}</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse autorisée de démonstration</dt><dd>{Math.floor(loadResult.permittedTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Marge de démonstration</dt><dd style={{ color: marginColor }}>{displayedMargin! >= 0 ? "+" : "−"}{Math.abs(displayedMargin!)} kg</dd></div>
-                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Prévision</dt><dd>{new Date(groundTemperature.validTime).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Prévision</dt><dd>{formatInTimeZone(groundTemperature.validTime, groundTemperature.requestIdentity.timeZone, { hour: "2-digit", minute: "2-digit" })}</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Décalage</dt><dd>{(groundTemperature.forecastOffsetMinutes ?? 0) >= 0 ? "+" : "−"}{Math.abs(Math.round(groundTemperature.forecastOffsetMinutes ?? 0))} min</dd></div>
                 <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Source</dt><dd>{groundTemperature.provider ?? "Open-Meteo"} · {groundTemperature.sourceModel}</dd></div>
                 <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Dataset</dt><dd>Données synthétiques pour test UX</dd></div>

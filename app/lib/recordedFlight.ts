@@ -121,6 +121,7 @@ export interface RecordedFlight {
   balloonRegistration?: string;
   weatherModel?: string;
   weatherSnapshot?: FlightWeatherSnapshot;
+  timeZone?: string;
   groundCalibration?: GroundCalibration;
   startLocationLabel?: string;
   endLocationLabel?: string;
@@ -505,6 +506,7 @@ export function createRecordedFlight({
   balloonRegistration,
   weatherModel,
   weatherSnapshot,
+  timeZone,
 }: {
   startedAt?: number;
   id?: string;
@@ -512,11 +514,13 @@ export function createRecordedFlight({
   balloonRegistration?: string;
   weatherModel?: string;
   weatherSnapshot?: FlightWeatherSnapshot;
+  timeZone?: string;
 } = {}): RecordedFlight {
   const points =
     firstPoint && canAppendRecordedFlightPoint(firstPoint, null).accepted
       ? [firstPoint]
       : [];
+  const resolvedTimeZone = weatherSnapshot?.launchTimeZone ?? timeZone;
   return {
     id,
     schemaVersion: RECORDED_FLIGHT_SCHEMA_VERSION,
@@ -530,6 +534,7 @@ export function createRecordedFlight({
     ...(balloonRegistration ? { balloonRegistration } : {}),
     ...(weatherModel ? { weatherModel } : {}),
     ...(weatherSnapshot ? { weatherSnapshot } : {}),
+    ...(resolvedTimeZone ? { timeZone: resolvedTimeZone } : {}),
   };
 }
 

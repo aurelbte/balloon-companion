@@ -411,6 +411,7 @@ export default function FlightPage() {
         if (!latestPosition?.available || !latestPosition.position) { setWeatherLaunchNotice("Position GPS indisponible. Réessayez le lancement lorsque le GPS est disponible."); return; }
         await startTracking(latestPosition.position, {
           ...(selectedBalloon?.registration ? { balloonRegistration: selectedBalloon.registration } : {}),
+          ...(preparation?.launchTimeZone ? { timeZone: preparation.launchTimeZone } : {}),
           ...(weatherSnapshot ? { weatherModel: weatherSnapshot.weatherModel, weatherSnapshot } : {}),
         });
       } finally { weatherLaunchBusyRef.current = false; }
@@ -831,6 +832,7 @@ export default function FlightPage() {
         predicted={predictedWinds}
         predictedModelLabel={predictedModelLabel}
         predictedForecastAt={historicalWeatherSnapshot?.forecastAtIso ?? null}
+        predictedTimeZone={historicalWeatherSnapshot?.launchTimeZone}
         predictedWeatherStatus={`${activeFlight ? "Référence historique du vol · " : ""}${freshnessLabel(historicalFreshness)} · ${retrievalLabel(historicalWeatherSnapshot?.weatherFetchedAt)} · ${historicalWeatherSnapshot?.calculatedAtIso ? `Calcul commencé le ${new Date(historicalWeatherSnapshot.calculatedAtIso).toLocaleString("fr-FR")} · ` : ""}Run du modèle inconnu`}
         onToggle={() => { setIsLiveSharingOpen(false); setIsMapOptionsOpen(false); setIsWindProfileOpen((open) => !open); }}
         onClose={() => setIsWindProfileOpen(false)}
@@ -851,6 +853,7 @@ export default function FlightPage() {
 
       <PlannedTrajectoriesInfo
         trajectories={flightSession.projections.planned}
+        timeZone={historicalWeatherSnapshot?.launchTimeZone}
       />
 
       {geoState === "simulation" && (

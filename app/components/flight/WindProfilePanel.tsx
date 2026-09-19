@@ -8,6 +8,7 @@ import {
 } from "../../lib/flightWindProfile";
 import { useUnitPreferences } from "../../contexts/UnitPreferencesContext";
 import { formatFlightAltitude, formatFlightSpeed, formatWeatherWind, knotsToKmh } from "../../lib/unitPreferences";
+import { formatInTimeZone } from "../../lib/timeZone.ts";
 
 interface WindProfilePanelProps {
   open: boolean;
@@ -15,12 +16,13 @@ interface WindProfilePanelProps {
   predicted: ReadonlyMap<FlightWindLevel, ObservedWind>;
   predictedModelLabel: string | null;
   predictedForecastAt?: string | null;
+  predictedTimeZone?: string;
   predictedWeatherStatus?: string;
   onToggle: () => void;
   onClose: () => void;
 }
 
-export default function WindProfilePanel({ open, observed, predicted, predictedModelLabel, predictedForecastAt, predictedWeatherStatus, onToggle, onClose }: WindProfilePanelProps) {
+export default function WindProfilePanel({ open, observed, predicted, predictedModelLabel, predictedForecastAt, predictedTimeZone, predictedWeatherStatus, onToggle, onClose }: WindProfilePanelProps) {
   const units = useUnitPreferences();
   const formatPredictedWind = (value: ObservedWind | undefined) => value ? `${String(Math.round(value.directionDeg) % 360).padStart(3, "0")}° / ${formatWeatherWind(knotsToKmh(value.speedKt), units.weather.windSpeedUnit)}` : "—";
   const formatObserved = (value: ObservedWind | undefined) => value ? `${String(Math.round(value.directionDeg) % 360).padStart(3, "0")}° / ${formatFlightSpeed(knotsToKmh(value.speedKt), units.flightInstruments.speedUnit)}` : "—";
@@ -30,7 +32,7 @@ export default function WindProfilePanel({ open, observed, predicted, predictedM
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--bc-space-2)", paddingBottom: "var(--bc-space-2)", borderBottom: "1px solid var(--bc-color-border-glass)" }}><strong style={{ fontSize: "13px", letterSpacing: "-.01em" }}>Profil des vents</strong><button type="button" aria-label="Fermer le profil des vents" onClick={onClose} style={{ width: "40px", height: "40px", display: "grid", placeItems: "center", border: 0, borderRadius: "var(--bc-radius-control)", background: "transparent", color: "inherit" }}><X size={18} /></button></header>
       {predicted.size === 0
         ? <p role="status" style={{ fontSize: "12px", marginBottom: "8px" }}>Prévision indisponible ou périmée</p>
-        : predictedForecastAt && <p style={{ fontSize: "11px", marginBottom: "8px" }}>Prévision du {new Date(predictedForecastAt).toLocaleString("fr-FR")}</p>}
+        : predictedForecastAt && <p style={{ fontSize: "11px", marginBottom: "8px" }}>Prévision du {formatInTimeZone(predictedForecastAt, predictedTimeZone, { dateStyle: "short", timeStyle: "short" })}</p>}
       {predictedWeatherStatus && <p role="status" style={{ fontSize: "11px", marginBottom: "8px" }}>{predictedWeatherStatus}</p>}
       <p style={{ fontSize: "11px", marginBottom: "8px" }}>Observé : estimation basée sur la dérive GPS. Directions d’où vient le vent.</p>
       <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr", gap: "8px", alignItems: "center", fontSize: "11px", fontVariantNumeric: "tabular-nums" }}>

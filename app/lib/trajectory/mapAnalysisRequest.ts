@@ -11,6 +11,7 @@ export function loadMapAnalysisRequest(): StoredTrajectoryAnalysisRequest | null
     ...submitted.request,
     launchSite: preparation.launchSite,
     launchDateTimeIso: preparation.departureTime,
+    launchTimeZone: preparation.launchTimeZone,
     durationSeconds: preparation.durationMinutes * 60,
     weatherModel: preparation.weatherModel,
     altitudesAmslM: preparation.selectedAltitudes ?? submitted.request.altitudesAmslM,

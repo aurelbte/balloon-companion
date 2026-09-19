@@ -1,5 +1,6 @@
 import type { LaunchSite } from "./trajectory/types.ts";
 import type { AltitudeOption } from "./trajectory/integration.ts";
+import { isValidTimeZone } from "./timeZone.ts";
 
 /**
  * Format historique reconnu par la migration pure des drafts modernes.
@@ -26,6 +27,7 @@ export interface StoredFlightPreparationV2 {
    */
   unresolvedLaunchSiteName?: string;
   departureTime: string | null;
+  launchTimeZone?: string;
   durationMinutes: number | null;
   weatherModel: string;
   targetAltitudeAmslM: number | null;
@@ -149,6 +151,7 @@ function parseV2Preparation(
       ? { unresolvedLaunchSiteName: value.unresolvedLaunchSiteName.trim() }
       : {}),
     departureTime: value.departureTime as string | null,
+    ...(isValidTimeZone(value.launchTimeZone) ? { launchTimeZone: value.launchTimeZone } : {}),
     durationMinutes: value.durationMinutes as number | null,
     weatherModel: value.weatherModel,
     targetAltitudeAmslM: value.targetAltitudeAmslM as number | null,

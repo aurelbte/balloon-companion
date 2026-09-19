@@ -15,6 +15,7 @@ import { currentWeatherSelection, watchCurrentWeather, type CurrentWeatherSelect
 import { DATA_SCOPE_CHANGED_EVENT } from "../lib/auth/dataScopeRuntime";
 import { getRuntimeDataScope } from "../lib/auth/dataScopeRuntime";
 import { recordFavoriteWeatherUiHydration } from "../lib/favoriteWeatherPullDiagnostics";
+import { zonedDateTimeParts } from "../lib/timeZone.ts";
 
 type WeatherPreferencesContextValue = WeatherPreferences & {
   favorites: readonly FavoriteWeatherPlace[];
@@ -25,6 +26,7 @@ type WeatherPreferencesContextValue = WeatherPreferences & {
   selectedPoint: WeatherHourlyPoint | null;
   currentWeather: CurrentWeatherSelection;
   currentSunTimes: SunTimes | null;
+  forecastTimeZone?: string;
   sunTimes: SunTimes | null;
   days: readonly string[];
   times: readonly string[];
@@ -97,12 +99,13 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   const times = useMemo(() => selectedDay ? availableTimes(points, selectedDay) : [], [points, selectedDay]);
   useEffect(() => {
     const now = new Date();
-    const localDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const localTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const zoned = forecastTimeZone ? zonedDateTimeParts(now, forecastTimeZone) : null;
+    const localDay = zoned?.date ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const localTime = zoned?.time ?? `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const nextDay = selectedDay && days.includes(selectedDay) ? selectedDay : closestAvailableDay(days, localDay);
     setSelectedDay(nextDay);
     setSelectedTime((current) => closestAvailableTime(nextDay ? availableTimes(points, nextDay) : [], current ?? localTime));
-  }, [days, points, selectedDay]);
+  }, [days, points, selectedDay, forecastTimeZone]);
 
   const dayIndex = selectedDay ? days.indexOf(selectedDay) : -1;
   const timeIndex = selectedTime ? times.indexOf(selectedTime) : -1;
@@ -110,7 +113,7 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
   const sunTimes = useMemo(() => calculateSunTimes(selectedDay, activeFavorite?.latitude, activeFavorite?.longitude, forecastTimeZone), [selectedDay, activeFavorite, forecastTimeZone]);
   const changeDay = useCallback((offset: number) => { const day = days[dayIndex + offset]; if (!day) return; setSelectedDay(day); setSelectedTime((current) => closestAvailableTime(availableTimes(points, day), current)); }, [dayIndex, days, points]);
   const changeTime = useCallback((offset: number) => { const time = times[timeIndex + offset]; if (time) { setSelectedTime(time); return; } const adjacentDay = days[dayIndex + offset]; if (!adjacentDay) return; const adjacentTimes = availableTimes(points, adjacentDay); const adjacentTime = offset > 0 ? adjacentTimes[0] : adjacentTimes.at(-1); if (adjacentTime) { setSelectedDay(adjacentDay); setSelectedTime(adjacentTime); } }, [dayIndex, days, points, timeIndex, times]);
-  const resetToCurrent = useCallback(() => { const now = new Date(); const localDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; const localTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`; const day = closestAvailableDay(days, localDay); setSelectedDay(day); setSelectedTime(closestAvailableTime(day ? availableTimes(points, day) : [], localTime)); }, [days, points]);
+  const resetToCurrent = useCallback(() => { const now = new Date(); const zoned = forecastTimeZone ? zonedDateTimeParts(now, forecastTimeZone) : null; const localDay = zoned?.date ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; const localTime = zoned?.time ?? `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`; const day = closestAvailableDay(days, localDay); setSelectedDay(day); setSelectedTime(closestAvailableTime(day ? availableTimes(points, day) : [], localTime)); }, [days, points, forecastTimeZone]);
   const modelName = SUPPORTED_WEATHER_MODELS.find(({ providerModelId }) => providerModelId === preferences.weatherModel)?.label ?? preferences.weatherModel ?? "";
   const addFavoriteWeatherLocation = useCallback((site: GeocodingResult, displayName?: string) => {
     const result = addOrReuseFavoriteWeatherPlace(favorites, site, new Date().toISOString(), displayName);
@@ -133,7 +136,7 @@ export function WeatherPreferencesProvider({ children }: { children: React.React
     setPreferences((current) => ({ ...current, favoriteWeatherLocationId: nextSelectedId }));
     return true;
   }, [favorites, preferences]);
-  const value = useMemo<WeatherPreferencesContextValue>(() => ({ ...preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, currentWeather, currentSunTimes, sunTimes, days, times, dayIndex, timeIndex, loading, error, freshness, setFavoriteWeatherLocationId: (id) => update({ favoriteWeatherLocationId: id }), addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, setWeatherModel: (model) => update({ weatherModel: model }), changeDay, changeTime, resetToCurrent, retry: () => hourlyRuntime.current?.retry() }), [preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, currentWeather, currentSunTimes, sunTimes, days, times, dayIndex, timeIndex, loading, error, freshness, update, addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, changeDay, changeTime, resetToCurrent]);
+  const value = useMemo<WeatherPreferencesContextValue>(() => ({ ...preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, currentWeather, currentSunTimes, forecastTimeZone, sunTimes, days, times, dayIndex, timeIndex, loading, error, freshness, setFavoriteWeatherLocationId: (id) => update({ favoriteWeatherLocationId: id }), addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, setWeatherModel: (model) => update({ weatherModel: model }), changeDay, changeTime, resetToCurrent, retry: () => hourlyRuntime.current?.retry() }), [preferences, favorites, activeFavorite, modelName, selectedDay, selectedTime, selectedPoint, currentWeather, currentSunTimes, forecastTimeZone, sunTimes, days, times, dayIndex, timeIndex, loading, error, freshness, update, addFavoriteWeatherLocation, renameFavoriteWeatherLocation, removeFavoriteWeatherLocation, changeDay, changeTime, resetToCurrent]);
   return <WeatherPreferencesContext.Provider value={value}>{children}</WeatherPreferencesContext.Provider>;
 }
 

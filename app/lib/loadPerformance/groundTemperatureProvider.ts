@@ -1,10 +1,11 @@
 import type { GroundTemperatureProvider } from "./types";
+import { isValidTimeZone } from "../timeZone.ts";
 
 const CACHE_PREFIX = "balloon-companion:ground-temperature:v1:";
 export const GROUND_TEMPERATURE_PROVIDER_ID = "open-meteo-generic";
 // Application refresh policy, not the forecast model's update cadence.
 export const GROUND_TEMPERATURE_TTL_MS = 15 * 60_000;
-export type GroundTemperatureRequestIdentity = { latitude: number; longitude: number; dateTime: string; provider?: string };
+export type GroundTemperatureRequestIdentity = { latitude: number; longitude: number; dateTime: string; provider?: string; timeZone?: string };
 export type GroundTemperatureData = { temperatureC: number; sourceModel: string; forecastRun: string; validTime: string; forecastOffsetMinutes: number; provider: string; fetchedAt: string; requestIdentity: GroundTemperatureRequestIdentity };
 
 function timestamp(value: unknown): number {
@@ -17,10 +18,11 @@ export function canFetchGroundTemperature(input: Partial<GroundTemperatureReques
   return typeof input.latitude === "number" && Number.isFinite(input.latitude) && input.latitude >= -90 && input.latitude <= 90
     && typeof input.longitude === "number" && Number.isFinite(input.longitude) && input.longitude >= -180 && input.longitude <= 180
     && Number.isFinite(timestamp(input.dateTime))
+    && (input.timeZone === undefined || isValidTimeZone(input.timeZone))
     && (input.provider === undefined || input.provider === GROUND_TEMPERATURE_PROVIDER_ID);
 }
 export function groundTemperatureRequestKey(input: GroundTemperatureRequestIdentity): string {
-  return JSON.stringify([input.latitude, input.longitude, input.dateTime, input.provider ?? GROUND_TEMPERATURE_PROVIDER_ID]);
+  return JSON.stringify([input.latitude, input.longitude, input.dateTime, input.provider ?? GROUND_TEMPERATURE_PROVIDER_ID, input.timeZone ?? null]);
 }
 function cacheKey(input: GroundTemperatureRequestIdentity): string { return `${CACHE_PREFIX}${groundTemperatureRequestKey(input)}`; }
 
@@ -44,7 +46,7 @@ export class OpenMeteoGroundTemperatureProvider implements GroundTemperatureProv
   constructor(now: () => number = Date.now) { this.now = now; }
   async getGroundTemperature(input: GroundTemperatureRequestIdentity & { weatherModel: string; signal?: AbortSignal }): Promise<GroundTemperatureData> {
     if (!canFetchGroundTemperature(input)) throw unavailable("INVALID_TEMPERATURE_REQUEST");
-    const identity = { latitude: input.latitude, longitude: input.longitude, dateTime: input.dateTime, provider: input.provider ?? GROUND_TEMPERATURE_PROVIDER_ID };
+    const identity = { latitude: input.latitude, longitude: input.longitude, dateTime: input.dateTime, provider: input.provider ?? GROUND_TEMPERATURE_PROVIDER_ID, ...(input.timeZone ? { timeZone: input.timeZone } : {}) };
     const key = cacheKey(identity);
     if (typeof window !== "undefined") {
       try {
@@ -58,6 +60,7 @@ export class OpenMeteoGroundTemperatureProvider implements GroundTemperatureProv
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) throw unavailable("GROUND_TEMPERATURE_UNAVAILABLE_OFFLINE");
     const params = new URLSearchParams({ lat: String(input.latitude), lon: String(input.longitude), validAt: input.dateTime });
+    if (input.timeZone) params.set("timeZone", input.timeZone);
     const response = await fetch(`/api/weather/ground-temperature?${params}`, { headers: { accept: "application/json" }, signal: input.signal });
     const payload: unknown = await response.json();
     if (!response.ok || !payload || typeof payload !== "object" || Array.isArray(payload)) throw unavailable();

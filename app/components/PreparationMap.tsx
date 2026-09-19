@@ -57,6 +57,7 @@ interface PreparationMapProps {
   visibleTraceIds: string[];
   launchSiteName: string;
   launchSite: BoundsLaunchSite;
+  launchTimeZone?: string;
   analysisKey: string;
   baseMap: BaseMap;
   layers: AnalysisLayerSettings;
@@ -205,6 +206,7 @@ export default function PreparationMap({
   visibleTraceIds,
   launchSiteName,
   launchSite,
+  launchTimeZone,
   analysisKey,
   baseMap,
   layers,
@@ -755,7 +757,7 @@ export default function PreparationMap({
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
-      {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
+      {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>
   );
