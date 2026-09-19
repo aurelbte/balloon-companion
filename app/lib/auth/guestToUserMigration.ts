@@ -3,6 +3,8 @@ import { BALLOON_DOCUMENT_DB_NAME, BALLOON_DOCUMENT_FILES_STORE, BALLOON_DOCUMEN
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "../flightCompletionStorage.ts";
 import { RECORDED_FLIGHT_DB_NAME, RECORDED_FLIGHTS_STORE } from "../recordedFlightStorage.ts";
 import { IndexedDbSyncOutboxStorage } from "../syncOutbox.ts";
+import { loadPilotQualifications, PILOT_QUALIFICATIONS_STORAGE_KEY, savePilotQualifications } from "../pilotQualificationsStorage.ts";
+import { normalizeQualificationProfile, type QualificationProfile } from "../pilotQualifications.ts";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration, scopedBusinessStorageKey, scopedIndexedDbName } from "./dataScopeRuntime.ts";
 
 import { acquireGuestImportClaim, readGuestImportClaims, type GuestImportClaim } from "./guestImportClaim.ts";
@@ -55,6 +57,102 @@ function markers(storage: Storage): Record<string, Marker> {
   return value;
 }
 function saveMarker(storage: Storage, marker: Marker): void { storage.setItem(GUEST_TO_USER_MIGRATION_KEY, JSON.stringify({ ...markers(storage), [markerId(marker.userId, marker.deviceId, marker.manifestId)]: marker })); }
+
+export type PilotQualificationsProfileConflict = Readonly<{
+  id: string;
+  manifestId: string;
+  source: "GUEST" | "LEGACY";
+  deviceProfile: QualificationProfile;
+  cloudProfile: QualificationProfile;
+}>;
+
+async function qualificationConflictId(manifestId: string, source: "GUEST" | "LEGACY", deviceProfile: QualificationProfile, cloudProfile: QualificationProfile): Promise<string> {
+  return `${manifestId}:${source}:pilot-qualifications-profile:singleton:${await fingerprint({ deviceProfile, cloudProfile })}`;
+}
+
+/** Reads only the frozen B6 claim and the current account-scoped value. */
+export async function listPilotQualificationsProfileConflicts(input: Readonly<{
+  userId: string;
+  storage: Storage;
+  factory: IDBFactory;
+  readCloudProfile(): Promise<QualificationProfile>;
+}>): Promise<readonly PilotQualificationsProfileConflict[]> {
+  const scope = `USER:${input.userId}` as const;
+  const generation = getRuntimeDataScopeGeneration();
+  const assertCurrent = () => {
+    if (getRuntimeDataScope() !== scope || getRuntimeDataScopeGeneration() !== generation) throw new Error("IMPORT_OBSOLETE");
+  };
+  assertCurrent();
+  const claims = await readGuestImportClaims(input.factory, assertCurrent);
+  const stored = markers(input.storage);
+  const cloudProfile = normalizeQualificationProfile(await input.readCloudProfile());
+  assertCurrent();
+  const conflicts: PilotQualificationsProfileConflict[] = [];
+  for (const marker of Object.values(stored)) {
+    if (marker.userId !== input.userId || !marker.manifestId) continue;
+    const claim = claims.find(candidate => candidate.userId === input.userId && candidate.id === marker.manifestId);
+    if (!claim) continue;
+    for (const collision of marker.collisions) {
+      if (collision.domain !== "pilot-qualifications-profile" || collision.entityId !== "singleton") continue;
+      const source = manifestSourceValues(claim.manifest, PILOT_QUALIFICATIONS_STORAGE_KEY).find(value => value.source === collision.source);
+      const profile = object(parsed(source?.raw ?? null)).profile;
+      if (!profile || typeof profile !== "object") throw new Error("INVALID_QUALIFICATION_CONFLICT");
+      const deviceProfile = normalizeQualificationProfile(profile);
+      conflicts.push({
+        id: await qualificationConflictId(claim.id, collision.source, deviceProfile, cloudProfile),
+        manifestId: claim.id,
+        source: collision.source,
+        deviceProfile,
+        cloudProfile,
+      });
+    }
+  }
+  assertCurrent();
+  return conflicts;
+}
+
+export async function resolvePilotQualificationsProfileConflict(input: Readonly<{
+  userId: string;
+  conflictId: string;
+  strategy: "DEVICE" | "CLOUD";
+  storage: Storage;
+  factory: IDBFactory;
+  readCloudProfile(): Promise<QualificationProfile>;
+}>): Promise<readonly GuestToUserMigrationCollision[]> {
+  const scope = `USER:${input.userId}` as const;
+  const generation = getRuntimeDataScopeGeneration();
+  const assertCurrent = () => {
+    if (getRuntimeDataScope() !== scope || getRuntimeDataScopeGeneration() !== generation) throw new Error("IMPORT_OBSOLETE");
+  };
+  const available = await listPilotQualificationsProfileConflicts({ userId: input.userId, storage: input.storage, factory: input.factory, readCloudProfile: input.readCloudProfile });
+  assertCurrent();
+  const selected = available.find(conflict => conflict.id === input.conflictId);
+  if (!selected) throw new Error("QUALIFICATION_CONFLICT_NOT_FOUND");
+  const stored = markers(input.storage);
+  const key = Object.keys(stored).find(candidate => {
+    const marker = stored[candidate]!;
+    return marker.userId === input.userId && marker.manifestId === selected.manifestId
+      && marker.collisions.some(collision => collision.domain === "pilot-qualifications-profile" && collision.entityId === "singleton" && collision.source === selected.source);
+  });
+  if (!key) throw new Error("QUALIFICATION_CONFLICT_NOT_FOUND");
+
+  const current = loadPilotQualifications(input.storage);
+  const chosenProfile = input.strategy === "DEVICE" ? selected.deviceProfile : selected.cloudProfile;
+  if (!savePilotQualifications({ profile: chosenProfile, events: current.events }, input.storage)) throw new Error("QUALIFICATION_SAVE_FAILED");
+  assertCurrent();
+
+  const latest = markers(input.storage);
+  const marker = latest[key];
+  if (!marker || marker.userId !== input.userId || marker.manifestId !== selected.manifestId) throw new Error("QUALIFICATION_CONFLICT_CHANGED");
+  const collisions = marker.collisions.filter(collision => !(collision.domain === "pilot-qualifications-profile" && collision.entityId === "singleton" && collision.source === selected.source));
+  saveMarker(input.storage, { ...marker, collisions });
+  assertCurrent();
+  const claims = await readGuestImportClaims(input.factory, assertCurrent);
+  const claimIds = new Set(claims.filter(claim => claim.userId === input.userId).map(claim => claim.id));
+  return Object.values(markers(input.storage))
+    .filter(candidate => candidate.userId === input.userId && candidate.manifestId && claimIds.has(candidate.manifestId))
+    .flatMap(candidate => candidate.collisions);
+}
 
 export function guestToUserMigrationComplete(storage: Storage, userId: string, deviceId: string, manifestId: string): boolean {
   return Boolean(markers(storage)[markerId(userId, deviceId, manifestId)]?.completedAt);
