@@ -188,12 +188,21 @@ test("la phase 7C expose accès initial et voies professionnelles sans cumul art
   assert.match(page, /Délivrance initiale — activité commerciale passagers/);
   assert.match(page, /Ajouter ma délivrance/);
   assert.match(page, /Récence — 180 jours/);
-  assert.match(page, /Maintien 24 mois — contrôle de compétences/);
-  assert.match(page, /Maintien 24 mois — formation \/ remise à niveau/);
-  assert.match(page, /result=\{commercial\.proficiencyCheckFeB\}/);
-  assert.match(page, /result=\{commercial\.refresherCourse\}/);
+  assert.match(page, /Maintien commercial — 24 mois/);
+  assert.match(page, /result=\{commercial\.maintenance\}/);
+  assert.match(page, /Voie retenue/);
+  assert.match(page, /Délivrance initiale/);
+  assert.doesNotMatch(page, /Maintien 24 mois — contrôle de compétences/);
+  assert.doesNotMatch(page, /Maintien 24 mois — formation \/ remise à niveau/);
   assert.match(page, /function CommercialEventForm/);
   assert.match(page, /upsertCommercialQualificationEvent/);
+});
+
+test("la récence commerciale inconnue propose de compléter ou confirmer l’historique antérieur", () => {
+  assert.match(page, /Historique BC incomplet sur les 180 derniers jours/);
+  assert.match(page, /Ajouter un vol antérieur/);
+  assert.match(page, /Confirmer mon historique antérieur/);
+  assert.match(page, /onClick=\{openInitialSituation\}/);
 });
 
 test("le formulaire commercial exige la preuve explicite du FI(B) qualifié", () => {
@@ -208,7 +217,7 @@ test("le lot commercial passagers expose classes, groupe et contrôle opérateur
   assert.match(page, /Groupe hot-air commercial maximal détenu/);
   assert.match(page, /commercialBalloonClasses\.includes\("HOT_AIR_BALLOON"\)/);
   assert.match(page, /OPERATOR_PROFICIENCY_CHECK/);
-  assert.match(page, /Maintien 24 mois — contrôle opérateur/);
+  assert.match(page, /Contrôle opérateur — 24 mois/);
   assert.match(page, /Groupe actuellement exerçable/);
 });
 
@@ -239,7 +248,8 @@ test("la phase 7C.3 masque À faire sans obligation et ignore une déclaration v
   assert.match(page, /\{actionItems\.length > 0 && <section className=\{`\$\{styles\.section\} \$\{styles\.todo\}`\}/);
   assert.doesNotMatch(page, /text: "Compléter mon historique récent"/);
   assert.match(page, /view\.bpl\.recentExperience\.status === "UNKNOWN" && <Link/);
-  assert.match(page, /commercial\.recency\.status === "UNKNOWN" && <Link/);
+  assert.match(page, /commercial\.recency\.status === "UNKNOWN" && <>/);
+  assert.match(page, /href="\/journal\/ascension\/new">Ajouter un vol antérieur/);
 });
 
 test("la phase 7C.3 empile les champs de situation initiale sur iPhone", () => {

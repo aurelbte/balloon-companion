@@ -37,7 +37,32 @@ test("l’accès initial est requis et reste distinct des voies de maintien", ()
   const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2026-01-01", { balloonClass: hotAir });
   const result = calculate({ events: [issuance], ascensions: [ascension("one", "2026-04-01"), ascension("two", "2026-05-01"), ascension("three", "2026-06-01")] });
   assert.equal(result.initialAccess.status, "COMPLIANT");
-  assert.equal(result.overall.status, "ACTION_REQUIRED");
+  assert.equal(result.maintenance.status, "COMPLIANT");
+  assert.deepEqual(result.maintenance.sourceEventIds, [issuance.id]);
+  assert.equal(result.overall.status, "COMPLIANT");
+});
+
+test("la délivrance initiale ouvre le premier cycle commercial de 24 mois", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2026-04-06", { balloonClass: hotAir });
+  const duringCycle = calculate({ events: [issuance], referenceDateIso: "2026-08-20" });
+  assert.equal(duringCycle.maintenance.status, "COMPLIANT");
+  assert.equal(duringCycle.maintenance.currentValue, "2026-04-06");
+  assert.equal(duringCycle.maintenance.dueDate, "2028-04-06");
+  assert.deepEqual(duringCycle.maintenance.sourceEventIds, [issuance.id]);
+  assert.equal(issuance.type, "INITIAL_COMMERCIAL_ISSUANCE");
+
+  const afterCycle = calculate({ events: [issuance], referenceDateIso: "2028-04-07" });
+  assert.equal(afterCycle.maintenance.status, "ACTION_REQUIRED");
+  assert.equal(afterCycle.maintenance.dueDate, "2028-04-06");
+});
+
+test("un maintien admissible ultérieur remplace la délivrance comme référence", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2026-04-06", { balloonClass: hotAir });
+  const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2027-03-01", { balloonClass: hotAir, examiner: { name: "FE Test" } });
+  const result = calculate({ events: [issuance, check], referenceDateIso: "2027-04-01" });
+  assert.equal(result.maintenance.currentValue, "2027-03-01");
+  assert.equal(result.maintenance.dueDate, "2029-03-01");
+  assert.deepEqual(result.maintenance.sourceEventIds, [check.id]);
 });
 
 test("un vol PIC supervisé par FI(B) dans la classe suffit", () => {
@@ -81,7 +106,24 @@ test("une remise à niveau complète satisfait la voie alternative lorsque perti
   const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-01-10", { balloonClass: hotAir, theoryMinutes: 360, relatedEventIds: [training.id], commercialQualifiedFiB: true });
   const result = calculate({ events: [issuance, course, training] });
   assert.equal(result.maintenance.status, "COMPLIANT");
+  assert.equal(result.proficiencyCheckFeB.status, "ACTION_REQUIRED");
   assert.equal(result.overall.status, "ACTION_REQUIRED");
+});
+
+test("contrôle FE(B) ou formation conforme satisfont chacun l'unique maintien 24 mois", () => {
+  const issuance = event("INITIAL_COMMERCIAL_ISSUANCE", "2025-01-01", { balloonClass: hotAir });
+  const check = event("COMMERCIAL_PROFICIENCY_CHECK", "2026-01-01", { balloonClass: hotAir, examiner: { name: "FE Test" } });
+  const byCheck = calculate({ events: [issuance, check] });
+  assert.equal(byCheck.proficiencyCheckFeB.status, "COMPLIANT");
+  assert.equal(byCheck.refresherCourse.status, "ACTION_REQUIRED");
+  assert.equal(byCheck.maintenance.status, "COMPLIANT");
+
+  const training = event("TRAINING_FLIGHT_BPL", "2026-01-11", { balloonClass: hotAir, instructor: { name: "FI Test" } });
+  const course = event("COMMERCIAL_REFRESHER_COURSE", "2026-01-10", { balloonClass: hotAir, theoryMinutes: 360, relatedEventIds: [training.id], commercialQualifiedFiB: true });
+  const byCourse = calculate({ events: [issuance, course, training] });
+  assert.equal(byCourse.proficiencyCheckFeB.status, "ACTION_REQUIRED");
+  assert.equal(byCourse.refresherCourse.status, "COMPLIANT");
+  assert.equal(byCourse.maintenance.status, "COMPLIANT");
 });
 
 test("une preuve d’une autre classe ne donne aucune conformité", () => {
@@ -91,7 +133,9 @@ test("une preuve d’une autre classe ne donne aucune conformité", () => {
 });
 
 test("un historique incomplet retourne UNKNOWN si les preuves sont insuffisantes", () => {
-  assert.equal(calculate({ ascensions: [ascension("one", "2026-01-01")], ascensionHistoryComplete: false }).recency.status, "UNKNOWN");
+  const result = calculate({ ascensions: [ascension("one", "2026-01-01")], ascensionHistoryComplete: false });
+  assert.equal(result.recency.status, "UNKNOWN");
+  assert.match(result.recency.reason, /Historique récent à compléter/);
 });
 
 test("la couverture partielle sur 180 jours reste UNKNOWN malgré deux vols connus", () => {

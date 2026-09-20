@@ -129,6 +129,15 @@ export function calculateCommercialQualification(input: Readonly<{
   const initialAccess: QualificationRequirementResult = issuance
     ? { status: "COMPLIANT", reason: "Délivrance initiale pour l’activité commerciale passagers renseignée dans cette classe.", currentValue: issuance.dateIso, sourceEventIds: [issuance.id] }
     : { status: "UNKNOWN", reason: "Délivrance initiale pour l’activité commerciale passagers non renseignée dans cette classe." };
+  const initialMaintenanceCycle: QualificationRequirementResult | null = issuance
+    ? {
+        ...eventResult(issuance, input.referenceDateIso, ""),
+        reason: addCalendarMonths(issuance.dateIso, COMMERCIAL_REGULATORY_RULES.maintenanceMonths) < input.referenceDateIso
+          ? "Le premier cycle de 24 mois depuis la délivrance initiale est dépassé."
+          : "Premier cycle de 24 mois calculé depuis la délivrance initiale.",
+      }
+    : null;
+  const afterInitialIssuance = (event: QualificationEvent): boolean => !issuance || event.dateIso > issuance.dateIso;
 
   const startIso = subtractDays(input.referenceDateIso, COMMERCIAL_REGULATORY_RULES.recencyDays);
   const historyComplete = input.historyCoverageStartDate === undefined
@@ -159,13 +168,13 @@ export function calculateCommercialQualification(input: Readonly<{
   const heldClasses = input.profile.commercialBalloonClasses ?? [];
   const inHeldClass = (event: QualificationEvent) => Boolean(event.balloonClass && heldClasses.includes(event.balloonClass.classId as "HOT_AIR_BALLOON" | "GAS_BALLOON"));
   const heldGroup = input.profile.commercialHotAirBalloonGroupPrivilege ?? null;
-  const checks = input.events.filter((event) => event.type === "COMMERCIAL_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && inHeldClass(event));
+  const checks = input.events.filter((event) => event.type === "COMMERCIAL_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && afterInitialIssuance(event) && event.examiner?.name.trim() && inHeldClass(event));
   const activeChecks = checks.filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
   const proficiencyCheckAlternative = eventResult(bestMaintenanceEvent(activeChecks, heldGroup) ?? bestMaintenanceEvent(checks, heldGroup), input.referenceDateIso, "Aucun contrôle de compétences commercial avec FE(B) identifiable.");
 
   const byId = new Map(input.events.map((event) => [event.id, event]));
   const courses = input.events.filter((course) => {
-    if (course.type !== "COMMERCIAL_REFRESHER_COURSE" || course.dateIso > input.referenceDateIso || !inHeldClass(course) || (course.theoryMinutes ?? 0) < COMMERCIAL_REGULATORY_RULES.refresherTheoryMinutes) return false;
+    if (course.type !== "COMMERCIAL_REFRESHER_COURSE" || course.dateIso > input.referenceDateIso || !afterInitialIssuance(course) || !inHeldClass(course) || (course.theoryMinutes ?? 0) < COMMERCIAL_REGULATORY_RULES.refresherTheoryMinutes) return false;
     const courseWindowStart = addCalendarMonths(input.referenceDateIso, -COMMERCIAL_REGULATORY_RULES.maintenanceMonths);
     return course.relatedEventIds?.some((id) => {
       const training = byId.get(id);
@@ -186,7 +195,7 @@ export function calculateCommercialQualification(input: Readonly<{
   const proficiencyCheckFeB = proficiencyCheckAlternative;
   const ambiguousCourse = input.events.some((candidate) => candidate.type === "COMMERCIAL_REFRESHER_COURSE" && candidate.dateIso <= input.referenceDateIso && inHeldClass(candidate) && (candidate.theoryMinutes ?? 0) >= 360 && candidate.commercialQualifiedFiB === undefined);
   const refresherCourse: QualificationRequirementResult = course ? refresherCourseAlternative : ambiguousCourse ? { status: "UNKNOWN", reason: "La qualification commerciale du FI(B) lié n’est pas renseignée." } : baseRefresherCourse;
-  const operatorChecks = input.events.filter((event) => event.type === "OPERATOR_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && event.examiner?.name.trim() && inHeldClass(event));
+  const operatorChecks = input.events.filter((event) => event.type === "OPERATOR_PROFICIENCY_CHECK" && event.dateIso <= input.referenceDateIso && afterInitialIssuance(event) && event.examiner?.name.trim() && inHeldClass(event));
   const activeOperatorChecks = operatorChecks.filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
   const operatorEquivalent = eventResult(bestMaintenanceEvent(activeOperatorChecks, heldGroup) ?? bestMaintenanceEvent(operatorChecks, heldGroup), input.referenceDateIso, "Aucun contrôle de compétences opérateur admissible sur 24 mois.");
   const validRoutes = [...checks, ...courses, ...operatorChecks].filter((event) => active(eventResult(event, input.referenceDateIso, "").status));
@@ -209,6 +218,7 @@ export function calculateCommercialQualification(input: Readonly<{
       : active(proficiencyCheckFeB.status) ? proficiencyCheckFeB
       : active(operatorEquivalent.status) ? operatorEquivalent
       : active(refresherCourse.status) ? refresherCourse
+        : checks.length === 0 && courses.length === 0 && operatorChecks.length === 0 && initialMaintenanceCycle ? initialMaintenanceCycle
         : proficiencyCheckFeB.status === "UNKNOWN" || refresherCourse.status === "UNKNOWN" ? { status: "UNKNOWN", reason: "Preuves de maintien sur 24 mois insuffisantes." }
           : { status: "ACTION_REQUIRED", reason: "Aucune preuve de maintien sur 24 mois n’est satisfaite." };
   const overall: QualificationRequirementResult = initialAccess.status !== "COMPLIANT"
