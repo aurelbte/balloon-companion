@@ -22,6 +22,9 @@ const DOMAIN_LABEL: Record<string, string> = {
   "favorite-weather-place": "Lieu météo favori", "favorite-launch-site": "Terrain favori",
   balloon: "Ballon", flight: "Vol", "logbook-entry": "Ascension officielle", "balloon-document": "Document ballon", "pilot-qualifications": "Qualifications pilote",
 };
+const PROTECTED_PREFERENCE_LABEL: Record<string, string> = {
+  "weather-preferences": "Préférences météo", "unit-preferences": "Préférences d’unités", "aviation-preferences": "Préférences aviation",
+};
 function shortId(value: string | null): string { return !value ? "inconnu" : value.length <= 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`; }
 
 function yesNo(value: boolean): string { return value ? "Oui" : "Non"; }
@@ -57,6 +60,7 @@ export default function CloudSyncPage() {
   const [qualificationDetailsScope, setQualificationDetailsScope] = useState<string | null>(null);
   const [qualificationChoice, setQualificationChoice] = useState<Readonly<{ conflictId: string; strategy: "DEVICE" | "CLOUD" }> | null>(null);
   const [qualificationCloudState, setQualificationCloudState] = useState<"IDLE" | "LOADING" | "AVAILABLE" | "UNAVAILABLE">("IDLE");
+  const [preferenceChoice, setPreferenceChoice] = useState<Readonly<{ entityType: string; strategy: "LOCAL" | "CLOUD" }> | null>(null);
   const scope = auth.user?.id ? `USER:${auth.user.id}` as const : null;
   const verdict = useCloudSyncVerdict(scope);
   const resolver = useMemo(() => scope && typeof window !== "undefined" ? createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }) : null, [scope]);
@@ -132,6 +136,25 @@ export default function CloudSyncPage() {
   const hasQualificationCollision = Boolean(qualificationCollisionKey);
   const visibleQualificationConflicts = qualificationDetailsScope === scope ? qualificationConflicts : [];
   const otherLocalCollisions = auth.localDataMigrationCollisions.filter(collision => collision.domain !== "pilot-qualifications-profile" || collision.entityId !== "singleton");
+  const protectedPreferenceChains = Object.keys(PROTECTED_PREFERENCE_LABEL).flatMap(entityType => {
+    const members = issues.filter(issue => issue.entityType === entityType && issue.entityId === "singleton" && issue.lastErrorCode === "CONFLICT");
+    return members.length ? [{ entityType, members }] : [];
+  });
+  const ordinaryIssues = issues.filter(issue => !protectedPreferenceChains.some(chain => chain.entityType === issue.entityType && issue.entityId === "singleton"));
+  const resolveProtectedPreference = async () => {
+    if (!resolver || !preferenceChoice) return;
+    const key = `${preferenceChoice.entityType}:singleton`;
+    setResolving(key); setActionError(null);
+    try {
+      if (preferenceChoice.strategy === "LOCAL") await resolver.resolveProtectedLocalWins(preferenceChoice.entityType);
+      else await resolver.resolveProtectedCloudWins(preferenceChoice.entityType);
+      setPreferenceChoice(null);
+      await refresh();
+      if (inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "La résolution doit être réessayée.");
+    } finally { setResolving(null); }
+  };
 
   return <main className="mx-auto min-h-screen max-w-2xl px-5 py-8 pb-24">
     <Link href="/more" className="text-sm text-slate-600">← Plus</Link>
@@ -168,7 +191,19 @@ export default function CloudSyncPage() {
     {issuesReadError && <section className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-5 text-red-950" role="alert"><h2 className="font-semibold">Impossible de lire les détails du conflit</h2><p className="mt-1 text-sm">Le conflit reste conservé. Réessayez lorsque le stockage local est disponible.</p><button className="mt-3 rounded-xl border border-red-400 bg-white px-4 py-2" type="button" onClick={() => void refresh()}>Relire les conflits</button></section>}
     {issues.length > 0 && <section className="mt-5 space-y-3" aria-label="Conflits Cloud">
       <p className="text-sm text-slate-700">Des conflits nécessitent votre attention.</p>
-      {issues.map((issue, index) => { const key = `${issue.entityType}:${issue.entityId}:${issue.mutationId ?? "diagnostic"}:${index}`; return <article key={key} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+      {protectedPreferenceChains.map(chain => { const key = `${chain.entityType}:singleton`; const choice = preferenceChoice?.entityType === chain.entityType ? preferenceChoice : null; return <article key={key} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+        <h2 className="font-semibold">{PROTECTED_PREFERENCE_LABEL[chain.entityType]} — conflit de synchronisation</h2>
+        <p className="mt-1 text-sm">{chain.members.length} ancienne{chain.members.length > 1 ? "s" : ""} version{chain.members.length > 1 ? "s sont" : " est"} en conflit.</p>
+        <p className="mt-2 text-sm text-slate-700">Appareil : les réglages actuellement visibles ici. Cloud : les réglages actuellement enregistrés dans le Cloud.</p>
+        {resolving === key ? <p className="mt-3 font-medium">Résolution en cours…</p> : choice ? <div className="mt-3 rounded-xl border border-amber-400 bg-white p-3">
+          <p className="text-sm font-medium">Confirmer que vous souhaitez garder les préférences {choice.strategy === "LOCAL" ? "de cet appareil" : "du Cloud"} ?</p>
+          <div className="mt-3 flex gap-2"><button className="rounded-xl bg-slate-900 px-4 py-2 text-white" onClick={() => void resolveProtectedPreference()}>Confirmer</button><button className="rounded-xl border px-4 py-2" onClick={() => setPreferenceChoice(null)}>Annuler</button></div>
+        </div> : <div className="mt-4 flex flex-wrap gap-2">
+          <button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => setPreferenceChoice({ entityType: chain.entityType, strategy: "LOCAL" })}>Garder les préférences de cet appareil</button>
+          <button className="rounded-xl border border-slate-400 bg-white px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => setPreferenceChoice({ entityType: chain.entityType, strategy: "CLOUD" })}>Garder les préférences du Cloud</button>
+        </div>}
+      </article>; })}
+      {ordinaryIssues.map((issue, index) => { const key = `${issue.entityType}:${issue.entityId}:${issue.mutationId ?? "diagnostic"}:${index}`; return <article key={key} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
         <h2 className="font-semibold">{label(issue)}</h2>
         <p className="mt-1 break-words text-xs text-slate-600">{issue.entityType} · entité {shortId(issue.entityId)} · mutation {shortId(issue.mutationId)}</p>
         <p className="mt-1 text-xs text-slate-600">{issue.operation ?? "Opération inconnue"} · {issue.createdAt ? new Date(issue.createdAt).toLocaleString("fr-FR") : "date inconnue"} · révision de base {issue.baseRevision ?? "inconnue"}</p>

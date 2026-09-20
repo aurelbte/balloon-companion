@@ -18,6 +18,15 @@ import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { IndexedDbSyncOutboxStorage, SYNC_MUTATIONS_STORE, SYNC_OUTBOX_DB_NAME, type SyncMutation } from "./syncOutbox.ts";
 import { readExistingSyncStore, withLocalSyncInspectionTimeout } from "./cloudSyncVerdictBrowser.ts";
 import type { BalloonDocument } from "./balloonDocuments.ts";
+import { hasLocalStorageSyncIntent } from "./durableSyncIntent.ts";
+import { applyUnitPreferencesFromCloudWithoutEnqueue, normalizeUnitPreferences } from "./unitPreferencesStorage.ts";
+import { applyWeatherPreferencesFromCloudWithoutEnqueue } from "./weatherPreferencesStorage.ts";
+import { applyAviationPreferencesFromCloudWithoutEnqueue } from "./aviation/aviationPreferencesStorage.ts";
+import { normalizeAirportIcao } from "./aviation/aviationWeather.ts";
+import {
+  resolveProtectedPreferenceConflictCloudWins, resolveProtectedPreferenceConflictLocalWins,
+  type ProtectedPreferenceCloudState, type ProtectedPreferenceRebaseType,
+} from "./protectedPreferenceConflictRebase.ts";
 
 const DOMAIN = {
   "favorite-weather-place": ["favorite_weather_places", "id,user_id,sync_id,name,latitude,longitude,revision,created_at,updated_at,deleted_at", parseFavoriteWeatherPlaceCloudRow],
@@ -30,6 +39,31 @@ const DOMAIN = {
 } satisfies Record<CrudConflictEntityType, readonly [string, string, (value: unknown) => { id: string; userId: string; revision: number; updatedAt: string; deletedAt: string | null; value?: unknown }] >;
 
 type FlightValue = Readonly<{ flight: RecordedFlight; journal: CloudFlightJournalMetadata }>;
+
+function protectedPreferenceValue(type: ProtectedPreferenceRebaseType, row: Record<string, unknown>): unknown {
+  if (row.schema_version !== 1) throw new Error("Protected preference schema invalid");
+  if (type === "weather-preferences") {
+    if (!row.preferences || typeof row.preferences !== "object") throw new Error("Weather preferences invalid");
+    const value = row.preferences as Record<string, unknown>;
+    if ((value.favoriteWeatherLocationId !== null && typeof value.favoriteWeatherLocationId !== "string") || (value.weatherModel !== null && typeof value.weatherModel !== "string")) throw new Error("Weather preferences invalid");
+    return { favoriteWeatherLocationId: value.favoriteWeatherLocationId, weatherModel: value.weatherModel };
+  }
+  if (type === "unit-preferences") {
+    if (!row.preferences || typeof row.preferences !== "object") throw new Error("Unit preferences invalid");
+    const value = row.preferences as { weather?: Record<string, unknown>; flightInstruments?: Record<string, unknown> };
+    if (!value.weather || !value.flightInstruments || !["km/h", "kt"].includes(String(value.weather.windSpeedUnit)) || !["°C", "°F"].includes(String(value.weather.temperatureUnit)) || !["km/h", "kt"].includes(String(value.flightInstruments.speedUnit)) || !["m", "ft"].includes(String(value.flightInstruments.altitudeUnit)) || !["km", "NM"].includes(String(value.flightInstruments.distanceUnit))) throw new Error("Unit preferences invalid");
+    return normalizeUnitPreferences(value);
+  }
+  if (row.airport_icao !== null && typeof row.airport_icao !== "string" || !Array.isArray(row.favorites)) throw new Error("Aviation preferences invalid");
+  const airportIcao = normalizeAirportIcao(row.airport_icao as string | null) ?? null;
+  const favorites = row.favorites.map(item => {
+    if (!item || typeof item !== "object") throw new Error("Aviation preferences invalid");
+    const candidate = item as Record<string, unknown>, icao = normalizeAirportIcao(typeof candidate.icao === "string" ? candidate.icao : null);
+    if (!icao || typeof candidate.name !== "string" || !candidate.name.trim()) throw new Error("Aviation preferences invalid");
+    return { icao, name: candidate.name.trim() };
+  }).filter((item, index, all) => all.findIndex(candidate => candidate.icao === item.icao) === index);
+  return { airportIcao, favorites };
+}
 
 async function applyCloud(scope: `USER:${string}`, storage: Storage, entityType: CrudConflictEntityType, row: ReturnType<(typeof DOMAIN)[CrudConflictEntityType][2]>): Promise<boolean> {
   if (entityType === "pilot-qualifications") {
@@ -89,11 +123,44 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     buildPayload: (mutation) => payloads.build(mutation),
     syncMutationById: (mutationId) => service.syncMutationById(mutationId),
   };
+  const readProtectedCloud = async (type: ProtectedPreferenceRebaseType): Promise<ProtectedPreferenceCloudState | null> => {
+    const { data: authData, error: authError } = await input.client.auth.getUser();
+    if (authError || authData.user?.id !== input.scope.slice(5) || getRuntimeDataScope() !== input.scope) throw new Error("Protected preference session mismatch");
+    const aviation = type === "aviation-preferences";
+    const id = aviation ? "aviation" : type === "weather-preferences" ? "weather" : "units";
+    const select = aviation
+      ? "id,user_id,revision,updated_at,deleted_at,airport_icao,favorites,schema_version"
+      : "id,user_id,revision,updated_at,deleted_at,preferences,schema_version";
+    const { data, error } = await input.client.from(aviation ? "aviation_preferences" : "user_preferences").select(select).eq("id", id).maybeSingle();
+    if (error) throw new Error(`Protected preference read failed: ${error.code ?? "UNKNOWN"}`);
+    if (!data) return null;
+    const row = data as unknown as Record<string, unknown>;
+    if (row.id !== id || row.user_id !== input.scope.slice(5) || !Number.isInteger(row.revision) || typeof row.updated_at !== "string" || (row.deleted_at !== null && typeof row.deleted_at !== "string")) throw new Error("Protected preference cloud row invalid");
+    const value = protectedPreferenceValue(type, row);
+    const payload = aviation
+      ? { serverEntityType: "aviation_preferences", serverEntityId: "aviation", payload: { airport_icao: (value as { airportIcao: string | null }).airportIcao, favorites: (value as { favorites: unknown[] }).favorites, schema_version: 1 } }
+      : { serverEntityType: "user_preferences", serverEntityId: id, payload: { schema_version: 1, preferences: value } };
+    return { revision: row.revision as number, updatedAt: row.updated_at, deletedAt: row.deleted_at as string | null, value, payload };
+  };
+  const protectedDependencies = {
+    outbox, issues, getScope: getRuntimeDataScope,
+    hasPendingIntent: (type: ProtectedPreferenceRebaseType) => hasLocalStorageSyncIntent(input.storage, input.scope, type, "singleton"),
+    readCloudState: readProtectedCloud,
+    buildPayload: (mutation: SyncMutation) => payloads.build(mutation),
+    applyCloudLocally: (type: ProtectedPreferenceRebaseType, cloud: ProtectedPreferenceCloudState) => type === "unit-preferences"
+      ? applyUnitPreferencesFromCloudWithoutEnqueue(input.scope, cloud.value, false, input.storage)
+      : type === "weather-preferences"
+        ? applyWeatherPreferencesFromCloudWithoutEnqueue(input.scope, cloud.value, false, input.storage)
+        : applyAviationPreferencesFromCloudWithoutEnqueue(input.scope, cloud.value, false, input.storage),
+    syncMutationById: (mutationId: string) => service.syncMutationById(mutationId),
+  };
   return {
     listConflicts: async () => aggregateCrudConflicts(await issues.list(), await outbox.list()),
     retryDuplicateRegistration: (entityId: string) => service.retryDuplicateRegistration(entityId),
     resolveLocalWins: (entityType: string, entityId: string) => resolveCrudConflictLocalWins(entityType, entityId, dependencies),
     resolveServerWins: (entityType: string, entityId: string) => resolveCrudConflictServerWins(entityType, entityId, dependencies),
+    resolveProtectedLocalWins: (entityType: string) => resolveProtectedPreferenceConflictLocalWins(entityType, protectedDependencies),
+    resolveProtectedCloudWins: (entityType: string) => resolveProtectedPreferenceConflictCloudWins(entityType, protectedDependencies),
   } as const;
 }
 

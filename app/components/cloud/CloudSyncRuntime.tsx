@@ -54,10 +54,6 @@ import { loadUnitPreferences, saveUnitPreferences } from "../../lib/unitPreferen
 import { loadWeatherPreferences, saveWeatherPreferences } from "../../lib/weatherPreferencesStorage.ts";
 import { loadAviationPreferences, saveAviationPreferences } from "../../lib/aviation/aviationPreferencesStorage.ts";
 import { loadPilotProfile } from "../../lib/pilotProfileStorage.ts";
-import {
-  resolveProtectedPreferenceConflictLocalWins,
-  type ProtectedPreferenceRebaseType,
-} from "../../lib/protectedPreferenceConflictRebase.ts";
 import { createBrowserCrudConflictResolver, getCloudSyncConflictDebugInfo } from "../../lib/crudConflictBrowser.ts";
 import { CLOUD_SYNC_REPAIR_REQUESTED_EVENT, requestCloudSyncRepair } from "../../lib/cloudSyncRepairEvent.ts";
 
@@ -1431,28 +1427,7 @@ export default function CloudSyncRuntime(): null {
       scope,
       getScope: getRuntimeDataScope,
     }).syncMutationById(mutationId);
-    const resolveProtectedConflict = (entityType: string) => {
-      const outbox = new IndexedDbSyncOutboxStorage(scope);
-      const payloads = new BrowserCloudSyncPayloadProvider(window.localStorage, scope);
-      const client = createBrowserSupabaseClient();
-      return resolveProtectedPreferenceConflictLocalWins(entityType, {
-        outbox,
-        getScope: getRuntimeDataScope,
-        buildPayload: (mutation) => payloads.build(mutation),
-        syncMutationById: syncTargetedMutationById,
-        readCloudState: async (type: ProtectedPreferenceRebaseType) => {
-          const target = type === "aviation-preferences"
-            ? { table: "aviation_preferences" as const, id: "aviation" }
-            : { table: "user_preferences" as const, id: type === "weather-preferences" ? "weather" : "units" };
-          const { data, error } = await client.from(target.table)
-            .select("revision,updated_at,deleted_at")
-            .eq("id", target.id)
-            .maybeSingle();
-          if (error) throw new Error(`Cloud read failed: ${error.code ?? "UNKNOWN"}`);
-          return data ? { revision: data.revision, updatedAt: data.updated_at, deletedAt: data.deleted_at } : null;
-        },
-      });
-    };
+    const resolveProtectedConflict = (entityType: string) => createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).resolveProtectedLocalWins(entityType);
     const controlledApi = controlled ? {
       syncMutationById: syncTargetedMutationById,
       createLocalOfficialAscensionTest: () => createLocalOfficialAscensionTest(scope),
