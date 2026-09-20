@@ -35,8 +35,9 @@ export type CloudMutationResult = Readonly<{
 }>;
 
 export type CloudSyncIssue = Readonly<{
-  kind: "CONFLICT" | "BUSINESS_CONFLICT" | "NOT_FOUND";
+  kind: "CONFLICT" | "BUSINESS_CONFLICT" | "NOT_FOUND" | "BLOCKED_ERROR";
   businessCode?: "DUPLICATE_REGISTRATION";
+  errorCode?: string;
   entityType: string;
   entityId: string;
   mutation: SyncMutation;
@@ -61,10 +62,14 @@ export class MemoryCloudSyncIssueRepository implements CloudSyncIssueRepository 
 
 export class CloudSyncTransportError extends Error {
   readonly kind: "AUTH" | "NETWORK" | "SERVER";
-  constructor(kind: "AUTH" | "NETWORK" | "SERVER", message: string) {
+  readonly code?: string;
+  readonly retryable: boolean;
+  constructor(kind: "AUTH" | "NETWORK" | "SERVER", message: string, input: Readonly<{ code?: string; retryable?: boolean }> = {}) {
     super(message);
     this.name = "CloudSyncTransportError";
     this.kind = kind;
+    this.code = input.code;
+    this.retryable = input.retryable ?? kind !== "AUTH";
   }
 }
 
@@ -96,6 +101,16 @@ const TARGETED_ALLOWED_TYPES = new Set<string>(PHASE_3B_TARGETED_SYNC_ENTITY_TYP
 const AUTOMATIC_TYPE_PRIORITY = new Map<string, number>(AUTOMATIC_SYNC_ENTITY_TYPES.map((entityType, index) => [entityType, index]));
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
 const BASE_BACKOFF_MS = 5 * 1000;
+const LOCAL_PAYLOAD_NOT_FOUND = "LOCAL_PAYLOAD_NOT_FOUND";
+const DETERMINISTIC_RPC_ERROR_PREFIX = "RPC_DETERMINISTIC";
+
+export function isDeterministicCloudMutationErrorCode(code: string): boolean {
+  return /^(?:22|23|42)/.test(code) || /^PGRST[12]\d{2}$/.test(code);
+}
+
+export function isDurablyBlockedCloudSyncMutation(mutation: Pick<SyncMutation, "lastErrorCode">): boolean {
+  return mutation.lastErrorCode === LOCAL_PAYLOAD_NOT_FOUND || mutation.lastErrorCode?.startsWith(`${DETERMINISTIC_RPC_ERROR_PREFIX}:`) === true;
+}
 
 export function cloudSyncBackoffMs(attempts: number): number {
   return Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** Math.max(0, attempts - 1));
@@ -108,10 +123,11 @@ function userIdFromScope(scope: LocalDataScope | null): string | null {
 export function inspectAutomaticMutationEligibility(mutation: SyncMutation, now = new Date()): Readonly<{
   allowed: boolean;
   eligible: boolean;
-  reason: "ELIGIBLE" | "ENTITY_TYPE_NOT_ALLOWED" | "CONFLICT_BLOCKED" | "BACKOFF_NOT_DUE" | "INVALID_NEXT_ATTEMPT_AT";
+  reason: "ELIGIBLE" | "ENTITY_TYPE_NOT_ALLOWED" | "CONFLICT_BLOCKED" | "DURABLE_ERROR_BLOCKED" | "BACKOFF_NOT_DUE" | "INVALID_NEXT_ATTEMPT_AT";
 }> {
   if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType)) return { allowed: false, eligible: false, reason: "ENTITY_TYPE_NOT_ALLOWED" };
   if ((mutation.lastErrorCode === "CONFLICT" || mutation.lastErrorCode === "DUPLICATE_REGISTRATION")) return { allowed: true, eligible: false, reason: "CONFLICT_BLOCKED" };
+  if (isDurablyBlockedCloudSyncMutation(mutation)) return { allowed: true, eligible: false, reason: "DURABLE_ERROR_BLOCKED" };
   if (!mutation.nextAttemptAt) return { allowed: true, eligible: true, reason: "ELIGIBLE" };
   const nextAttemptAt = Date.parse(mutation.nextAttemptAt);
   if (!Number.isFinite(nextAttemptAt)) return { allowed: true, eligible: false, reason: "INVALID_NEXT_ATTEMPT_AT" };
@@ -127,7 +143,7 @@ function isEligible(mutation: SyncMutation, now: Date): boolean {
 export function nextEligibleRetryAt(mutations: readonly SyncMutation[]): string | null {
   let next: number | null = null;
   for (const mutation of mutations) {
-    if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType) || (mutation.lastErrorCode === "CONFLICT" || mutation.lastErrorCode === "DUPLICATE_REGISTRATION") || !mutation.nextAttemptAt) continue;
+    if (!AUTOMATIC_ALLOWED_TYPES.has(mutation.entityType) || (mutation.lastErrorCode === "CONFLICT" || mutation.lastErrorCode === "DUPLICATE_REGISTRATION") || isDurablyBlockedCloudSyncMutation(mutation) || !mutation.nextAttemptAt) continue;
     const timestamp = Date.parse(mutation.nextAttemptAt);
     if (Number.isFinite(timestamp) && (next === null || timestamp < next)) next = timestamp;
   }
@@ -162,7 +178,7 @@ export class CloudSyncService {
     if ("state" in authorization) return authorization;
     const mutation = (await this.dependencies.outbox.list()).find((candidate) => candidate.mutationId === mutationId);
     if (!mutation) return this.result("COMPLETED");
-    return this.processMutations([mutation], authorization, TARGETED_ALLOWED_TYPES);
+    return this.processMutations([mutation], authorization, TARGETED_ALLOWED_TYPES, false, true);
   }
 
   /** Explicit retry after resolving the occupied registration; never rebase or replace the snapshot. */
@@ -198,6 +214,7 @@ export class CloudSyncService {
     authorization: Readonly<{ scope: `USER:${string}`; userId: string }>,
     allowedTypes: ReadonlySet<string>,
     wholeOutbox = false,
+    allowDurablyBlockedRetry = false,
   ): Promise<CloudSyncPassResult> {
     const counters = { applied: 0, conflicts: 0, notFound: 0, ignored: 0 };
     const now = (this.dependencies.now ?? (() => new Date()))();
@@ -205,7 +222,7 @@ export class CloudSyncService {
     for (const candidate of mutations) {
       if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
       if (!allowedTypes.has(candidate.entityType)) { counters.ignored += 1; continue; }
-      if (!isEligible(candidate, now)) continue;
+      if (!isEligible(candidate, now) && !(allowDurablyBlockedRetry && isDurablyBlockedCloudSyncMutation(candidate))) continue;
       if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
 
       if (candidate.entityType === "balloon" && candidate.operation === "UPSERT") {
@@ -223,7 +240,7 @@ export class CloudSyncService {
           const payload = await this.dependencies.buildPayload(attempted);
           if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
           if (!payload && attempted.operation === "UPSERT") {
-            await this.scheduleRetry(attempted, "LOCAL_PAYLOAD_NOT_FOUND", now);
+            await this.blockMutation(attempted, LOCAL_PAYLOAD_NOT_FOUND, now);
             return { state: "STOPPED_ERROR", ...counters };
           }
           attempted = await this.dependencies.outbox.freezePayload(attempted.mutationId, payload ?? {
@@ -318,6 +335,10 @@ export class CloudSyncService {
         if (error instanceof CloudSyncTransportError && error.kind === "AUTH") {
           return { state: "SKIPPED_NO_ONLINE_SESSION", ...counters };
         }
+        if (error instanceof CloudSyncTransportError && !error.retryable) {
+          await this.blockMutation(attempted, `${DETERMINISTIC_RPC_ERROR_PREFIX}:${error.code || "UNKNOWN"}`, now);
+          return { state: "STOPPED_ERROR", ...counters };
+        }
         await this.scheduleRetry(attempted, error instanceof CloudSyncTransportError ? error.kind : "NETWORK", now);
         return { state: "STOPPED_ERROR", ...counters };
       }
@@ -345,6 +366,25 @@ export class CloudSyncService {
       lastErrorCode: code,
       nextAttemptAt: new Date(now.getTime() + cloudSyncBackoffMs(mutation.attempts)).toISOString(),
     });
+  }
+
+  private async blockMutation(mutation: SyncMutation, code: string, now: Date): Promise<void> {
+    const blocked = await this.dependencies.outbox.updateMutation(mutation.mutationId, { lastErrorCode: code, nextAttemptAt: undefined }) ?? mutation;
+    try {
+      await this.dependencies.issues.save({
+        kind: "BLOCKED_ERROR",
+        errorCode: code,
+        entityType: blocked.entityType,
+        entityId: blocked.entityId,
+        mutation: blocked,
+        serverRevision: null,
+        serverUpdatedAt: null,
+        serverDeletedAt: null,
+        recordedAt: now.toISOString(),
+      });
+    } catch {
+      // The durable outbox error remains the authoritative visible diagnostic.
+    }
   }
 
   private result(state: CloudSyncPassResult["state"]): CloudSyncPassResult {

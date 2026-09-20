@@ -7,6 +7,7 @@ import { AVIATION_PREFERENCES_STORAGE_KEY, type AviationPreferences } from "./av
 import {
   CloudSyncService,
   CloudSyncTransportError,
+  isDeterministicCloudMutationErrorCode,
   type CloudMutationResult,
   type CloudSyncIssue,
   type CloudSyncIssueRepository,
@@ -315,7 +316,10 @@ export function createBrowserCloudSyncService(input: Readonly<{
       if (error) {
         const code = String(error.code ?? "");
         const authError = code === "PGRST301" || /jwt|auth|permission/i.test(error.message);
-        throw new CloudSyncTransportError(authError ? "AUTH" : "SERVER", error.message);
+        throw new CloudSyncTransportError(authError ? "AUTH" : "SERVER", error.message, {
+          code,
+          retryable: !authError && !isDeterministicCloudMutationErrorCode(code),
+        });
       }
       return mutationResult(data);
     },

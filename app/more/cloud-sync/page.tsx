@@ -103,11 +103,12 @@ export default function CloudSyncPage() {
     if (issue.entityType === "balloon") name = loadBalloonRegistry().balloons.find(({ id }) => id === issue.entityId)?.registration;
     return `${DOMAIN_LABEL[issue.entityType] ?? "Donnée"}${name ? ` — ${name}` : ""}`;
   };
-  const resolve = async (issue: AggregatedCloudSyncConflict, strategy: "LOCAL" | "SERVER" | "BUSINESS") => {
+  const resolve = async (issue: AggregatedCloudSyncConflict, strategy: "LOCAL" | "SERVER" | "BUSINESS" | "FLIGHT_PAYLOAD") => {
     if (!resolver) return;
     setResolving(`${issue.entityType}:${issue.entityId}`); setActionError(null);
     try {
       if (strategy === "BUSINESS") await resolver.retryDuplicateRegistration(issue.entityId);
+      else if (strategy === "FLIGHT_PAYLOAD") await resolver.reconcileBlockedFlight(issue.entityId);
       else if (strategy === "LOCAL") await resolver.resolveLocalWins(issue.entityType, issue.entityId);
       else await resolver.resolveServerWins(issue.entityType, issue.entityId);
       await refresh();
@@ -209,7 +210,10 @@ export default function CloudSyncPage() {
         <p className="mt-1 text-xs text-slate-600">{issue.operation ?? "Opération inconnue"} · {issue.createdAt ? new Date(issue.createdAt).toLocaleString("fr-FR") : "date inconnue"} · révision de base {issue.baseRevision ?? "inconnue"}</p>
         {issue.integrity === "MUTATION_WITHOUT_DIAGNOSTIC" && <p className="mt-2 text-sm font-medium text-amber-900">Conflit local incomplet : la mutation existe sans diagnostic associé.</p>}
         {issue.integrity === "DIAGNOSTIC_WITHOUT_MUTATION" && <p className="mt-2 text-sm font-medium text-amber-900">Diagnostic de conflit sans mutation associée.</p>}
-        {issue.businessCode === "DUPLICATE_REGISTRATION" ? <>
+        {issue.resolution === "FLIGHT_PAYLOAD" ? <>
+          <p className="mt-2 text-sm">Le payload historique de ce vol est invalide. Le vol local doit être relu avant toute nouvelle tentative.</p>
+          <button className="mt-3 rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "FLIGHT_PAYLOAD")}>Reconstruire depuis le vol local</button>
+        </> : issue.businessCode === "DUPLICATE_REGISTRATION" ? <>
           <p className="mt-2 text-sm">Immatriculation déjà utilisée. Vérifiez le ballon concerné avant de réessayer l’envoi enregistré.</p>
           <Link className="mt-2 inline-block underline" href={loadBalloonRegistry().balloons.some(({ id }) => id === issue.entityId) ? `/more/profile/balloons/${encodeURIComponent(issue.entityId)}/edit` : "/more/profile/balloons"}>Modifier le ballon concerné</Link>
           {issue.resolution === "DUPLICATE_REGISTRATION" && <button className="ml-3 mt-3 rounded-xl border px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "BUSINESS")}>Réessayer après résolution</button>}

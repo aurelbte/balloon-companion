@@ -6,6 +6,7 @@ import {
   MemoryCloudSyncIssueRepository,
   cloudSyncBackoffMs,
   inspectAutomaticMutationEligibility,
+  isDeterministicCloudMutationErrorCode,
   nextEligibleRetryAt,
 } from "./cloudSyncService.ts";
 import { BrowserCloudSyncPayloadProvider, scanInitialCloudSyncInventory } from "./cloudSyncBrowser.ts";
@@ -37,8 +38,15 @@ test("le diagnostic d'éligibilité explique sans mutation pourquoi le drain ign
   const base = { mutationId: "m", entityType: "favorite-weather-place", entityId: "103178767", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 0 };
   assert.deepEqual(inspectAutomaticMutationEligibility(base, NOW), { allowed: true, eligible: true, reason: "ELIGIBLE" });
   assert.equal(inspectAutomaticMutationEligibility({ ...base, lastErrorCode: "CONFLICT" }, NOW).reason, "CONFLICT_BLOCKED");
+  assert.equal(inspectAutomaticMutationEligibility({ ...base, lastErrorCode: "LOCAL_PAYLOAD_NOT_FOUND" }, NOW).reason, "DURABLE_ERROR_BLOCKED");
+  assert.equal(inspectAutomaticMutationEligibility({ ...base, lastErrorCode: "RPC_DETERMINISTIC:22023" }, NOW).reason, "DURABLE_ERROR_BLOCKED");
   assert.equal(inspectAutomaticMutationEligibility({ ...base, nextAttemptAt: "2026-08-18T15:01:00.000Z" }, NOW).reason, "BACKOFF_NOT_DUE");
   assert.equal(inspectAutomaticMutationEligibility({ ...base, entityType: "unknown" }, NOW).reason, "ENTITY_TYPE_NOT_ALLOWED");
+});
+
+test("la classification RPC bloque les erreurs déterministes et laisse les erreurs transitoires retryables", () => {
+  for (const code of ["22023", "23514", "42P01", "PGRST100", "PGRST204"]) assert.equal(isDeterministicCloudMutationErrorCode(code), true, code);
+  for (const code of ["", "40001", "53300", "57014", "PGRST301"]) assert.equal(isDeterministicCloudMutationErrorCode(code), false, code);
 });
 
 class MemoryStorage {
@@ -65,7 +73,7 @@ function fixture(input = {}) {
     issues,
     getScope: () => scope,
     getOnlineUserId: async () => input.onlineUserId === undefined ? USER_A : input.onlineUserId,
-    buildPayload: async (mutation) => ({ serverEntityType: mutation.entityType === "pilot-profile" ? "profile" : mutation.entityType, serverEntityId: mutation.entityId, payload: { first_name: "Alice" } }),
+    buildPayload: input.buildPayload ?? (async (mutation) => ({ serverEntityType: mutation.entityType === "pilot-profile" ? "profile" : mutation.entityType, serverEntityId: mutation.entityId, payload: { first_name: "Alice" } })),
     applyMutation: async (request) => {
       calls += 1;
       requests.push(request);
@@ -222,6 +230,54 @@ test("une erreur réseau conserve la mutation avec attempts et backoff", async (
   assert.equal(mutation.nextAttemptAt, new Date(NOW.getTime() + cloudSyncBackoffMs(1)).toISOString());
   await value.service.syncPendingMutations();
   assert.equal(value.calls(), 1, "le prochain trigger n attend pas activement et respecte nextAttemptAt");
+});
+
+test("LOCAL_PAYLOAD_NOT_FOUND bloque durablement sans ACK ni retry automatique puis autorise un retry manuel", async () => {
+  let available = false;
+  const value = fixture({ buildPayload: async (mutation) => available ? { serverEntityType: mutation.entityType, serverEntityId: mutation.entityId, payload: { title: "restored" } } : null });
+  const original = await value.outbox.enqueue({ entityType: "logbook-entry", entityId: "missing", operation: "UPSERT", mutationId: "durable-intent" });
+
+  assert.equal((await value.service.syncPendingMutations()).state, "STOPPED_ERROR");
+  const [blocked] = await value.outbox.list();
+  assert.equal(blocked.mutationId, original.mutationId);
+  assert.deepEqual(blocked.durableIntentIds, ["durable-intent"]);
+  assert.equal(blocked.lastErrorCode, "LOCAL_PAYLOAD_NOT_FOUND");
+  assert.equal(blocked.nextAttemptAt, undefined);
+  assert.equal((await value.issues.list())[0].kind, "BLOCKED_ERROR");
+  await value.service.syncPendingMutations();
+  assert.equal((await value.outbox.list())[0].attempts, 1, "le drain automatique ne retente pas");
+  assert.equal(value.calls(), 0);
+
+  available = true;
+  assert.equal((await value.service.syncMutationById(original.mutationId)).applied, 1);
+  assert.equal(value.calls(), 1);
+  assert.equal((await value.outbox.list()).length, 0);
+});
+
+test("une erreur RPC déterministe conserve snapshot et intention sans retry automatique puis accepte le retry manuel", async () => {
+  let resolved = false;
+  const value = fixture({ apply: async (request) => {
+    if (!resolved) throw new CloudSyncTransportError("SERVER", "invalid payload", { code: "22023", retryable: false });
+    return { status: "APPLIED", entityId: request.entityId, revision: 4, serverUpdatedAt: NOW.toISOString(), deletedAt: null };
+  } });
+  const original = await value.outbox.enqueue({ entityType: "flight", entityId: "flight-1", operation: "UPSERT", mutationId: "flight-intent" });
+
+  assert.equal((await value.service.syncPendingMutations()).state, "STOPPED_ERROR");
+  const [blocked] = await value.outbox.list();
+  assert.equal(blocked.lastErrorCode, "RPC_DETERMINISTIC:22023");
+  assert.equal(blocked.nextAttemptAt, undefined);
+  assert.ok(blocked.payloadSnapshot);
+  assert.deepEqual(blocked.durableIntentIds, ["flight-intent"]);
+  assert.deepEqual((await value.issues.list()).map(({ kind, errorCode }) => ({ kind, errorCode })), [{ kind: "BLOCKED_ERROR", errorCode: "RPC_DETERMINISTIC:22023" }]);
+  await value.service.syncPendingMutations();
+  assert.equal(value.calls(), 1, "aucun second appel RPC automatique");
+  assert.equal((await value.outbox.list())[0].attempts, 1);
+
+  resolved = true;
+  assert.equal((await value.service.syncMutationById(original.mutationId)).applied, 1);
+  assert.equal(value.calls(), 2);
+  assert.equal((await value.outbox.list()).length, 0);
+  assert.equal((await value.issues.list()).length, 0);
 });
 
 test("une erreur Auth arrête la passe sans programmer un backoff agressif", async () => {

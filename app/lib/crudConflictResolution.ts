@@ -1,5 +1,5 @@
 import type { LocalDataScope } from "./auth/dataScope.ts";
-import type { CloudSyncIssue, CloudSyncIssueRepository, CloudSyncPassResult, CloudSyncPayload } from "./cloudSyncService.ts";
+import { isDurablyBlockedCloudSyncMutation, type CloudSyncIssue, type CloudSyncIssueRepository, type CloudSyncPassResult, type CloudSyncPayload } from "./cloudSyncService.ts";
 import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./syncOutbox.ts";
 import { isCloudSyncConflictIssue, isCloudSyncConflictMutation } from "./cloudSyncVerdict.ts";
 
@@ -32,9 +32,9 @@ function assertScope(dependencies: CrudConflictResolutionDependencies, scope: `U
 }
 
 export type CloudSyncConflictIntegrity = "MATCHED" | "MUTATION_WITHOUT_DIAGNOSTIC" | "DIAGNOSTIC_WITHOUT_MUTATION";
-export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "NONE";
+export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "FLIGHT_PAYLOAD" | "NONE";
 export type AggregatedCloudSyncConflict = Readonly<{
-  kind: "CONFLICT" | "BUSINESS_CONFLICT";
+  kind: "CONFLICT" | "BUSINESS_CONFLICT" | "BLOCKED_ERROR";
   businessCode?: "DUPLICATE_REGISTRATION";
   entityType: string;
   entityId: string;
@@ -55,17 +55,18 @@ export type AggregatedCloudSyncConflict = Readonly<{
 }>;
 
 export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutations: readonly SyncMutation[]): readonly AggregatedCloudSyncConflict[] {
-  const diagnostics = issues.filter(isCloudSyncConflictIssue);
-  const conflictMutations = mutations.filter(isCloudSyncConflictMutation);
+  const diagnostics = issues.filter(issue => isCloudSyncConflictIssue(issue) || issue.kind === "BLOCKED_ERROR" && issue.entityType === "flight");
+  const conflictMutations = mutations.filter(mutation => isCloudSyncConflictMutation(mutation) || mutation.entityType === "flight" && isDurablyBlockedCloudSyncMutation(mutation));
   const usedMutationIds = new Set<string>();
   const aggregate = (entityType: string, entityId: string, diagnostic: CloudSyncIssue | null, mutation: SyncMutation | null): AggregatedCloudSyncConflict => {
     const businessCode = diagnostic?.businessCode ?? (mutation?.lastErrorCode === "DUPLICATE_REGISTRATION" ? "DUPLICATE_REGISTRATION" : undefined);
-    const kind = businessCode ? "BUSINESS_CONFLICT" : "CONFLICT";
+    const kind = diagnostic?.kind === "BLOCKED_ERROR" || Boolean(mutation?.entityType === "flight" && isDurablyBlockedCloudSyncMutation(mutation)) ? "BLOCKED_ERROR" : businessCode ? "BUSINESS_CONFLICT" : "CONFLICT";
     const diagnosticPresent = Boolean(diagnostic), mutationPresent = Boolean(mutation);
     const integrity: CloudSyncConflictIntegrity = diagnosticPresent && mutationPresent ? "MATCHED" : mutationPresent ? "MUTATION_WITHOUT_DIAGNOSTIC" : "DIAGNOSTIC_WITHOUT_MUTATION";
     const revisionResolvable = kind === "CONFLICT" && mutationPresent && allowed(entityType)
       && (diagnosticPresent || (entityType === "pilot-qualifications" && entityId === "singleton"));
     const duplicateResolvable = businessCode === "DUPLICATE_REGISTRATION" && diagnosticPresent && mutationPresent && entityType === "balloon";
+    const flightPayloadResolvable = kind === "BLOCKED_ERROR" && mutationPresent && entityType === "flight" && mutation?.operation === "UPSERT";
     return {
       kind, ...(businessCode ? { businessCode } : {}), entityType: entityType!, entityId: entityId!,
       mutationId: mutation?.mutationId ?? diagnostic?.mutation?.mutationId ?? null,
@@ -79,7 +80,7 @@ export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutati
       attempts: mutation?.attempts ?? diagnostic?.mutation?.attempts ?? null,
       lastErrorCode: mutation?.lastErrorCode ?? diagnostic?.mutation?.lastErrorCode ?? null,
       diagnosticPresent, mutationPresent, integrity,
-      resolution: duplicateResolvable ? "DUPLICATE_REGISTRATION" : revisionResolvable ? "REVISION" : "NONE",
+      resolution: duplicateResolvable ? "DUPLICATE_REGISTRATION" : revisionResolvable ? "REVISION" : flightPayloadResolvable ? "FLIGHT_PAYLOAD" : "NONE",
     };
   };
   const result = diagnostics.map(diagnostic => {
@@ -91,6 +92,50 @@ export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutati
     if (!usedMutationIds.has(mutation.mutationId)) result.push(aggregate(mutation.entityType, mutation.entityId, null, mutation));
   }
   return result;
+}
+
+function validFlightPayload(payload: CloudSyncPayload | null): payload is CloudSyncPayload {
+  if (!payload || payload.serverEntityType !== "flight") return false;
+  const value = payload.payload;
+  return ["RECORDING", "COMPLETED", "INTERRUPTED"].includes(String(value.status))
+    && typeof value.started_at === "string" && Number.isFinite(Date.parse(value.started_at))
+    && value.summary !== null && typeof value.summary === "object";
+}
+
+export async function reconcileBlockedFlightMutation(entityId: string, dependencies: CrudConflictResolutionDependencies) {
+  const scope = dependencies.getScope();
+  if (!userScope(scope)) throw new CrudConflictResolutionError("USER_REQUIRED", "Utilisateur connecté requis");
+  if (await dependencies.getOnlineUserId().catch(() => null) !== scope.slice(5)) throw new CrudConflictResolutionError("OFFLINE_OR_SESSION_INVALID", "Session Cloud indisponible");
+  assertScope(dependencies, scope);
+  const historical = (await dependencies.outbox.list()).filter(mutation => mutation.entityType === "flight" && mutation.entityId === entityId && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation));
+  const blocked = historical.at(-1);
+  if (!blocked) throw new CrudConflictResolutionError("BLOCKED_MUTATION_NOT_FOUND", "La mutation bloquée n’est plus présente");
+  const existingIssue = (await dependencies.issues.list()).find(issue => issue.kind === "BLOCKED_ERROR" && issue.entityType === "flight" && issue.entityId === entityId);
+  const payload = await dependencies.buildPayload(blocked);
+  if (!validFlightPayload(payload)) throw new CrudConflictResolutionError("INVALID_LOCAL_PAYLOAD", "Le vol local est absent ou invalide. Une intervention est nécessaire.");
+  assertScope(dependencies, scope);
+  const cloud = await dependencies.readCloud("flight", entityId).catch(() => { throw new CrudConflictResolutionError("CLOUD_READ_FAILED", "Lecture Cloud impossible"); });
+  assertScope(dependencies, scope);
+  const baseRevision = cloud === null ? 0 : cloud.revision;
+  if (!Number.isInteger(baseRevision) || baseRevision < 0 || cloud && !cloud.updatedAt) throw new CrudConflictResolutionError("CLOUD_STATE_INVALID", "État Cloud invalide");
+  const fresh = await dependencies.outbox.enqueueFresh({ entityType: "flight", entityId, operation: "UPSERT", baseRevision });
+  const reserved = await dependencies.outbox.markAttempt(fresh.mutationId);
+  if (!reserved) throw new CrudConflictResolutionError("FRESH_MUTATION_REQUIRED", "La nouvelle tentative n’a pas pu être réservée");
+  await dependencies.outbox.freezePayload(fresh.mutationId, payload);
+  assertScope(dependencies, scope);
+  const result = await dependencies.syncMutationById(fresh.mutationId);
+  assertScope(dependencies, scope);
+  if (result.state !== "COMPLETED" || result.applied !== 1 || result.conflicts !== 0) throw new CrudConflictResolutionError("RECONCILIATION_FAILED", "Le vol reconstruit n’a pas été appliqué");
+  const finalMetadata = await dependencies.outbox.getMetadata("flight", entityId);
+  if (!finalMetadata || finalMetadata.revision !== baseRevision + 1) throw new CrudConflictResolutionError("FINAL_SIDECAR_INVALID", "Révision locale finale invalide");
+  await dependencies.issues.save(existingIssue ?? {
+    kind: "BLOCKED_ERROR", errorCode: blocked.lastErrorCode, entityType: "flight", entityId, mutation: blocked,
+    serverRevision: cloud?.revision ?? null, serverUpdatedAt: cloud?.updatedAt ?? null, serverDeletedAt: cloud?.deletedAt ?? null,
+    recordedAt: new Date().toISOString(),
+  });
+  for (const mutation of historical) await dependencies.outbox.acknowledge(mutation.mutationId, finalMetadata);
+  await dependencies.issues.remove("flight", entityId);
+  return { entityType: "flight", entityId, newMutationId: fresh.mutationId, finalRevision: finalMetadata.revision } as const;
 }
 
 async function confirmedContext(entityType: string, entityId: string, dependencies: CrudConflictResolutionDependencies) {

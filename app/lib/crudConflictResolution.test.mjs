@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateCrudConflicts, CrudConflictResolutionError, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
+import { aggregateCrudConflicts, CrudConflictResolutionError, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
 import { MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -123,6 +123,66 @@ test("échec concurrent sans diagnostic conserve la mutation pilot-qualification
   const mutations = await ctx.outbox.list();
   assert.equal(mutations.some(mutation => mutation.mutationId === ctx.historical.mutationId && mutation.lastErrorCode === "CONFLICT"), true);
   assert.equal(aggregateCrudConflicts(await ctx.issues.list(), mutations).length, 1);
+});
+
+async function blockedFlightFixture(options = {}) {
+  let id = 0;
+  const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => `flight-m-${++id}`, now: () => "2026-09-20T12:00:00.000Z" } });
+  const issues = new MemoryCloudSyncIssueRepository();
+  const historical = await outbox.enqueue({ entityType: "flight", entityId: "flight-1", operation: "UPSERT", baseRevision: 0, mutationId: "flight-intent" });
+  await outbox.markAttempt(historical.mutationId);
+  await outbox.freezePayload(historical.mutationId, { serverEntityType: "flight", serverEntityId: "flight-1", payload: {} });
+  const blocked = await outbox.updateMutation(historical.mutationId, { lastErrorCode: "RPC_DETERMINISTIC:23502" });
+  await issues.save({ kind: "BLOCKED_ERROR", errorCode: "RPC_DETERMINISTIC:23502", entityType: "flight", entityId: "flight-1", mutation: blocked, serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-20T12:01:00.000Z" });
+  let syncSnapshot = [];
+  const payload = { serverEntityType: "flight", serverEntityId: "flight-1", payload: { status: "COMPLETED", started_at: "2026-09-20T10:00:00.000Z", summary: { durationSeconds: 3600 } } };
+  const dependencies = {
+    outbox, issues, getScope: () => scope, getOnlineUserId: async () => scope.slice(5),
+    readCloud: async () => options.cloudMissing ? null : { revision: 7, updatedAt: "2026-09-20T11:00:00.000Z", deletedAt: null, value: {} },
+    applyCloudLocally: async () => false,
+    buildPayload: async () => options.localMissing ? null : payload,
+    syncMutationById: async mutationId => {
+      syncSnapshot = structuredClone(await outbox.list());
+      if (options.syncFails) return { state: "STOPPED_ERROR", applied: 0, conflicts: 0, notFound: 0, ignored: 0 };
+      const fresh = syncSnapshot.find(mutation => mutation.mutationId === mutationId);
+      await outbox.setMetadata({ entityType: "flight", entityId: "flight-1", revision: fresh.baseRevision + 1, updatedAt: "2026-09-20T12:02:00.000Z" });
+      await outbox.remove(mutationId);
+      return { state: "COMPLETED", applied: 1, conflicts: 0, notFound: 0, ignored: 0 };
+    },
+  };
+  return { outbox, issues, historical, payload, dependencies, get syncSnapshot() { return syncSnapshot; } };
+}
+
+test("flight bloqué reconstruit un snapshot actuel sur la vraie révision et conserve l'ancien jusqu'au succès", async () => {
+  const ctx = await blockedFlightFixture();
+  const [visible] = aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list());
+  assert.equal(visible.resolution, "FLIGHT_PAYLOAD");
+  const result = await reconcileBlockedFlightMutation("flight-1", ctx.dependencies);
+  assert.equal(ctx.syncSnapshot.length, 2);
+  assert.ok(ctx.syncSnapshot.some(mutation => mutation.mutationId === ctx.historical.mutationId && mutation.payloadSnapshot?.payload.status === undefined));
+  const fresh = ctx.syncSnapshot.find(mutation => mutation.mutationId === result.newMutationId);
+  assert.equal(fresh.baseRevision, 7);
+  assert.deepEqual(fresh.payloadSnapshot, ctx.payload);
+  assert.equal((await ctx.outbox.list()).length, 0);
+  assert.equal((await ctx.issues.list()).length, 0);
+  assert.deepEqual((await ctx.outbox.getMetadata("flight", "flight-1")).acknowledgedLocalIntentIds, ["flight-intent"]);
+});
+
+test("flight absent ou en échec conserve mutation, snapshot et diagnostic sans tentative automatique", async () => {
+  for (const options of [{ localMissing: true }, { syncFails: true }]) {
+    const ctx = await blockedFlightFixture(options);
+    await assert.rejects(reconcileBlockedFlightMutation("flight-1", ctx.dependencies), error => error instanceof CrudConflictResolutionError && ["INVALID_LOCAL_PAYLOAD", "RECONCILIATION_FAILED"].includes(error.code));
+    const remaining = await ctx.outbox.list();
+    assert.ok(remaining.some(mutation => mutation.mutationId === ctx.historical.mutationId && mutation.lastErrorCode === "RPC_DETERMINISTIC:23502"));
+    assert.deepEqual(remaining.find(mutation => mutation.mutationId === ctx.historical.mutationId).payloadSnapshot.payload, {});
+    assert.equal((await ctx.issues.list()).length, 1);
+  }
+});
+
+test("flight absent du Cloud utilise la révision de création zéro sans deviner le contenu local", async () => {
+  const ctx = await blockedFlightFixture({ cloudMissing: true });
+  const result = await reconcileBlockedFlightMutation("flight-1", ctx.dependencies);
+  assert.equal(ctx.syncSnapshot.find(mutation => mutation.mutationId === result.newMutationId).baseRevision, 0);
 });
 
 test("sécurité: whitelist, session, USER switch, lecture, payload, conflit disparu", async () => {

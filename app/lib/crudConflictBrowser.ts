@@ -7,7 +7,7 @@ import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
   parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
-import { aggregateCrudConflicts, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
+import { aggregateCrudConflicts, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
@@ -159,6 +159,7 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     retryDuplicateRegistration: (entityId: string) => service.retryDuplicateRegistration(entityId),
     resolveLocalWins: (entityType: string, entityId: string) => resolveCrudConflictLocalWins(entityType, entityId, dependencies),
     resolveServerWins: (entityType: string, entityId: string) => resolveCrudConflictServerWins(entityType, entityId, dependencies),
+    reconcileBlockedFlight: (entityId: string) => reconcileBlockedFlightMutation(entityId, dependencies),
     resolveProtectedLocalWins: (entityType: string) => resolveProtectedPreferenceConflictLocalWins(entityType, protectedDependencies),
     resolveProtectedCloudWins: (entityType: string) => resolveProtectedPreferenceConflictCloudWins(entityType, protectedDependencies),
   } as const;
