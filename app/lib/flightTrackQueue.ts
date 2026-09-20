@@ -114,9 +114,11 @@ export type FlightTrackQueueTransport = Readonly<{
   cleanup(flightId: string): Promise<unknown>;
 }>;
 
-export type FlightTrackQueueDrainResult = Readonly<{ processed: number; succeeded: number; failed: number; stoppedForUserSwitch: boolean }>;
+export type FlightTrackQueueDrainResult = Readonly<{ state: "COMPLETED" | "TIMEOUT"; processed: number; succeeded: number; failed: number; stoppedForUserSwitch: boolean }>;
 function notifyTrackActivity(): void { invalidateCloudSyncObservation(); }
 const activeDrains = new Map<string, Promise<FlightTrackQueueDrainResult>>();
+const physicalDrains = new Map<string, Promise<FlightTrackQueueDrainResult>>();
+const activeDrainTimers = new Map<string, ReturnType<typeof setTimeout>>();
 export function isFlightTrackQueueRunning(scope: `USER:${string}`): boolean { return activeDrains.has(scope); }
 
 function errorDetails(error: unknown): Pick<FlightTrackJob, "lastErrorCode" | "lastErrorCategory"> {
@@ -133,15 +135,21 @@ export function drainFlightTrackQueue(input: Readonly<{
   getScope?: () => LocalDataScope | null;
   online?: () => boolean;
   now?: () => Date;
+  activityTimeoutMs?: number;
+  signal?: AbortSignal;
 }>): Promise<FlightTrackQueueDrainResult> {
   const running = activeDrains.get(input.scope);
   if (running) return running;
-  const promise = (async () => {
-    const result = { processed: 0, succeeded: 0, failed: 0, stoppedForUserSwitch: false };
+  if (physicalDrains.has(input.scope)) return Promise.resolve({ state: "TIMEOUT", processed: 0, succeeded: 0, failed: 0, stoppedForUserSwitch: false });
+  const token = { active: true };
+  const active = () => token.active && !input.signal?.aborted;
+  const work = (async () => {
+    const result = { state: "COMPLETED" as const, processed: 0, succeeded: 0, failed: 0, stoppedForUserSwitch: false };
     const getScope = input.getScope ?? getRuntimeDataScope;
     const now = input.now ?? (() => new Date());
     if (getScope() !== input.scope || !(input.online ?? (() => navigator.onLine))()) return { ...result, stoppedForUserSwitch: getScope() !== input.scope };
     for (const job of await input.storage.list()) {
+      if (!active()) return { ...result, state: "TIMEOUT" as const };
       if (job.scope !== input.scope || job.userId !== input.scope.slice(5)) continue;
       if (job.nextEligibleRetryAt && Date.parse(job.nextEligibleRetryAt) > now().getTime()) continue;
       if (getScope() !== input.scope) return { ...result, stoppedForUserSwitch: true };
@@ -150,20 +158,40 @@ export function drainFlightTrackQueue(input: Readonly<{
         if (job.operation === "UPLOAD") await input.transport.upload(job.flightId);
         else if (job.operation === "DOWNLOAD") await input.transport.download(job.flightId);
         else await input.transport.cleanup(job.flightId);
+        if (!active()) return { ...result, state: "TIMEOUT" as const };
         if (getScope() !== input.scope) return { ...result, stoppedForUserSwitch: true };
         await input.storage.remove(job.jobId);
+        if (!active()) return { ...result, state: "TIMEOUT" as const };
         result.succeeded += 1;
       } catch (error) {
+        if (!active()) return { ...result, state: "TIMEOUT" as const };
         if (getScope() !== input.scope) return { ...result, stoppedForUserSwitch: true };
         const attempts = job.attempts + 1;
         const timestamp = now();
         await input.storage.put({ ...job, attempts, updatedAt: timestamp.toISOString(), nextEligibleRetryAt: new Date(timestamp.getTime() + flightTrackBackoffMs(attempts)).toISOString(), ...errorDetails(error), status: "FAILED" });
+        if (!active()) return { ...result, state: "TIMEOUT" as const };
         result.failed += 1;
       }
     }
     return result;
-  })().finally(() => { activeDrains.delete(input.scope); notifyTrackActivity(); });
+  })();
+  let resolveTimeout!: (value: FlightTrackQueueDrainResult) => void;
+  const timeout = new Promise<FlightTrackQueueDrainResult>((resolve) => { resolveTimeout = resolve; });
+  const physical = work.finally(() => {
+    physicalDrains.delete(input.scope);
+    notifyTrackActivity();
+  });
+  physicalDrains.set(input.scope, physical);
+  const promise = Promise.race([physical, timeout]).finally(() => {
+    if (activeDrains.get(input.scope) === promise) activeDrains.delete(input.scope);
+    const timer = activeDrainTimers.get(input.scope); if (timer) clearTimeout(timer);
+    activeDrainTimers.delete(input.scope); notifyTrackActivity();
+  });
   activeDrains.set(input.scope, promise);
+  activeDrainTimers.set(input.scope, setTimeout(() => {
+    token.active = false;
+    resolveTimeout({ state: "TIMEOUT", processed: 0, succeeded: 0, failed: 0, stoppedForUserSwitch: false });
+  }, input.activityTimeoutMs ?? 55_000));
   notifyTrackActivity();
   return promise;
 }
@@ -174,9 +202,11 @@ export async function nextFlightTrackRetryAt(storage: FlightTrackQueueStorage): 
 }
 
 /** Discovery failure never starves already durable jobs; coverage remains explicitly incomplete. */
-export async function discoverAndDrainFlightTracks(input: Readonly<{ discover(): Promise<unknown>; drain(): Promise<FlightTrackQueueDrainResult> }>): Promise<Readonly<{ discoveryComplete: boolean; discoveryError: "TRACE_DISCOVERY_FAILED" | null; drain: FlightTrackQueueDrainResult }>> {
+export async function discoverAndDrainFlightTracks(input: Readonly<{ discover(): Promise<unknown>; drain(): Promise<FlightTrackQueueDrainResult>; signal?: AbortSignal }>): Promise<Readonly<{ discoveryComplete: boolean; discoveryError: "TRACE_DISCOVERY_FAILED" | "TRACE_DRAIN_TIMEOUT" | null; drain: FlightTrackQueueDrainResult }>> {
   let discoveryComplete = true;
-  try { await input.discover(); } catch { discoveryComplete = false; }
+  try { await input.discover(); input.signal?.throwIfAborted(); } catch { discoveryComplete = false; }
+  if (input.signal?.aborted) return { discoveryComplete: false, discoveryError: "TRACE_DRAIN_TIMEOUT", drain: { state: "TIMEOUT", processed: 0, succeeded: 0, failed: 0, stoppedForUserSwitch: false } };
   const drain = await input.drain();
-  return { discoveryComplete, discoveryError: discoveryComplete ? null : "TRACE_DISCOVERY_FAILED", drain };
+  const timedOut = drain.state === "TIMEOUT";
+  return { discoveryComplete: discoveryComplete && !timedOut, discoveryError: timedOut ? "TRACE_DRAIN_TIMEOUT" : discoveryComplete ? null : "TRACE_DISCOVERY_FAILED", drain };
 }

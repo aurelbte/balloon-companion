@@ -31,19 +31,32 @@ export type CloudSyncRuntimeControllerSnapshot = Readonly<{
   nextEligibleRetryAt: string | null;
   retryTimerScheduled: boolean;
   retryTimerForUserId: string | null;
+  currentPhase: "BOOTSTRAP" | "PUSH" | null;
+  phaseStartedAt: string | null;
+  operationStartedAt: string | null;
 }>;
 
 type Dependencies = Readonly<{
   isOnline(): boolean;
-  bootstrap(userId: string): Promise<AutomaticBootstrapResult>;
-  push(userId: string): Promise<unknown>;
+  bootstrap(userId: string, signal?: AbortSignal): Promise<AutomaticBootstrapResult>;
+  push(userId: string, signal?: AbortSignal): Promise<unknown>;
   now?(): string;
   onDiagnosticChange?(snapshot: CloudSyncRuntimeControllerSnapshot): void;
   getNextEligibleRetryAt?(userId: string): Promise<string | null>;
   setTimer?(callback: () => void, delayMs: number): unknown;
   clearTimer?(timer: unknown): void;
   nowMs?(): number;
+  phaseTimeoutMs?: Readonly<{ bootstrap: number; push: number }>;
 }>;
+
+export class CloudSyncRuntimeTimeoutError extends Error {
+  readonly code: "CLOUD_BOOTSTRAP_TIMEOUT" | "CLOUD_PUSH_TIMEOUT";
+  constructor(phase: "BOOTSTRAP" | "PUSH") {
+    super(phase === "BOOTSTRAP" ? "La vérification Cloud a expiré" : "La synchronisation Cloud a expiré");
+    this.name = "CloudSyncRuntimeTimeoutError";
+    this.code = phase === "BOOTSTRAP" ? "CLOUD_BOOTSTRAP_TIMEOUT" : "CLOUD_PUSH_TIMEOUT";
+  }
+}
 
 /**
  * Serializes the future automatic PULL/PUSH wiring. It deliberately allows a
@@ -79,6 +92,12 @@ export class CloudSyncRuntimeController {
   private retryTimer: unknown = null;
   private retryTimerUserId: string | null = null;
   private retryDue = false;
+  private currentPhase: "BOOTSTRAP" | "PUSH" | null = null;
+  private phaseStartedAt: string | null = null;
+  private operationStartedAt: string | null = null;
+  private phaseSequence = 0;
+  private physicalOperation: Promise<unknown> | null = null;
+  private physicalAbortController: AbortController | null = null;
 
   constructor(dependencies: Dependencies) {
     this.dependencies = dependencies;
@@ -89,6 +108,12 @@ export class CloudSyncRuntimeController {
     const previous = this.userId;
     this.userId = userId;
     this.generation += 1;
+    this.phaseSequence += 1;
+    this.physicalAbortController?.abort();
+    this.bootstrapInProgress = false;
+    this.pushInProgress = false;
+    this.currentPhase = null;
+    this.phaseStartedAt = null;
     this.lastBootstrapState = null;
     this.lastCompletedAt = null;
     this.lastPushExecuted = false;
@@ -180,6 +205,9 @@ export class CloudSyncRuntimeController {
       nextEligibleRetryAt: this.nextRetryAt,
       retryTimerScheduled: this.retryTimer !== null,
       retryTimerForUserId: this.retryTimerUserId,
+      currentPhase: this.currentPhase,
+      phaseStartedAt: this.phaseStartedAt,
+      operationStartedAt: this.operationStartedAt,
     };
   }
 
@@ -213,34 +241,38 @@ export class CloudSyncRuntimeController {
     this.running = this.run().finally(async () => {
       this.running = null;
       await this.refreshRetrySchedule();
-      if (this.userId && this.dependencies.isOnline()
+      if (!this.physicalOperation && this.userId && this.dependencies.isOnline()
         && (this.bootstrapRequested || this.pushRequested && this.readyGeneration === this.generation)) this.schedule();
     });
   }
 
   private async run(): Promise<void> {
+    if (this.physicalOperation) { this.record("RESULT_UNKNOWN_RECHECK_REQUIRED", this.userId); return; }
     const userId = this.userId;
     const generation = this.generation;
     if (!userId) return;
+    this.operationStartedAt = this.now();
     let bootstrapSucceeded = false;
     if (this.bootstrapRequested) {
       this.bootstrapRequested = false;
       this.bootstrapInProgress = true;
+      this.beginPhase("BOOTSTRAP");
       this.lastStartedAt = this.now();
       this.lastPushExecuted = false;
       this.record("BOOTSTRAP_STARTED", userId);
       let report: AutomaticBootstrapResult;
-      try { report = await this.dependencies.bootstrap(userId); }
+      try { report = await this.withPhaseTimeout("BOOTSTRAP", signal => this.dependencies.bootstrap(userId, signal)); }
       catch (error) {
         if (generation !== this.generation || userId !== this.userId) return;
         this.lastBootstrapState = "STOPPED_ERROR";
         this.lastError = this.safeError(error);
+        if (error instanceof CloudSyncRuntimeTimeoutError) { this.readyGeneration = -1; this.bootstrapRequested = true; this.pushRequested = true; }
         this.lastPushAuthorized = false;
         this.lastPushRefusalReason = "BOOTSTRAP_STOPPED_ERROR";
         this.lastCompletedAt = this.now();
         this.record("BOOTSTRAP_ERROR", userId, "STOPPED_ERROR");
         return;
-      } finally { this.bootstrapInProgress = false; this.publish(); }
+      } finally { this.bootstrapInProgress = false; this.endPhase("BOOTSTRAP"); this.publish(); }
       if (generation !== this.generation || userId !== this.userId) { this.record("BOOTSTRAP_CANCELLED", userId); return; }
       bootstrapSucceeded = report.state === "SUCCESS";
       this.readyGeneration = bootstrapSucceeded ? generation : -1;
@@ -264,9 +296,10 @@ export class CloudSyncRuntimeController {
       && generation === this.generation && userId === this.userId) {
       this.pushRequested = false;
       this.pushInProgress = true;
+      this.beginPhase("PUSH");
       this.record("PUSH_STARTED", userId);
       try {
-        const result = await this.dependencies.push(userId);
+        const result = await this.withPhaseTimeout("PUSH", signal => this.dependencies.push(userId, signal));
         if (generation !== this.generation || userId !== this.userId) return;
         this.lastPushExecuted = true;
         this.lastPushState = result && typeof result === "object" && "state" in result ? String(result.state) : null;
@@ -279,9 +312,10 @@ export class CloudSyncRuntimeController {
         this.lastPushState = "STOPPED_ERROR";
         this.lastPushCompletedAt = null;
         this.lastError = this.safeError(error);
+        if (error instanceof CloudSyncRuntimeTimeoutError) { this.readyGeneration = -1; this.bootstrapRequested = true; this.pushRequested = true; }
         this.record("PUSH_ERROR", userId, "STOPPED_ERROR");
       }
-      finally { this.pushInProgress = false; this.publish(); }
+      finally { this.pushInProgress = false; this.endPhase("PUSH"); this.publish(); }
     } else if (this.pushRequested && !bootstrapSucceeded && this.readyGeneration !== generation) {
       this.record("PUSH_SKIPPED", userId, this.lastPushRefusalReason ?? "BOOTSTRAP_NOT_READY");
     }
@@ -291,7 +325,35 @@ export class CloudSyncRuntimeController {
   private nowMs(): number { return this.dependencies.nowMs?.() ?? Date.now(); }
   private sanitize(message: string): string { return message.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED]").slice(0, 300); }
   private safeError(error: unknown): Readonly<{ code: string; message: string }> {
-    return { code: "UNEXPECTED_ERROR", message: this.sanitize(error instanceof Error ? error.message : "Unknown runtime error") };
+    return { code: error instanceof CloudSyncRuntimeTimeoutError ? error.code : "UNEXPECTED_ERROR", message: this.sanitize(error instanceof Error ? error.message : "Unknown runtime error") };
+  }
+  private beginPhase(phase: "BOOTSTRAP" | "PUSH"): void {
+    this.currentPhase = phase; this.phaseStartedAt = this.now(); this.phaseSequence += 1; this.publish();
+  }
+  private endPhase(phase: "BOOTSTRAP" | "PUSH"): void {
+    if (this.currentPhase === phase) { this.currentPhase = null; this.phaseStartedAt = null; }
+  }
+  private async withPhaseTimeout<T>(phase: "BOOTSTRAP" | "PUSH", operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const timeoutMs = phase === "BOOTSTRAP" ? this.dependencies.phaseTimeoutMs?.bootstrap ?? 45_000 : this.dependencies.phaseTimeoutMs?.push ?? 150_000;
+    const sequence = this.phaseSequence;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const physical = operation(controller.signal);
+    this.physicalOperation = physical;
+    this.physicalAbortController = controller;
+    let timedOut = false;
+    const settled = () => {
+      if (this.physicalOperation === physical) this.physicalOperation = null;
+      if (this.physicalAbortController === controller) this.physicalAbortController = null;
+      if (timedOut && sequence === this.phaseSequence && this.userId) this.schedule();
+    };
+    void physical.then(settled, settled);
+    try {
+      return await Promise.race([
+        physical.then(value => { if (sequence !== this.phaseSequence || this.currentPhase !== phase || controller.signal.aborted) throw new CloudSyncRuntimeTimeoutError(phase); return value; }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => { timedOut = true; controller.abort(); reject(new CloudSyncRuntimeTimeoutError(phase)); }, timeoutMs); }),
+      ]);
+    } finally { if (timer !== null) clearTimeout(timer); }
   }
   private record(type: string, userId: string | null, result?: string): void {
     this.history.push({ at: this.now(), type, userId, ...(result ? { result } : {}) });

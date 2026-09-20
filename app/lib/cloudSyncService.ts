@@ -79,6 +79,7 @@ export type CloudSyncDependencies = Readonly<{
   buildPayload(mutation: SyncMutation): Promise<CloudSyncPayload | null>;
   applyMutation(request: CloudMutationRequest): Promise<CloudMutationResult>;
   acknowledgeBeforeIssueRemoval?: boolean;
+  signal?: AbortSignal;
   now?: () => Date;
 }>;
 
@@ -202,6 +203,7 @@ export class CloudSyncService {
     const now = (this.dependencies.now ?? (() => new Date()))();
 
     for (const candidate of mutations) {
+      if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
       if (!allowedTypes.has(candidate.entityType)) { counters.ignored += 1; continue; }
       if (!isEligible(candidate, now)) continue;
       if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
@@ -214,10 +216,12 @@ export class CloudSyncService {
       if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
       // Reserve before any asynchronous local read: subsequent edits cannot coalesce here.
       let attempted = await this.dependencies.outbox.markAttempt(candidate.mutationId);
+      if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
       if (!attempted) continue;
       try {
         if (!attempted.payloadSnapshot) {
           const payload = await this.dependencies.buildPayload(attempted);
+          if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
           if (!payload && attempted.operation === "UPSERT") {
             await this.scheduleRetry(attempted, "LOCAL_PAYLOAD_NOT_FOUND", now);
             return { state: "STOPPED_ERROR", ...counters };
@@ -225,6 +229,7 @@ export class CloudSyncService {
           attempted = await this.dependencies.outbox.freezePayload(attempted.mutationId, payload ?? {
             serverEntityType: attempted.entityType, serverEntityId: attempted.entityId, payload: {},
           });
+          if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
           if (!attempted) continue;
         }
       } catch {
@@ -242,6 +247,7 @@ export class CloudSyncService {
           baseRevision: attempted.baseRevision,
           payload: attempted.operation === "DELETE" ? {} : structuredClone(payload.payload),
         });
+        if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
         if (!this.sameUser(authorization.scope, authorization.userId)) return { state: "STOPPED_USER_SWITCH", ...counters };
 
         if (response.status === "APPLIED" || response.status === "ALREADY_APPLIED") {
@@ -253,17 +259,23 @@ export class CloudSyncService {
             updatedAt: response.serverUpdatedAt,
             ...(response.deletedAt ? { deletedAt: response.deletedAt } : {}),
           };
-          if (this.dependencies.acknowledgeBeforeIssueRemoval) {
+          if (this.dependencies.acknowledgeBeforeIssueRemoval || this.dependencies.signal) {
+            if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
             await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
+            if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
             await this.dependencies.issues.remove(attempted.entityType, attempted.entityId);
           } else {
+            if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
             await this.dependencies.issues.remove(attempted.entityType, attempted.entityId);
+            if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
             await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
           }
+          if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
           counters.applied += 1;
           continue;
         }
 
+        if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
         await this.dependencies.issues.save({
           kind: response.status,
           ...(response.businessCode ? { businessCode: response.businessCode } : {}),
@@ -275,14 +287,17 @@ export class CloudSyncService {
           serverDeletedAt: response.deletedAt,
           recordedAt: now.toISOString(),
         });
+        if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
         if (response.status === "BUSINESS_CONFLICT") {
           if (response.businessCode !== "DUPLICATE_REGISTRATION") throw new CloudSyncTransportError("SERVER", "Unknown business conflict");
           await this.dependencies.outbox.updateMutation(attempted.mutationId, { lastErrorCode: response.businessCode, nextAttemptAt: undefined });
+          if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
           counters.conflicts += 1;
           continue;
         }
         if (response.status === "CONFLICT") {
           await this.dependencies.outbox.updateMutation(attempted.mutationId, { lastErrorCode: "CONFLICT" });
+          if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
           counters.conflicts += 1;
           continue;
         }
@@ -296,8 +311,10 @@ export class CloudSyncService {
           };
           await this.dependencies.outbox.acknowledge(attempted.mutationId, metadata);
         } else await this.dependencies.outbox.remove(attempted.mutationId);
+        if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
         counters.notFound += 1;
       } catch (error) {
+        if (!this.isActive()) return { state: "STOPPED_ERROR", ...counters };
         if (error instanceof CloudSyncTransportError && error.kind === "AUTH") {
           return { state: "SKIPPED_NO_ONLINE_SESSION", ...counters };
         }
@@ -320,6 +337,8 @@ export class CloudSyncService {
     const current = this.dependencies.getScope();
     return current === scope && userIdFromScope(current) === userId;
   }
+
+  private isActive(): boolean { return !this.dependencies.signal?.aborted; }
 
   private async scheduleRetry(mutation: SyncMutation, code: string, now: Date): Promise<void> {
     await this.dependencies.outbox.updateMutation(mutation.mutationId, {

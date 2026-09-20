@@ -387,3 +387,44 @@ test("un USER switch invalide l'ancien timer avant de cibler le nouveau USER", a
   assert.equal(ctx.controller.inspect().userId, "B");
   assert.deepEqual(ctx.pushes, ["push", "push"]);
 });
+
+test("watchdog bootstrap libère le flag mais attend la fin physique avant la réinspection", async () => {
+  let calls = 0, release;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    phaseTimeoutMs: { bootstrap: 5, push: 5 },
+    bootstrap: async () => { calls += 1; return calls === 1 ? new Promise(resolve => { release = resolve; }) : { state: "SUCCESS", resumable: false }; },
+    push: async () => ({ state: "COMPLETED" }),
+  });
+  controller.setUser("A");
+  await controller.whenIdle();
+  assert.equal(controller.inspect().bootstrapInProgress, false);
+  assert.equal(controller.inspect().currentPhase, null);
+  assert.equal(controller.inspect().lastError.code, "CLOUD_BOOTSTRAP_TIMEOUT");
+  await controller.synchronizeNow();
+  assert.equal(calls, 1);
+  release({ state: "SUCCESS", resumable: false });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await controller.whenIdle();
+  assert.equal(calls, 2);
+  assert.equal(controller.inspect().lastPushState, "COMPLETED");
+});
+
+test("watchdog PUSH libère le flag et ignore une réponse tardive", async () => {
+  let release, pushes = 0;
+  const controller = new CloudSyncRuntimeController({
+    isOnline: () => true,
+    phaseTimeoutMs: { bootstrap: 5, push: 5 },
+    bootstrap: async () => ({ state: "SUCCESS", resumable: false }),
+    push: async () => { pushes += 1; if (pushes === 1) return new Promise(resolve => { release = resolve; }); return { state: "COMPLETED" }; },
+  });
+  controller.setUser("A");
+  await controller.whenIdle();
+  assert.equal(controller.inspect().pushInProgress, false);
+  assert.equal(controller.inspect().lastError.code, "CLOUD_PUSH_TIMEOUT");
+  release({ state: "COMPLETED" });
+  await Promise.resolve();
+  assert.equal(controller.inspect().lastPushState, "STOPPED_ERROR");
+  await controller.synchronizeNow();
+  assert.equal(controller.inspect().lastPushState, "COMPLETED");
+});

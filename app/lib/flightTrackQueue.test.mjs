@@ -4,8 +4,10 @@ import test, { afterEach } from "node:test";
 import { setRuntimeAuthSnapshot } from "./auth/dataScopeRuntime.ts";
 import {
   drainFlightTrackQueue,
+  discoverAndDrainFlightTracks,
   enqueueFlightTrackJob,
   flightTrackBackoffMs,
+  isFlightTrackQueueRunning,
   MemoryFlightTrackQueueStorage,
   nextFlightTrackRetryAt,
 } from "./flightTrackQueue.ts";
@@ -24,8 +26,40 @@ test("queue durable logique coalesce upload et DELETE remplace les jobs liés", 
   assert.deepEqual((await storage.list()).map(({ operation }) => operation), ["DELETE"]);
 });
 
+test("un timeout trace ne devient jamais une couverture complète", async () => {
+  signedIn();
+  const storage = new MemoryFlightTrackQueueStorage();
+  await enqueueFlightTrackJob(storage, { scope, flightId: "flight-timeout-coverage", operation: "UPLOAD" });
+  let release;
+  const result = await discoverAndDrainFlightTracks({
+    discover: async () => {},
+    drain: () => drainFlightTrackQueue({ scope, storage, activityTimeoutMs: 5, online: () => true, transport: { upload: async () => new Promise(resolve => { release = resolve; }), download: async () => {}, cleanup: async () => {} } }),
+  });
+  assert.equal(result.discoveryComplete, false);
+  assert.equal(result.discoveryError, "TRACE_DRAIN_TIMEOUT");
+  assert.equal(result.drain.state, "TIMEOUT");
+  release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+});
+
 test("backoff exact et durable: 5s, 15s, 45s, 2m, 5m, 15m", () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 9].map(flightTrackBackoffMs), [5_000, 15_000, 45_000, 120_000, 300_000, 900_000, 900_000]);
+});
+
+test("une trace pendante expire, libère l'activité et conserve le job", async () => {
+  signedIn();
+  const storage = new MemoryFlightTrackQueueStorage();
+  await enqueueFlightTrackJob(storage, { scope, flightId: "flight-timeout", operation: "UPLOAD" });
+  let release;
+  const operation = drainFlightTrackQueue({ scope, storage, activityTimeoutMs: 5, online: () => true, transport: { upload: async () => new Promise(resolve => { release = resolve; }), download: async () => {}, cleanup: async () => {} } });
+  assert.equal(isFlightTrackQueueRunning(scope), true);
+  const result = await operation;
+  assert.equal(result.state, "TIMEOUT");
+  assert.equal(isFlightTrackQueueRunning(scope), false);
+  assert.equal((await storage.list()).length, 1);
+  release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal((await storage.list()).length, 1);
 });
 
 test("erreur réseau conserve le job, puis retry réussi le retire", async () => {

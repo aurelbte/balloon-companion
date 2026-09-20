@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { File } from "node:buffer";
-import { withSyncIntents, pendingSyncIntents, recoverLocalStorageSyncIntents, recoverIndexedDbSyncIntents, writeBusinessValueWithSync, putIndexedDbWithSyncIntents, LOCAL_SYNC_DELETED } from "./durableSyncIntent.ts";
+import { withSyncIntents, pendingSyncIntents, recoverLocalStorageSyncIntents, recoverIndexedDbSyncIntents, writeBusinessValueWithSync, putIndexedDbWithSyncIntents, LOCAL_SYNC_DELETED, isLocalSyncRecoveryRunning } from "./durableSyncIntent.ts";
 import { MemorySyncOutboxStorage, IndexedDbSyncOutboxStorage, enqueueLocalSyncMutation } from "./syncOutbox.ts";
 import { getRuntimeDataScope, setRuntimeAuthSnapshot, scopedIndexedDbName, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { CloudSyncService } from "./cloudSyncService.ts";
@@ -51,6 +51,34 @@ test("création + enqueue échoué : donnée et intention restent durables", asy
   savePilotProfile(profile("A")); assert.equal(await enqueueLocalSyncMutation("pilot-profile","singleton"),false);
   await assert.rejects(recoverLocalStorageSyncIntents(storage, scope, failingOutbox(outbox)));
   assert.equal(loadPilotProfile().firstName,"A"); assert.equal(intents(storage).length,1); assert.equal((await outbox.list()).length,0);
+});
+test("recovery C2 pendante expire, libère l'activité et conserve l'intention", async (t) => {
+  const storage = setup(t), outbox = new MemorySyncOutboxStorage();
+  savePilotProfile(profile("A"));
+  let release;
+  const hanging = new Proxy(outbox, { get(target, key) { if (key === "enqueue") return () => new Promise(resolve => { release = resolve; }); const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
+  const operation = recoverLocalStorageSyncIntents(storage, scope, hanging, undefined, 5);
+  await assert.rejects(operation, /SYNC_INTENT_RECOVERY_TIMEOUT/);
+  assert.equal(isLocalSyncRecoveryRunning(scope), false);
+  assert.equal(intents(storage).length, 1);
+  assert.equal((await outbox.list()).length, 0);
+  release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+});
+test("enqueue C2 commité après timeout reste idempotent puis nettoie au passage suivant", async (t) => {
+  const storage = setup(t), outbox = new MemorySyncOutboxStorage();
+  savePilotProfile(profile("A"));
+  let release;
+  const delayed = new Proxy(outbox, { get(target, key) { if (key === "enqueue") return async (intent) => { await new Promise(resolve => { release = resolve; }); return target.enqueue(intent); }; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
+  const recovery = recoverLocalStorageSyncIntents(storage, scope, delayed, undefined, 5);
+  await assert.rejects(recovery, /SYNC_INTENT_RECOVERY_TIMEOUT/);
+  assert.equal(intents(storage).length, 1);
+  release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal((await outbox.list()).length, 1);
+  await recoverLocalStorageSyncIntents(storage, scope, outbox);
+  assert.equal((await outbox.list()).length, 1);
+  assert.equal(intents(storage).length, 0);
 });
 test("update après sidecar existant + échec + nouvelle instance : récupération de B", async (t) => {
   const storage = setup(t), mutations = new Map(), metadata = new Map();

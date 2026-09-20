@@ -364,12 +364,12 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
     return updated;
   }
 
-  async recoverSyncIntents(scope: `USER:${string}`, outbox: SyncOutboxStorage): Promise<void> {
+  async recoverSyncIntents(scope: `USER:${string}`, outbox: SyncOutboxStorage, signal?: AbortSignal): Promise<void> {
     if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
     if ((this.scope && this.scope !== scope) || outbox.getScope?.() !== scope) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
     const database = await this.database();
     if (this.scope !== scope || (database.name && database.name !== scopedIndexedDbName(scope, DATABASE_NAME))) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
-    await recoverIndexedDbSyncIntents(database, FLIGHTS_STORE, scope, outbox);
+    await recoverIndexedDbSyncIntents(database, FLIGHTS_STORE, scope, outbox, 30_000, signal);
   }
 
   async deleteFlight(id: string): Promise<void> {

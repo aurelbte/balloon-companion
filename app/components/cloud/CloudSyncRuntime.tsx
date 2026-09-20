@@ -56,6 +56,7 @@ import { loadAviationPreferences, saveAviationPreferences } from "../../lib/avia
 import { loadPilotProfile } from "../../lib/pilotProfileStorage.ts";
 import { createBrowserCrudConflictResolver, getCloudSyncConflictDebugInfo } from "../../lib/crudConflictBrowser.ts";
 import { CLOUD_SYNC_REPAIR_REQUESTED_EVENT, requestCloudSyncRepair } from "../../lib/cloudSyncRepairEvent.ts";
+import { isLocalSyncRecoveryRunning } from "../../lib/durableSyncIntent.ts";
 
 const lastCloudBootstrapReports = new Map<string, unknown>();
 const CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY = "balloon-companion:dev:cloud-sync-runtime-diagnostic";
@@ -132,6 +133,7 @@ declare global {
       migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
     }>;
     getCloudSyncConflictDebugInfo?: () => Promise<unknown>;
+    getCloudSyncRuntimeDebugInfo?: () => ReturnType<typeof getCloudSyncRuntimeDebugInfo>;
   }
 }
 
@@ -153,11 +155,13 @@ export function inspectCloudSyncTraceEvidence() {
 
 const automaticCloudSyncController = new CloudSyncRuntimeController({
   isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
-  bootstrap: async (userId) => {
+  bootstrap: async (userId, signal) => {
     const scope = `USER:${userId}` as const;
-    const report = await createBrowserCloudBootstrapService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).bootstrapCloudDataForCurrentUser();
+    const report = await createBrowserCloudBootstrapService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, signal }).bootstrapCloudDataForCurrentUser();
+    signal?.throwIfAborted();
     if (report.state === "SUCCESS") {
-      const backfill = await createBrowserCloudBackfillService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }).run();
+      const backfill = await createBrowserCloudBackfillService({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, signal }).run();
+      signal?.throwIfAborted();
       if (backfill.state !== "COMPLETED") {
         const partialReport = {
         ...report,
@@ -167,15 +171,17 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
         lastCloudBootstrapReports.set(scope, partialReport);
         return partialReport;
       }
-      await repairBrowserFavoriteWeatherIdentityCollisions({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope });
+      await repairBrowserFavoriteWeatherIdentityCollisions({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope, signal });
+      signal?.throwIfAborted();
     }
     lastCloudBootstrapReports.set(scope, report);
     return report;
   },
-  push: async (userId) => {
+  push: async (userId, signal) => {
     const scope = `USER:${userId}` as const;
     const client = createBrowserSupabaseClient();
-    const report = await createBrowserCloudSyncService({ client, storage: window.localStorage, scope, getScope: getRuntimeDataScope }).syncPendingMutations();
+    const report = await createBrowserCloudSyncService({ client, storage: window.localStorage, scope, getScope: getRuntimeDataScope, signal }).syncPendingMutations();
+    signal?.throwIfAborted();
     if (report.state !== "COMPLETED" || report.conflicts > 0) return report;
     const tracks = new BrowserFlightTrackCloudService(client, scope);
     const queue = new IndexedDbFlightTrackQueueStorage(scope);
@@ -183,15 +189,18 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     let downloadsChecked = false;
     try {
       const result = await discoverAndDrainFlightTracks({
+        signal,
         discover: async () => {
           await tracks.discoverPendingJobs(queue);
           await tracks.discoverMissingDownloadJobs(queue);
           downloadsChecked = true;
         },
-        drain: () => drainFlightTrackQueue({ scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } }),
+        drain: () => drainFlightTrackQueue({ scope, storage: queue, signal, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } }),
       });
+      signal?.throwIfAborted();
       if (getRuntimeDataScope() === scope) traceVerdictEvidence.set(scope, { complete: result.discoveryComplete && !result.drain.stoppedForUserSwitch, downloadsChecked: result.discoveryComplete && downloadsChecked, discoveryError: result.discoveryError, generation: cloudSyncVerdictGeneration() });
-    } catch { /* Missing trace coverage is exposed as UNVERIFIABLE, never success. */ }
+      if (!result.discoveryComplete || result.drain.state === "TIMEOUT") return { ...report, state: "STOPPED_ERROR" as const };
+    } catch { return { ...report, state: "STOPPED_ERROR" as const }; }
     return report;
   },
   getNextEligibleRetryAt: async (userId) => {
@@ -213,6 +222,23 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
 
 export function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeControllerSnapshot {
   return automaticCloudSyncController.inspect();
+}
+
+export function getCloudSyncRuntimeDebugInfo() {
+  const runtime = automaticCloudSyncController.inspect();
+  const scope = getRuntimeDataScope();
+  const userScope = scope?.startsWith("USER:") ? scope as `USER:${string}` : null;
+  return {
+    bootstrapInProgress: runtime.bootstrapInProgress,
+    pushInProgress: runtime.pushInProgress,
+    traceActive: Boolean(userScope && isFlightTrackQueueRunning(userScope)),
+    recoveryActive: Boolean(scope && isLocalSyncRecoveryRunning(scope)),
+    currentPhase: runtime.currentPhase,
+    phaseStartedAt: runtime.phaseStartedAt,
+    operationStartedAt: runtime.operationStartedAt,
+    scope: userScope ? `USER:${userScope.slice(5, 11)}…` : scope,
+    lastError: runtime.lastError,
+  } as const;
 }
 
 export function retryCloudSyncThroughRuntimeController(): void {
@@ -1584,6 +1610,7 @@ export default function CloudSyncRuntime(): null {
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
     if (process.env.NODE_ENV === "development") window.getCloudSyncConflictDebugInfo = () => getCloudSyncConflictDebugInfo(window.localStorage, scope);
+    if (process.env.NODE_ENV === "development") window.getCloudSyncRuntimeDebugInfo = getCloudSyncRuntimeDebugInfo;
     const repair = (event?: Event) => { if (!controlled) void requestCompleteCloudSyncRepair(event?.type === CLOUD_SYNC_REPAIR_REQUESTED_EVENT); };
     const mutation = () => { if (!controlled && !manualCloudSyncInProgress) automaticCloudSyncController.notifyLocalMutation(); };
     const visibility = () => { if (document.visibilityState === "visible") repair(); };
@@ -1604,6 +1631,7 @@ export default function CloudSyncRuntime(): null {
       document.removeEventListener("visibilitychange", visibility);
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
       if (process.env.NODE_ENV === "development") delete window.getCloudSyncConflictDebugInfo;
+      if (process.env.NODE_ENV === "development") delete window.getCloudSyncRuntimeDebugInfo;
       releaseRuntimeMount();
     };
   }, [auth.state, auth.user, auth.localDataMigrationState, auth.localDataMigrationCollisions]);

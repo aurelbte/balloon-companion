@@ -19,6 +19,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudBootstrapService {
   const preferences = createBrowserPreferencePullService(input);
   const profile = createBrowserPilotProfilePullService(input);
@@ -38,7 +39,7 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
       return data.user?.id ?? null;
     },
     isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
-    listOutbox: async () => { await recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox); return outbox.list(); },
+    listOutbox: async () => { await recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox, input.signal); input.signal?.throwIfAborted(); return outbox.list(); },
     pulls: {
       profile: () => profile.pullPilotProfile(),
       pilotQualifications: () => preferences.pullPilotQualifications(),
@@ -59,5 +60,6 @@ export function createBrowserCloudBootstrapService(input: Readonly<{
       documents: () => documents.pullDocuments(),
     },
     now: () => new Date().toISOString(),
+    signal: input.signal,
   });
 }

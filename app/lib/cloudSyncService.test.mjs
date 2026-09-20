@@ -73,6 +73,7 @@ function fixture(input = {}) {
       return { status: "APPLIED", entityId: request.entityId, revision: 0, serverUpdatedAt: NOW.toISOString(), deletedAt: null };
     },
     acknowledgeBeforeIssueRemoval: input.acknowledgeBeforeIssueRemoval,
+    signal: input.signal,
     now: () => NOW,
   });
   return { outbox, issues, service, calls: () => calls, requests, setScope: (value) => { scope = value; } };
@@ -84,6 +85,39 @@ test("GUEST reste local et ne produit aucun appel réseau", async () => {
   assert.equal((await value.service.syncPendingMutations()).state, "SKIPPED_GUEST");
   assert.equal(value.calls(), 0);
   assert.equal((await value.outbox.list()).length, 1);
+});
+
+test("une réponse RPC tardive après expiration ne peut pas acquitter", async () => {
+  const controller = new AbortController();
+  let release;
+  const value = fixture({ signal: controller.signal, apply: async (request) => new Promise(resolve => { release = () => resolve({ status: "APPLIED", entityId: request.entityId, revision: 1, serverUpdatedAt: NOW.toISOString(), deletedAt: null }); }) });
+  await value.outbox.enqueue({ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT" });
+  const metadataBefore = await value.outbox.getMetadata("pilot-profile", "singleton");
+  const pass = value.service.syncPendingMutations();
+  while (!release) await Promise.resolve();
+  controller.abort();
+  release();
+  assert.equal((await pass).state, "STOPPED_ERROR");
+  assert.equal((await value.outbox.list()).length, 1);
+  assert.deepEqual(await value.outbox.getMetadata("pilot-profile", "singleton"), metadataBefore);
+});
+
+test("un ACK atomique déjà engagé peut finir après expiration sans publier de succès ni nettoyer le diagnostic", async () => {
+  const controller = new AbortController();
+  const baseOutbox = new MemorySyncOutboxStorage();
+  let releaseAck, ackStarted;
+  const started = new Promise(resolve => { ackStarted = resolve; });
+  const outbox = new Proxy(baseOutbox, { get(target, key) { if (key === "acknowledge") return async (...args) => { ackStarted(); await new Promise(resolve => { releaseAck = resolve; }); return target.acknowledge(...args); }; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
+  const issues = new MemoryCloudSyncIssueRepository();
+  await issues.save({ kind: "CONFLICT", entityType: "pilot-profile", entityId: "singleton", mutation: { mutationId: "old", entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT", baseRevision: 0, createdAt: NOW.toISOString(), attempts: 1 }, serverRevision: 0, serverUpdatedAt: NOW.toISOString(), serverDeletedAt: null, recordedAt: NOW.toISOString() });
+  const value = fixture({ outbox, issues, signal: controller.signal });
+  await outbox.enqueue({ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT" });
+  const pass = value.service.syncPendingMutations();
+  await started;
+  controller.abort(); releaseAck();
+  assert.equal((await pass).state, "STOPPED_ERROR");
+  assert.equal((await outbox.list()).length, 0);
+  assert.equal((await issues.list()).length, 1);
 });
 
 test("un USER sans session online conserve toute sa mutation", async () => {

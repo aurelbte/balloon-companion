@@ -20,6 +20,7 @@ type Dependencies = Readonly<{
   listCandidates(): Promise<readonly CloudBackfillCandidate[]>;
   findExistingCloud(candidates: readonly CloudBackfillCandidate[]): Promise<ReadonlySet<string>>;
   outbox: Pick<SyncOutboxStorage, "list" | "getMetadata" | "enqueue">;
+  signal?: AbortSignal;
 }>;
 
 export function cloudBackfillKey(candidate: CloudBackfillCandidate): string {
@@ -38,7 +39,9 @@ export class CloudBackfillService {
     if (await this.dependencies.getOnlineUserId().catch(() => null) !== userId) return { state: "SESSION_INVALID", ...empty };
     try {
       const candidates = await this.dependencies.listCandidates();
+      this.dependencies.signal?.throwIfAborted();
       const mutations = await this.dependencies.outbox.list();
+      this.dependencies.signal?.throwIfAborted();
       const pending = new Set(mutations.map((mutation: SyncMutation) => cloudBackfillKey(mutation)));
       let pendingPreserved = 0;
       let knownPreserved = 0;
@@ -49,6 +52,7 @@ export class CloudBackfillService {
         unknown.push(candidate);
       }
       const existingCloud = await this.dependencies.findExistingCloud(unknown);
+      this.dependencies.signal?.throwIfAborted();
       let enqueued = 0;
       let cloudExistingPreserved = 0;
       for (const candidate of unknown) {
@@ -57,7 +61,9 @@ export class CloudBackfillService {
           return { state: "SESSION_INVALID", scanned: candidates.length, enqueued, pendingPreserved, knownPreserved, cloudExistingPreserved };
         }
         if (existingCloud.has(cloudBackfillKey(candidate))) { cloudExistingPreserved += 1; continue; }
+        this.dependencies.signal?.throwIfAborted();
         await this.dependencies.outbox.enqueue({ entityType: candidate.entityType, entityId: candidate.entityId, operation: "UPSERT", baseRevision: 0 });
+        this.dependencies.signal?.throwIfAborted();
         enqueued += 1;
       }
       return { state: "COMPLETED", scanned: candidates.length, enqueued, pendingPreserved, knownPreserved, cloudExistingPreserved };

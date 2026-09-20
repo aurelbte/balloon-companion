@@ -52,6 +52,7 @@ export type FavoriteWeatherPlacePullDependencies = Readonly<{
   logbookEntryDomain?: PullDomainAdapter<LogbookEntryCloudRow>;
   documentDomain?: PullDomainAdapter<DocumentCloudRow>;
   recordConflict(conflict: FavoriteWeatherPlacePullConflict, mutation: SyncMutation, row: CloudPullRow): Promise<void>;
+  signal?: AbortSignal;
 }>;
 
 function userIdFromScope(scope: LocalDataScope | null): string | null { return scope?.startsWith("USER:") ? scope.slice(5) : null; }
@@ -72,7 +73,9 @@ export class CloudPullService {
   constructor(dependencies: FavoriteWeatherPlacePullDependencies) { this.dependencies = dependencies; }
 
   async pullFavoriteWeatherPlaces(pageSize = 25): Promise<FavoriteWeatherPlacePullReport> {
+    this.assertActive();
     await this.dependencies.prepareIdentityRepairs?.();
+    this.assertActive();
     return this.pullDomain<FavoriteWeatherPlaceCloudRow & { entityId: string }>(FAVORITE_WEATHER_PLACE_PULL_DOMAIN, {
       readPage: async (cursor, limit) => (await this.dependencies.readPage(cursor, limit)).map((row) => ({ ...row, entityId: row.id })),
       applyLocally: (row) => this.dependencies.applyLocally(row),
@@ -109,9 +112,11 @@ export class CloudPullService {
     const conflicts: FavoriteWeatherPlacePullConflict[] = [], anomalies: FavoriteWeatherPlacePullAnomaly[] = [];
     try {
       while (true) {
+        this.assertActive();
         if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
         currentStep = "READ_PAGE";
         const rows = await adapter.readPage(cursor, pageSize);
+        this.assertActive();
         pages += 1;
         if (rows.length === 0) break;
         for (const row of rows) {
@@ -119,13 +124,19 @@ export class CloudPullService {
           if (!await this.onlineUserIs(expectedUserId) || row.userId !== expectedUserId) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
           let pending = (await this.dependencies.outbox.list()).filter(({ entityType, entityId }) => entityType === domain && entityId === row.entityId);
           if (pending.length > 0 && await adapter.repairIdentityCollision?.(row, pending)) {
+            this.assertActive();
             pending = (await this.dependencies.outbox.list()).filter(({ entityType, entityId }) => entityType === domain && entityId === row.entityId);
           }
           const sidecar = await this.dependencies.outbox.getMetadata(domain, row.entityId);
           const anomaly = this.anomaly(row, sidecar, pending);
           if (anomaly) { anomalies.push(anomaly); return { state: "BLOCKED_ANOMALY", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor }; }
           const conflict = this.conflict(row, sidecar, pending);
-          if (conflict) { await this.dependencies.recordConflict(conflict, pending.at(-1)!, row); conflicts.push(conflict); }
+          if (conflict) {
+            this.assertActive();
+            await this.dependencies.recordConflict(conflict, pending.at(-1)!, row);
+            this.assertActive();
+            conflicts.push(conflict);
+          }
           else if (pending.length > 0) preservedLocalPending += 1;
           else {
             const localAnomaly = await adapter.localAnomaly?.(row);
@@ -139,17 +150,23 @@ export class CloudPullService {
             }
             if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
             currentStep = "APPLY_LOCAL";
+            this.assertActive();
             if (!await adapter.applyLocally(row)) throw new Error("Cloud row could not be applied locally");
+            this.assertActive();
             if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
             currentStep = "WRITE_SIDECAR";
+            this.assertActive();
             await this.dependencies.outbox.setMetadata({ entityType: domain, entityId: row.entityId, revision: row.revision, updatedAt: row.updatedAt, ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}) });
+            this.assertActive();
             applied += 1;
             if (row.deletedAt) tombstonesApplied += 1;
           }
           if (!await this.onlineUserIs(expectedUserId)) return { state: "STOPPED_USER_SWITCH", fetched, applied, tombstonesApplied, preservedLocalPending, conflicts, anomalies, pages, cursor };
           const nextCursor = { updatedAt: row.updatedAt, id: row.id };
           currentStep = "WRITE_CURSOR";
+          this.assertActive();
           await this.dependencies.cursors.set(userScope, domain, nextCursor);
+          this.assertActive();
           cursor = nextCursor;
         }
         if (rows.length < pageSize) break;
@@ -159,9 +176,11 @@ export class CloudPullService {
   }
 
   private async onlineUserIs(expectedUserId: string): Promise<boolean> {
+    if (this.dependencies.signal?.aborted) return false;
     if (this.dependencies.getScope() !== this.dependencies.scope) return false;
     try { return await this.dependencies.getOnlineUserId() === expectedUserId; } catch { return false; }
   }
+  private assertActive(): void { this.dependencies.signal?.throwIfAborted(); }
   private anomaly(row: CloudPullRow, sidecar: StoredSyncMetadata | null, pending: readonly SyncMutation[]): FavoriteWeatherPlacePullAnomaly | null {
     if (sidecar && row.revision < sidecar.revision) return { entityId: row.entityId, reason: "REMOTE_REVISION_BEHIND_LOCAL", cloudRevision: row.revision, localRevision: sidecar.revision };
     const ahead = pending.find(({ baseRevision }) => baseRevision > row.revision);

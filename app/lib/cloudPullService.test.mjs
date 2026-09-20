@@ -440,3 +440,23 @@ test("les helpers profile ciblés restent PULL-only et READ-ONLY", () => {
   assert.doesNotMatch(pull, /syncMutationById|syncPendingMutations|\.rpc\(|\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
   assert.doesNotMatch(inspection, /syncMutationById|syncPendingMutations|\.rpc\(|\.enqueue\(|\.setMetadata\(|save[A-Z]/);
 });
+
+test("expiration pendant apply bloque sidecar et curseur tardifs", async () => {
+  const controller = new AbortController();
+  let release, metadataWrites = 0, cursorWrites = 0;
+  const service = new CloudPullService({
+    scope: "USER:user-a", getScope: () => "USER:user-a", getOnlineUserId: async () => "user-a", signal: controller.signal,
+    outbox: { list: async () => [], getMetadata: async () => null, setMetadata: async () => { metadataWrites += 1; } },
+    cursors: { get: async () => null, set: async () => { cursorWrites += 1; } },
+    readPage: async () => [], applyLocally: async () => false, recordConflict: async () => {},
+    profileDomain: {
+      readPage: async cursor => cursor ? [] : [{ id: "profile", entityId: "singleton", userId: "user-a", revision: 1, createdAt: "2026-09-20T10:00:00.000Z", updatedAt: "2026-09-20T10:00:00.000Z", deletedAt: null, value: {} }],
+      applyLocally: async () => new Promise(resolve => { release = () => resolve(true); }),
+    },
+  });
+  const pass = service.pullPilotProfile();
+  while (!release) await Promise.resolve();
+  controller.abort(); release();
+  assert.equal((await pass).state, "STOPPED_ERROR");
+  assert.equal(metadataWrites, 0); assert.equal(cursorWrites, 0);
+});

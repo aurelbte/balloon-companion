@@ -354,6 +354,7 @@ async function readPreferencePage(input: Readonly<{
   domain: PreferencePullDomain;
   cursor: CloudPullCursor | null;
   limit: number;
+  signal?: AbortSignal;
 }>): Promise<readonly PreferenceCloudRow[]> {
   const aviation = input.domain === "aviation-preferences";
   const table = aviation ? "aviation_preferences" : "user_preferences";
@@ -368,7 +369,7 @@ async function readPreferencePage(input: Readonly<{
   let query = input.client.from(table).select(select).eq("id", id)
     .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(input.limit);
   if (input.cursor) query = query.or(`updated_at.gt.${input.cursor.updatedAt},and(updated_at.eq.${input.cursor.updatedAt},id.gt.${quotedPostgrestValue(input.cursor.id)})`);
-  const { data, error } = await query;
+  const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
   if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
   return (data ?? []).map((row) => preferenceRow(row, input.domain));
 }
@@ -377,6 +378,7 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
@@ -387,6 +389,7 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
   };
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -408,7 +411,7 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
       if (effectiveCursor) {
         query = query.or(`updated_at.gt.${effectiveCursor.updatedAt},and(updated_at.eq.${effectiveCursor.updatedAt},id.gt.${quotedPostgrestValue(effectiveCursor.id)})`);
       }
-      const { data, error } = await query;
+      const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
       if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
       return (data ?? []).map(parseFavoriteWeatherPlaceCloudRow);
     },
@@ -439,23 +442,26 @@ export function createBrowserFavoriteWeatherPlacePullService(input: Readonly<{
 }
 
 export async function repairBrowserFavoriteWeatherIdentityCollisions(
-  input: Readonly<{ client: SupabaseClient; storage: Storage; scope: `USER:${string}` }>,
+  input: Readonly<{ client: SupabaseClient; storage: Storage; scope: `USER:${string}`; signal?: AbortSignal }>,
   outbox = new IndexedDbSyncOutboxStorage(input.scope),
   issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope),
 ): Promise<number> {
   const pending = (await outbox.list()).filter(({ entityType, operation }) => entityType === "favorite-weather-place" && operation === "UPSERT");
   if (pending.length === 0) return 0;
   if (getRuntimeDataScope() !== input.scope) throw new Error("USER_SWITCH");
-  const { data, error } = await input.client.from("favorite_weather_places")
+  const query = input.client.from("favorite_weather_places")
     .select("id,user_id,sync_id,name,latitude,longitude,revision,created_at,updated_at,deleted_at")
     .in("id", [...new Set(pending.map(({ entityId }) => entityId))])
     .not("deleted_at", "is", null);
+  const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
   if (error) throw new CloudPullTechnicalError("READ_PAGE", error.code ?? "UNKNOWN", "Favorite identity collision read failed");
   let repaired = 0;
   for (const raw of data ?? []) {
+    input.signal?.throwIfAborted();
     if (getRuntimeDataScope() !== input.scope) throw new Error("USER_SWITCH");
     const row = parseFavoriteWeatherPlaceCloudRow(raw);
     const result = await repairFavoriteWeatherTombstoneIdentityCollision({ scope: input.scope, storage: input.storage, outbox, row, pending: pending.filter(({ entityId }) => entityId === row.id) });
+    input.signal?.throwIfAborted();
     if (result.repaired) { repaired += 1; await issues.remove("favorite-weather-place", row.id); }
   }
   return repaired;
@@ -465,11 +471,13 @@ export function createBrowserFavoriteLaunchSitePullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -486,7 +494,7 @@ export function createBrowserFavoriteLaunchSitePullService(input: Readonly<{
           .select("id,user_id,sync_id,name,source_name,latitude,longitude,icao_code,altitude_amsl_m,revision,created_at,updated_at,deleted_at")
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
-        const { data, error } = await query;
+        const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
         return (data ?? []).map(parseFavoriteLaunchSiteCloudRow);
       },
@@ -514,11 +522,12 @@ export function createBrowserPreferencePullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   const adapter = (domain: PreferencePullDomain) => ({
-    readPage: (cursor: CloudPullCursor | null, limit: number) => readPreferencePage({ client: input.client, domain, cursor, limit }),
+    readPage: (cursor: CloudPullCursor | null, limit: number) => readPreferencePage({ client: input.client, domain, cursor, limit, signal: input.signal }),
     applyLocally: (row: PreferenceCloudRow) => domain === "unit-preferences"
       ? applyUnitPreferencesFromCloudWithoutEnqueue(input.scope, row.value, Boolean(row.deletedAt), input.storage)
       : domain === "weather-preferences"
@@ -531,6 +540,7 @@ export function createBrowserPreferencePullService(input: Readonly<{
   });
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -558,11 +568,13 @@ export function createBrowserPilotProfilePullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -579,7 +591,7 @@ export function createBrowserPilotProfilePullService(input: Readonly<{
           .select("id,user_id,revision,created_at,updated_at,deleted_at,first_name,last_name,license_number,usual_function,flight_test_due_date,medical_due_date,experience_confirmed,opening_ascensions,opening_official_duration_minutes")
           .eq("id", "profile").order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
-        const { data, error } = await query;
+        const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
         return (data ?? []).map(pilotProfileRow);
       },
@@ -601,11 +613,13 @@ export function createBrowserBalloonPullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -622,7 +636,7 @@ export function createBrowserBalloonPullService(input: Readonly<{
           .select("id,user_id,revision,created_at,updated_at,deleted_at,registration,display_name,manufacturer,model,category,volume_m3,applicable_mtom_kg,configuration_limits_confirmed,color,weights,is_favorite,last_used_at")
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
-        const { data, error } = await query;
+        const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
         return (data ?? []).map(parseBalloonCloudRow);
       },
@@ -644,12 +658,14 @@ export function createBrowserFlightPullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   const flights = new IndexedDbRecordedFlightStorage();
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -666,7 +682,7 @@ export function createBrowserFlightPullService(input: Readonly<{
           .select("id,user_id,revision,created_at,updated_at,deleted_at,schema_version,status,started_at,ended_at,balloon_id,balloon_registration,start_location_label,end_location_label,generated_title,custom_title,notes,origin,logbook_status,recovered,summary,weather_model,weather_snapshot,ground_calibration")
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
-        const { data, error } = await query;
+        const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
         if (error) throw new CloudPullTechnicalError("READ_PAGE", error.code ?? "SUPABASE_READ_ERROR", `flights SELECT: ${error.message}`);
         try {
           return (data ?? []).map(parseFlightCloudRow);
@@ -692,11 +708,13 @@ export function createBrowserLogbookEntryPullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -713,7 +731,7 @@ export function createBrowserLogbookEntryPullService(input: Readonly<{
           .select("id,user_id,revision,created_at,updated_at,deleted_at,flight_id,source,date_iso,balloon_model,balloon_manufacturer,registration,departure,arrival,category,pilot_function,regulatory_role,supervised_by_fi_b,night_flight,maximum_altitude_m,gps_duration_minutes,official_duration_minutes,observations,flight_nature,takeoff_count,landing_count,instructor,examiner")
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
-        const { data, error } = await query;
+        const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
         return (data ?? []).map(parseLogbookEntryCloudRow);
       },
@@ -730,11 +748,13 @@ export function createBrowserDocumentPullService(input: Readonly<{
   client: SupabaseClient;
   storage: Storage;
   scope: `USER:${string}`;
+  signal?: AbortSignal;
 }>): CloudPullService {
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   return new CloudPullService({
     scope: input.scope,
+    signal: input.signal,
     getScope: getRuntimeDataScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();
@@ -751,7 +771,7 @@ export function createBrowserDocumentPullService(input: Readonly<{
           .select("id,user_id,revision,created_at,updated_at,deleted_at,balloon_id,category,title,original_filename,mime_type,size_bytes,notes,issue_date,expiry_date")
           .order("updated_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
         if (cursor) query = query.or(`updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${quotedPostgrestValue(cursor.id)})`);
-        const { data, error } = await query;
+        const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
         if (error) throw new Error(`Cloud pull read failed: ${error.code ?? "UNKNOWN"}`);
         return (data ?? []).map(parseDocumentCloudRow);
       },

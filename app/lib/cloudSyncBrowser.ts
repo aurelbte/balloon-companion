@@ -287,12 +287,13 @@ export function createBrowserCloudSyncService(input: Readonly<{
   scope: `USER:${string}`;
   getScope(): LocalDataScope | null;
   acknowledgeBeforeIssueRemoval?: boolean;
+  signal?: AbortSignal;
 }>): CloudSyncService {
   const payloads = new BrowserCloudSyncPayloadProvider(input.storage, input.scope);
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
   return new CloudSyncService({
     outbox,
-    recoverLocalMutations: () => recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox),
+    recoverLocalMutations: () => recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox, input.signal),
     issues: new BrowserCloudSyncIssueRepository(input.storage, input.scope),
     getScope: input.getScope,
     getOnlineUserId: async () => {
@@ -301,6 +302,7 @@ export function createBrowserCloudSyncService(input: Readonly<{
     },
     buildPayload: (mutation) => payloads.build(mutation),
     acknowledgeBeforeIssueRemoval: input.acknowledgeBeforeIssueRemoval,
+    signal: input.signal,
     applyMutation: async (request) => {
       const { data, error } = await input.client.rpc("apply_cloud_sync_mutation", {
         p_mutation_id: request.mutationId,
@@ -309,7 +311,7 @@ export function createBrowserCloudSyncService(input: Readonly<{
         p_operation: request.operation,
         p_base_revision: request.baseRevision,
         p_payload: request.payload,
-      });
+      }).abortSignal(input.signal ?? new AbortController().signal);
       if (error) {
         const code = String(error.code ?? "");
         const authError = code === "PGRST301" || /jwt|auth|permission/i.test(error.message);

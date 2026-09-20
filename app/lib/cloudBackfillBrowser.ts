@@ -69,7 +69,7 @@ export async function listBrowserCloudBackfillCandidates(storage: Storage, scope
   return [...new Map(candidates.map((candidate) => [cloudBackfillKey(candidate), candidate])).values()];
 }
 
-export function createBrowserCloudBackfillService(input: Readonly<{ client: SupabaseClient; storage: Storage; scope: `USER:${string}` }>): CloudBackfillService {
+export function createBrowserCloudBackfillService(input: Readonly<{ client: SupabaseClient; storage: Storage; scope: `USER:${string}`; signal?: AbortSignal }>): CloudBackfillService {
   const userId = input.scope.slice(5);
   return new CloudBackfillService({
     scope: input.scope,
@@ -91,7 +91,8 @@ export function createBrowserCloudBackfillService(input: Readonly<{ client: Supa
       for (const [table, targets] of groups) {
         for (let offset = 0; offset < targets.length; offset += 100) {
           const batch = targets.slice(offset, offset + 100);
-          const { data, error } = await input.client.from(table).select("id,revision,updated_at,deleted_at").eq("user_id", userId).in("id", batch.map(({ cloudId }) => cloudId));
+          const query = input.client.from(table).select("id,revision,updated_at,deleted_at").eq("user_id", userId).in("id", batch.map(({ cloudId }) => cloudId));
+          const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query);
           if (error) throw new Error(`BACKFILL_CLOUD_READ:${error.code ?? "UNKNOWN"}`);
           const found = new Set((data ?? []).flatMap((row) => typeof row.id === "string" ? [row.id] : []));
           for (const target of batch) if (found.has(target.cloudId)) existing.add(cloudBackfillKey(target.candidate));
@@ -100,5 +101,6 @@ export function createBrowserCloudBackfillService(input: Readonly<{ client: Supa
       return existing;
     },
     outbox: new IndexedDbSyncOutboxStorage(input.scope),
+    signal: input.signal,
   });
 }

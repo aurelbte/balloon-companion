@@ -33,12 +33,15 @@ export function writeBusinessValueWithSync(storage: Storage, legacyKey: string, 
   storage.setItem(key, JSON.stringify(withSyncIntents(JSON.parse(value) as object, changes, previous, scope)));
   return true;
 }
-async function transfer(intents: readonly LocalSyncIntent[], outbox: SyncOutboxStorage, scope: LocalDataScope): Promise<Set<string>> {
+async function transfer(intents: readonly LocalSyncIntent[], outbox: SyncOutboxStorage, scope: LocalDataScope, active: () => boolean = () => true): Promise<Set<string>> {
   if (outbox.getScope?.() !== scope) throw new Error("SYNC_INTENT_SCOPE_MISMATCH");
   const transferred = new Set<string>();
   for (const intent of intents) {
+    if (!active()) throw new Error("SYNC_INTENT_RECOVERY_TIMEOUT");
     if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
-    await outbox.enqueue(intent); transferred.add(intent.mutationId);
+    await outbox.enqueue(intent);
+    if (!active()) throw new Error("SYNC_INTENT_RECOVERY_TIMEOUT");
+    transferred.add(intent.mutationId);
   }
   return transferred;
 }
@@ -51,7 +54,7 @@ export function hasLocalStorageSyncIntent(storage: Storage, scope: `USER:${strin
   }
   return false;
 }
-async function recoverLocalStorageSyncIntentsUnlocked(storage: Storage, scope: `USER:${string}`, outbox: SyncOutboxStorage, only?: Readonly<{entityType: string; entityId: string}>): Promise<boolean> {
+async function recoverLocalStorageSyncIntentsUnlocked(storage: Storage, scope: `USER:${string}`, outbox: SyncOutboxStorage, only?: Readonly<{entityType: string; entityId: string}>, active: () => boolean = () => true): Promise<boolean> {
   const prefix = scopedBusinessStorageKey(scope, ""); let found = false;
   const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter((key): key is string => Boolean(key?.startsWith(prefix)));
   for (const key of keys) {
@@ -59,7 +62,8 @@ async function recoverLocalStorageSyncIntentsUnlocked(storage: Storage, scope: `
     const value = JSON.parse(raw) as IntentRecord;
     const intents = pendingSyncIntents(value).filter((intent) => !only || (intent.entityType === only.entityType && intent.entityId === only.entityId));
     if (!intents.length) continue; found = true;
-    const transferred = await transfer(intents, outbox, scope);
+    const transferred = await transfer(intents, outbox, scope, active);
+    if (!active()) throw new Error("SYNC_INTENT_RECOVERY_TIMEOUT");
     if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
     // Re-read: another local write may have occurred during the enqueue.
     const latest = JSON.parse(storage.getItem(key) ?? "null") as IntentRecord | null;
@@ -67,7 +71,7 @@ async function recoverLocalStorageSyncIntentsUnlocked(storage: Storage, scope: `
   }
   return found;
 }
-async function recoverIndexedDbSyncIntentsUnlocked(database: IDBDatabase, storeName: string, scope: LocalDataScope, outbox: SyncOutboxStorage): Promise<void> {
+async function recoverIndexedDbSyncIntentsUnlocked(database: IDBDatabase, storeName: string, scope: LocalDataScope, outbox: SyncOutboxStorage, active: () => boolean = () => true): Promise<void> {
   const values = await new Promise<IntentRecord[]>((resolve, reject) => {
     const pending: IntentRecord[] = [];
     const request = database.transaction(storeName).objectStore(storeName).openCursor();
@@ -82,8 +86,10 @@ async function recoverIndexedDbSyncIntentsUnlocked(database: IDBDatabase, storeN
     request.onerror = () => reject(request.error);
   });
   for (const value of values) {
+    if (!active()) throw new Error("SYNC_INTENT_RECOVERY_TIMEOUT");
     const intents = pendingSyncIntents(value); if (!intents.length) continue;
-    const transferred = await transfer(intents, outbox, scope);
+    const transferred = await transfer(intents, outbox, scope, active);
+    if (!active()) throw new Error("SYNC_INTENT_RECOVERY_TIMEOUT");
     if (getRuntimeDataScope() !== scope) throw new Error("SYNC_INTENT_USER_SWITCH");
     await new Promise<void>((resolve, reject) => {
       const tx = database.transaction(storeName, "readwrite"), store = tx.objectStore(storeName), request = store.get(value.id as IDBValidKey);
@@ -101,18 +107,30 @@ let recoveryChain: Promise<unknown> = Promise.resolve();
 const activeRecoveries = new Set<LocalDataScope>();
 export function isLocalSyncRecoveryRunning(scope: LocalDataScope): boolean { return activeRecoveries.has(scope); }
 function notifyRecoveryActivity(): void { invalidateCloudSyncObservation(); }
-function serialize<T>(work: () => Promise<T>, scope: LocalDataScope): Promise<T> {
-  const result = recoveryChain.catch(() => undefined).then(async () => {
+function serialize<T>(work: (active: () => boolean) => Promise<T>, scope: LocalDataScope, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  let valid = true;
+  const physical = recoveryChain.catch(() => undefined).then(async () => {
     activeRecoveries.add(scope); notifyRecoveryActivity();
-    try { return await work(); }
-    finally { activeRecoveries.delete(scope); notifyRecoveryActivity(); }
-  }); recoveryChain = result; return result;
+    try { return await work(() => valid && !signal?.aborted); }
+    finally { valid = false; activeRecoveries.delete(scope); notifyRecoveryActivity(); }
+  });
+  recoveryChain = physical.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const visible = Promise.race([
+    physical,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => { valid = false; reject(new Error("SYNC_INTENT_RECOVERY_TIMEOUT")); }, timeoutMs); }),
+  ]).finally(() => {
+    if (timer !== null) clearTimeout(timer);
+    activeRecoveries.delete(scope);
+    notifyRecoveryActivity();
+  });
+  return visible;
 }
-export function recoverLocalStorageSyncIntents(...args: Parameters<typeof recoverLocalStorageSyncIntentsUnlocked>): Promise<boolean> {
-  return serialize(() => recoverLocalStorageSyncIntentsUnlocked(...args), args[1]);
+export function recoverLocalStorageSyncIntents(storage: Storage, scope: `USER:${string}`, outbox: SyncOutboxStorage, only?: Readonly<{entityType: string; entityId: string}>, timeoutMs = 30_000, signal?: AbortSignal): Promise<boolean> {
+  return serialize((active) => recoverLocalStorageSyncIntentsUnlocked(storage, scope, outbox, only, active), scope, timeoutMs, signal);
 }
-export function recoverIndexedDbSyncIntents(...args: Parameters<typeof recoverIndexedDbSyncIntentsUnlocked>): Promise<void> {
-  return serialize(() => recoverIndexedDbSyncIntentsUnlocked(...args), args[2]);
+export function recoverIndexedDbSyncIntents(database: IDBDatabase, storeName: string, scope: LocalDataScope, outbox: SyncOutboxStorage, timeoutMs = 30_000, signal?: AbortSignal): Promise<void> {
+  return serialize((active) => recoverIndexedDbSyncIntentsUnlocked(database, storeName, scope, outbox, active), scope, timeoutMs, signal);
 }
 export function putIndexedDbWithSyncIntents<T extends { id: string }>(store: IDBObjectStore, value: T, changes: readonly LocalSyncChange[], scope: LocalDataScope): void {
   const request = store.get(value.id);

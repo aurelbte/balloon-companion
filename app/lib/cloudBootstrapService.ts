@@ -39,6 +39,7 @@ type CloudBootstrapDependencies = Readonly<{
   listOutbox(): Promise<readonly SyncMutation[]>;
   pulls: Readonly<Record<CloudBootstrapDomain, () => Promise<FavoriteWeatherPlacePullReport>>>;
   now(): string;
+  signal?: AbortSignal;
 }>;
 
 function userIdFromScope(scope: LocalDataScope | null): string | null {
@@ -67,19 +68,22 @@ export class CloudBootstrapService {
     if (!expectedUserId || this.dependencies.getScope() !== this.dependencies.scope) state = "SESSION_INVALID";
     else {
       try {
+        this.dependencies.signal?.throwIfAborted();
         before = await this.dependencies.listOutbox();
+        this.dependencies.signal?.throwIfAborted();
         if (!this.dependencies.isOnline()) state = "OFFLINE";
         else if (await this.dependencies.getOnlineUserId() !== expectedUserId) state = "SESSION_INVALID";
       } catch { state = this.dependencies.isOnline() ? "SESSION_INVALID" : "OFFLINE"; }
     }
     if (state === "SUCCESS") {
       for (const domain of CLOUD_BOOTSTRAP_DOMAIN_ORDER) {
+        this.dependencies.signal?.throwIfAborted();
         if (!this.dependencies.isOnline()) { state = "OFFLINE"; stoppedAtDomain = domain; break; }
         if (this.dependencies.getScope() !== this.dependencies.scope || await this.safeOnlineUserId() !== expectedUserId) {
           state = "SESSION_INVALID"; stoppedAtDomain = domain; break;
         }
         let report: FavoriteWeatherPlacePullReport;
-        try { report = await this.dependencies.pulls[domain](); }
+        try { report = await this.dependencies.pulls[domain](); this.dependencies.signal?.throwIfAborted(); }
         catch { state = this.dependencies.isOnline() ? "PARTIAL" : "OFFLINE"; stoppedAtDomain = domain; break; }
         domains[domain] = report;
         totals.fetched += report.fetched;
@@ -102,6 +106,7 @@ export class CloudBootstrapService {
     if ((state === "SUCCESS" || state === "PARTIAL")
       && (this.dependencies.getScope() !== this.dependencies.scope || await this.safeOnlineUserId() !== expectedUserId)) state = "SESSION_INVALID";
     const after = expectedUserId ? await this.dependencies.listOutbox().catch(() => before) : before;
+    this.dependencies.signal?.throwIfAborted();
     const outboxPreserved = sameOutbox(before, after);
     if (!outboxPreserved && state !== "OFFLINE" && state !== "SESSION_INVALID") state = "BLOCKED";
     return {
