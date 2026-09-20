@@ -1,6 +1,7 @@
 import type { LocalDataScope } from "./auth/dataScope.ts";
 import type { CloudSyncIssue, CloudSyncIssueRepository, CloudSyncPassResult, CloudSyncPayload } from "./cloudSyncService.ts";
 import type { StoredSyncMetadata, SyncMutation, SyncOutboxStorage } from "./syncOutbox.ts";
+import { isCloudSyncConflictIssue, isCloudSyncConflictMutation } from "./cloudSyncVerdict.ts";
 
 export const CRUD_CONFLICT_ENTITY_TYPES = Object.freeze([
   "favorite-weather-place", "favorite-launch-site", "balloon", "flight", "logbook-entry", "balloon-document", "pilot-qualifications",
@@ -30,19 +31,66 @@ function assertScope(dependencies: CrudConflictResolutionDependencies, scope: `U
   if (dependencies.getScope() !== scope) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
 }
 
-export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutations: readonly SyncMutation[]): readonly CloudSyncIssue[] {
-  const conflicts = new Map(issues
-    .filter(issue => (issue.kind === "CONFLICT" || issue.kind === "BUSINESS_CONFLICT") && allowed(issue.entityType))
-    .map(issue => [`${issue.entityType}\u0000${issue.entityId}`, issue]));
-  for (const mutation of mutations) {
-    if (mutation.entityType !== "pilot-qualifications" || mutation.entityId !== "singleton" || mutation.lastErrorCode !== "CONFLICT") continue;
-    const key = `${mutation.entityType}\u0000${mutation.entityId}`;
-    if (!conflicts.has(key)) conflicts.set(key, {
-      kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation,
-      serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: mutation.createdAt,
-    });
+export type CloudSyncConflictIntegrity = "MATCHED" | "MUTATION_WITHOUT_DIAGNOSTIC" | "DIAGNOSTIC_WITHOUT_MUTATION";
+export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "NONE";
+export type AggregatedCloudSyncConflict = Readonly<{
+  kind: "CONFLICT" | "BUSINESS_CONFLICT";
+  businessCode?: "DUPLICATE_REGISTRATION";
+  entityType: string;
+  entityId: string;
+  mutationId: string | null;
+  operation: SyncMutation["operation"] | null;
+  createdAt: string | null;
+  recordedAt: string | null;
+  baseRevision: number | null;
+  serverRevision: number | null;
+  serverUpdatedAt: string | null;
+  serverDeletedAt: string | null;
+  attempts: number | null;
+  lastErrorCode: string | null;
+  diagnosticPresent: boolean;
+  mutationPresent: boolean;
+  integrity: CloudSyncConflictIntegrity;
+  resolution: CloudSyncConflictResolution;
+}>;
+
+export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutations: readonly SyncMutation[]): readonly AggregatedCloudSyncConflict[] {
+  const diagnostics = issues.filter(isCloudSyncConflictIssue);
+  const conflictMutations = mutations.filter(isCloudSyncConflictMutation);
+  const usedMutationIds = new Set<string>();
+  const aggregate = (entityType: string, entityId: string, diagnostic: CloudSyncIssue | null, mutation: SyncMutation | null): AggregatedCloudSyncConflict => {
+    const businessCode = diagnostic?.businessCode ?? (mutation?.lastErrorCode === "DUPLICATE_REGISTRATION" ? "DUPLICATE_REGISTRATION" : undefined);
+    const kind = businessCode ? "BUSINESS_CONFLICT" : "CONFLICT";
+    const diagnosticPresent = Boolean(diagnostic), mutationPresent = Boolean(mutation);
+    const integrity: CloudSyncConflictIntegrity = diagnosticPresent && mutationPresent ? "MATCHED" : mutationPresent ? "MUTATION_WITHOUT_DIAGNOSTIC" : "DIAGNOSTIC_WITHOUT_MUTATION";
+    const revisionResolvable = kind === "CONFLICT" && mutationPresent && allowed(entityType)
+      && (diagnosticPresent || (entityType === "pilot-qualifications" && entityId === "singleton"));
+    const duplicateResolvable = businessCode === "DUPLICATE_REGISTRATION" && diagnosticPresent && mutationPresent && entityType === "balloon";
+    return {
+      kind, ...(businessCode ? { businessCode } : {}), entityType: entityType!, entityId: entityId!,
+      mutationId: mutation?.mutationId ?? diagnostic?.mutation?.mutationId ?? null,
+      operation: mutation?.operation ?? diagnostic?.mutation?.operation ?? null,
+      createdAt: mutation?.createdAt ?? diagnostic?.mutation?.createdAt ?? null,
+      recordedAt: diagnostic?.recordedAt ?? null,
+      baseRevision: mutation?.baseRevision ?? diagnostic?.mutation?.baseRevision ?? null,
+      serverRevision: diagnostic?.serverRevision ?? null,
+      serverUpdatedAt: diagnostic?.serverUpdatedAt ?? null,
+      serverDeletedAt: diagnostic?.serverDeletedAt ?? null,
+      attempts: mutation?.attempts ?? diagnostic?.mutation?.attempts ?? null,
+      lastErrorCode: mutation?.lastErrorCode ?? diagnostic?.mutation?.lastErrorCode ?? null,
+      diagnosticPresent, mutationPresent, integrity,
+      resolution: duplicateResolvable ? "DUPLICATE_REGISTRATION" : revisionResolvable ? "REVISION" : "NONE",
+    };
+  };
+  const result = diagnostics.map(diagnostic => {
+    const mutation = conflictMutations.find(candidate => candidate.mutationId === diagnostic.mutation?.mutationId) ?? null;
+    if (mutation) usedMutationIds.add(mutation.mutationId);
+    return aggregate(diagnostic.entityType, diagnostic.entityId, diagnostic, mutation);
+  });
+  for (const mutation of conflictMutations) {
+    if (!usedMutationIds.has(mutation.mutationId)) result.push(aggregate(mutation.entityType, mutation.entityId, null, mutation));
   }
-  return [...conflicts.values()];
+  return result;
 }
 
 async function confirmedContext(entityType: string, entityId: string, dependencies: CrudConflictResolutionDependencies) {

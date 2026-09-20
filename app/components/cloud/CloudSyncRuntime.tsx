@@ -58,7 +58,7 @@ import {
   resolveProtectedPreferenceConflictLocalWins,
   type ProtectedPreferenceRebaseType,
 } from "../../lib/protectedPreferenceConflictRebase.ts";
-import { createBrowserCrudConflictResolver } from "../../lib/crudConflictBrowser.ts";
+import { createBrowserCrudConflictResolver, getCloudSyncConflictDebugInfo } from "../../lib/crudConflictBrowser.ts";
 import { CLOUD_SYNC_REPAIR_REQUESTED_EVENT, requestCloudSyncRepair } from "../../lib/cloudSyncRepairEvent.ts";
 
 const lastCloudBootstrapReports = new Map<string, unknown>();
@@ -135,6 +135,7 @@ declare global {
       replayFlightTrackSupabaseToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
       migrateLegacyFlightTrackToR2Targeted(flightId: string, generation?: number): Promise<unknown>;
     }>;
+    getCloudSyncConflictDebugInfo?: () => Promise<unknown>;
   }
 }
 
@@ -1607,6 +1608,7 @@ export default function CloudSyncRuntime(): null {
       migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
+    if (process.env.NODE_ENV === "development") window.getCloudSyncConflictDebugInfo = () => getCloudSyncConflictDebugInfo(window.localStorage, scope);
     const repair = (event?: Event) => { if (!controlled) void requestCompleteCloudSyncRepair(event?.type === CLOUD_SYNC_REPAIR_REQUESTED_EVENT); };
     const mutation = () => { if (!controlled && !manualCloudSyncInProgress) automaticCloudSyncController.notifyLocalMutation(); };
     const visibility = () => { if (document.visibilityState === "visible") repair(); };
@@ -1626,6 +1628,7 @@ export default function CloudSyncRuntime(): null {
       window.removeEventListener(FLIGHT_TRACK_QUEUE_CHANGED_EVENT, mutation);
       document.removeEventListener("visibilitychange", visibility);
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
+      if (process.env.NODE_ENV === "development") delete window.getCloudSyncConflictDebugInfo;
       releaseRuntimeMount();
     };
   }, [auth.state, auth.user, auth.localDataMigrationState, auth.localDataMigrationCollisions]);

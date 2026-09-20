@@ -85,6 +85,36 @@ test("diagnostic et mutation pilot-qualifications sont dédupliqués", async () 
   const visible = aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list());
   assert.equal(visible.length, 1);
   assert.equal(visible[0].serverRevision, 3);
+  assert.equal(visible[0].integrity, "MATCHED");
+});
+
+test("agrège exactement les quatre sources bloquantes C1, y compris hors ancienne whitelist", () => {
+  const mutation = (entityType, entityId, lastErrorCode, mutationId) => ({ mutationId, entityType, entityId, operation: "UPSERT", baseRevision: 2, createdAt: "2026-09-20T08:00:00.000Z", attempts: 1, lastErrorCode });
+  const revision = mutation("pilot-profile", "singleton", "CONFLICT", "m-revision");
+  const duplicate = mutation("balloon", "balloon-1", "DUPLICATE_REGISTRATION", "m-duplicate");
+  const diagnosticMutation = mutation("weather-preferences", "singleton", undefined, "m-diagnostic");
+  const diagnostics = [
+    { kind: "CONFLICT", entityType: "weather-preferences", entityId: "singleton", mutation: diagnosticMutation, serverRevision: 3, serverUpdatedAt: "2026-09-20T08:01:00.000Z", serverDeletedAt: null, recordedAt: "2026-09-20T08:02:00.000Z" },
+    { kind: "BUSINESS_CONFLICT", businessCode: "DUPLICATE_REGISTRATION", entityType: "balloon", entityId: "balloon-2", mutation: mutation("balloon", "balloon-2", undefined, "m-business"), serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-20T08:03:00.000Z" },
+  ];
+  const visible = aggregateCrudConflicts(diagnostics, [revision, duplicate]);
+  assert.equal(visible.length, 4);
+  assert.equal(visible.find(value => value.mutationId === "m-revision").integrity, "MUTATION_WITHOUT_DIAGNOSTIC");
+  assert.equal(visible.find(value => value.mutationId === "m-revision").resolution, "NONE");
+  assert.equal(visible.find(value => value.mutationId === "m-duplicate").businessCode, "DUPLICATE_REGISTRATION");
+  assert.equal(visible.find(value => value.mutationId === "m-duplicate").resolution, "NONE");
+  assert.equal(visible.find(value => value.entityType === "weather-preferences").integrity, "DIAGNOSTIC_WITHOUT_MUTATION");
+  assert.equal(visible.find(value => value.entityId === "balloon-2").integrity, "DIAGNOSTIC_WITHOUT_MUTATION");
+});
+
+test("diagnostic et mutation correspondants donnent un conflit MATCHED unique et résolvable seulement si sûr", () => {
+  const mutation = { mutationId: "m", entityType: "favorite-launch-site", entityId: "site", operation: "DELETE", baseRevision: 4, createdAt: "2026-09-20T08:00:00.000Z", attempts: 1, lastErrorCode: "CONFLICT" };
+  const issue = { kind: "CONFLICT", entityType: mutation.entityType, entityId: mutation.entityId, mutation, serverRevision: 5, serverUpdatedAt: "2026-09-20T08:01:00.000Z", serverDeletedAt: null, recordedAt: "2026-09-20T08:02:00.000Z" };
+  const [visible] = aggregateCrudConflicts([issue], [mutation]);
+  assert.equal(visible.integrity, "MATCHED");
+  assert.equal(visible.resolution, "REVISION");
+  assert.equal(visible.operation, "DELETE");
+  assert.equal(visible.mutationId, "m");
 });
 
 test("échec concurrent sans diagnostic conserve la mutation pilot-qualifications CONFLICT", async () => {

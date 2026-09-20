@@ -6,14 +6,14 @@ import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
 import { inspectCloudSyncRuntimeControllerState, retryCloudSyncThroughRuntimeController, synchronizeCloudNowThroughRuntimeController } from "../../components/cloud/CloudSyncRuntime.tsx";
 import { getRuntimeDataScope } from "../../lib/auth/dataScopeRuntime.ts";
 import { useCloudSyncVerdict } from "../../lib/useCloudSyncVerdict.ts";
-import { CLOUD_SYNC_VERDICT_LABELS } from "../../lib/cloudSyncVerdict.ts";
+import { CLOUD_SYNC_VERDICT_CHANGED_EVENT, CLOUD_SYNC_VERDICT_LABELS } from "../../lib/cloudSyncVerdict.ts";
 import { CLOUD_SYNC_ISSUES_CHANGED_EVENT } from "../../lib/cloudSyncBrowser.ts";
 import { createBrowserCrudConflictResolver } from "../../lib/crudConflictBrowser.ts";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client.ts";
 import { loadFavoriteLaunchSites } from "../../lib/favoriteLaunchSites.ts";
 import { loadFavoriteWeatherPlaces } from "../../lib/favoriteWeatherPlaces.ts";
 import { loadBalloonRegistry } from "../../lib/balloonStorage.ts";
-import type { CloudSyncIssue } from "../../lib/cloudSyncService.ts";
+import type { AggregatedCloudSyncConflict } from "../../lib/crudConflictResolution.ts";
 import { listPilotQualificationsProfileConflicts, type PilotQualificationsProfileConflict } from "../../lib/auth/guestToUserMigration.ts";
 import type { QualificationProfile } from "../../lib/pilotQualifications.ts";
 import { readPilotQualificationsProfileFromCloud } from "../../lib/pilotQualificationsCloudReader.ts";
@@ -22,6 +22,7 @@ const DOMAIN_LABEL: Record<string, string> = {
   "favorite-weather-place": "Lieu météo favori", "favorite-launch-site": "Terrain favori",
   balloon: "Ballon", flight: "Vol", "logbook-entry": "Ascension officielle", "balloon-document": "Document ballon", "pilot-qualifications": "Qualifications pilote",
 };
+function shortId(value: string | null): string { return !value ? "inconnu" : value.length <= 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`; }
 
 function yesNo(value: boolean): string { return value ? "Oui" : "Non"; }
 function list(value: readonly string[]): string { return value.length ? value.join(", ") : "Non renseigné"; }
@@ -47,7 +48,8 @@ function QualificationProfileSummary({ profile }: Readonly<{ profile: Qualificat
 
 export default function CloudSyncPage() {
   const auth = useBalloonAuth();
-  const [issues, setIssues] = useState<readonly CloudSyncIssue[]>([]);
+  const [issues, setIssues] = useState<readonly AggregatedCloudSyncConflict[]>([]);
+  const [issuesReadError, setIssuesReadError] = useState(false);
   const [resolving, setResolving] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [importDecisionBusy, setImportDecisionBusy] = useState(false);
@@ -62,13 +64,17 @@ export default function CloudSyncPage() {
   const refreshSequence = useRef(0);
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
-    try { const next = resolver ? await resolver.listConflicts() : []; if (sequence === refreshSequence.current && getRuntimeDataScope() === scope) setIssues(next); } catch { /* The central verdict reports unreadable diagnostics. */ }
+    try {
+      const next = resolver ? await resolver.listConflicts() : [];
+      if (sequence === refreshSequence.current && getRuntimeDataScope() === scope) { setIssues(next); setIssuesReadError(false); }
+    } catch { if (sequence === refreshSequence.current && getRuntimeDataScope() === scope) setIssuesReadError(true); }
   }, [resolver, scope]);
   useEffect(() => {
     queueMicrotask(() => void refresh());
     window.addEventListener(CLOUD_SYNC_ISSUES_CHANGED_EVENT, refresh);
+    window.addEventListener(CLOUD_SYNC_VERDICT_CHANGED_EVENT, refresh);
     window.addEventListener("online", refresh); window.addEventListener("offline", refresh);
-    return () => { refreshSequence.current += 1; window.removeEventListener(CLOUD_SYNC_ISSUES_CHANGED_EVENT, refresh); window.removeEventListener("online", refresh); window.removeEventListener("offline", refresh); };
+    return () => { refreshSequence.current += 1; window.removeEventListener(CLOUD_SYNC_ISSUES_CHANGED_EVENT, refresh); window.removeEventListener(CLOUD_SYNC_VERDICT_CHANGED_EVENT, refresh); window.removeEventListener("online", refresh); window.removeEventListener("offline", refresh); };
   }, [refresh]);
 
   const qualificationCollisionKey = auth.localDataMigrationCollisions.filter(collision => collision.domain === "pilot-qualifications-profile" && collision.entityId === "singleton").map(collision => collision.source).sort().join(":");
@@ -86,14 +92,14 @@ export default function CloudSyncPage() {
     return () => { active = false; };
   }, [qualificationCollisionKey, scope]);
 
-  const label = (issue: CloudSyncIssue) => {
+  const label = (issue: AggregatedCloudSyncConflict) => {
     let name: string | undefined;
     if (issue.entityType === "favorite-launch-site") name = loadFavoriteLaunchSites().find(({ id }) => id === issue.entityId)?.name;
     if (issue.entityType === "favorite-weather-place") name = loadFavoriteWeatherPlaces().find(({ id }) => id === issue.entityId)?.name;
     if (issue.entityType === "balloon") name = loadBalloonRegistry().balloons.find(({ id }) => id === issue.entityId)?.registration;
     return `${DOMAIN_LABEL[issue.entityType] ?? "Donnée"}${name ? ` — ${name}` : ""}`;
   };
-  const resolve = async (issue: CloudSyncIssue, strategy: "LOCAL" | "SERVER" | "BUSINESS") => {
+  const resolve = async (issue: AggregatedCloudSyncConflict, strategy: "LOCAL" | "SERVER" | "BUSINESS") => {
     if (!resolver) return;
     setResolving(`${issue.entityType}:${issue.entityId}`); setActionError(null);
     try {
@@ -157,19 +163,25 @@ export default function CloudSyncPage() {
       <p className="mt-2 text-sm">Fichiers des documents stockés uniquement sur cet appareil.</p>
       <p className="mt-1 text-sm">Live et Amis sont hors du périmètre Cloud Sync.</p>
       {(["ERROR", "PENDING", "UNVERIFIABLE"].includes(verdict.state) || actionError) && <><p className="mt-2 text-sm text-red-700">{actionError ?? "Vérifiez les détails du statut avant de réessayer."}</p><button className="mt-3 rounded-xl border px-4 py-2" type="button" onClick={retryCloudSyncThroughRuntimeController}>Réessayer</button></>}
+      {verdict.state === "CONFLICT" && <p className="mt-2 text-sm text-amber-800">Résolvez le conflit ci-dessous avant de relancer la synchronisation.</p>}
     </section>
+    {issuesReadError && <section className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-5 text-red-950" role="alert"><h2 className="font-semibold">Impossible de lire les détails du conflit</h2><p className="mt-1 text-sm">Le conflit reste conservé. Réessayez lorsque le stockage local est disponible.</p><button className="mt-3 rounded-xl border border-red-400 bg-white px-4 py-2" type="button" onClick={() => void refresh()}>Relire les conflits</button></section>}
     {issues.length > 0 && <section className="mt-5 space-y-3" aria-label="Conflits Cloud">
       <p className="text-sm text-slate-700">Des conflits nécessitent votre attention.</p>
-      {issues.map((issue) => { const key = `${issue.entityType}:${issue.entityId}`; return <article key={key} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+      {issues.map((issue, index) => { const key = `${issue.entityType}:${issue.entityId}:${issue.mutationId ?? "diagnostic"}:${index}`; return <article key={key} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
         <h2 className="font-semibold">{label(issue)}</h2>
-        {issue.kind === "BUSINESS_CONFLICT" ? <>
-          <p className="mt-2 text-sm">Un ballon avec cette immatriculation existe déjà dans le compte Cloud. Vérifiez les fiches existantes. Après résolution, réessayez l’envoi enregistré.</p>
-          <Link className="mt-2 inline-block underline" href="/more/profile/balloons">Voir mes ballons</Link>
-          <button className="mt-3 rounded-xl border px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "BUSINESS")}>Réessayer après résolution</button>
-        </> : <div className="mt-4 flex flex-wrap gap-2">
+        <p className="mt-1 break-words text-xs text-slate-600">{issue.entityType} · entité {shortId(issue.entityId)} · mutation {shortId(issue.mutationId)}</p>
+        <p className="mt-1 text-xs text-slate-600">{issue.operation ?? "Opération inconnue"} · {issue.createdAt ? new Date(issue.createdAt).toLocaleString("fr-FR") : "date inconnue"} · révision de base {issue.baseRevision ?? "inconnue"}</p>
+        {issue.integrity === "MUTATION_WITHOUT_DIAGNOSTIC" && <p className="mt-2 text-sm font-medium text-amber-900">Conflit local incomplet : la mutation existe sans diagnostic associé.</p>}
+        {issue.integrity === "DIAGNOSTIC_WITHOUT_MUTATION" && <p className="mt-2 text-sm font-medium text-amber-900">Diagnostic de conflit sans mutation associée.</p>}
+        {issue.businessCode === "DUPLICATE_REGISTRATION" ? <>
+          <p className="mt-2 text-sm">Immatriculation déjà utilisée. Vérifiez le ballon concerné avant de réessayer l’envoi enregistré.</p>
+          <Link className="mt-2 inline-block underline" href={loadBalloonRegistry().balloons.some(({ id }) => id === issue.entityId) ? `/more/profile/balloons/${encodeURIComponent(issue.entityId)}/edit` : "/more/profile/balloons"}>Modifier le ballon concerné</Link>
+          {issue.resolution === "DUPLICATE_REGISTRATION" && <button className="ml-3 mt-3 rounded-xl border px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "BUSINESS")}>Réessayer après résolution</button>}
+        </> : issue.resolution === "REVISION" ? <div className="mt-4 flex flex-wrap gap-2">
           <button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "LOCAL")}>Garder ma version</button>
           <button className="rounded-xl border border-slate-400 bg-white px-4 py-2 disabled:opacity-50" disabled={resolving !== null} onClick={() => void resolve(issue, "SERVER")}>Utiliser la version Cloud</button>
-        </div>}
+        </div> : <p className="mt-2 text-sm">Aucune résolution automatique sûre n’est disponible. Le conflit est conservé pour intervention.</p>}
       </article>; })}
     </section>}
   </main>;

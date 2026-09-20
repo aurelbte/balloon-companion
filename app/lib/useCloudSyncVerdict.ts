@@ -26,6 +26,8 @@ export function useCloudSyncVerdict(scope: string | null): CloudSyncVerdict {
             stabilityRetries = 0; setVerdict({ ...accepted, checking: false });
           } else if (getRuntimeDataScope() === scope && stabilityRetries < 2) {
             stabilityRetries += 1; queueMicrotask(refresh);
+          } else if (getRuntimeDataScope() === scope) {
+            setVerdict(current => ({ ...current, state: current.state === "SYNCED" ? "UNVERIFIABLE" : current.state, scope, generation: cloudSyncVerdictGeneration(), verifiedAt: current.state === "SYNCED" ? null : current.verifiedAt, checking: false }));
           }
         }
       }).catch(() => { if (!disposed && request === sequence) setVerdict({ ...unknown(scope), reason: "Vérification locale impossible", checking: false }); });

@@ -48,6 +48,12 @@ export type CloudSyncEvidence = Readonly<{
   mutations: readonly SyncMutation[]; intents: number; issues: readonly CloudSyncIssue[]; tracks: readonly FlightTrackJob[];
   traceActive: boolean; recoveryActive?: boolean; traceDiscoveryComplete: boolean; traceDiscoveryError?: string | null; coverageComplete: boolean; passGeneration: number | null;
 }>;
+export function isCloudSyncConflictIssue(issue: Pick<CloudSyncIssue, "kind">): boolean {
+  return issue.kind === "CONFLICT" || issue.kind === "BUSINESS_CONFLICT";
+}
+export function isCloudSyncConflictMutation(mutation: Pick<SyncMutation, "lastErrorCode">): boolean {
+  return mutation.lastErrorCode === "CONFLICT" || mutation.lastErrorCode === "DUPLICATE_REGISTRATION";
+}
 export async function inspectCloudSyncVerdict(input: Readonly<{
   getScope(): string | null; getGeneration(): number; runtime(): CloudSyncRuntimeControllerSnapshot;
   getObservationVersion?(): number; activityToken?(): string;
@@ -64,7 +70,7 @@ export async function inspectCloudSyncVerdict(input: Readonly<{
     const e = await input.read(scope as `USER:${string}`);
     if (!stable()) return result("UNVERIFIABLE", "Les sources ont changé pendant la vérification");
     const scopedRuntime = runtime.scope === scope;
-    if (e.issues.some(i => (i.kind === "CONFLICT" || i.kind === "BUSINESS_CONFLICT")) || e.mutations.some(m => (m.lastErrorCode === "CONFLICT" || m.lastErrorCode === "DUPLICATE_REGISTRATION"))) return result("CONFLICT", "Conflit durable non résolu");
+    if (e.issues.some(isCloudSyncConflictIssue) || e.mutations.some(isCloudSyncConflictMutation)) return result("CONFLICT", "Conflit durable non résolu");
     if ((scopedRuntime && (runtime.bootstrapInProgress || runtime.pushInProgress)) || e.traceActive || e.recoveryActive) return result("SYNCING", "Transfert ou préparation actif");
     if (e.issues.length || (scopedRuntime && (runtime.lastError || runtime.lastPushState === "STOPPED_ERROR")) || e.tracks.some(j => j.status === "FAILED") || e.mutations.some(m => m.lastErrorCode)) return result("ERROR", "Échec ou diagnostic durable non résolu");
     if (e.mutations.some(m => !(AUTOMATIC_SYNC_ENTITY_TYPES as readonly string[]).includes(m.entityType))) return result("UNVERIFIABLE", "Type non transporté présent dans l’outbox (flight-completion compris)");

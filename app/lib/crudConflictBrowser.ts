@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getRuntimeDataScope } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import { applyBalloonFromCloudWithoutEnqueue, loadBalloonRegistry, type CloudBalloon } from "./balloonStorage.ts";
 import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "./cloudSyncBrowser.ts";
@@ -15,7 +15,8 @@ import type { OfficialAscension } from "./flightCompletion.ts";
 import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
-import { IndexedDbSyncOutboxStorage } from "./syncOutbox.ts";
+import { IndexedDbSyncOutboxStorage, SYNC_MUTATIONS_STORE, SYNC_OUTBOX_DB_NAME, type SyncMutation } from "./syncOutbox.ts";
+import { readExistingSyncStore, withLocalSyncInspectionTimeout } from "./cloudSyncVerdictBrowser.ts";
 import type { BalloonDocument } from "./balloonDocuments.ts";
 
 const DOMAIN = {
@@ -94,4 +95,33 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     resolveLocalWins: (entityType: string, entityId: string) => resolveCrudConflictLocalWins(entityType, entityId, dependencies),
     resolveServerWins: (entityType: string, entityId: string) => resolveCrudConflictServerWins(entityType, entityId, dependencies),
   } as const;
+}
+
+function abbreviated(value: string | null): string | null {
+  if (!value || value.length <= 12) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+/** Development-only caller owns exposure; this reader never writes or returns payloads. */
+export async function getCloudSyncConflictDebugInfo(storage: Storage, scope: `USER:${string}`) {
+  if (!indexedDB.databases) throw new Error("DATABASE_ENUMERATION_UNAVAILABLE");
+  const names = await withLocalSyncInspectionTimeout(indexedDB.databases());
+  const mutations = await readExistingSyncStore(indexedDB, names, scopedIndexedDbName(scope, SYNC_OUTBOX_DB_NAME), SYNC_MUTATIONS_STORE);
+  const conflicts = aggregateCrudConflicts(
+    await new BrowserCloudSyncIssueRepository(storage, scope).list(),
+    mutations as unknown as SyncMutation[],
+  );
+  return conflicts.map(conflict => ({
+    kind: conflict.kind,
+    ...(conflict.businessCode ? { businessCode: conflict.businessCode } : {}),
+    entityType: conflict.entityType,
+    entityId: abbreviated(conflict.entityId),
+    mutationId: abbreviated(conflict.mutationId),
+    operation: conflict.operation,
+    createdAt: conflict.createdAt,
+    recordedAt: conflict.recordedAt,
+    attempts: conflict.attempts,
+    lastErrorCode: conflict.lastErrorCode,
+    integrity: conflict.integrity,
+  }));
 }
