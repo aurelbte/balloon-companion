@@ -226,11 +226,22 @@ test("le snapshot observe SUCCESS, ONLINE, déduplication et PUSH sans donnée m
   assert.equal(snapshot.lastTrigger, "ONLINE");
   assert.equal(snapshot.lastBootstrapState, "SUCCESS");
   assert.equal(snapshot.lastPushAuthorized, true);
-  assert.equal(snapshot.lastPushExecuted, false);
+  assert.equal(snapshot.lastPushExecuted, true);
+  assert.equal(snapshot.lastPushState, null);
   assert.ok(snapshot.deduplicatedRequests >= 1);
   assert.ok(snapshot.history.some(({ type }) => type === "TRIGGER_ONLINE"));
   assert.ok(snapshot.history.some(({ type }) => type === "PUSH_COMPLETED"));
   assert.equal(JSON.stringify(snapshot).includes("payload"), false);
+});
+
+test("un retour online après un passage antérieur produit à nouveau un vrai PUSH vide", async () => {
+  const ctx = fixture();
+  ctx.controller.setUser("A");
+  await ctx.controller.whenIdle();
+  ctx.controller.notifyOnline();
+  await ctx.controller.whenIdle();
+  assert.deepEqual(ctx.bootstraps, ["A", "A"]);
+  assert.deepEqual(ctx.pushes, ["A", "A"]);
 });
 
 test("STOPPED_ERROR sanitise le diagnostic et refuse le PUSH", async () => {

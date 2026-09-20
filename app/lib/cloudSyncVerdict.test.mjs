@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { inspectCloudSyncVerdict, cloudSyncVerdictGeneration, invalidateCloudSyncVerdict, cloudSyncObservationVersion, CloudSyncVerdictAcceptance } from './cloudSyncVerdict.ts';
 import { CloudSyncRuntimeController } from './cloudSyncRuntimeController.ts';
-import { countStoredSyncIntents, readExistingSyncStore } from './cloudSyncVerdictBrowser.ts';
+import { countStoredSyncIntents, readExistingSyncStore, withLocalSyncInspectionTimeout } from './cloudSyncVerdictBrowser.ts';
 import { setRuntimeAuthSnapshot } from './auth/dataScopeRuntime.ts';
 const mutation = (extra={}) => ({ mutationId:'m',entityType:'flight',entityId:'f',operation:'UPSERT',attempts:0,baseRevision:1,createdAt:'2026-09-17',...extra });
 const runtime = (extra={}) => ({scope:'USER:A',lastBootstrapState:'SUCCESS',lastPushState:'COMPLETED',lastPushCompletedAt:'2026-09-17T12:00:00Z',lastCompletedAt:'2026-09-17T11:59:00Z',lastError:null,bootstrapInProgress:false,pushInProgress:false,...extra});
@@ -25,11 +25,28 @@ test('trace retry/backoff',async()=>assert.equal(await state({}, {tracks:[{statu
 test('découverte trace impossible',async()=>assert.equal(await state({}, {traceDiscoveryComplete:false}),'UNVERIFIABLE'));
 for(const type of ['flight-completion','unknown'])test(`type non transporté ${type}`,async()=>assert.equal(await state({}, {mutations:[mutation({entityType:type})]}),'UNVERIFIABLE'));
 test('lecture impossible ou JSON invalide',async()=>{const f=fixture();f.input.read=async()=>JSON.parse('{');assert.equal((await inspectCloudSyncVerdict(f.input)).state,'UNVERIFIABLE');assert.throws(()=>countStoredSyncIntents({__balloonPendingSync:{}}));});
+test('lecture locale bloquée expire explicitement et ne devient jamais SYNCED',async()=>{
+ await assert.rejects(withLocalSyncInspectionTimeout(new Promise(()=>{}),5),/LOCAL_SYNC_INSPECTION_TIMEOUT/);
+ const f=fixture();f.input.read=()=>withLocalSyncInspectionTimeout(new Promise(()=>{}),5);
+ const verdict=await inspectCloudSyncVerdict(f.input);assert.equal(verdict.state,'UNVERIFIABLE');assert.match(verdict.reason,/stockage ne répond pas/);
+});
+test('une ressource de lecture arrivée après timeout est libérée',async()=>{
+ let release,disposed=0;const operation=new Promise(resolve=>{release=resolve;});
+ await assert.rejects(withLocalSyncInspectionTimeout(operation,5,()=>disposed++),/LOCAL_SYNC_INSPECTION_TIMEOUT/);
+ release({});await new Promise(resolve=>setTimeout(resolve,0));assert.equal(disposed,1);
+});
 test('A→B pendant inspection',async()=>{const f=fixture();f.input.read=async()=>{f.changeScope('USER:B');return evidence();};assert.equal((await inspectCloudSyncVerdict(f.input)).state,'UNVERIFIABLE');});
 test('A→B→A : génération invalide aussi',async()=>{const f=fixture();f.input.read=async()=>{f.changeScope('USER:B');f.changeGeneration();f.changeScope('USER:A');return evidence();};assert.equal((await inspectCloudSyncVerdict(f.input)).state,'UNVERIFIABLE');});
 test('modification après succès révoque ancien passage',async()=>{const f=fixture();assert.equal((await inspectCloudSyncVerdict(f.input)).state,'SYNCED');f.changeGeneration();assert.equal((await inspectCloudSyncVerdict(f.input)).state,'UNVERIFIABLE');});
 test('modification pendant lecture',async()=>{const f=fixture();f.input.read=async()=>{f.changeGeneration();return evidence();};assert.equal((await inspectCloudSyncVerdict(f.input)).state,'UNVERIFIABLE');});
 test('SYNCED seulement stable, complet, passage réussi',async()=>{assert.equal(await state(),'SYNCED');assert.equal(await state({}, {coverageComplete:false}),'UNVERIFIABLE');assert.equal(await state({lastPushState:null}),'UNVERIFIABLE');});
+test('chaque preuve manquante expose une cause exploitable',async()=>{
+ assert.match((await inspectCloudSyncVerdict(fixture({scope:null}).input)).reason,/runtime Cloud/);
+ assert.match((await inspectCloudSyncVerdict(fixture({}, {coverageComplete:false}).input)).reason,/couverture/);
+ assert.match((await inspectCloudSyncVerdict(fixture({lastBootstrapState:null}).input)).reason,/initiale Cloud/);
+ assert.match((await inspectCloudSyncVerdict(fixture({lastPushState:null}).input)).reason,/PUSH/);
+ assert.match((await inspectCloudSyncVerdict(fixture({}, {passGeneration:99}).input)).reason,/reconstruites/);
+});
 test('hors ligne pending / absence de pending non vérifiable',async()=>{const f=fixture({}, {intents:1});f.offline();assert.equal((await inspectCloudSyncVerdict(f.input)).state,'OFFLINE_PENDING');const clean=fixture();clean.offline();assert.equal((await inspectCloudSyncVerdict(clean.input)).state,'UNVERIFIABLE');});
 test('activité réelle et utilisateur local',async()=>{assert.equal(await state({pushInProgress:true}),'SYNCING');assert.equal(await state({}, {traceActive:true}),'SYNCING');const f=fixture();f.changeScope('GUEST');assert.equal((await inspectCloudSyncVerdict(f.input)).state,'LOCAL_ONLY');});
 test('lecteur base absente ne crée ni ouvre de DB',async()=>{assert.deepEqual(await readExistingSyncStore({open:()=>assert.fail('open')},[],'absent','store'),[]);});

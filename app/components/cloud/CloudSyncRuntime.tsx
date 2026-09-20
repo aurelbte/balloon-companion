@@ -59,6 +59,7 @@ import {
   type ProtectedPreferenceRebaseType,
 } from "../../lib/protectedPreferenceConflictRebase.ts";
 import { createBrowserCrudConflictResolver } from "../../lib/crudConflictBrowser.ts";
+import { CLOUD_SYNC_REPAIR_REQUESTED_EVENT, requestCloudSyncRepair } from "../../lib/cloudSyncRepairEvent.ts";
 
 const lastCloudBootstrapReports = new Map<string, unknown>();
 const CLOUD_SYNC_RUNTIME_DIAGNOSTIC_KEY = "balloon-companion:dev:cloud-sync-runtime-diagnostic";
@@ -68,6 +69,8 @@ let runtimeUnmountGeneration = 0;
 let suppressRuntimeDiagnosticPersistence = false;
 let manualCloudSyncInProgress = false;
 let manualCloudSyncOperation: Promise<CloudSyncRuntimeControllerSnapshot> | null = null;
+let nextAutomaticRepairAt = 0;
+const AUTOMATIC_REPAIR_BACKOFF_MS = 5_000;
 
 declare global {
   interface Window {
@@ -180,12 +183,17 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     const tracks = new BrowserFlightTrackCloudService(client, scope);
     const queue = new IndexedDbFlightTrackQueueStorage(scope);
     traceVerdictEvidence.set(scope, { complete: false, generation: null });
+    let downloadsChecked = false;
     try {
       const result = await discoverAndDrainFlightTracks({
-        discover: () => tracks.discoverPendingJobs(queue),
+        discover: async () => {
+          await tracks.discoverPendingJobs(queue);
+          await tracks.discoverMissingDownloadJobs(queue);
+          downloadsChecked = true;
+        },
         drain: () => drainFlightTrackQueue({ scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } }),
       });
-      if (getRuntimeDataScope() === scope) traceVerdictEvidence.set(scope, { complete: result.discoveryComplete && !result.drain.stoppedForUserSwitch, discoveryError: result.discoveryError, generation: cloudSyncVerdictGeneration() });
+      if (getRuntimeDataScope() === scope) traceVerdictEvidence.set(scope, { complete: result.discoveryComplete && !result.drain.stoppedForUserSwitch, downloadsChecked: result.discoveryComplete && downloadsChecked, discoveryError: result.discoveryError, generation: cloudSyncVerdictGeneration() });
     } catch { /* Missing trace coverage is exposed as UNVERIFIABLE, never success. */ }
     return report;
   },
@@ -211,7 +219,7 @@ export function inspectCloudSyncRuntimeControllerState(): CloudSyncRuntimeContro
 }
 
 export function retryCloudSyncThroughRuntimeController(): void {
-  automaticCloudSyncController.notifyOnline();
+  requestCloudSyncRepair();
 }
 
 export function synchronizeCloudNowThroughRuntimeController(): Promise<CloudSyncRuntimeControllerSnapshot> {
@@ -222,18 +230,21 @@ export function synchronizeCloudNowThroughRuntimeController(): Promise<CloudSync
     await automaticCloudSyncController.synchronizeNow();
     const snapshot = automaticCloudSyncController.inspect();
     if (!snapshot.scope || getRuntimeDataScope() !== snapshot.scope) throw new Error("SYNC_USER_SWITCH");
-    const tracks = new BrowserFlightTrackCloudService(createBrowserSupabaseClient(), snapshot.scope);
-    const queue = new IndexedDbFlightTrackQueueStorage(snapshot.scope);
-    const discoveryError = traceVerdictEvidence.get(snapshot.scope)?.discoveryError ?? null;
-    const uploadsDiscovered = traceVerdictEvidence.get(snapshot.scope)?.complete ?? false;
-    traceVerdictEvidence.set(snapshot.scope, { complete: false, generation: null });
-    await tracks.discoverMissingDownloadJobs(queue);
-    const trackReport = await drainFlightTrackQueue({ scope: snapshot.scope, storage: queue, transport: { upload: (id) => tracks.upload(id), download: (id) => tracks.download(id), cleanup: (id) => tracks.cleanup(id) } });
-    if (trackReport.failed > 0 || trackReport.stoppedForUserSwitch) throw new Error("SYNC_TRACKS_INCOMPLETE");
-    traceVerdictEvidence.set(snapshot.scope, { complete: uploadsDiscovered, discoveryError, downloadsChecked: true, generation: cloudSyncVerdictGeneration() });
-    return automaticCloudSyncController.inspect();
+    return snapshot;
   })().finally(() => { manualCloudSyncInProgress = false; manualCloudSyncScope = null; manualCloudSyncOperation = null; if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_RUNTIME_CHANGED_EVENT)); });
   manualCloudSyncOperation = operation;
+  return operation;
+}
+
+function requestCompleteCloudSyncRepair(force = false): Promise<CloudSyncRuntimeControllerSnapshot> | null {
+  if (typeof navigator === "undefined" || !navigator.onLine || !automaticCloudSyncController.inspect().userId) return null;
+  if (manualCloudSyncOperation) return manualCloudSyncOperation;
+  if (!force && Date.now() < nextAutomaticRepairAt) return null;
+  const operation = synchronizeCloudNowThroughRuntimeController();
+  void operation.then((snapshot) => {
+    const healthy = snapshot.lastBootstrapState === "SUCCESS" && snapshot.lastPushState === "COMPLETED";
+    nextAutomaticRepairAt = healthy ? 0 : Date.now() + AUTOMATIC_REPAIR_BACKOFF_MS;
+  }).catch(() => { nextAutomaticRepairAt = Date.now() + AUTOMATIC_REPAIR_BACKOFF_MS; });
   return operation;
 }
 
@@ -1596,15 +1607,21 @@ export default function CloudSyncRuntime(): null {
       migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
-    const online = () => { if (!controlled) automaticCloudSyncController.notifyOnline(); };
+    const repair = (event?: Event) => { if (!controlled) void requestCompleteCloudSyncRepair(event?.type === CLOUD_SYNC_REPAIR_REQUESTED_EVENT); };
     const mutation = () => { if (!controlled && !manualCloudSyncInProgress) automaticCloudSyncController.notifyLocalMutation(); };
-    const visibility = () => { if (!controlled && document.visibilityState === "visible") void automaticCloudSyncController.notifyVisible(); };
-    window.addEventListener("online", online);
+    const visibility = () => { if (document.visibilityState === "visible") repair(); };
+    window.addEventListener("online", repair);
+    window.addEventListener("pageshow", repair);
+    window.addEventListener("focus", repair);
+    window.addEventListener(CLOUD_SYNC_REPAIR_REQUESTED_EVENT, repair);
     window.addEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
     window.addEventListener(FLIGHT_TRACK_QUEUE_CHANGED_EVENT, mutation);
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      window.removeEventListener("online", online);
+      window.removeEventListener("online", repair);
+      window.removeEventListener("pageshow", repair);
+      window.removeEventListener("focus", repair);
+      window.removeEventListener(CLOUD_SYNC_REPAIR_REQUESTED_EVENT, repair);
       window.removeEventListener(SYNC_MUTATION_ENQUEUED_EVENT, mutation);
       window.removeEventListener(FLIGHT_TRACK_QUEUE_CHANGED_EVENT, mutation);
       document.removeEventListener("visibilitychange", visibility);

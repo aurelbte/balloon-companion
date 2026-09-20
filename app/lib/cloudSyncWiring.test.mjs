@@ -22,12 +22,16 @@ test("le runtime utilise des déclencheurs événementiels sans polling", () => 
   assert.match(runtime, /SYNC_MUTATION_ENQUEUED_EVENT/);
   assert.match(runtime, /new CloudSyncRuntimeController/);
   assert.match(runtime, /automaticCloudSyncController\.setUser\(userId\)/);
-  assert.match(runtime, /automaticCloudSyncController\.notifyOnline\(\)/);
+  assert.match(runtime, /requestCompleteCloudSyncRepair/);
   assert.match(runtime, /automaticCloudSyncController\.notifyLocalMutation\(\)/);
   assert.doesNotMatch(runtime, /activePasses|pendingPasses|runPass\(/);
   assert.doesNotMatch(runtime, /setInterval|poll/i);
   assert.match(runtime, /addEventListener\("visibilitychange"/);
-  assert.doesNotMatch(runtime, /addEventListener\("focus"/);
+  assert.match(runtime, /addEventListener\("focus"/);
+  assert.match(runtime, /addEventListener\("pageshow"/);
+  assert.match(runtime, /CLOUD_SYNC_REPAIR_REQUESTED_EVENT/);
+  assert.match(runtime, /synchronizeCloudNowThroughRuntimeController/);
+  assert.match(runtime, /discoverPendingJobs\(queue\)[\s\S]*discoverMissingDownloadJobs\(queue\)/);
   assert.match(runtime, /suppressRuntimeDiagnosticPersistence = true[\s\S]*automaticCloudSyncController\.setUser\(null\)/);
   assert.match(runtime, /__BC_CLOUD_SYNC_CONTROLLED_TEST__/);
   assert.doesNotMatch(runtime, /useSearchParams\(\)/);

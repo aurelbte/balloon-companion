@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { clearLocalAuthSession, restoreAuthSnapshot, saveLocalAuthSession } from "../lib/auth/session.ts";
 import { SupabaseAuthProvider } from "../lib/auth/supabaseAuthProvider.ts";
@@ -17,6 +17,7 @@ import { isIsolatedAuthCallbackPath } from "../lib/auth/authCallbackPath.ts";
 import { readPilotQualificationsProfileFromCloud } from "../lib/pilotQualificationsCloudReader.ts";
 import { persistPilotQualificationsB6Choice } from "../lib/pilotQualificationsB6Persistence.ts";
 import { BrowserCloudSyncIssueRepository } from "../lib/cloudSyncBrowser.ts";
+import { CLOUD_SYNC_REPAIR_REQUESTED_EVENT } from "../lib/cloudSyncRepairEvent.ts";
 
 type AuthContextValue = AuthSnapshot & Readonly<{
   signUp(input: SignUpInput): Promise<void>;
@@ -53,6 +54,9 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
   const [localDataImportRetry, setLocalDataImportRetry] = useState(0);
   const [dataReadyUserId, setDataReadyUserId] = useState<string | null>(null);
   const [authChoiceState, setAuthChoiceState] = useState<"AUTH_CHOICE_PENDING" | "GUEST_ACTIVE">("AUTH_CHOICE_PENDING");
+  const snapshotRef = useRef(snapshot);
+  const authRevalidationRef = useRef<Promise<void> | null>(null);
+  useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
   const isolatedAuthCallback = isIsolatedAuthCallbackPath(pathname);
   const effectiveSnapshot = isolatedAuthCallback ? UNKNOWN_AUTH_SNAPSHOT : snapshot;
   const migrationUserId = snapshot.state === "SIGNED_IN" || snapshot.state === "OFFLINE_SESSION" ? snapshot.user?.id ?? null : null;
@@ -69,6 +73,37 @@ export function BalloonAuthProvider({ children }: Readonly<{ children: React.Rea
       .then((restored) => { if (active) { setRuntimeAuthSnapshot(restored); setSnapshot(restored); } });
     return () => { active = false; };
   }, [isolatedAuthCallback, pathname, provider]);
+
+  useEffect(() => {
+    if (isolatedAuthCallback) return;
+    const revalidate = () => {
+      const current = snapshotRef.current;
+      if (current.state !== "OFFLINE_SESSION" || !current.user || !navigator.onLine || authRevalidationRef.current) return;
+      const expectedUserId = current.user.id;
+      const operation = restoreAuthSnapshot({ provider, storage: window.localStorage, online: true })
+        .then((restored) => {
+          const latest = snapshotRef.current;
+          if (latest.state !== "OFFLINE_SESSION" || latest.user?.id !== expectedUserId) return;
+          setRuntimeAuthSnapshot(restored);
+          setSnapshot(restored);
+        })
+        .finally(() => { if (authRevalidationRef.current === operation) authRevalidationRef.current = null; });
+      authRevalidationRef.current = operation;
+    };
+    const visible = () => { if (document.visibilityState === "visible") revalidate(); };
+    window.addEventListener("online", revalidate);
+    window.addEventListener("pageshow", revalidate);
+    window.addEventListener("focus", revalidate);
+    window.addEventListener(CLOUD_SYNC_REPAIR_REQUESTED_EVENT, revalidate);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("online", revalidate);
+      window.removeEventListener("pageshow", revalidate);
+      window.removeEventListener("focus", revalidate);
+      window.removeEventListener(CLOUD_SYNC_REPAIR_REQUESTED_EVENT, revalidate);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [isolatedAuthCallback, provider]);
 
   useEffect(() => {
     if (isolatedAuthCallback) {

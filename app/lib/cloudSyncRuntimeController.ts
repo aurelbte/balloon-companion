@@ -119,6 +119,7 @@ export class CloudSyncRuntimeController {
     }
     this.readyGeneration = -1;
     this.bootstrapRequested = true;
+    this.pushRequested = true;
     this.lastTrigger = "ONLINE";
     this.record("TRIGGER_ONLINE", this.userId);
     this.schedule();

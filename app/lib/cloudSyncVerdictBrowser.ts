@@ -6,24 +6,33 @@ import type { SyncMutation } from "./syncOutbox.ts";
 import type { FlightTrackJob } from "./flightTrackQueue.ts";
 import type { CloudSyncIssue } from "./cloudSyncService.ts";
 
+export const LOCAL_SYNC_INSPECTION_TIMEOUT_MS = 8_000;
+export function withLocalSyncInspectionTimeout<T>(operation: Promise<T>, timeoutMs = LOCAL_SYNC_INSPECTION_TIMEOUT_MS, disposeLateValue?: (value: T) => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; reject(new Error("LOCAL_SYNC_INSPECTION_TIMEOUT")); }, timeoutMs);
+    operation.then(value => { if (timedOut) disposeLateValue?.(value); else resolve(value); }, reject).finally(() => clearTimeout(timer));
+  });
+}
+
 /** No creation/upgrade, no write transaction, no replay. A vanished DB aborts. */
 export async function readExistingSyncStore(factory: IDBFactory, names: readonly IDBDatabaseInfo[], name: string, store: string, project: (value: Record<string, unknown>) => Record<string, unknown> = value => value): Promise<Record<string, unknown>[]> {
   if (!names.some(db => db.name === name)) return [];
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+  const db = await withLocalSyncInspectionTimeout(new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(name);
     request.onupgradeneeded = () => { request.transaction?.abort(); reject(new Error("DATABASE_CHANGED")); };
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error("DATABASE_BLOCKED"));
     request.onsuccess = () => resolve(request.result);
-  });
+  }), LOCAL_SYNC_INSPECTION_TIMEOUT_MS, database => database.close());
   try {
-    return await new Promise((resolve, reject) => {
+    return await withLocalSyncInspectionTimeout(new Promise((resolve, reject) => {
       const tx = db.transaction(store, "readonly");
       const rows: Record<string, unknown>[] = [];
       const request = tx.objectStore(store).openCursor();
       request.onsuccess = () => { const cursor = request.result; if (!cursor) return; const value = cursor.value; if (!value || typeof value !== "object") { tx.abort(); return; } try { rows.push(project(value)); cursor.continue(); } catch { tx.abort(); } };
       tx.oncomplete = () => resolve(rows); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error ?? new Error("INVALID_RECORD"));
-    });
+    }));
   } finally { db.close(); }
 }
 export function countStoredSyncIntents(value: unknown): number {
@@ -47,7 +56,7 @@ const singletons: Record<string, string> = {
 export async function readBrowserCloudSyncEvidence(scope: `USER:${string}`, runtime: CloudSyncRuntimeControllerSnapshot, trace: Readonly<{ complete: boolean; generation: number | null; active: boolean; downloadsChecked?: boolean; discoveryError?: string | null }>): Promise<CloudSyncEvidence> {
   const storage = window.localStorage, factory = indexedDB;
   if (!factory.databases) throw new Error("DATABASE_ENUMERATION_UNAVAILABLE");
-  const names = await factory.databases();
+  const names = await withLocalSyncInspectionTimeout(factory.databases());
   const read = (name: string, store: string) => readExistingSyncStore(factory, names, scopedIndexedDbName(scope, name), store, value => name === "balloon-companion-flights" ? {
     id: value.id, status: value.status, pointsValid: Array.isArray(value.points), pointCount: Array.isArray(value.points) ? value.points.length : null,
     __balloonDeleted: value.__balloonDeleted, __balloonPendingSync: value.__balloonPendingSync,

@@ -59,6 +59,15 @@ test("une session locale existante permet OFFLINE_SESSION", async () => {
   assert.deepEqual(snapshot, { state: "OFFLINE_SESSION", user });
 });
 
+test("une restauration réseau temporairement en erreur conserve la session locale", async () => {
+  const storage = memoryStorage();
+  saveLocalAuthSession(storage, user);
+  const failingProvider = { ...provider(null), restoreSession: async () => { throw new Error("NETWORK"); } };
+  const snapshot = await restoreAuthSnapshot({ provider: failingProvider, storage, online: true });
+  assert.deepEqual(snapshot, { state: "OFFLINE_SESSION", user });
+  assert.equal(JSON.parse(storage.getItem(LOCAL_AUTH_SESSION_STORAGE_KEY)).id, user.id);
+});
+
 test("la déconnexion locale ne supprime que la session Auth", () => {
   const storage = memoryStorage();
   storage.setItem(LOCAL_AUTH_SESSION_STORAGE_KEY, JSON.stringify(user));

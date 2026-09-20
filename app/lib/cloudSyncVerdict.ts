@@ -38,7 +38,7 @@ export function cloudSyncRuntimeToken(runtime: CloudSyncRuntimeControllerSnapsho
 }
 export type CloudSyncValidation = Readonly<{ observation: number; runtime: string; activity: string }>;
 export type CloudSyncVerdictState = "SYNCING" | "PENDING" | "OFFLINE_PENDING" | "ERROR" | "CONFLICT" | "UNVERIFIABLE" | "LOCAL_ONLY" | "SYNCED";
-export type CloudSyncVerdict = Readonly<{ state: CloudSyncVerdictState; scope: string | null; generation: number; verifiedAt: string | null; bootstrapAt: string | null; reason: string; validation?: CloudSyncValidation }>;
+export type CloudSyncVerdict = Readonly<{ state: CloudSyncVerdictState; scope: string | null; generation: number; verifiedAt: string | null; bootstrapAt: string | null; reason: string; validation?: CloudSyncValidation; checking?: boolean }>;
 export const CLOUD_SYNC_VERDICT_LABELS: Record<CloudSyncVerdictState, string> = {
   SYNCING: "Synchronisation en cours", PENDING: "Modifications en attente", OFFLINE_PENDING: "Hors ligne — modifications en attente",
   ERROR: "Erreur de synchronisation", CONFLICT: "Conflit à résoudre", UNVERIFIABLE: "État de synchronisation non vérifiable",
@@ -70,12 +70,17 @@ export async function inspectCloudSyncVerdict(input: Readonly<{
     if (e.mutations.some(m => !(AUTOMATIC_SYNC_ENTITY_TYPES as readonly string[]).includes(m.entityType))) return result("UNVERIFIABLE", "Type non transporté présent dans l’outbox (flight-completion compris)");
     if (e.mutations.length || e.intents || e.tracks.length || (scopedRuntime && runtime.lastPushState === "PENDING")) return result(input.online() ? "PENDING" : "OFFLINE_PENDING", "Travail durable restant");
     if (!e.traceDiscoveryComplete) return result("UNVERIFIABLE", e.traceDiscoveryError ? "Découverte des traces impossible — couverture non vérifiable" : "Découverte des traces incomplète ou non vérifiée");
-    if (!scopedRuntime || !input.online() || !e.coverageComplete || !e.traceDiscoveryComplete || runtime.lastBootstrapState !== "SUCCESS" || runtime.lastPushState !== "COMPLETED" || !runtime.lastPushCompletedAt || e.passGeneration !== captured) return result("UNVERIFIABLE", "Aucun passage complet vérifié pour cette version des données");
+    if (!scopedRuntime) return result("UNVERIFIABLE", "Le runtime Cloud du compte courant n’est pas actif");
+    if (!input.online()) return result("UNVERIFIABLE", "Hors ligne — la vérification Cloud ne peut pas être terminée");
+    if (!e.coverageComplete) return result("UNVERIFIABLE", "La couverture des données locales n’est pas encore vérifiée");
+    if (runtime.lastBootstrapState !== "SUCCESS") return result("UNVERIFIABLE", "La vérification initiale Cloud doit être relancée");
+    if (runtime.lastPushState !== "COMPLETED" || !runtime.lastPushCompletedAt) return result("UNVERIFIABLE", "Aucun passage PUSH complet n’a été vérifié");
+    if (e.passGeneration !== captured) return result("UNVERIFIABLE", "Les preuves Cloud doivent être reconstruites pour la version locale courante");
     // A second bounded, read-only scan validates diagnostics/queue even without a local event.
     const finalEvidence = await input.read(scope as `USER:${string}`);
     if (!stable() || !input.online() || input.authKnown?.() === false || JSON.stringify(e) !== JSON.stringify(finalEvidence)) return result("UNVERIFIABLE", "Les sources ont changé pendant la validation finale");
     return result("SYNCED", "Modifications locales acquittées dans le périmètre Cloud Sync");
-  } catch { return result("UNVERIFIABLE", "Inspection locale impossible ou données invalides"); }
+  } catch (error) { return result("UNVERIFIABLE", error instanceof Error && error.message === "LOCAL_SYNC_INSPECTION_TIMEOUT" ? "Vérification locale impossible : le stockage ne répond pas" : "Inspection locale impossible ou données invalides"); }
 }
 
 /** The acceptance step, never the inspector, owns the last verified date (memory only). */
