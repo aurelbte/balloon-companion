@@ -51,6 +51,7 @@ export interface SyncOutboxStorage {
   updateMutation(mutationId: string, input: Readonly<{ nextAttemptAt?: string; lastErrorCode?: string }>): Promise<SyncMutation | null>;
   remove(mutationId: string): Promise<void>;
   removeMany(mutationIds: readonly string[]): Promise<void>;
+  removeManyIfUnchanged(mutations: readonly SyncMutation[]): Promise<boolean>;
 }
 
 type SyncOutboxDependencies = Readonly<{
@@ -212,6 +213,11 @@ export class MemorySyncOutboxStorage implements SyncOutboxStorage {
   }
   async removeMany(mutationIds: readonly string[]): Promise<void> {
     for (const mutationIdValue of mutationIds) this.mutations.delete(mutationIdValue);
+  }
+  async removeManyIfUnchanged(mutations: readonly SyncMutation[]): Promise<boolean> {
+    if (mutations.some((expected) => JSON.stringify(this.mutations.get(expected.mutationId)) !== JSON.stringify(expected))) return false;
+    for (const mutation of mutations) this.mutations.delete(mutation.mutationId);
+    return true;
   }
 }
 
@@ -445,6 +451,25 @@ export class IndexedDbSyncOutboxStorage implements SyncOutboxStorage {
       const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
       for (const mutationIdValue of mutationIds) store.delete(mutationIdValue);
       transaction.oncomplete = () => { invalidateCloudSyncVerdict(); resolve(); };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+  async removeManyIfUnchanged(mutations: readonly SyncMutation[]): Promise<boolean> {
+    if (mutations.length === 0) return false;
+    const database = await this.database();
+    return new Promise<boolean>((resolve, reject) => {
+      const transaction = database.transaction(SYNC_MUTATIONS_STORE, "readwrite");
+      const store = transaction.objectStore(SYNC_MUTATIONS_STORE);
+      const request = store.getAll();
+      let removed = false;
+      request.onsuccess = () => {
+        const current = request.result as SyncMutation[];
+        if (mutations.some((expected) => JSON.stringify(current.find(({ mutationId }) => mutationId === expected.mutationId)) !== JSON.stringify(expected))) return;
+        for (const mutation of mutations) store.delete(mutation.mutationId);
+        removed = true;
+      };
+      transaction.oncomplete = () => { if (removed) invalidateCloudSyncVerdict(); resolve(removed); };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateCrudConflicts, CrudConflictResolutionError, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, CrudConflictResolutionError, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
 import { MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -186,6 +186,92 @@ test("flight absent du Cloud utilise la révision de création zéro sans devine
   const ctx = await blockedFlightFixture({ cloudMissing: true });
   const result = await reconcileBlockedFlightMutation("flight-1", ctx.dependencies);
   assert.equal(ctx.syncSnapshot.find(mutation => mutation.mutationId === result.newMutationId).baseRevision, 0);
+});
+
+async function orphanedFlightFixture() {
+  let id = 0, currentScope = scope, generation = 4;
+  let local = { reconstructible: false, rawRecordPresent: false, activeFlightWithSameId: false, matchingIntentIds: [] };
+  const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => `orphan-${++id}`, now: () => `2026-09-21T10:00:0${id}.000Z` } });
+  const issues = new MemoryCloudSyncIssueRepository();
+  const block = async (entityId, operation = "UPSERT") => {
+    const mutation = await outbox.enqueueFresh({ entityType: "flight", entityId, operation, baseRevision: 0 });
+    await outbox.markAttempt(mutation.mutationId);
+    await outbox.freezePayload(mutation.mutationId, { serverEntityType: "flight", serverEntityId: entityId, payload: {} });
+    return outbox.updateMutation(mutation.mutationId, { lastErrorCode: "RPC_DETERMINISTIC:23502" });
+  };
+  const first = await block("flight-orphan"), second = await block("flight-orphan");
+  await issues.save({ kind: "BLOCKED_ERROR", errorCode: "RPC_DETERMINISTIC:23502", entityType: "flight", entityId: "flight-orphan", mutation: first, serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-21T10:01:00.000Z" });
+  const dependencies = {
+    outbox, issues, getScope: () => currentScope, getOnlineUserId: async () => scope.slice(5),
+    readCloud: async () => null, applyCloudLocally: async () => false, buildPayload: async () => null,
+    syncMutationById: async () => ({ state: "STOPPED_ERROR", applied: 0, conflicts: 0, notFound: 0, ignored: 0 }),
+    getScopeGeneration: () => generation, inspectFlightLocalState: async () => structuredClone(local),
+  };
+  return { outbox, issues, dependencies, ids: [first.mutationId, second.mutationId], block,
+    setLocal: value => { local = { ...local, ...value }; }, switchScope: () => { currentScope = "USER:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"; generation += 1; }, bumpGeneration: () => { generation += 1; } };
+}
+
+test("flight orphelin exige confirmation puis retire seulement ses UPSERT bloqués et leurs snapshots", async () => {
+  const ctx = await orphanedFlightFixture();
+  assert.deepEqual(await classifyBlockedFlightMutation("flight-orphan", ctx.dependencies), { state: "ORPHANED", mutationCount: 2 });
+  assert.equal((await ctx.outbox.list()).length, 2, "inspection sans confirmation non mutante");
+  await ctx.block("other-flight");
+  await ctx.block("flight-orphan", "DELETE");
+  const otherDomain = await ctx.outbox.enqueueFresh({ entityType: "balloon", entityId: "flight-orphan", operation: "UPSERT", baseRevision: 0 });
+  const result = await abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies);
+  assert.deepEqual(result.removedMutationIds, [...ctx.ids].sort());
+  const remaining = await ctx.outbox.list();
+  assert.equal(remaining.length, 3);
+  assert.ok(remaining.some(mutation => mutation.entityId === "other-flight"));
+  assert.ok(remaining.some(mutation => mutation.entityId === "flight-orphan" && mutation.operation === "DELETE"));
+  assert.ok(remaining.some(mutation => mutation.mutationId === otherDomain.mutationId));
+  assert.equal((await ctx.issues.list()).length, 0);
+  assert.equal(aggregateCrudConflicts(await ctx.issues.list(), remaining).some(issue => issue.entityId === "flight-orphan" && issue.operation === "UPSERT"), false);
+});
+
+test("flight réapparu, actif ou porteur d'une intention C2 ne peut jamais être abandonné", async () => {
+  for (const protectedState of [
+    { reconstructible: true }, { rawRecordPresent: true }, { activeFlightWithSameId: true }, { matchingIntentIds: ["intent-new"] },
+  ]) {
+    const ctx = await orphanedFlightFixture(); ctx.setLocal(protectedState);
+    await rejectsCode(abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies), "LOCAL_FLIGHT_RECOVERABLE");
+    assert.equal((await ctx.outbox.list()).length, 2);
+    assert.equal((await ctx.issues.list()).length, 1);
+  }
+});
+
+test("un snapshot flight complet reste protégé même si le RecordedFlight local est absent", async () => {
+  const ctx = await orphanedFlightFixture();
+  const [first] = await ctx.outbox.list();
+  await ctx.outbox.updateMutation(first.mutationId, {});
+  const stored = ctx.outbox.mutations?.get?.(first.mutationId);
+  if (stored) ctx.outbox.mutations.set(first.mutationId, { ...stored, payloadSnapshot: { serverEntityType: "flight", serverEntityId: "flight-orphan", payload: { status: "COMPLETED", started_at: "2026-09-21T08:00:00.000Z", summary: {} } } });
+  assert.equal((await classifyBlockedFlightMutation("flight-orphan", ctx.dependencies)).state, "PROTECTED");
+  await rejectsCode(abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies), "RECOVERABLE_SNAPSHOT");
+  assert.equal((await ctx.outbox.list()).length, 2);
+});
+
+test("confirmation périmée, changement de scope ou génération conserve toutes les mutations", async () => {
+  const changed = await orphanedFlightFixture(); await changed.block("flight-orphan");
+  await rejectsCode(abandonOrphanedFlightMutations("flight-orphan", changed.ids, changed.dependencies), "CONFIRMATION_STALE");
+  assert.equal((await changed.outbox.list()).length, 3);
+  for (const mutateIdentity of [ctx => ctx.switchScope(), ctx => ctx.bumpGeneration()]) {
+    const ctx = await orphanedFlightFixture(); let reads = 0;
+    const inspect = ctx.dependencies.inspectFlightLocalState;
+    ctx.dependencies.inspectFlightLocalState = async id => { const result = await inspect(id); if (++reads === 1) mutateIdentity(ctx); return result; };
+    await rejectsCode(abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies), "USER_SWITCH");
+    assert.equal((await ctx.outbox.list()).length, 2);
+  }
+});
+
+test("panne partielle n'annonce aucun succès et laisse le conflit durable récupérable", async () => {
+  const ctx = await orphanedFlightFixture();
+  const original = ctx.outbox.removeManyIfUnchanged.bind(ctx.outbox);
+  ctx.outbox.removeManyIfUnchanged = async () => { throw new Error("IDB_ABORT"); };
+  await assert.rejects(abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies), /IDB_ABORT/);
+  assert.equal((await ctx.outbox.list()).length, 2);
+  assert.equal(aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list()).filter(issue => issue.entityId === "flight-orphan").length, 2);
+  ctx.outbox.removeManyIfUnchanged = original;
 });
 
 test("sécurité: whitelist, session, USER switch, lecture, payload, conflit disparu", async () => {

@@ -18,6 +18,13 @@ export type CrudConflictResolutionDependencies = Readonly<{
   applyCloudLocally(entityType: CrudConflictEntityType, entityId: string, cloud: CrudCloudState): Promise<boolean>;
   buildPayload(mutation: SyncMutation): Promise<CloudSyncPayload | null>;
   syncMutationById(mutationId: string, authorization?: Readonly<{ scope: `USER:${string}`; userId: string }>): Promise<CloudSyncPassResult>;
+  getScopeGeneration?(): number;
+  inspectFlightLocalState?(entityId: string): Promise<Readonly<{
+    reconstructible: boolean;
+    rawRecordPresent: boolean;
+    activeFlightWithSameId: boolean;
+    matchingIntentIds: readonly string[];
+  }>>;
 }>;
 
 export class CrudConflictResolutionError extends Error {
@@ -32,7 +39,7 @@ function assertScope(dependencies: CrudConflictResolutionDependencies, scope: `U
 }
 
 export type CloudSyncConflictIntegrity = "MATCHED" | "MUTATION_WITHOUT_DIAGNOSTIC" | "DIAGNOSTIC_WITHOUT_MUTATION";
-export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "FLIGHT_PAYLOAD" | "NONE";
+export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "FLIGHT_PAYLOAD" | "FLIGHT_ORPHAN" | "NONE";
 export type AggregatedCloudSyncConflict = Readonly<{
   kind: "CONFLICT" | "BUSINESS_CONFLICT" | "BLOCKED_ERROR";
   businessCode?: "DUPLICATE_REGISTRATION";
@@ -52,6 +59,7 @@ export type AggregatedCloudSyncConflict = Readonly<{
   mutationPresent: boolean;
   integrity: CloudSyncConflictIntegrity;
   resolution: CloudSyncConflictResolution;
+  relatedMutationCount?: number;
 }>;
 
 export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutations: readonly SyncMutation[]): readonly AggregatedCloudSyncConflict[] {
@@ -92,6 +100,67 @@ export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutati
     if (!usedMutationIds.has(mutation.mutationId)) result.push(aggregate(mutation.entityType, mutation.entityId, null, mutation));
   }
   return result;
+}
+
+function blockedFlightMutations(mutations: readonly SyncMutation[], entityId: string): SyncMutation[] {
+  return mutations.filter((mutation) => mutation.entityType === "flight" && mutation.entityId === entityId
+    && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation));
+}
+
+export async function classifyBlockedFlightMutation(entityId: string, dependencies: CrudConflictResolutionDependencies) {
+  if (!dependencies.inspectFlightLocalState) return { state: "UNREADABLE" as const, mutationCount: 0 };
+  const mutations = blockedFlightMutations(await dependencies.outbox.list(), entityId);
+  if (!mutations.length) return { state: "MISSING_MUTATION" as const, mutationCount: 0 };
+  const local = await dependencies.inspectFlightLocalState(entityId);
+  const state = local.reconstructible
+    ? "RECONSTRUCTIBLE" as const
+    : !local.rawRecordPresent && !local.activeFlightWithSameId && local.matchingIntentIds.length === 0
+      && !mutations.some((mutation) => validFlightPayload(mutation.payloadSnapshot ?? null))
+      ? "ORPHANED" as const
+      : "PROTECTED" as const;
+  return { state, mutationCount: mutations.length };
+}
+
+export async function abandonOrphanedFlightMutations(
+  entityId: string,
+  expectedMutationIds: readonly string[],
+  dependencies: CrudConflictResolutionDependencies,
+) {
+  const scope = dependencies.getScope();
+  if (!userScope(scope)) throw new CrudConflictResolutionError("USER_REQUIRED", "Utilisateur connecté requis");
+  if (!dependencies.inspectFlightLocalState || !dependencies.getScopeGeneration) throw new CrudConflictResolutionError("LOCAL_INSPECTION_UNAVAILABLE", "Inspection locale indisponible");
+  const generation = dependencies.getScopeGeneration();
+  const assertIdentity = () => {
+    assertScope(dependencies, scope);
+    if (dependencies.getScopeGeneration!() !== generation) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
+  };
+  const expected = [...new Set(expectedMutationIds)].sort();
+  if (!expected.length) throw new CrudConflictResolutionError("CONFIRMATION_STALE", "La confirmation n’est plus applicable");
+  const inspectAbsent = async () => {
+    const local = await dependencies.inspectFlightLocalState!(entityId);
+    assertIdentity();
+    if (local.reconstructible || local.rawRecordPresent || local.activeFlightWithSameId || local.matchingIntentIds.length) {
+      throw new CrudConflictResolutionError("LOCAL_FLIGHT_RECOVERABLE", "Un état local récupérable empêche l’abandon");
+    }
+  };
+  await inspectAbsent();
+  const current = blockedFlightMutations(await dependencies.outbox.list(), entityId);
+  assertIdentity();
+  const currentIds = current.map(({ mutationId }) => mutationId).sort();
+  if (currentIds.length !== expected.length || currentIds.some((id, index) => id !== expected[index])) {
+    throw new CrudConflictResolutionError("CONFIRMATION_STALE", "Les mutations ont changé depuis la confirmation");
+  }
+  if (current.some((mutation) => validFlightPayload(mutation.payloadSnapshot ?? null))) {
+    throw new CrudConflictResolutionError("RECOVERABLE_SNAPSHOT", "Un snapshot complet empêche l’abandon");
+  }
+  // Re-read immediately before the first destructive step. A raw record or C2 intent always wins.
+  await inspectAbsent();
+  await dependencies.issues.remove("flight", entityId);
+  assertIdentity();
+  if (!await dependencies.outbox.removeManyIfUnchanged(current)) {
+    throw new CrudConflictResolutionError("CONFIRMATION_STALE", "Les mutations ont changé pendant la confirmation");
+  }
+  return { entityType: "flight", entityId, removedMutationIds: currentIds } as const;
 }
 
 function validFlightPayload(payload: CloudSyncPayload | null): payload is CloudSyncPayload {

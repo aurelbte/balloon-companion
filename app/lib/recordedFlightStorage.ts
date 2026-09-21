@@ -1,5 +1,5 @@
 import { invalidateCloudSyncVerdict } from "./cloudSyncVerdict.ts";
-import { withSyncIntents, recoverIndexedDbSyncIntents, isLocalSyncDeleted, LOCAL_SYNC_DELETED } from "./durableSyncIntent.ts";
+import { withSyncIntents, recoverIndexedDbSyncIntents, isLocalSyncDeleted, LOCAL_SYNC_DELETED, pendingSyncIntents } from "./durableSyncIntent.ts";
 import type { SyncOutboxStorage } from "./syncOutbox.ts";
 import {
   RECORDED_FLIGHT_SCHEMA_VERSION,
@@ -30,6 +30,13 @@ interface ActiveFlightRecord {
   key: typeof ACTIVE_FLIGHT_KEY;
   flight: RecordedFlight;
 }
+
+export type RecordedFlightRecoveryInspection = Readonly<{
+  flight: RecordedFlight | null;
+  rawRecordPresent: boolean;
+  activeFlightWithSameId: boolean;
+  matchingIntentIds: readonly string[];
+}>;
 
 export interface RecordedFlightStorage {
   getActiveFlight(): Promise<RecordedFlight | null>;
@@ -290,6 +297,29 @@ export class IndexedDbRecordedFlightStorage implements RecordedFlightStorage {
       request.onerror = () => reject(request.error);
     });
     return isRecordedFlight(value) ? value : null;
+  }
+
+  async inspectForBlockedMutationResolution(id: string): Promise<RecordedFlightRecoveryInspection> {
+    const database = await this.database();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([FLIGHTS_STORE, ACTIVE_FLIGHT_STORE]);
+      const flightRequest = transaction.objectStore(FLIGHTS_STORE).get(id);
+      const activeRequest = transaction.objectStore(ACTIVE_FLIGHT_STORE).get(ACTIVE_FLIGHT_KEY);
+      transaction.oncomplete = () => {
+        const raw = flightRequest.result as unknown;
+        const active = activeRequest.result as ActiveFlightRecord | undefined;
+        resolve({
+          flight: isRecordedFlight(raw) ? raw : null,
+          rawRecordPresent: raw !== undefined,
+          activeFlightWithSameId: active?.flight?.id === id,
+          matchingIntentIds: pendingSyncIntents(raw)
+            .filter((intent) => intent.entityType === "flight" && intent.entityId === id)
+            .map(({ mutationId }) => mutationId),
+        });
+      };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
   }
 
   async listFlights(): Promise<RecordedFlight[]> {

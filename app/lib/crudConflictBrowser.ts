@@ -1,13 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getRuntimeDataScope, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, getRuntimeDataScopeGeneration, scopedIndexedDbName } from "./auth/dataScopeRuntime.ts";
 import { applyBalloonFromCloudWithoutEnqueue, loadBalloonRegistry, type CloudBalloon } from "./balloonStorage.ts";
 import { balloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "./cloudSyncBrowser.ts";
+import { isDurablyBlockedCloudSyncMutation } from "./cloudSyncService.ts";
 import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
   parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
-import { aggregateCrudConflicts, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
@@ -103,6 +104,7 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
   const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   const payloads = new BrowserCloudSyncPayloadProvider(input.storage, input.scope);
   const service = createBrowserCloudSyncService({ client: input.client, storage: input.storage, scope: input.scope, getScope: getRuntimeDataScope, acknowledgeBeforeIssueRemoval: true });
+  const flights = new IndexedDbRecordedFlightStorage();
   const dependencies: CrudConflictResolutionDependencies = {
     outbox, issues, getScope: getRuntimeDataScope,
     getOnlineUserId: async () => { const { data, error } = await input.client.auth.getUser(); return error ? null : data.user?.id ?? null; },
@@ -124,6 +126,11 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     syncMutationById: (mutationId, authorization) => authorization
       ? service.syncMutationByIdForAuthorizedScope(mutationId, authorization.scope, authorization.userId)
       : service.syncMutationById(mutationId),
+    getScopeGeneration: getRuntimeDataScopeGeneration,
+    inspectFlightLocalState: async (entityId) => {
+      const local = await flights.inspectForBlockedMutationResolution(entityId);
+      return { reconstructible: local.flight !== null, rawRecordPresent: local.rawRecordPresent, activeFlightWithSameId: local.activeFlightWithSameId, matchingIntentIds: local.matchingIntentIds };
+    },
   };
   const readProtectedCloud = async (type: ProtectedPreferenceRebaseType): Promise<ProtectedPreferenceCloudState | null> => {
     const { data: authData, error: authError } = await input.client.auth.getUser();
@@ -157,11 +164,29 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     syncMutationById: (mutationId: string) => service.syncMutationById(mutationId),
   };
   return {
-    listConflicts: async () => aggregateCrudConflicts(await issues.list(), await outbox.list()),
+    listConflicts: async () => {
+      const conflicts = aggregateCrudConflicts(await issues.list(), await outbox.list());
+      const seenFlights = new Set<string>();
+      const result: typeof conflicts[number][] = [];
+      for (const conflict of conflicts) {
+        if (conflict.resolution !== "FLIGHT_PAYLOAD") { result.push(conflict); continue; }
+        if (seenFlights.has(conflict.entityId)) continue;
+        seenFlights.add(conflict.entityId);
+        const classification = await classifyBlockedFlightMutation(conflict.entityId, dependencies).catch(() => ({ state: "UNREADABLE" as const, mutationCount: 0 }));
+        result.push({ ...conflict, relatedMutationCount: classification.mutationCount,
+          resolution: classification.state === "RECONSTRUCTIBLE" ? "FLIGHT_PAYLOAD" : classification.state === "ORPHANED" ? "FLIGHT_ORPHAN" : "NONE" });
+      }
+      return result;
+    },
     retryDuplicateRegistration: (entityId: string) => service.retryDuplicateRegistration(entityId),
     resolveLocalWins: (entityType: string, entityId: string) => resolveCrudConflictLocalWins(entityType, entityId, dependencies),
     resolveServerWins: (entityType: string, entityId: string) => resolveCrudConflictServerWins(entityType, entityId, dependencies),
     reconcileBlockedFlight: (entityId: string) => reconcileBlockedFlightMutation(entityId, dependencies),
+    prepareOrphanedFlightAbandonment: async (entityId: string) => {
+      const mutationIds = (await outbox.list()).filter(mutation => mutation.entityType === "flight" && mutation.entityId === entityId
+        && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation)).map(({ mutationId }) => mutationId);
+      return { entityId, mutationIds, execute: () => abandonOrphanedFlightMutations(entityId, mutationIds, dependencies) };
+    },
     resolveProtectedLocalWins: (entityType: string) => resolveProtectedPreferenceConflictLocalWins(entityType, protectedDependencies),
     resolveProtectedCloudWins: (entityType: string) => resolveProtectedPreferenceConflictCloudWins(entityType, protectedDependencies),
   } as const;
