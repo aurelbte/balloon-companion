@@ -5,8 +5,7 @@ import { refreshCurrentWeatherAnalysis } from "../lib/trajectory/refreshWeatherA
 import { DATA_SCOPE_CHANGED_EVENT, getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
 import { ANALYSIS_POLICY, classifyWeatherFreshness, freshnessLabel, retrievalLabel, type WeatherFreshness } from "../lib/weather/weatherFreshness";
 import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
-import { useStorageResilience } from "../hooks/useStorageResilience";
-import { offlineReadinessLabel, persistenceStatusLabel, refreshStorageEstimate, storageEstimateWarning } from "../lib/storageResilience";
+import { refreshStorageEstimate } from "../lib/storageResilience";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -84,7 +83,6 @@ export default function FlightPage() {
   const router = useRouter();
   const auth = useBalloonAuth();
   const balloonRegistry = useBalloonRegistry();
-  const storageDiagnostics = useStorageResilience();
   const currentUserId = auth.state === "SIGNED_IN" ? (auth.user?.id ?? null) : null;
   const shouldRequestLocalGeolocation = typeof window === "undefined"
     ? true
@@ -954,32 +952,6 @@ export default function FlightPage() {
           }}
         >
           {storageError}
-        </div>
-      )}
-
-      {!flightControlActive && !recoverableFlight && !completedFlight && (
-        <div
-          role="status"
-          aria-label="État du stockage hors ligne"
-          style={{
-            position: "fixed",
-            left: "16px",
-            top: "calc(max(8px, env(safe-area-inset-top)) + 58px)",
-            zIndex: 18,
-            maxWidth: "min(310px, calc(100vw - 32px))",
-            padding: "8px 10px",
-            borderRadius: "10px",
-            background: "rgba(2,8,18,.82)",
-            color: "rgba(244,247,251,.82)",
-            fontSize: "10px",
-            lineHeight: 1.35,
-          }}
-        >
-          <div>{persistenceStatusLabel(storageDiagnostics.persistence)}</div>
-          <div>{offlineReadinessLabel(storageDiagnostics.offline)}</div>
-          {storageEstimateWarning(storageDiagnostics.estimate) && (
-            <div>{storageEstimateWarning(storageDiagnostics.estimate)}</div>
-          )}
         </div>
       )}
 

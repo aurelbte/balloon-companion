@@ -196,6 +196,16 @@ function isValidAirspace(value: unknown): value is OpenAipAirspace {
   );
 }
 
+function publishedFrequencies(airspace: OpenAipAirspace): OpenAipFrequency[] {
+  return (airspace.frequencies ?? []).map((frequency) =>
+    /\bCTR\s+LILLE\b/i.test(airspace.name) &&
+    /^LILLE\s+TWR$/i.test(frequency.name?.trim() ?? "") &&
+    frequency.value.trim() === "118.550"
+      ? { ...frequency, value: "118.555" }
+      : frequency,
+  );
+}
+
 export function openAipAirspacesToGeoJson(
   response: OpenAipAirspaceResponse
 ): AirspaceFeatureCollection {
@@ -220,7 +230,7 @@ export function openAipAirspacesToGeoJson(
         upperLimit: airspace.upperLimit ?? null,
         lowerLimitMin: airspace.lowerLimitMin ?? null,
         upperLimitMax: airspace.upperLimitMax ?? null,
-        frequencies: airspace.frequencies ?? [],
+        frequencies: publishedFrequencies(airspace),
         remarks: airspace.remarks ?? null,
         country: airspace.country ?? null,
         activity: airspace.activity ?? null,

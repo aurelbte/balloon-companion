@@ -44,7 +44,7 @@ export default function AirspaceDetails({
       style={{
         position: "fixed",
         left: "12px",
-        bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 196px)",
+        bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 252px)",
         zIndex: 25,
         width: "min(330px, calc(100vw - 92px))",
         maxHeight: "42vh",
