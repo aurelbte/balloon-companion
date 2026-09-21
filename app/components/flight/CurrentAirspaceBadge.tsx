@@ -33,6 +33,7 @@ export default function CurrentAirspaceBadge({
   onOpenCurrentAirspace,
 }: CurrentAirspaceBadgeProps) {
   const tone = TONE_STYLES[presentation.tone];
+  const label = presentation.label.replace(/ · \?$/, "");
 
   return (
     <div
@@ -63,7 +64,7 @@ export default function CurrentAirspaceBadge({
             whiteSpace: "nowrap",
           }}
         >
-          {presentation.label}
+          {label}
         </Chip>
       ) : (
         <div
@@ -80,7 +81,7 @@ export default function CurrentAirspaceBadge({
             whiteSpace: "nowrap",
           }}
         >
-          {presentation.label}
+          {label}
         </div>
       )}
     </div>

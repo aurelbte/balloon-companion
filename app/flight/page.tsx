@@ -250,7 +250,6 @@ export default function FlightPage() {
   const {
     point: currentPosition,
     state: geoState,
-    error: geoError,
     isStale,
     requestPermission,
     stopTracking: stopGeolocation,
@@ -937,27 +936,6 @@ export default function FlightPage() {
         onStopTracking={handleStopFlightControl}
       />
 
-      {!flightControlActive && !recoverableFlight && !completedFlight && (
-        <p
-          style={{
-            position: "fixed",
-            right: "16px",
-            bottom: "calc(max(6px, env(safe-area-inset-bottom)) + 292px)",
-            zIndex: 18,
-            width: "min(220px, 58vw)",
-            margin: 0,
-            color: "rgba(244,247,251,.78)",
-            fontSize: "10px",
-            lineHeight: 1.35,
-            textAlign: "right",
-            textShadow: "0 1px 3px #000",
-          }}
-        >
-          Pour un enregistrement continu sur iPhone, garder Balloon Companion
-          ouverte et l’écran allumé.
-        </p>
-      )}
-
       {storageError && (
         <div
           role="alert"
@@ -1123,26 +1101,6 @@ export default function FlightPage() {
         />
       )}
 
-      {/* Indicateur d'erreur GPS */}
-      {geoError && geoState !== "simulation" && (
-        <div
-          style={{
-            position: "fixed",
-            top: "max(112px, calc(env(safe-area-inset-top) + 96px))",
-            right: "16px",
-            backgroundColor: "rgba(239, 68, 68, 0.1)",
-            border: "1px solid var(--bc-danger)",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            fontSize: "13px",
-            color: "var(--bc-danger)",
-            zIndex: 20,
-            maxWidth: "300px",
-          }}
-        >
-          ⚠ {geoError}
-        </div>
-      )}
       <NavigationBar activeItem="Vol" onNavigate={handleNavigationRequest} />
     </div>
   );
