@@ -17,7 +17,7 @@ export type CrudConflictResolutionDependencies = Readonly<{
   readCloud(entityType: CrudConflictEntityType, entityId: string): Promise<CrudCloudState | null>;
   applyCloudLocally(entityType: CrudConflictEntityType, entityId: string, cloud: CrudCloudState): Promise<boolean>;
   buildPayload(mutation: SyncMutation): Promise<CloudSyncPayload | null>;
-  syncMutationById(mutationId: string): Promise<CloudSyncPassResult>;
+  syncMutationById(mutationId: string, authorization?: Readonly<{ scope: `USER:${string}`; userId: string }>): Promise<CloudSyncPassResult>;
 }>;
 
 export class CrudConflictResolutionError extends Error {
@@ -105,7 +105,8 @@ function validFlightPayload(payload: CloudSyncPayload | null): payload is CloudS
 export async function reconcileBlockedFlightMutation(entityId: string, dependencies: CrudConflictResolutionDependencies) {
   const scope = dependencies.getScope();
   if (!userScope(scope)) throw new CrudConflictResolutionError("USER_REQUIRED", "Utilisateur connecté requis");
-  if (await dependencies.getOnlineUserId().catch(() => null) !== scope.slice(5)) throw new CrudConflictResolutionError("OFFLINE_OR_SESSION_INVALID", "Session Cloud indisponible");
+  const userId = await dependencies.getOnlineUserId().catch(() => null);
+  if (userId !== scope.slice(5)) throw new CrudConflictResolutionError("OFFLINE_OR_SESSION_INVALID", "Session Cloud indisponible");
   assertScope(dependencies, scope);
   const historical = (await dependencies.outbox.list()).filter(mutation => mutation.entityType === "flight" && mutation.entityId === entityId && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation));
   const blocked = historical.at(-1);
@@ -123,9 +124,9 @@ export async function reconcileBlockedFlightMutation(entityId: string, dependenc
   if (!reserved) throw new CrudConflictResolutionError("FRESH_MUTATION_REQUIRED", "La nouvelle tentative n’a pas pu être réservée");
   await dependencies.outbox.freezePayload(fresh.mutationId, payload);
   assertScope(dependencies, scope);
-  const result = await dependencies.syncMutationById(fresh.mutationId);
+  const result = await dependencies.syncMutationById(fresh.mutationId, { scope, userId });
   assertScope(dependencies, scope);
-  if (result.state !== "COMPLETED" || result.applied !== 1 || result.conflicts !== 0) throw new CrudConflictResolutionError("RECONCILIATION_FAILED", "Le vol reconstruit n’a pas été appliqué");
+  if (result.applied !== 1 || result.conflicts !== 0) throw new CrudConflictResolutionError("RECONCILIATION_FAILED", "Le vol reconstruit n’a pas été appliqué");
   const finalMetadata = await dependencies.outbox.getMetadata("flight", entityId);
   if (!finalMetadata || finalMetadata.revision !== baseRevision + 1) throw new CrudConflictResolutionError("FINAL_SIDECAR_INVALID", "Révision locale finale invalide");
   await dependencies.issues.save(existingIssue ?? {

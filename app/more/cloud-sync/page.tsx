@@ -113,7 +113,7 @@ export default function CloudSyncPage() {
       else await resolver.resolveServerWins(issue.entityType, issue.entityId);
       await refresh();
       if (issue.entityType === "pilot-qualifications" && inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController();
-    } catch { setActionError("La résolution n’a pas abouti. Réessayez lorsque la connexion est stable."); }
+    } catch (error) { setActionError(strategy === "FLIGHT_PAYLOAD" && error instanceof Error ? error.message : "La résolution n’a pas abouti. Réessayez lorsque la connexion est stable."); }
     finally { setResolving(null); }
   };
   const decideLocalImport = (decision: "MIGRATION_APPROVED" | "MIGRATION_DEFERRED") => {

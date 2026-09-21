@@ -20,6 +20,7 @@ test('C2 : DELETE/tombstone durable après redémarrage',async()=>{const stored=
 test('retry futur outbox reste pending',async()=>assert.equal(await state({}, {mutations:[mutation({nextAttemptAt:'2099-01-01'})]}),'PENDING'));
 for(const entityType of ['pilot-profile','unit-preferences','weather-preferences','aviation-preferences','pilot-qualifications','balloon-preferences','favorite-launch-site','favorite-weather-place','balloon','flight','logbook-entry','balloon-document'])test(`conflit ${entityType}`,async()=>assert.equal(await state({}, {issues:[{kind:'CONFLICT',entityType,entityId:'x'}]}),'CONFLICT'));
 test('NOT_FOUND bloque le verdict',async()=>assert.equal(await state({}, {issues:[{kind:'NOT_FOUND',entityType:'flight',entityId:'f'}]}),'ERROR'));
+test('BLOCKED_ERROR flight valide reste un diagnostic ERROR vérifiable',async()=>assert.equal(await state({}, {issues:[{kind:'BLOCKED_ERROR',errorCode:'RPC_DETERMINISTIC:23502',entityType:'flight',entityId:'f'}]}),'ERROR'));
 test('trace pending',async()=>assert.equal(await state({}, {tracks:[{status:'PENDING'}]}),'PENDING'));
 test('trace retry/backoff',async()=>assert.equal(await state({}, {tracks:[{status:'FAILED',nextEligibleRetryAt:'2099-01-01'}]}),'ERROR'));
 test('découverte trace impossible',async()=>assert.equal(await state({}, {traceDiscoveryComplete:false}),'UNVERIFIABLE'));
@@ -93,6 +94,10 @@ test('inspection browser JSON invalide reste une erreur de lecture',async(t)=>{
 test('inspection browser lit diagnostics sans filtre CRUD',async(t)=>{
  const {readBrowserCloudSyncEvidence}=await import('./cloudSyncVerdictBrowser.ts');browserFixture(t,new Map([[storedKey('balloon-companion-cloud-sync-issues-v1'),JSON.stringify([{kind:'CONFLICT',entityType:'pilot-profile',entityId:'singleton'},{kind:'NOT_FOUND',entityType:'flight',entityId:'f'}])]]));
  const e=await readBrowserCloudSyncEvidence('USER:A',runtime(),{complete:true,generation:0,active:false});assert.equal(e.issues.length,2);assert.equal(await state({},e),'CONFLICT');
+});
+test('inspection browser accepte le diagnostic durable flight reconstruit',async(t)=>{
+ const {readBrowserCloudSyncEvidence}=await import('./cloudSyncVerdictBrowser.ts');browserFixture(t,new Map([[storedKey('balloon-companion-cloud-sync-issues-v1'),JSON.stringify([{kind:'BLOCKED_ERROR',errorCode:'RPC_DETERMINISTIC:23502',entityType:'flight',entityId:'f'}])]]));
+ const e=await readBrowserCloudSyncEvidence('USER:A',runtime(),{complete:true,generation:0,active:false});assert.equal(e.issues.length,1);assert.equal(await state({},e),'ERROR');
 });
 test('inspection browser ne présume pas les traces téléchargées depuis une file vide',async(t)=>{
  const {readBrowserCloudSyncEvidence}=await import('./cloudSyncVerdictBrowser.ts');browserFixture(t,new Map(),new Map([['balloon-companion-flights:user:A',new Map([['flights',[{id:'f',status:'COMPLETED',points:[]}]]])],['balloon-companion-sync-v1:user:A',new Map([['mutations',[]],['metadata',[{entityType:'flight',entityId:'f',revision:1}]]])]]));

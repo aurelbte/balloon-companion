@@ -176,6 +176,15 @@ export class CloudSyncService {
   async syncMutationById(mutationId: string): Promise<CloudSyncPassResult> {
     const authorization = await this.authorizePass();
     if ("state" in authorization) return authorization;
+    return this.syncAuthorizedMutationById(mutationId, authorization);
+  }
+
+  async syncMutationByIdForAuthorizedScope(mutationId: string, scope: `USER:${string}`, userId: string): Promise<CloudSyncPassResult> {
+    if (!this.sameUser(scope, userId)) return this.result("STOPPED_USER_SWITCH");
+    return this.syncAuthorizedMutationById(mutationId, { scope, userId });
+  }
+
+  private async syncAuthorizedMutationById(mutationId: string, authorization: Readonly<{ scope: `USER:${string}`; userId: string }>): Promise<CloudSyncPassResult> {
     const mutation = (await this.dependencies.outbox.list()).find((candidate) => candidate.mutationId === mutationId);
     if (!mutation) return this.result("COMPLETED");
     return this.processMutations([mutation], authorization, TARGETED_ALLOWED_TYPES, false, true);

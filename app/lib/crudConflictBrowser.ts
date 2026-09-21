@@ -121,7 +121,9 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     },
     applyCloudLocally: (entityType, _entityId, cloud) => applyCloud(input.scope, input.storage, entityType, cloud.value as ReturnType<(typeof DOMAIN)[CrudConflictEntityType][2]>),
     buildPayload: (mutation) => payloads.build(mutation),
-    syncMutationById: (mutationId) => service.syncMutationById(mutationId),
+    syncMutationById: (mutationId, authorization) => authorization
+      ? service.syncMutationByIdForAuthorizedScope(mutationId, authorization.scope, authorization.userId)
+      : service.syncMutationById(mutationId),
   };
   const readProtectedCloud = async (type: ProtectedPreferenceRebaseType): Promise<ProtectedPreferenceCloudState | null> => {
     const { data: authData, error: authError } = await input.client.auth.getUser();

@@ -79,7 +79,7 @@ export async function readBrowserCloudSyncEvidence(scope: `USER:${string}`, runt
     if (!CLOUD_SYNC_BUSINESS_STORAGE_KEYS.has(legacy) && !excludedStorageKeys.has(legacy)) coverageComplete = false;
     intents += countStoredSyncIntents(value);
     if (legacy === "balloon-companion-cloud-sync-issues-v1") {
-      if (!Array.isArray(value) || value.some(v => !v || !["CONFLICT", "BUSINESS_CONFLICT", "NOT_FOUND"].includes(v.kind) || typeof v.entityType !== "string" || typeof v.entityId !== "string" || (v.kind === "BUSINESS_CONFLICT" && (v.businessCode !== "DUPLICATE_REGISTRATION" || v.entityType !== "balloon")))) throw new Error("INVALID_ISSUES");
+      if (!Array.isArray(value) || value.some(v => !v || !["CONFLICT", "BUSINESS_CONFLICT", "NOT_FOUND", "BLOCKED_ERROR"].includes(v.kind) || typeof v.entityType !== "string" || typeof v.entityId !== "string" || (v.kind === "BUSINESS_CONFLICT" && (v.businessCode !== "DUPLICATE_REGISTRATION" || v.entityType !== "balloon")) || (v.kind === "BLOCKED_ERROR" && typeof v.errorCode !== "string"))) throw new Error("INVALID_ISSUES");
       issues = value;
     }
     if (singletons[legacy]) { if (!value || typeof value !== "object") throw new Error("INVALID_BUSINESS_VALUE"); requireKnown(singletons[legacy]!, "singleton"); }

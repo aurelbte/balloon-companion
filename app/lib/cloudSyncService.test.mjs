@@ -72,7 +72,7 @@ function fixture(input = {}) {
     outbox,
     issues,
     getScope: () => scope,
-    getOnlineUserId: async () => input.onlineUserId === undefined ? USER_A : input.onlineUserId,
+    getOnlineUserId: input.getOnlineUserId ?? (async () => input.onlineUserId === undefined ? USER_A : input.onlineUserId),
     buildPayload: input.buildPayload ?? (async (mutation) => ({ serverEntityType: mutation.entityType === "pilot-profile" ? "profile" : mutation.entityType, serverEntityId: mutation.entityId, payload: { first_name: "Alice" } })),
     applyMutation: async (request) => {
       calls += 1;
@@ -436,6 +436,13 @@ test("syncMutationById envoie uniquement TEST et laisse A et B strictement intac
   assert.deepEqual(await value.outbox.list(), [a, b]);
   assert.equal(await value.outbox.getMetadata("pilot-profile", "a").then((item) => item.attempts), undefined);
   assert.equal((await value.outbox.getMetadata("favorite-weather-place", "test")).revision, 0);
+});
+
+test("la réconciliation ciblée réutilise le scope déjà authentifié sans second appel Auth", async () => {
+  const value = fixture({ getOnlineUserId: async () => assert.fail("auth déjà validifiée") });
+  const target = await value.outbox.enqueue({ entityType: "flight", entityId: "flight", operation: "UPSERT" });
+  assert.equal((await value.service.syncMutationByIdForAuthorizedScope(target.mutationId, `USER:${USER_A}`, USER_A)).applied, 1);
+  assert.equal(value.calls(), 1);
 });
 
 test("syncMutationById conserve uniquement TEST en conflit", async () => {

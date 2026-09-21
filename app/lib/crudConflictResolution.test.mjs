@@ -134,23 +134,24 @@ async function blockedFlightFixture(options = {}) {
   await outbox.freezePayload(historical.mutationId, { serverEntityType: "flight", serverEntityId: "flight-1", payload: {} });
   const blocked = await outbox.updateMutation(historical.mutationId, { lastErrorCode: "RPC_DETERMINISTIC:23502" });
   await issues.save({ kind: "BLOCKED_ERROR", errorCode: "RPC_DETERMINISTIC:23502", entityType: "flight", entityId: "flight-1", mutation: blocked, serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-20T12:01:00.000Z" });
-  let syncSnapshot = [];
+  let syncSnapshot = [], authCalls = 0, forwardedAuthorization = null;
   const payload = { serverEntityType: "flight", serverEntityId: "flight-1", payload: { status: "COMPLETED", started_at: "2026-09-20T10:00:00.000Z", summary: { durationSeconds: 3600 } } };
   const dependencies = {
-    outbox, issues, getScope: () => scope, getOnlineUserId: async () => scope.slice(5),
+    outbox, issues, getScope: () => scope, getOnlineUserId: async () => { authCalls += 1; return scope.slice(5); },
     readCloud: async () => options.cloudMissing ? null : { revision: 7, updatedAt: "2026-09-20T11:00:00.000Z", deletedAt: null, value: {} },
     applyCloudLocally: async () => false,
     buildPayload: async () => options.localMissing ? null : payload,
-    syncMutationById: async mutationId => {
+    syncMutationById: async (mutationId, authorization) => {
+      forwardedAuthorization = authorization;
       syncSnapshot = structuredClone(await outbox.list());
       if (options.syncFails) return { state: "STOPPED_ERROR", applied: 0, conflicts: 0, notFound: 0, ignored: 0 };
       const fresh = syncSnapshot.find(mutation => mutation.mutationId === mutationId);
       await outbox.setMetadata({ entityType: "flight", entityId: "flight-1", revision: fresh.baseRevision + 1, updatedAt: "2026-09-20T12:02:00.000Z" });
       await outbox.remove(mutationId);
-      return { state: "COMPLETED", applied: 1, conflicts: 0, notFound: 0, ignored: 0 };
+      return { state: options.successState ?? "PENDING", applied: 1, conflicts: 0, notFound: 0, ignored: 0 };
     },
   };
-  return { outbox, issues, historical, payload, dependencies, get syncSnapshot() { return syncSnapshot; } };
+  return { outbox, issues, historical, payload, dependencies, get syncSnapshot() { return syncSnapshot; }, get authCalls() { return authCalls; }, get forwardedAuthorization() { return forwardedAuthorization; } };
 }
 
 test("flight bloqué reconstruit un snapshot actuel sur la vraie révision et conserve l'ancien jusqu'au succès", async () => {
@@ -163,6 +164,8 @@ test("flight bloqué reconstruit un snapshot actuel sur la vraie révision et co
   const fresh = ctx.syncSnapshot.find(mutation => mutation.mutationId === result.newMutationId);
   assert.equal(fresh.baseRevision, 7);
   assert.deepEqual(fresh.payloadSnapshot, ctx.payload);
+  assert.equal(ctx.authCalls, 1);
+  assert.deepEqual(ctx.forwardedAuthorization, { scope, userId: scope.slice(5) });
   assert.equal((await ctx.outbox.list()).length, 0);
   assert.equal((await ctx.issues.list()).length, 0);
   assert.deepEqual((await ctx.outbox.getMetadata("flight", "flight-1")).acknowledgedLocalIntentIds, ["flight-intent"]);
