@@ -8,7 +8,7 @@ import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
   parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
-import { abandonOrphanedFlightMutations, abandonOrphanedLogbookEntryMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, classifyBlockedLogbookEntryMutation, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, abandonOrphanedLogbookEntryMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, classifyBlockedLogbookEntryMutation, cleanupAbandonedLogbookEntryDiagnostic, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, recoverHistoricalOrphanedLogbookEntryDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, inspectOfficialAscensionForBlockedMutation, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
@@ -199,9 +199,14 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
     prepareOrphanedLogbookEntryAbandonment: async (entityId: string) => {
       const mutationIds = (await outbox.list()).filter(mutation => mutation.entityType === "logbook-entry" && mutation.entityId === entityId
         && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation)).map(({ mutationId }) => mutationId);
-      return { entityId, mutationIds, execute: () => abandonOrphanedLogbookEntryMutations(entityId, mutationIds, dependencies) };
+      return {
+        entityId, mutationIds,
+        execute: () => abandonOrphanedLogbookEntryMutations(entityId, mutationIds, dependencies),
+        cleanupDiagnostic: () => cleanupAbandonedLogbookEntryDiagnostic(entityId, mutationIds, dependencies),
+      };
     },
     recoverHistoricalOrphanedFlightDiagnostics: () => recoverHistoricalOrphanedFlightDiagnostics(dependencies),
+    recoverHistoricalOrphanedLogbookEntryDiagnostics: () => recoverHistoricalOrphanedLogbookEntryDiagnostics(dependencies),
     resolveProtectedLocalWins: (entityType: string) => resolveProtectedPreferenceConflictLocalWins(entityType, protectedDependencies),
     resolveProtectedCloudWins: (entityType: string) => resolveProtectedPreferenceConflictCloudWins(entityType, protectedDependencies),
   } as const;

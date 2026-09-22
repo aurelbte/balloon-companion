@@ -186,10 +186,77 @@ export async function abandonOrphanedLogbookEntryMutations(
   assertIdentity();
   if (issue) {
     const diagnosticMutationId = issue.mutation?.mutationId;
-    if (!diagnosticMutationId || !currentIds.includes(diagnosticMutationId)) throw new CrudConflictResolutionError("DIAGNOSTIC_CHANGED", "Le diagnostic ne correspond plus aux mutations abandonnées");
-    await dependencies.issues.remove("logbook-entry", entityId);
+    if (diagnosticMutationId && currentIds.includes(diagnosticMutationId)) await dependencies.issues.remove("logbook-entry", entityId);
   }
   return { entityType: "logbook-entry", entityId, removedMutationIds: currentIds } as const;
+}
+
+export async function cleanupAbandonedLogbookEntryDiagnostic(
+  entityId: string,
+  removedMutationIds: readonly string[],
+  dependencies: CrudConflictResolutionDependencies,
+) {
+  const scope = dependencies.getScope();
+  if (!userScope(scope)) throw new CrudConflictResolutionError("USER_REQUIRED", "Utilisateur connecté requis");
+  if (!dependencies.inspectLogbookEntryLocalState || !dependencies.getScopeGeneration) throw new CrudConflictResolutionError("LOCAL_INSPECTION_UNAVAILABLE", "Inspection locale indisponible");
+  const generation = dependencies.getScopeGeneration();
+  const assertIdentity = () => {
+    assertScope(dependencies, scope);
+    if (dependencies.getScopeGeneration!() !== generation) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
+  };
+  const expected = [...new Set(removedMutationIds)];
+  if (!expected.length) throw new CrudConflictResolutionError("CONFIRMATION_STALE", "Aucune mutation abandonnée à vérifier");
+  const local = await dependencies.inspectLogbookEntryLocalState(entityId);
+  assertIdentity();
+  if (local.ascensionPresent || !local.rawStateReadable || local.matchingIntentIds.length) return { removed: false } as const;
+  const mutations = await dependencies.outbox.list();
+  assertIdentity();
+  if (mutations.some((mutation) => mutation.entityType === "logbook-entry" && mutation.entityId === entityId)) return { removed: false } as const;
+  const issue = (await dependencies.issues.list()).find((candidate) => candidate.entityType === "logbook-entry" && candidate.entityId === entityId);
+  assertIdentity();
+  if (!issue?.mutation?.mutationId || !expected.includes(issue.mutation.mutationId)) return { removed: false } as const;
+  await dependencies.issues.remove("logbook-entry", entityId);
+  assertIdentity();
+  return { removed: true } as const;
+}
+
+export async function recoverHistoricalOrphanedLogbookEntryDiagnostics(dependencies: CrudConflictResolutionDependencies) {
+  const scope = dependencies.getScope();
+  if (!userScope(scope) || !dependencies.inspectLogbookEntryLocalState || !dependencies.getScopeGeneration) return { removedEntityIds: [] as string[] };
+  const generation = dependencies.getScopeGeneration();
+  const assertIdentity = () => {
+    assertScope(dependencies, scope);
+    if (dependencies.getScopeGeneration!() !== generation) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
+  };
+  const initialMutations = await dependencies.outbox.list();
+  assertIdentity();
+  const initialIssues = await dependencies.issues.list();
+  assertIdentity();
+  const removedEntityIds: string[] = [];
+  for (const issue of initialIssues) {
+    const diagnosticMutation = issue.mutation;
+    if (!["NOT_FOUND", "BLOCKED_ERROR"].includes(issue.kind) || issue.entityType !== "logbook-entry"
+      || diagnosticMutation?.entityType !== "logbook-entry" || diagnosticMutation.entityId !== issue.entityId
+      || diagnosticMutation.operation !== "UPSERT" || !diagnosticMutation.mutationId) continue;
+    if (initialMutations.some((mutation) => mutation.entityType === "logbook-entry" && mutation.entityId === issue.entityId)) continue;
+    if (validLogbookPayload(diagnosticMutation.payloadSnapshot ?? null)) continue;
+    const local = await dependencies.inspectLogbookEntryLocalState(issue.entityId);
+    assertIdentity();
+    if (local.ascensionPresent || !local.rawStateReadable || local.matchingIntentIds.length) continue;
+    const currentMutations = await dependencies.outbox.list();
+    assertIdentity();
+    if (currentMutations.some((mutation) => mutation.entityType === "logbook-entry" && mutation.entityId === issue.entityId)) continue;
+    const currentIssue = (await dependencies.issues.list()).find((candidate) => candidate.entityType === "logbook-entry" && candidate.entityId === issue.entityId);
+    assertIdentity();
+    if (!currentIssue || JSON.stringify(currentIssue) !== JSON.stringify(issue)) continue;
+    const finalLocal = await dependencies.inspectLogbookEntryLocalState(issue.entityId);
+    assertIdentity();
+    if (finalLocal.ascensionPresent || !finalLocal.rawStateReadable || finalLocal.matchingIntentIds.length) continue;
+    await dependencies.issues.remove("logbook-entry", issue.entityId);
+    assertIdentity();
+    removedEntityIds.push(issue.entityId);
+  }
+  return { removedEntityIds };
 }
 
 export async function classifyBlockedFlightMutation(entityId: string, dependencies: CrudConflictResolutionDependencies) {

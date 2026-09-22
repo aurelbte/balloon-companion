@@ -21,3 +21,8 @@ test("les helpers CRUD restent DEV targeted et réutilisent les primitives produ
   assert.match(source, /resolveCrudConflictServerWins:/);
   assert.match(source, /createBrowserCrudConflictResolver/);
 });
+
+test("l'abandon logbook attend le passage concurrent, nettoie son diagnostic puis réinspecte C1", async () => {
+  const source = await readFile(pagePath, "utf8");
+  assert.match(source, /await synchronizeCloudNowThroughRuntimeController\(\)\.catch\(\(\) => undefined\);\s*if \(orphanedChoice\.entityType === "logbook-entry"[\s\S]*await orphanedChoice\.cleanupDiagnostic\?\.\(\);\s*if \(inspectCloudSyncRuntimeControllerState\(\)\.scope === scope\) await synchronizeCloudNowThroughRuntimeController\(\)\.catch\(\(\) => undefined\);/);
+});

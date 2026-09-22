@@ -61,7 +61,7 @@ export default function CloudSyncPage() {
   const [qualificationChoice, setQualificationChoice] = useState<Readonly<{ conflictId: string; strategy: "DEVICE" | "CLOUD" }> | null>(null);
   const [qualificationCloudState, setQualificationCloudState] = useState<"IDLE" | "LOADING" | "AVAILABLE" | "UNAVAILABLE">("IDLE");
   const [preferenceChoice, setPreferenceChoice] = useState<Readonly<{ entityType: string; strategy: "LOCAL" | "CLOUD" }> | null>(null);
-  const [orphanedChoice, setOrphanedChoice] = useState<Readonly<{ entityType: "flight" | "logbook-entry"; entityId: string; mutationIds: readonly string[]; execute: () => Promise<unknown> }> | null>(null);
+  const [orphanedChoice, setOrphanedChoice] = useState<Readonly<{ entityType: "flight" | "logbook-entry"; entityId: string; mutationIds: readonly string[]; execute: () => Promise<unknown>; cleanupDiagnostic?: () => Promise<unknown> }> | null>(null);
   const scope = auth.user?.id ? `USER:${auth.user.id}` as const : null;
   const verdict = useCloudSyncVerdict(scope);
   const resolver = useMemo(() => scope && typeof window !== "undefined" ? createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }) : null, [scope]);
@@ -85,8 +85,8 @@ export default function CloudSyncPage() {
   useEffect(() => {
     if (!resolver || !scope || orphanRecoveryScope.current === scope) return;
     orphanRecoveryScope.current = scope;
-    void resolver.recoverHistoricalOrphanedFlightDiagnostics().then(async ({ removedEntityIds }) => {
-      if (!removedEntityIds.length || getRuntimeDataScope() !== scope) return;
+    void (async () => [await resolver.recoverHistoricalOrphanedFlightDiagnostics(), await resolver.recoverHistoricalOrphanedLogbookEntryDiagnostics()])().then(async (recoveries) => {
+      if (!recoveries.some(({ removedEntityIds }) => removedEntityIds.length) || getRuntimeDataScope() !== scope) return;
       await refresh();
       if (inspectCloudSyncRuntimeControllerState().scope === scope) {
         await synchronizeCloudNowThroughRuntimeController().catch(() => undefined);
@@ -201,6 +201,10 @@ export default function CloudSyncPage() {
       setOrphanedChoice(null);
       await refresh();
       if (inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController().catch(() => undefined);
+      if (orphanedChoice.entityType === "logbook-entry" && getRuntimeDataScope() === scope) {
+        await orphanedChoice.cleanupDiagnostic?.();
+        if (inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController().catch(() => undefined);
+      }
       if (getRuntimeDataScope() === scope) await refresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "L’abandon n’a pas abouti. Aucune réussite n’a été confirmée.");

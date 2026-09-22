@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abandonOrphanedFlightMutations, abandonOrphanedLogbookEntryMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, classifyBlockedLogbookEntryMutation, CrudConflictResolutionError, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, abandonOrphanedLogbookEntryMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, classifyBlockedLogbookEntryMutation, cleanupAbandonedLogbookEntryDiagnostic, CrudConflictResolutionError, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, recoverHistoricalOrphanedLogbookEntryDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
 import { MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -402,6 +402,39 @@ test("logbook-entry: échec du commit atomique conserve mutation et diagnostic",
   await assert.rejects(abandonOrphanedLogbookEntryMutations("ascension-orphan", [ctx.mutation.mutationId], ctx.dependencies), /IDB_ABORT/);
   assert.equal((await ctx.outbox.list()).length, 1);
   assert.equal((await ctx.issues.list()).length, 1);
+});
+
+test("logbook-entry: une réinspection concurrente recréant NOT_FOUND après abandon est nettoyée sûrement", async () => {
+  const ctx = await orphanedLogbookFixture();
+  const removedId = ctx.mutation.mutationId;
+  await abandonOrphanedLogbookEntryMutations("ascension-orphan", [removedId], ctx.dependencies);
+  await ctx.issues.save({
+    kind: "NOT_FOUND", entityType: "logbook-entry", entityId: "ascension-orphan", mutation: ctx.mutation,
+    serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-22T10:02:00.000Z",
+  });
+  const flight = await ctx.outbox.enqueueFresh({ entityType: "flight", entityId: "flight-protected", operation: "UPSERT", baseRevision: 0 });
+  const completion = await ctx.outbox.enqueueFresh({ entityType: "flight-completion", entityId: "singleton", operation: "UPSERT", baseRevision: 0 });
+
+  assert.deepEqual(await cleanupAbandonedLogbookEntryDiagnostic("ascension-orphan", [removedId], ctx.dependencies), { removed: true });
+  assert.deepEqual(await ctx.issues.list(), []);
+  assert.deepEqual((await ctx.outbox.list()).map(({ mutationId }) => mutationId), [flight.mutationId, completion.mutationId]);
+});
+
+test("logbook-entry: le diagnostic NOT_FOUND historique déjà orphelin est récupéré sans toucher aux autres domaines", async () => {
+  const ctx = await orphanedLogbookFixture();
+  const removedId = ctx.mutation.mutationId;
+  await ctx.outbox.removeManyIfUnchanged([ctx.mutation]);
+  await ctx.issues.save({
+    kind: "NOT_FOUND", entityType: "logbook-entry", entityId: "ascension-orphan", mutation: ctx.mutation,
+    serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-22T10:02:00.000Z",
+  });
+  const flight = await ctx.outbox.enqueueFresh({ entityType: "flight", entityId: "flight-protected", operation: "UPSERT", baseRevision: 0 });
+  const completion = await ctx.outbox.enqueueFresh({ entityType: "flight-completion", entityId: "singleton", operation: "UPSERT", baseRevision: 0 });
+
+  assert.deepEqual(await recoverHistoricalOrphanedLogbookEntryDiagnostics(ctx.dependencies), { removedEntityIds: ["ascension-orphan"] });
+  assert.deepEqual(await ctx.issues.list(), []);
+  assert.deepEqual((await ctx.outbox.list()).map(({ mutationId }) => mutationId), [flight.mutationId, completion.mutationId]);
+  assert.equal(removedId, ctx.mutation.mutationId);
 });
 
 test("sécurité: whitelist, session, USER switch, lecture, payload, conflit disparu", async () => {
