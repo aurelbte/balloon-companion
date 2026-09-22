@@ -25,6 +25,11 @@ export type CrudConflictResolutionDependencies = Readonly<{
     activeFlightWithSameId: boolean;
     matchingIntentIds: readonly string[];
   }>>;
+  inspectLogbookEntryLocalState?(entityId: string): Promise<Readonly<{
+    ascensionPresent: boolean;
+    rawStateReadable: boolean;
+    matchingIntentIds: readonly string[];
+  }>>;
 }>;
 
 export class CrudConflictResolutionError extends Error {
@@ -39,7 +44,7 @@ function assertScope(dependencies: CrudConflictResolutionDependencies, scope: `U
 }
 
 export type CloudSyncConflictIntegrity = "MATCHED" | "MUTATION_WITHOUT_DIAGNOSTIC" | "DIAGNOSTIC_WITHOUT_MUTATION";
-export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "FLIGHT_PAYLOAD" | "FLIGHT_ORPHAN" | "NONE";
+export type CloudSyncConflictResolution = "REVISION" | "DUPLICATE_REGISTRATION" | "FLIGHT_PAYLOAD" | "FLIGHT_ORPHAN" | "LOGBOOK_PAYLOAD" | "LOGBOOK_ORPHAN" | "NONE";
 export type AggregatedCloudSyncConflict = Readonly<{
   kind: "CONFLICT" | "BUSINESS_CONFLICT" | "BLOCKED_ERROR";
   businessCode?: "DUPLICATE_REGISTRATION";
@@ -63,18 +68,19 @@ export type AggregatedCloudSyncConflict = Readonly<{
 }>;
 
 export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutations: readonly SyncMutation[]): readonly AggregatedCloudSyncConflict[] {
-  const diagnostics = issues.filter(issue => isCloudSyncConflictIssue(issue) || issue.kind === "BLOCKED_ERROR" && issue.entityType === "flight");
-  const conflictMutations = mutations.filter(mutation => isCloudSyncConflictMutation(mutation) || mutation.entityType === "flight" && isDurablyBlockedCloudSyncMutation(mutation));
+  const diagnostics = issues.filter(issue => isCloudSyncConflictIssue(issue) || issue.kind === "BLOCKED_ERROR" && ["flight", "logbook-entry"].includes(issue.entityType));
+  const conflictMutations = mutations.filter(mutation => isCloudSyncConflictMutation(mutation) || ["flight", "logbook-entry"].includes(mutation.entityType) && isDurablyBlockedCloudSyncMutation(mutation));
   const usedMutationIds = new Set<string>();
   const aggregate = (entityType: string, entityId: string, diagnostic: CloudSyncIssue | null, mutation: SyncMutation | null): AggregatedCloudSyncConflict => {
     const businessCode = diagnostic?.businessCode ?? (mutation?.lastErrorCode === "DUPLICATE_REGISTRATION" ? "DUPLICATE_REGISTRATION" : undefined);
-    const kind = diagnostic?.kind === "BLOCKED_ERROR" || Boolean(mutation?.entityType === "flight" && isDurablyBlockedCloudSyncMutation(mutation)) ? "BLOCKED_ERROR" : businessCode ? "BUSINESS_CONFLICT" : "CONFLICT";
+    const kind = diagnostic?.kind === "BLOCKED_ERROR" || Boolean(mutation && ["flight", "logbook-entry"].includes(mutation.entityType) && isDurablyBlockedCloudSyncMutation(mutation)) ? "BLOCKED_ERROR" : businessCode ? "BUSINESS_CONFLICT" : "CONFLICT";
     const diagnosticPresent = Boolean(diagnostic), mutationPresent = Boolean(mutation);
     const integrity: CloudSyncConflictIntegrity = diagnosticPresent && mutationPresent ? "MATCHED" : mutationPresent ? "MUTATION_WITHOUT_DIAGNOSTIC" : "DIAGNOSTIC_WITHOUT_MUTATION";
     const revisionResolvable = kind === "CONFLICT" && mutationPresent && allowed(entityType)
       && (diagnosticPresent || (entityType === "pilot-qualifications" && entityId === "singleton"));
     const duplicateResolvable = businessCode === "DUPLICATE_REGISTRATION" && diagnosticPresent && mutationPresent && entityType === "balloon";
     const flightPayloadResolvable = kind === "BLOCKED_ERROR" && mutationPresent && entityType === "flight" && mutation?.operation === "UPSERT";
+    const logbookPayloadResolvable = kind === "BLOCKED_ERROR" && mutationPresent && entityType === "logbook-entry" && mutation?.operation === "UPSERT";
     return {
       kind, ...(businessCode ? { businessCode } : {}), entityType: entityType!, entityId: entityId!,
       mutationId: mutation?.mutationId ?? diagnostic?.mutation?.mutationId ?? null,
@@ -88,7 +94,7 @@ export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutati
       attempts: mutation?.attempts ?? diagnostic?.mutation?.attempts ?? null,
       lastErrorCode: mutation?.lastErrorCode ?? diagnostic?.mutation?.lastErrorCode ?? null,
       diagnosticPresent, mutationPresent, integrity,
-      resolution: duplicateResolvable ? "DUPLICATE_REGISTRATION" : revisionResolvable ? "REVISION" : flightPayloadResolvable ? "FLIGHT_PAYLOAD" : "NONE",
+      resolution: duplicateResolvable ? "DUPLICATE_REGISTRATION" : revisionResolvable ? "REVISION" : flightPayloadResolvable ? "FLIGHT_PAYLOAD" : logbookPayloadResolvable ? "LOGBOOK_PAYLOAD" : "NONE",
     };
   };
   const result = diagnostics.map(diagnostic => {
@@ -105,6 +111,85 @@ export function aggregateCrudConflicts(issues: readonly CloudSyncIssue[], mutati
 function blockedFlightMutations(mutations: readonly SyncMutation[], entityId: string): SyncMutation[] {
   return mutations.filter((mutation) => mutation.entityType === "flight" && mutation.entityId === entityId
     && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation));
+}
+
+function blockedLogbookEntryMutations(mutations: readonly SyncMutation[], entityId: string): SyncMutation[] {
+  return mutations.filter((mutation) => mutation.entityType === "logbook-entry" && mutation.entityId === entityId
+    && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation));
+}
+
+function validLogbookPayload(payload: CloudSyncPayload | null): payload is CloudSyncPayload {
+  if (!payload || payload.serverEntityType !== "logbook_entry") return false;
+  const value = payload.payload;
+  return ["source", "date_iso", "balloon_model", "registration", "departure", "arrival", "category", "pilot_function", "observations"]
+    .every((key) => typeof value[key] === "string")
+    && typeof value.night_flight === "boolean"
+    && typeof value.official_duration_minutes === "number" && Number.isFinite(value.official_duration_minutes);
+}
+
+export async function classifyBlockedLogbookEntryMutation(entityId: string, dependencies: CrudConflictResolutionDependencies) {
+  if (!dependencies.inspectLogbookEntryLocalState) return { state: "UNREADABLE" as const, mutationCount: 0 };
+  const allMutations = await dependencies.outbox.list();
+  const mutations = blockedLogbookEntryMutations(allMutations, entityId);
+  if (!mutations.length) return { state: "MISSING_MUTATION" as const, mutationCount: 0 };
+  if (allMutations.some((mutation) => mutation.entityType === "logbook-entry" && mutation.entityId === entityId && !mutations.some(({ mutationId }) => mutationId === mutation.mutationId))) {
+    return { state: "PROTECTED" as const, mutationCount: mutations.length };
+  }
+  const local = await dependencies.inspectLogbookEntryLocalState(entityId);
+  const state = !local.ascensionPresent && local.rawStateReadable && local.matchingIntentIds.length === 0
+    && !mutations.some((mutation) => validLogbookPayload(mutation.payloadSnapshot ?? null))
+    ? "ORPHANED" as const : "PROTECTED" as const;
+  return { state, mutationCount: mutations.length };
+}
+
+export async function abandonOrphanedLogbookEntryMutations(
+  entityId: string,
+  expectedMutationIds: readonly string[],
+  dependencies: CrudConflictResolutionDependencies,
+) {
+  const scope = dependencies.getScope();
+  if (!userScope(scope)) throw new CrudConflictResolutionError("USER_REQUIRED", "Utilisateur connecté requis");
+  if (!dependencies.inspectLogbookEntryLocalState || !dependencies.getScopeGeneration) throw new CrudConflictResolutionError("LOCAL_INSPECTION_UNAVAILABLE", "Inspection locale indisponible");
+  const generation = dependencies.getScopeGeneration();
+  const assertIdentity = () => {
+    assertScope(dependencies, scope);
+    if (dependencies.getScopeGeneration!() !== generation) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
+  };
+  const expected = [...new Set(expectedMutationIds)].sort();
+  if (!expected.length) throw new CrudConflictResolutionError("CONFIRMATION_STALE", "La confirmation n’est plus applicable");
+  const inspectAbsent = async () => {
+    const local = await dependencies.inspectLogbookEntryLocalState!(entityId);
+    assertIdentity();
+    if (local.ascensionPresent || !local.rawStateReadable || local.matchingIntentIds.length) {
+      throw new CrudConflictResolutionError("LOCAL_LOGBOOK_RECOVERABLE", "Un état local récupérable ou ambigu empêche l’abandon");
+    }
+  };
+  await inspectAbsent();
+  const allMutations = await dependencies.outbox.list();
+  assertIdentity();
+  const current = blockedLogbookEntryMutations(allMutations, entityId);
+  const currentIds = current.map(({ mutationId }) => mutationId).sort();
+  if (currentIds.length !== expected.length || currentIds.some((id, index) => id !== expected[index])
+    || allMutations.some((mutation) => mutation.entityType === "logbook-entry" && mutation.entityId === entityId && !currentIds.includes(mutation.mutationId))) {
+    throw new CrudConflictResolutionError("CONFIRMATION_STALE", "Les mutations ont changé depuis la confirmation");
+  }
+  if (current.some((mutation) => validLogbookPayload(mutation.payloadSnapshot ?? null))) {
+    throw new CrudConflictResolutionError("RECOVERABLE_SNAPSHOT", "Un snapshot complet empêche l’abandon");
+  }
+  await inspectAbsent();
+  if (!await dependencies.outbox.removeManyIfUnchanged(current)) throw new CrudConflictResolutionError("CONFIRMATION_STALE", "Les mutations ont changé pendant la confirmation");
+  assertIdentity();
+  const remaining = await dependencies.outbox.list();
+  assertIdentity();
+  if (remaining.some((mutation) => currentIds.includes(mutation.mutationId))) throw new CrudConflictResolutionError("ORPHAN_CLEANUP_INCOMPLETE", "Les mutations abandonnées sont encore présentes");
+  const issue = (await dependencies.issues.list()).find((candidate) => candidate.entityType === "logbook-entry" && candidate.entityId === entityId);
+  assertIdentity();
+  if (issue) {
+    const diagnosticMutationId = issue.mutation?.mutationId;
+    if (!diagnosticMutationId || !currentIds.includes(diagnosticMutationId)) throw new CrudConflictResolutionError("DIAGNOSTIC_CHANGED", "Le diagnostic ne correspond plus aux mutations abandonnées");
+    await dependencies.issues.remove("logbook-entry", entityId);
+  }
+  return { entityType: "logbook-entry", entityId, removedMutationIds: currentIds } as const;
 }
 
 export async function classifyBlockedFlightMutation(entityId: string, dependencies: CrudConflictResolutionDependencies) {

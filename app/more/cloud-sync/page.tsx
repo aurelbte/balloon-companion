@@ -61,7 +61,7 @@ export default function CloudSyncPage() {
   const [qualificationChoice, setQualificationChoice] = useState<Readonly<{ conflictId: string; strategy: "DEVICE" | "CLOUD" }> | null>(null);
   const [qualificationCloudState, setQualificationCloudState] = useState<"IDLE" | "LOADING" | "AVAILABLE" | "UNAVAILABLE">("IDLE");
   const [preferenceChoice, setPreferenceChoice] = useState<Readonly<{ entityType: string; strategy: "LOCAL" | "CLOUD" }> | null>(null);
-  const [orphanedFlightChoice, setOrphanedFlightChoice] = useState<Readonly<{ entityId: string; mutationIds: readonly string[]; execute: () => Promise<unknown> }> | null>(null);
+  const [orphanedChoice, setOrphanedChoice] = useState<Readonly<{ entityType: "flight" | "logbook-entry"; entityId: string; mutationIds: readonly string[]; execute: () => Promise<unknown> }> | null>(null);
   const scope = auth.user?.id ? `USER:${auth.user.id}` as const : null;
   const verdict = useCloudSyncVerdict(scope);
   const resolver = useMemo(() => scope && typeof window !== "undefined" ? createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }) : null, [scope]);
@@ -176,20 +176,32 @@ export default function CloudSyncPage() {
     try {
       const prepared = await resolver.prepareOrphanedFlightAbandonment(entityId);
       if (!prepared.mutationIds.length) throw new Error("La demande bloquée n’est plus présente.");
-      setOrphanedFlightChoice(prepared);
+      setOrphanedChoice({ ...prepared, entityType: "flight" });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "La vérification locale n’a pas abouti.");
     } finally { setResolving(null); }
   };
-  const confirmOrphanedFlightAbandonment = async () => {
-    if (!orphanedFlightChoice) return;
-    const key = `flight:${orphanedFlightChoice.entityId}`;
+  const prepareOrphanedLogbookEntryAbandonment = async (entityId: string) => {
+    if (!resolver) return;
+    setResolving(`logbook-entry:${entityId}`); setActionError(null);
+    try {
+      const prepared = await resolver.prepareOrphanedLogbookEntryAbandonment(entityId);
+      if (!prepared.mutationIds.length) throw new Error("La demande bloquée n’est plus présente.");
+      setOrphanedChoice({ ...prepared, entityType: "logbook-entry" });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "La vérification locale n’a pas abouti.");
+    } finally { setResolving(null); }
+  };
+  const confirmOrphanedAbandonment = async () => {
+    if (!orphanedChoice) return;
+    const key = `${orphanedChoice.entityType}:${orphanedChoice.entityId}`;
     setResolving(key); setActionError(null);
     try {
-      await orphanedFlightChoice.execute();
-      setOrphanedFlightChoice(null);
+      await orphanedChoice.execute();
+      setOrphanedChoice(null);
       await refresh();
-      if (inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController();
+      if (inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController().catch(() => undefined);
+      if (getRuntimeDataScope() === scope) await refresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "L’abandon n’a pas abouti. Aucune réussite n’a été confirmée.");
     } finally { setResolving(null); }
@@ -254,11 +266,19 @@ export default function CloudSyncPage() {
         </> : issue.resolution === "FLIGHT_ORPHAN" ? <>
           <p className="mt-2 font-medium">Vol local introuvable</p>
           <p className="mt-1 text-sm">Cette ancienne demande de synchronisation ne peut pas être reconstruite.</p>
-          {orphanedFlightChoice?.entityId === issue.entityId ? <div className="mt-3 rounded-xl border border-amber-400 bg-white p-3">
-            <p className="break-words text-sm font-medium">Confirmer l’abandon de {orphanedFlightChoice.mutationIds.length} mutation{orphanedFlightChoice.mutationIds.length > 1 ? "s" : ""} pour l’entité {issue.entityId} ?</p>
+          {orphanedChoice?.entityType === "flight" && orphanedChoice.entityId === issue.entityId ? <div className="mt-3 rounded-xl border border-amber-400 bg-white p-3">
+            <p className="break-words text-sm font-medium">Confirmer l’abandon de {orphanedChoice.mutationIds.length} mutation{orphanedChoice.mutationIds.length > 1 ? "s" : ""} pour l’entité {issue.entityId} ?</p>
             <p className="mt-1 text-sm text-slate-700">Cette action ne recrée ni ne supprime un vol.</p>
-            <div className="mt-3 flex gap-2"><button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => void confirmOrphanedFlightAbandonment()}>Confirmer l’abandon</button><button className="rounded-xl border border-slate-500 bg-white px-4 py-2 font-medium text-slate-950 disabled:opacity-50" disabled={resolving !== null} onClick={() => setOrphanedFlightChoice(null)}>Annuler</button></div>
+            <div className="mt-3 flex gap-2"><button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => void confirmOrphanedAbandonment()}>Confirmer l’abandon</button><button className="rounded-xl border border-slate-500 bg-white px-4 py-2 font-medium text-slate-950 disabled:opacity-50" disabled={resolving !== null} onClick={() => setOrphanedChoice(null)}>Annuler</button></div>
           </div> : <button className="mt-3 rounded-xl border border-amber-700 bg-white px-4 py-2 font-medium text-amber-950 disabled:opacity-50" disabled={resolving !== null} onClick={() => void prepareOrphanedFlightAbandonment(issue.entityId)}>Abandonner cette synchronisation</button>}
+        </> : issue.resolution === "LOGBOOK_ORPHAN" ? <>
+          <p className="mt-2 font-medium">Ascension locale introuvable</p>
+          <p className="mt-1 text-sm">Cette ancienne demande de synchronisation ne peut pas être reconstruite.</p>
+          {orphanedChoice?.entityType === "logbook-entry" && orphanedChoice.entityId === issue.entityId ? <div className="mt-3 rounded-xl border border-amber-400 bg-white p-3">
+            <p className="break-words text-sm font-medium">Confirmer l’abandon de {orphanedChoice.mutationIds.length} mutation{orphanedChoice.mutationIds.length > 1 ? "s" : ""} pour l’entité {issue.entityId} ?</p>
+            <p className="mt-1 text-sm text-slate-700">Cette action ne recrée ni ne supprime une ascension.</p>
+            <div className="mt-3 flex gap-2"><button className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50" disabled={resolving !== null} onClick={() => void confirmOrphanedAbandonment()}>Confirmer l’abandon</button><button className="rounded-xl border border-slate-500 bg-white px-4 py-2 font-medium text-slate-950 disabled:opacity-50" disabled={resolving !== null} onClick={() => setOrphanedChoice(null)}>Annuler</button></div>
+          </div> : <button className="mt-3 rounded-xl border border-amber-700 bg-white px-4 py-2 font-medium text-amber-950 disabled:opacity-50" disabled={resolving !== null} onClick={() => void prepareOrphanedLogbookEntryAbandonment(issue.entityId)}>Abandonner cette synchronisation</button>}
         </> : issue.businessCode === "DUPLICATE_REGISTRATION" ? <>
           <p className="mt-2 text-sm">Immatriculation déjà utilisée. Vérifiez le ballon concerné avant de réessayer l’envoi enregistré.</p>
           <Link className="mt-2 inline-block underline" href={loadBalloonRegistry().balloons.some(({ id }) => id === issue.entityId) ? `/more/profile/balloons/${encodeURIComponent(issue.entityId)}/edit` : "/more/profile/balloons"}>Modifier le ballon concerné</Link>

@@ -4,12 +4,14 @@ import {
   FLIGHT_COMPLETION_STORAGE_KEY,
   loadFlightCompletionState,
   ensureDemoCompletionPersisted,
+  inspectOfficialAscensionForBlockedMutation,
   persistOfficialAscension,
   persistOfficialAscensionUpdate,
   persistPilotExperience,
   saveFlightCompletionState,
 } from "./flightCompletionStorage.ts";
 import { calculatePilotOfficialTotals, createEmptyFlightCompletionState, defaultOfficialAscensionInput, DEMO_COMPLETION_FLIGHT_ID, ensureCompletionJournalFlight, validateOfficialAscension } from "./flightCompletion.ts";
+import { scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 
 function memoryStorage() {
   const values = new Map();
@@ -18,6 +20,18 @@ function memoryStorage() {
     setItem: (key, value) => values.set(key, value),
   };
 }
+
+test("inspection logbook orpheline lit uniquement l'agrégat scopé et ses intentions", () => {
+  const storage = memoryStorage(), scope = "USER:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", entityId = "ascension-a";
+  const key = scopedBusinessStorageKey(scope, FLIGHT_COMPLETION_STORAGE_KEY);
+  storage.setItem(key, JSON.stringify({ officialAscensions: [], journalFlights: [], openingBalance: {}, __balloonPendingSync: [
+    { mutationId: "intent-a", entityType: "logbook-entry", entityId, operation: "UPSERT" },
+    { mutationId: "intent-b", entityType: "logbook-entry", entityId: "other", operation: "UPSERT" },
+  ] }));
+  assert.deepEqual(inspectOfficialAscensionForBlockedMutation(scope, entityId, storage), { ascensionPresent: false, rawStateReadable: true, matchingIntentIds: ["intent-a"] });
+  storage.setItem(key, "{bad");
+  assert.equal(inspectOfficialAscensionForBlockedMutation(scope, entityId, storage).rawStateReadable, false);
+});
 
 test("l’expérience confirmée survit au rechargement du stockage", () => {
   globalThis.window = {

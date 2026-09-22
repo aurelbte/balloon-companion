@@ -8,10 +8,10 @@ import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
   parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
-import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, abandonOrphanedLogbookEntryMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, classifyBlockedLogbookEntryMutation, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
-import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
+import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, inspectOfficialAscensionForBlockedMutation, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
 import type { OfficialAscension } from "./flightCompletion.ts";
 import { applyPilotQualificationsFromCloudWithoutEnqueue, loadPilotQualifications } from "./pilotQualificationsStorage.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
@@ -131,6 +131,7 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
       const local = await flights.inspectForBlockedMutationResolution(entityId);
       return { reconstructible: local.flight !== null, rawRecordPresent: local.rawRecordPresent, activeFlightWithSameId: local.activeFlightWithSameId, matchingIntentIds: local.matchingIntentIds };
     },
+    inspectLogbookEntryLocalState: async (entityId) => inspectOfficialAscensionForBlockedMutation(input.scope, entityId, input.storage),
   };
   const readProtectedCloud = async (type: ProtectedPreferenceRebaseType): Promise<ProtectedPreferenceCloudState | null> => {
     const { data: authData, error: authError } = await input.client.auth.getUser();
@@ -169,6 +170,14 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
       const seenFlights = new Set<string>();
       const result: typeof conflicts[number][] = [];
       for (const conflict of conflicts) {
+        if (conflict.resolution === "LOGBOOK_PAYLOAD") {
+          if (seenFlights.has(`logbook:${conflict.entityId}`)) continue;
+          seenFlights.add(`logbook:${conflict.entityId}`);
+          const classification = await classifyBlockedLogbookEntryMutation(conflict.entityId, dependencies).catch(() => ({ state: "UNREADABLE" as const, mutationCount: 0 }));
+          result.push({ ...conflict, relatedMutationCount: classification.mutationCount,
+            resolution: classification.state === "ORPHANED" ? "LOGBOOK_ORPHAN" : "NONE" });
+          continue;
+        }
         if (conflict.resolution !== "FLIGHT_PAYLOAD") { result.push(conflict); continue; }
         if (seenFlights.has(conflict.entityId)) continue;
         seenFlights.add(conflict.entityId);
@@ -186,6 +195,11 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
       const mutationIds = (await outbox.list()).filter(mutation => mutation.entityType === "flight" && mutation.entityId === entityId
         && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation)).map(({ mutationId }) => mutationId);
       return { entityId, mutationIds, execute: () => abandonOrphanedFlightMutations(entityId, mutationIds, dependencies) };
+    },
+    prepareOrphanedLogbookEntryAbandonment: async (entityId: string) => {
+      const mutationIds = (await outbox.list()).filter(mutation => mutation.entityType === "logbook-entry" && mutation.entityId === entityId
+        && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation)).map(({ mutationId }) => mutationId);
+      return { entityId, mutationIds, execute: () => abandonOrphanedLogbookEntryMutations(entityId, mutationIds, dependencies) };
     },
     recoverHistoricalOrphanedFlightDiagnostics: () => recoverHistoricalOrphanedFlightDiagnostics(dependencies),
     resolveProtectedLocalWins: (entityType: string) => resolveProtectedPreferenceConflictLocalWins(entityType, protectedDependencies),

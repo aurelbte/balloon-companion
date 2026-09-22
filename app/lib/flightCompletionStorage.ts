@@ -1,4 +1,4 @@
-import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
+import { pendingSyncIntents, writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import {
   addManualOfficialAscension,
   confirmPilotExperience,
@@ -25,7 +25,7 @@ import { recordedFlightToJournalFlight } from "./realFlightJournal.ts";
 import { legacyFlightSessionToRecordedFlight } from "./realFlightJournal.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { loadFlightSession } from "./flightSessionStorage.ts";
-import { getRuntimeDataScope, readScopedBusinessValue, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
 import { enqueueLocalSyncMutation } from "./syncOutbox.ts";
 import { qualificationEventsAfterAscensionRemoval, reconcileQualificationEventForAscension } from "./officialAscensionQualifications.ts";
 import { loadPilotQualifications, savePilotQualifications } from "./pilotQualificationsStorage.ts";
@@ -153,6 +153,30 @@ export function loadFlightCompletionState(): FlightCompletionState {
     return normalizeState(value) ?? blank;
   } catch {
     return blank;
+  }
+}
+
+export function inspectOfficialAscensionForBlockedMutation(
+  scope: `USER:${string}`,
+  entityId: string,
+  storage: Storage,
+): Readonly<{ ascensionPresent: boolean; rawStateReadable: boolean; matchingIntentIds: readonly string[] }> {
+  const raw = storage.getItem(scopedBusinessStorageKey(scope, STORAGE_KEY));
+  if (raw === null) return { ascensionPresent: false, rawStateReadable: true, matchingIntentIds: [] };
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== "object") return { ascensionPresent: false, rawStateReadable: false, matchingIntentIds: [] };
+    const state = value as Partial<FlightCompletionState> & Record<string, unknown>;
+    if (!Array.isArray(state.officialAscensions)) return { ascensionPresent: false, rawStateReadable: false, matchingIntentIds: [] };
+    return {
+      ascensionPresent: state.officialAscensions.some((ascension) => ascension && typeof ascension === "object" && (ascension as { id?: unknown }).id === entityId),
+      rawStateReadable: true,
+      matchingIntentIds: pendingSyncIntents(value)
+        .filter((intent) => intent.entityType === "logbook-entry" && intent.entityId === entityId)
+        .map(({ mutationId }) => mutationId),
+    };
+  } catch {
+    return { ascensionPresent: false, rawStateReadable: false, matchingIntentIds: [] };
   }
 }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, CrudConflictResolutionError, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, abandonOrphanedLogbookEntryMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, classifyBlockedLogbookEntryMutation, CrudConflictResolutionError, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
 import { MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -334,6 +334,74 @@ test("panne partielle n'annonce aucun succès et laisse le conflit durable récu
   assert.equal((await ctx.outbox.list()).length, 2);
   assert.equal(aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list()).filter(issue => issue.entityId === "flight-orphan").length, 2);
   ctx.outbox.removeManyIfUnchanged = original;
+});
+
+async function orphanedLogbookFixture() {
+  let id = 0, currentScope = scope, generation = 9;
+  let local = { ascensionPresent: false, rawStateReadable: true, matchingIntentIds: [] };
+  const outbox = new MemorySyncOutboxStorage({ dependencies: { createId: () => `logbook-${++id}`, now: () => `2026-09-22T10:00:0${id}.000Z` } });
+  const issues = new MemoryCloudSyncIssueRepository();
+  const block = async (entityId, operation = "UPSERT") => {
+    const mutation = await outbox.enqueueFresh({ entityType: "logbook-entry", entityId, operation, baseRevision: 0 });
+    await outbox.markAttempt(mutation.mutationId);
+    const blocked = await outbox.updateMutation(mutation.mutationId, { lastErrorCode: "LOCAL_PAYLOAD_NOT_FOUND" });
+    return blocked;
+  };
+  const mutation = await block("ascension-orphan");
+  await issues.save({ kind: "BLOCKED_ERROR", errorCode: "LOCAL_PAYLOAD_NOT_FOUND", entityType: "logbook-entry", entityId: "ascension-orphan", mutation,
+    serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-22T10:01:00.000Z" });
+  const dependencies = {
+    outbox, issues, getScope: () => currentScope, getOnlineUserId: async () => scope.slice(5), readCloud: async () => null,
+    applyCloudLocally: async () => false, buildPayload: async () => null,
+    syncMutationById: async () => ({ state: "STOPPED_ERROR", applied: 0, conflicts: 0, notFound: 0, ignored: 0 }),
+    getScopeGeneration: () => generation, inspectLogbookEntryLocalState: async () => structuredClone(local),
+  };
+  return { outbox, issues, mutation, dependencies, block, setLocal: value => { local = { ...local, ...value }; },
+    switchScope: () => { currentScope = "USER:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"; generation += 1; } };
+}
+
+test("logbook-entry orpheline devient visible puis abandonne uniquement sa mutation confirmée", async () => {
+  const ctx = await orphanedLogbookFixture();
+  const [visible] = aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list());
+  assert.equal(visible.resolution, "LOGBOOK_PAYLOAD");
+  assert.deepEqual(await classifyBlockedLogbookEntryMutation("ascension-orphan", ctx.dependencies), { state: "ORPHANED", mutationCount: 1 });
+  const other = await ctx.block("ascension-other");
+  const result = await abandonOrphanedLogbookEntryMutations("ascension-orphan", [ctx.mutation.mutationId], ctx.dependencies);
+  assert.deepEqual(result.removedMutationIds, [ctx.mutation.mutationId]);
+  assert.deepEqual((await ctx.outbox.list()).map(({ mutationId }) => mutationId), [other.mutationId]);
+  assert.equal((await ctx.issues.list()).length, 0);
+});
+
+test("logbook-entry conserve ascension, intention, snapshot, mutation plus récente et changement d'identité", async () => {
+  for (const protection of ["ASCENSION", "UNREADABLE", "INTENT", "SNAPSHOT", "NEWER"]) {
+    const ctx = await orphanedLogbookFixture();
+    if (protection === "ASCENSION") ctx.setLocal({ ascensionPresent: true });
+    if (protection === "UNREADABLE") ctx.setLocal({ rawStateReadable: false });
+    if (protection === "INTENT") ctx.setLocal({ matchingIntentIds: ["intent"] });
+    if (protection === "SNAPSHOT") {
+      const stored = ctx.outbox.mutations.get(ctx.mutation.mutationId);
+      ctx.outbox.mutations.set(ctx.mutation.mutationId, { ...stored, payloadSnapshot: { serverEntityType: "logbook_entry", serverEntityId: "ascension-orphan", payload: {
+        source: "MANUAL", date_iso: "2026-09-22", balloon_model: "M", registration: "F-TEST", departure: "A", arrival: "B", category: "Libre à air chaud", pilot_function: "Pilote", observations: "", night_flight: false, official_duration_minutes: 60,
+      } } });
+    }
+    if (protection === "NEWER") await ctx.block("ascension-orphan", "DELETE");
+    assert.equal((await classifyBlockedLogbookEntryMutation("ascension-orphan", ctx.dependencies)).state, "PROTECTED");
+    await assert.rejects(abandonOrphanedLogbookEntryMutations("ascension-orphan", [ctx.mutation.mutationId], ctx.dependencies));
+    assert.ok((await ctx.outbox.list()).some(({ mutationId }) => mutationId === ctx.mutation.mutationId));
+  }
+  const switched = await orphanedLogbookFixture();
+  const inspect = switched.dependencies.inspectLogbookEntryLocalState;
+  switched.dependencies.inspectLogbookEntryLocalState = async id => { const value = await inspect(id); switched.switchScope(); return value; };
+  await rejectsCode(abandonOrphanedLogbookEntryMutations("ascension-orphan", [switched.mutation.mutationId], switched.dependencies), "USER_SWITCH");
+  assert.equal((await switched.issues.list()).length, 1);
+});
+
+test("logbook-entry: échec du commit atomique conserve mutation et diagnostic", async () => {
+  const ctx = await orphanedLogbookFixture();
+  ctx.outbox.removeManyIfUnchanged = async () => { throw new Error("IDB_ABORT"); };
+  await assert.rejects(abandonOrphanedLogbookEntryMutations("ascension-orphan", [ctx.mutation.mutationId], ctx.dependencies), /IDB_ABORT/);
+  assert.equal((await ctx.outbox.list()).length, 1);
+  assert.equal((await ctx.issues.list()).length, 1);
 });
 
 test("sécurité: whitelist, session, USER switch, lecture, payload, conflit disparu", async () => {
