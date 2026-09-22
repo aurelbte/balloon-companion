@@ -176,6 +176,45 @@ export async function abandonOrphanedFlightMutations(
   return { entityType: "flight", entityId, removedMutationIds: currentIds } as const;
 }
 
+export async function recoverHistoricalOrphanedFlightDiagnostics(dependencies: CrudConflictResolutionDependencies) {
+  const scope = dependencies.getScope();
+  if (!userScope(scope) || !dependencies.inspectFlightLocalState || !dependencies.getScopeGeneration) return { removedEntityIds: [] as string[] };
+  const generation = dependencies.getScopeGeneration();
+  const assertIdentity = () => {
+    assertScope(dependencies, scope);
+    if (dependencies.getScopeGeneration!() !== generation) throw new CrudConflictResolutionError("USER_SWITCH", "Le compte actif a changé");
+  };
+  const initialMutations = await dependencies.outbox.list();
+  assertIdentity();
+  const initialIssues = await dependencies.issues.list();
+  assertIdentity();
+  const removedEntityIds: string[] = [];
+  for (const issue of initialIssues) {
+    const diagnosticMutation = issue.mutation;
+    if (issue.kind !== "BLOCKED_ERROR" || issue.entityType !== "flight" || diagnosticMutation?.operation !== "UPSERT"
+      || !isDurablyBlockedCloudSyncMutation(diagnosticMutation) || !diagnosticMutation.mutationId) continue;
+    if (initialMutations.some((mutation) => mutation.entityType === "flight" && mutation.entityId === issue.entityId)) continue;
+    if (validFlightPayload(diagnosticMutation.payloadSnapshot ?? null)) continue;
+    const local = await dependencies.inspectFlightLocalState(issue.entityId);
+    assertIdentity();
+    if (local.reconstructible || local.rawRecordPresent || local.activeFlightWithSameId || local.matchingIntentIds.length) continue;
+
+    const currentMutations = await dependencies.outbox.list();
+    assertIdentity();
+    if (currentMutations.some((mutation) => mutation.entityType === "flight" && mutation.entityId === issue.entityId)) continue;
+    const currentIssue = (await dependencies.issues.list()).find((candidate) => candidate.entityType === "flight" && candidate.entityId === issue.entityId);
+    assertIdentity();
+    if (!currentIssue || JSON.stringify(currentIssue) !== JSON.stringify(issue)) continue;
+    const finalLocal = await dependencies.inspectFlightLocalState(issue.entityId);
+    assertIdentity();
+    if (finalLocal.reconstructible || finalLocal.rawRecordPresent || finalLocal.activeFlightWithSameId || finalLocal.matchingIntentIds.length) continue;
+    await dependencies.issues.remove("flight", issue.entityId);
+    assertIdentity();
+    removedEntityIds.push(issue.entityId);
+  }
+  return { removedEntityIds };
+}
+
 function validFlightPayload(payload: CloudSyncPayload | null): payload is CloudSyncPayload {
   if (!payload || payload.serverEntityType !== "flight") return false;
   const value = payload.payload;

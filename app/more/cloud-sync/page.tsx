@@ -67,6 +67,7 @@ export default function CloudSyncPage() {
   const resolver = useMemo(() => scope && typeof window !== "undefined" ? createBrowserCrudConflictResolver({ client: createBrowserSupabaseClient(), storage: window.localStorage, scope }) : null, [scope]);
 
   const refreshSequence = useRef(0);
+  const orphanRecoveryScope = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
     try {
@@ -81,6 +82,18 @@ export default function CloudSyncPage() {
     window.addEventListener("online", refresh); window.addEventListener("offline", refresh);
     return () => { refreshSequence.current += 1; window.removeEventListener(CLOUD_SYNC_ISSUES_CHANGED_EVENT, refresh); window.removeEventListener(CLOUD_SYNC_VERDICT_CHANGED_EVENT, refresh); window.removeEventListener("online", refresh); window.removeEventListener("offline", refresh); };
   }, [refresh]);
+  useEffect(() => {
+    if (!resolver || !scope || orphanRecoveryScope.current === scope) return;
+    orphanRecoveryScope.current = scope;
+    void resolver.recoverHistoricalOrphanedFlightDiagnostics().then(async ({ removedEntityIds }) => {
+      if (!removedEntityIds.length || getRuntimeDataScope() !== scope) return;
+      await refresh();
+      if (inspectCloudSyncRuntimeControllerState().scope === scope) {
+        await synchronizeCloudNowThroughRuntimeController().catch(() => undefined);
+      }
+      if (getRuntimeDataScope() === scope) await refresh();
+    }).catch(() => undefined);
+  }, [refresh, resolver, scope]);
 
   const qualificationCollisionKey = auth.localDataMigrationCollisions.filter(collision => collision.domain === "pilot-qualifications-profile" && collision.entityId === "singleton").map(collision => collision.source).sort().join(":");
   useEffect(() => {

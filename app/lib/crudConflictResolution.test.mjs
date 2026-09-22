@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, CrudConflictResolutionError, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, CrudConflictResolutionError, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins } from "./crudConflictResolution.ts";
 import { MemoryCloudSyncIssueRepository } from "./cloudSyncService.ts";
 import { MemorySyncOutboxStorage } from "./syncOutbox.ts";
 
@@ -242,6 +242,39 @@ test("cleanup post-abandon: aucun diagnostic flight orphelin ne subsiste dans la
   assert.equal((await ctx.outbox.list()).some(mutation => mutation.entityId === "flight-orphan"), false);
   assert.equal((await ctx.issues.list()).some(issue => issue.entityId === "flight-orphan"), false);
   assert.deepEqual(aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list()), []);
+});
+
+test("récupération historique: diagnostic flight sans mutation ni donnée locale est nettoyé pour C1", async () => {
+  const ctx = await orphanedFlightFixture();
+  await ctx.outbox.removeManyIfUnchanged(await ctx.outbox.list());
+  assert.equal((await ctx.issues.list()).length, 1);
+  const result = await recoverHistoricalOrphanedFlightDiagnostics(ctx.dependencies);
+  assert.deepEqual(result.removedEntityIds, ["flight-orphan"]);
+  assert.equal((await ctx.issues.list()).length, 0);
+  assert.deepEqual(aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list()), []);
+});
+
+test("récupération historique conserve tout diagnostic ambigu ou encore associé", async () => {
+  for (const protect of ["MUTATION", "FLIGHT", "RAW", "ACTIVE", "INTENT", "SNAPSHOT"]) {
+    const ctx = await orphanedFlightFixture();
+    if (protect !== "MUTATION") await ctx.outbox.removeManyIfUnchanged(await ctx.outbox.list());
+    if (protect === "FLIGHT") ctx.setLocal({ reconstructible: true });
+    if (protect === "RAW") ctx.setLocal({ rawRecordPresent: true });
+    if (protect === "ACTIVE") ctx.setLocal({ activeFlightWithSameId: true });
+    if (protect === "INTENT") ctx.setLocal({ matchingIntentIds: ["intent"] });
+    if (protect === "SNAPSHOT") {
+      const [issue] = await ctx.issues.list();
+      await ctx.issues.save({ ...issue, mutation: { ...issue.mutation, payloadSnapshot: { serverEntityType: "flight", serverEntityId: "flight-orphan", payload: { status: "COMPLETED", started_at: "2026-09-21T08:00:00.000Z", summary: {} } } } });
+    }
+    assert.deepEqual((await recoverHistoricalOrphanedFlightDiagnostics(ctx.dependencies)).removedEntityIds, []);
+    assert.equal((await ctx.issues.list()).length, 1);
+  }
+  const switched = await orphanedFlightFixture();
+  await switched.outbox.removeManyIfUnchanged(await switched.outbox.list());
+  const inspect = switched.dependencies.inspectFlightLocalState;
+  switched.dependencies.inspectFlightLocalState = async id => { const local = await inspect(id); switched.switchScope(); return local; };
+  await rejectsCode(recoverHistoricalOrphanedFlightDiagnostics(switched.dependencies), "USER_SWITCH");
+  assert.equal((await switched.issues.list()).length, 1);
 });
 
 test("un diagnostic remplacé pour une autre mutation n'est jamais supprimé par l'abandon", async () => {

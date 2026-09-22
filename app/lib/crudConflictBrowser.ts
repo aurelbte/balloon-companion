@@ -8,7 +8,7 @@ import {
   parseBalloonCloudRow, parseDocumentCloudRow, parseFavoriteLaunchSiteCloudRow,
   parseFavoriteWeatherPlaceCloudRow, parseFlightCloudRow, parseLogbookEntryCloudRow, parsePilotQualificationsCloudRow,
 } from "./cloudPullBrowser.ts";
-import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, reconcileBlockedFlightMutation, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
+import { abandonOrphanedFlightMutations, aggregateCrudConflicts, classifyBlockedFlightMutation, reconcileBlockedFlightMutation, recoverHistoricalOrphanedFlightDiagnostics, resolveCrudConflictLocalWins, resolveCrudConflictServerWins, type CrudCloudState, type CrudConflictEntityType, type CrudConflictResolutionDependencies } from "./crudConflictResolution.ts";
 import { applyFavoriteLaunchSiteFromCloudWithoutEnqueue } from "./favoriteLaunchSites.ts";
 import { applyFavoriteWeatherPlaceFromCloudWithoutEnqueue } from "./favoriteWeatherPlaces.ts";
 import { applyOfficialAscensionFromCloudWithoutEnqueue, applyRecordedFlightToJournalFromCloudWithoutEnqueue, hasOfficialAscensionSourceFlightConflict, type CloudFlightJournalMetadata } from "./flightCompletionStorage.ts";
@@ -187,6 +187,7 @@ export function createBrowserCrudConflictResolver(input: Readonly<{ client: Supa
         && mutation.operation === "UPSERT" && isDurablyBlockedCloudSyncMutation(mutation)).map(({ mutationId }) => mutationId);
       return { entityId, mutationIds, execute: () => abandonOrphanedFlightMutations(entityId, mutationIds, dependencies) };
     },
+    recoverHistoricalOrphanedFlightDiagnostics: () => recoverHistoricalOrphanedFlightDiagnostics(dependencies),
     resolveProtectedLocalWins: (entityType: string) => resolveProtectedPreferenceConflictLocalWins(entityType, protectedDependencies),
     resolveProtectedCloudWins: (entityType: string) => resolveProtectedPreferenceConflictCloudWins(entityType, protectedDependencies),
   } as const;
