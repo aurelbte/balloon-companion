@@ -155,10 +155,23 @@ export async function abandonOrphanedFlightMutations(
   }
   // Re-read immediately before the first destructive step. A raw record or C2 intent always wins.
   await inspectAbsent();
-  await dependencies.issues.remove("flight", entityId);
-  assertIdentity();
   if (!await dependencies.outbox.removeManyIfUnchanged(current)) {
     throw new CrudConflictResolutionError("CONFIRMATION_STALE", "Les mutations ont changé pendant la confirmation");
+  }
+  assertIdentity();
+  const remaining = await dependencies.outbox.list();
+  assertIdentity();
+  if (remaining.some((mutation) => currentIds.includes(mutation.mutationId))) {
+    throw new CrudConflictResolutionError("ORPHAN_CLEANUP_INCOMPLETE", "Les mutations abandonnées sont encore présentes");
+  }
+  const issue = (await dependencies.issues.list()).find((candidate) => candidate.entityType === "flight" && candidate.entityId === entityId);
+  assertIdentity();
+  if (issue) {
+    const diagnosticMutationId = issue.mutation?.mutationId;
+    if (!diagnosticMutationId || !currentIds.includes(diagnosticMutationId)) {
+      throw new CrudConflictResolutionError("DIAGNOSTIC_CHANGED", "Le diagnostic ne correspond plus aux mutations abandonnées");
+    }
+    await dependencies.issues.remove("flight", entityId);
   }
   return { entityType: "flight", entityId, removedMutationIds: currentIds } as const;
 }

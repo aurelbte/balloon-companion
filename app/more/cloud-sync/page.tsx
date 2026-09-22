@@ -176,6 +176,7 @@ export default function CloudSyncPage() {
       await orphanedFlightChoice.execute();
       setOrphanedFlightChoice(null);
       await refresh();
+      if (inspectCloudSyncRuntimeControllerState().scope === scope) await synchronizeCloudNowThroughRuntimeController();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "L’abandon n’a pas abouti. Aucune réussite n’a été confirmée.");
     } finally { setResolving(null); }

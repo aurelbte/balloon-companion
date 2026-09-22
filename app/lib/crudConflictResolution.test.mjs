@@ -218,8 +218,15 @@ test("flight orphelin exige confirmation puis retire seulement ses UPSERT bloqu�
   await ctx.block("other-flight");
   await ctx.block("flight-orphan", "DELETE");
   const otherDomain = await ctx.outbox.enqueueFresh({ entityType: "balloon", entityId: "flight-orphan", operation: "UPSERT", baseRevision: 0 });
+  const removeIssue = ctx.issues.remove.bind(ctx.issues);
+  let targetMutationsWhenDiagnosticRemoved = -1;
+  ctx.issues.remove = async (...args) => {
+    targetMutationsWhenDiagnosticRemoved = (await ctx.outbox.list()).filter(mutation => ctx.ids.includes(mutation.mutationId)).length;
+    return removeIssue(...args);
+  };
   const result = await abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies);
   assert.deepEqual(result.removedMutationIds, [...ctx.ids].sort());
+  assert.equal(targetMutationsWhenDiagnosticRemoved, 0, "le diagnostic est retiré seulement après le commit outbox");
   const remaining = await ctx.outbox.list();
   assert.equal(remaining.length, 3);
   assert.ok(remaining.some(mutation => mutation.entityId === "other-flight"));
@@ -227,6 +234,28 @@ test("flight orphelin exige confirmation puis retire seulement ses UPSERT bloqu�
   assert.ok(remaining.some(mutation => mutation.mutationId === otherDomain.mutationId));
   assert.equal((await ctx.issues.list()).length, 0);
   assert.equal(aggregateCrudConflicts(await ctx.issues.list(), remaining).some(issue => issue.entityId === "flight-orphan" && issue.operation === "UPSERT"), false);
+});
+
+test("cleanup post-abandon: aucun diagnostic flight orphelin ne subsiste dans la source C1", async () => {
+  const ctx = await orphanedFlightFixture();
+  await abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies);
+  assert.equal((await ctx.outbox.list()).some(mutation => mutation.entityId === "flight-orphan"), false);
+  assert.equal((await ctx.issues.list()).some(issue => issue.entityId === "flight-orphan"), false);
+  assert.deepEqual(aggregateCrudConflicts(await ctx.issues.list(), await ctx.outbox.list()), []);
+});
+
+test("un diagnostic remplacé pour une autre mutation n'est jamais supprimé par l'abandon", async () => {
+  const ctx = await orphanedFlightFixture();
+  const remove = ctx.outbox.removeManyIfUnchanged.bind(ctx.outbox);
+  ctx.outbox.removeManyIfUnchanged = async mutations => {
+    const removed = await remove(mutations);
+    await ctx.issues.save({ kind: "BLOCKED_ERROR", errorCode: "OTHER", entityType: "flight", entityId: "flight-orphan",
+      mutation: { mutationId: "newer", entityType: "flight", entityId: "flight-orphan", operation: "UPSERT", baseRevision: 0, createdAt: "2026-09-21T11:00:00.000Z", attempts: 1, lastErrorCode: "OTHER" },
+      serverRevision: null, serverUpdatedAt: null, serverDeletedAt: null, recordedAt: "2026-09-21T11:01:00.000Z" });
+    return removed;
+  };
+  await rejectsCode(abandonOrphanedFlightMutations("flight-orphan", ctx.ids, ctx.dependencies), "DIAGNOSTIC_CHANGED");
+  assert.equal((await ctx.issues.list())[0].mutation.mutationId, "newer");
 });
 
 test("flight réapparu, actif ou porteur d'une intention C2 ne peut jamais être abandonné", async () => {
