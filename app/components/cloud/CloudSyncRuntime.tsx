@@ -33,6 +33,7 @@ import { restoreRecordedFlightBackupTargeted } from "../../lib/recordedFlightBac
 import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowser.ts";
 import { migrateFlightTrackSupabaseToR2Targeted, migrateLegacyFlightTrackToR2Targeted, replayFlightTrackSupabaseToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
 import { discoverAndDrainFlightTracks, drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
+import { recoverMissingFlightTrackDownloads } from "../../lib/flightTrackDownloadRecovery.ts";
 import {
   loadFlightCompletionState,
   persistJournalFlight,
@@ -191,6 +192,7 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
       const result = await discoverAndDrainFlightTracks({
         signal,
         discover: async () => {
+          await recoverMissingFlightTrackDownloads({ scope, storage: window.localStorage, queue, outbox: new IndexedDbSyncOutboxStorage(scope), inspectLocal: (id) => new IndexedDbRecordedFlightStorage().inspectForBlockedMutationResolution(id), restoreFromCloud: (id) => tracks.restoreMissingLocalMetadata(id) });
           await tracks.discoverPendingJobs(queue);
           await tracks.discoverMissingDownloadJobs(queue);
           downloadsChecked = true;
@@ -1556,6 +1558,7 @@ export default function CloudSyncRuntime(): null {
           put: (value: Parameters<typeof queue.put>[0]) => queue.put(value),
           remove: (jobId: string) => queue.remove(jobId),
           removeMany: (jobIds: readonly string[]) => queue.removeMany(jobIds),
+          replaceIfUnchanged: (expected: Parameters<typeof queue.replaceIfUnchanged>[0], replacement: Parameters<typeof queue.replaceIfUnchanged>[1]) => queue.replaceIfUnchanged(expected, replacement),
         };
         let uploadError: Readonly<{ message: string; name: string; httpStatus: number | null; requestId: string | null; bucket: string | null; endpoint: string | null; objectKey: string | null }> | null = null;
         const result = await drainFlightTrackQueue({ scope, storage: targetedQueue, transport: {

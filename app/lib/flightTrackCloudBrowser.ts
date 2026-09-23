@@ -12,6 +12,8 @@ import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
 import { applyRecordedFlightToJournalFromCloudWithoutEnqueue, loadFlightCompletionState } from "./flightCompletionStorage.ts";
 import { enqueueFlightTrackJob, type FlightTrackQueueStorage } from "./flightTrackQueue.ts";
 import { R2FlightTrackBlobProvider, SupabaseLegacyFlightTrackBlobProvider, type FlightTrackBlobProvider, type FlightTrackProviderName } from "./flightTrackBlobProvider.ts";
+import { parseFlightCloudRow } from "./cloudPullBrowser.ts";
+import type { RecordedFlight } from "./recordedFlight.ts";
 
 type RemoteTrack = Readonly<{
   objectKey: string | null;
@@ -38,13 +40,13 @@ export type FlightTrackSyncState = Readonly<{
 export class BrowserFlightTrackCloudService {
   private readonly client: SupabaseClient;
   private readonly scope: `USER:${string}`;
-  private readonly storage: Pick<IndexedDbRecordedFlightStorage, "getFlight" | "listFlights" | "hydrateTrackFromCloudWithoutEnqueue">;
+  private readonly storage: Pick<IndexedDbRecordedFlightStorage, "getFlight" | "listFlights" | "hydrateTrackFromCloudWithoutEnqueue" | "applyFromCloudWithoutEnqueue">;
   private readonly r2Provider: FlightTrackBlobProvider;
   private readonly legacyProvider: FlightTrackBlobProvider;
   constructor(
     client: SupabaseClient,
     scope: `USER:${string}`,
-    storage: Pick<IndexedDbRecordedFlightStorage, "getFlight" | "listFlights" | "hydrateTrackFromCloudWithoutEnqueue"> = new IndexedDbRecordedFlightStorage(),
+    storage: Pick<IndexedDbRecordedFlightStorage, "getFlight" | "listFlights" | "hydrateTrackFromCloudWithoutEnqueue" | "applyFromCloudWithoutEnqueue"> = new IndexedDbRecordedFlightStorage(),
     providers: Readonly<{ r2?: FlightTrackBlobProvider; legacy?: FlightTrackBlobProvider }> = {},
   ) {
     this.client = client; this.scope = scope; this.storage = storage;
@@ -166,6 +168,21 @@ export class BrowserFlightTrackCloudService {
       recovered: journal.recovered ?? false,
     }, window.localStorage, "TRACK_RECONSTRUCTION")) throw new Error("TRACK_JOURNAL_REBUILD_REFUSED");
     return this.inspect(flightId);
+  }
+
+  async restoreMissingLocalMetadata(flightId: string): Promise<"RESTORED" | "ABSENT"> {
+    const userId = this.userId();
+    const { data, error } = await this.client.from("flights")
+      .select("id,user_id,revision,created_at,updated_at,deleted_at,schema_version,status,started_at,ended_at,balloon_id,balloon_registration,start_location_label,end_location_label,generated_title,custom_title,notes,origin,logbook_status,recovered,summary,weather_model,weather_snapshot,ground_calibration")
+      .eq("id", flightId).eq("user_id", userId).maybeSingle();
+    if (error) throw new Error(`TRACK_FLIGHT_RECOVERY_READ:${error.code ?? "UNKNOWN"}`);
+    if (!data || data.deleted_at) return "ABSENT";
+    const row = parseFlightCloudRow(data);
+    const local = row.value as { flight: RecordedFlight; journal: Parameters<typeof applyRecordedFlightToJournalFromCloudWithoutEnqueue>[3] };
+    if (!await this.storage.applyFromCloudWithoutEnqueue(this.scope, flightId, local.flight)) throw new Error("TRACK_FLIGHT_RECOVERY_REFUSED");
+    const restored = await this.storage.getFlight(flightId);
+    if (!restored || !applyRecordedFlightToJournalFromCloudWithoutEnqueue(this.scope, flightId, restored, local.journal, window.localStorage)) throw new Error("TRACK_FLIGHT_RECOVERY_REFUSED");
+    return "RESTORED";
   }
 
   async restoreFromR2Targeted(flightId: string): Promise<FlightTrackSyncState> {

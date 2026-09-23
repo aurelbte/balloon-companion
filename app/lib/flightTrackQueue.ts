@@ -28,6 +28,7 @@ export interface FlightTrackQueueStorage {
   put(job: FlightTrackJob): Promise<void>;
   remove(jobId: string): Promise<void>;
   removeMany(jobIds: readonly string[]): Promise<void>;
+  replaceIfUnchanged(expected: FlightTrackJob, replacement: FlightTrackJob | null): Promise<boolean>;
 }
 
 function createJobId(): string {
@@ -46,6 +47,11 @@ export class MemoryFlightTrackQueueStorage implements FlightTrackQueueStorage {
   async put(job: FlightTrackJob) { this.jobs.set(job.jobId, structuredClone(job)); }
   async remove(jobId: string) { this.jobs.delete(jobId); }
   async removeMany(jobIds: readonly string[]) { for (const id of jobIds) this.jobs.delete(id); }
+  async replaceIfUnchanged(expected: FlightTrackJob, replacement: FlightTrackJob | null) {
+    if (JSON.stringify(this.jobs.get(expected.jobId)) !== JSON.stringify(expected)) return false;
+    if (replacement) this.jobs.set(expected.jobId, structuredClone(replacement)); else this.jobs.delete(expected.jobId);
+    return true;
+  }
 }
 
 export class IndexedDbFlightTrackQueueStorage implements FlightTrackQueueStorage {
@@ -73,6 +79,22 @@ export class IndexedDbFlightTrackQueueStorage implements FlightTrackQueueStorage
   async put(job: FlightTrackJob): Promise<void> { await this.write((store) => store.put(job)); }
   async remove(jobId: string): Promise<void> { await this.write((store) => store.delete(jobId)); }
   async removeMany(jobIds: readonly string[]): Promise<void> { await this.write((store) => { for (const id of jobIds) store.delete(id); }); }
+  async replaceIfUnchanged(expected: FlightTrackJob, replacement: FlightTrackJob | null): Promise<boolean> {
+    const db = await this.database();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(FLIGHT_TRACK_QUEUE_STORE, "readwrite");
+      const store = transaction.objectStore(FLIGHT_TRACK_QUEUE_STORE);
+      const request = store.get(expected.jobId); let changed = false;
+      request.onsuccess = () => {
+        if (JSON.stringify(request.result) !== JSON.stringify(expected)) return;
+        if (replacement) store.put(replacement); else store.delete(expected.jobId);
+        changed = true;
+      };
+      transaction.oncomplete = () => { if (changed) invalidateCloudSyncVerdict(); resolve(changed); };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
   private async write(action: (store: IDBObjectStore) => void): Promise<void> {
     const db = await this.database();
     await new Promise<void>((resolve, reject) => {
@@ -152,6 +174,7 @@ export function drainFlightTrackQueue(input: Readonly<{
       if (!active()) return { ...result, state: "TIMEOUT" as const };
       if (job.scope !== input.scope || job.userId !== input.scope.slice(5)) continue;
       if (job.nextEligibleRetryAt && Date.parse(job.nextEligibleRetryAt) > now().getTime()) continue;
+      if (job.operation === "DOWNLOAD" && job.lastErrorCode === "LOCAL_FLIGHT_METADATA_NOT_FOUND") continue;
       if (getScope() !== input.scope) return { ...result, stoppedForUserSwitch: true };
       result.processed += 1;
       try {
