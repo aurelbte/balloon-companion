@@ -1,6 +1,7 @@
 "use client";
 
-import { cloudSyncVerdictGeneration, invalidateCloudSyncObservation } from "../../lib/cloudSyncVerdict.ts";
+import { cloudSyncObservationVersion, cloudSyncVerdictGeneration, invalidateCloudSyncObservation } from "../../lib/cloudSyncVerdict.ts";
+import { inspectBrowserCloudSyncVerdict, readBrowserCloudSyncEvidence } from "../../lib/cloudSyncVerdictBrowser.ts";
 
 import { useEffect } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
@@ -136,6 +137,7 @@ declare global {
     }>;
     getCloudSyncConflictDebugInfo?: () => Promise<unknown>;
     getCloudSyncRuntimeDebugInfo?: () => ReturnType<typeof getCloudSyncRuntimeDebugInfo>;
+    getCloudSyncC1DebugSnapshot?: () => Promise<unknown>;
   }
 }
 
@@ -1619,6 +1621,53 @@ export default function CloudSyncRuntime(): null {
       migrateLegacyFlightTrackToR2Targeted: (flightId: string, generation = 1) => migrateLegacyFlightTrackToR2Targeted(flightId, generation),
     } : null;
     if (controlledApi) window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ = controlledApi;
+    window.getCloudSyncC1DebugSnapshot = async () => {
+      const runtime = automaticCloudSyncController.inspect();
+      const trace = inspectCloudSyncTraceEvidence();
+      const currentScope = getRuntimeDataScope();
+      const generation = cloudSyncVerdictGeneration();
+      const observation = cloudSyncObservationVersion();
+      const evidence = currentScope?.startsWith("USER:")
+        ? await readBrowserCloudSyncEvidence(currentScope as `USER:${string}`, runtime, trace)
+        : null;
+      const verdict = await inspectBrowserCloudSyncVerdict(
+        () => automaticCloudSyncController.inspect(),
+        inspectCloudSyncTraceEvidence,
+      );
+      return {
+        capturedAt: new Date().toISOString(),
+        scope: currentScope?.startsWith("USER:") ? "USER" : currentScope,
+        generation,
+        observation,
+        runtime: {
+          online: runtime.online,
+          active: runtime.active,
+          bootstrapInProgress: runtime.bootstrapInProgress,
+          pushInProgress: runtime.pushInProgress,
+          lastBootstrapState: runtime.lastBootstrapState,
+          lastCompletedAt: runtime.lastCompletedAt,
+          lastPushState: runtime.lastPushState,
+          lastPushCompletedAt: runtime.lastPushCompletedAt,
+          lastError: runtime.lastError,
+          lastPushAuthorized: runtime.lastPushAuthorized,
+          lastPushRefusalReason: runtime.lastPushRefusalReason,
+        },
+        trace,
+        evidence: evidence ? {
+          mutations: evidence.mutations.map(({ entityType, operation, attempts, lastErrorCode }) => ({ entityType, operation, attempts, lastErrorCode })),
+          intents: evidence.intents,
+          issues: evidence.issues.map(({ kind, entityType, businessCode, errorCode }) => ({ kind, entityType, businessCode, errorCode })),
+          tracks: evidence.tracks.map(({ operation, status, attempts, lastErrorCode, lastErrorCategory }) => ({ operation, status, attempts, lastErrorCode, lastErrorCategory })),
+          traceActive: evidence.traceActive,
+          recoveryActive: evidence.recoveryActive,
+          traceDiscoveryComplete: evidence.traceDiscoveryComplete,
+          traceDiscoveryError: evidence.traceDiscoveryError,
+          coverageComplete: evidence.coverageComplete,
+          passGeneration: evidence.passGeneration,
+        } : null,
+        verdict: { state: verdict.state, reason: verdict.reason, generation: verdict.generation, verifiedAt: verdict.verifiedAt, bootstrapAt: verdict.bootstrapAt },
+      };
+    };
     if (process.env.NODE_ENV === "development") window.getCloudSyncConflictDebugInfo = () => getCloudSyncConflictDebugInfo(window.localStorage, scope);
     if (process.env.NODE_ENV === "development") window.getCloudSyncRuntimeDebugInfo = getCloudSyncRuntimeDebugInfo;
     const repair = (event?: Event) => { if (!controlled) void requestCompleteCloudSyncRepair(event?.type === CLOUD_SYNC_REPAIR_REQUESTED_EVENT); };
@@ -1640,6 +1689,7 @@ export default function CloudSyncRuntime(): null {
       window.removeEventListener(FLIGHT_TRACK_QUEUE_CHANGED_EVENT, mutation);
       document.removeEventListener("visibilitychange", visibility);
       if (controlledApi && window.__BC_CLOUD_SYNC_CONTROLLED_TEST__ === controlledApi) delete window.__BC_CLOUD_SYNC_CONTROLLED_TEST__;
+      delete window.getCloudSyncC1DebugSnapshot;
       if (process.env.NODE_ENV === "development") delete window.getCloudSyncConflictDebugInfo;
       if (process.env.NODE_ENV === "development") delete window.getCloudSyncRuntimeDebugInfo;
       releaseRuntimeMount();
