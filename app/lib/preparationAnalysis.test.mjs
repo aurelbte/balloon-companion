@@ -80,8 +80,20 @@ test("la saisie horaire accepte les formats numériques iPad", () => {
   assert.deepEqual(normalizeTimeInput("0615"), { digits: "0615", time: "06:15", error: null });
   assert.deepEqual(normalizeTimeInput("6:15"), { digits: "0615", time: "06:15", error: null });
   assert.equal(normalizeTimeInput("2568").error, "Heure invalide");
+  assert.deepEqual(normalizeTimeInput("001", true), { digits: "001", time: "", error: "Heure incomplète" });
+  assert.deepEqual(normalizeTimeInput("2359", true), { digits: "2359", time: "23:59", error: null });
+  assert.equal(normalizeTimeInput("2400", true).error, "Heure invalide");
   assert.equal(validDurationMinutes("75"), true);
   assert.equal(validDurationMinutes("0"), false);
+});
+
+test("Prépa conserve l'heure valide pendant un nouveau brouillon et permet de recommencer au focus", () => {
+  const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /if \(normalized\.time\) update\("time", normalized\.time\)/);
+  assert.match(source, /normalized\.time \? normalized\.digits : form\.time\.replace\(":", ""\)/);
+  assert.match(source, /const beginTimeEdit = \(\) => \{\s*setTimeDigits\(""\);\s*setTimeError\(null\)/);
+  assert.match(source, /onFocus=\{beginTimeEdit\}/);
+  assert.match(source, /onPointerDown=\{\(event\) => \{ if \(document\.activeElement === event\.currentTarget\) beginTimeEdit\(\); \}\}/);
 });
 
 test("les taux verticaux sont optionnels, positifs et convertis seulement à la frontière moteur", () => {

@@ -2,8 +2,8 @@ export type NormalizedTimeInput = { digits: string; time: string; error: string 
 
 export function normalizeTimeInput(raw: string, finalize = false): NormalizedTimeInput {
   let digits = raw.replace(/\D/g, "").slice(0, 4);
-  if ((raw.includes(":") || finalize) && digits.length === 3) digits = `0${digits}`;
-  if (digits.length < 4) return { digits, time: "", error: null };
+  if (raw.includes(":") && digits.length === 3) digits = `0${digits}`;
+  if (digits.length < 4) return { digits, time: "", error: finalize && digits.length > 0 ? "Heure incomplète" : null };
   const hours = Number(digits.slice(0, 2));
   const minutes = Number(digits.slice(2, 4));
   return hours <= 23 && minutes <= 59

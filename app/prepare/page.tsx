@@ -289,14 +289,19 @@ export default function PreparePage() {
     const normalized = normalizeTimeInput(value);
     setTimeDigits(normalized.digits);
     setTimeError(normalized.error);
-    update("time", normalized.time);
+    if (normalized.time) update("time", normalized.time);
   };
 
   const finalizeTimeDigits = () => {
     const normalized = normalizeTimeInput(timeDigits, true);
-    setTimeDigits(normalized.digits);
+    setTimeDigits(normalized.time ? normalized.digits : form.time.replace(":", ""));
     setTimeError(normalized.error);
-    update("time", normalized.time);
+    if (normalized.time) update("time", normalized.time);
+  };
+
+  const beginTimeEdit = () => {
+    setTimeDigits("");
+    setTimeError(null);
   };
 
   const updateFavorites = (
@@ -621,7 +626,8 @@ export default function PreparePage() {
                   onChange={(event) => updateTimeDigits(event.target.value)}
                   onBlur={finalizeTimeDigits}
                   onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); finalizeTimeDigits(); (event.currentTarget.closest(".grid")?.querySelector("button") as HTMLButtonElement | null)?.focus(); } }}
-                  onFocus={(event) => event.currentTarget.select()}
+                  onFocus={beginTimeEdit}
+                  onPointerDown={(event) => { if (document.activeElement === event.currentTarget) beginTimeEdit(); }}
                   className="block w-full border-0 bg-transparent p-0 text-sm font-semibold outline-none"
                   placeholder="—:—"
                   aria-label="Heure du vol, quatre chiffres"
