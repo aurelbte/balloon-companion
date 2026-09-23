@@ -255,6 +255,10 @@ test("l'Analyse charge les espaces indépendamment de leur visibilité et réuti
   assert.match(map, /PowerLineRuntime/);
   assert.match(map, /powerLineStatusLabel/);
   assert.match(map, /POWER_LINES_SOURCE/);
+  assert.match(page, /const \[showPowerLines, setShowPowerLines\] = useState\(false\)/);
+  assert.match(page, />\s*Lignes électriques\s*</);
+  assert.match(map, /showPowerLines \? "visible" : "none"/);
+  assert.match(map, /showPowerLines && powerLineState/);
   assert.match(map, /trace\.projection\.points\.at\(-1\)/);
   assert.match(map, /\.slice\(0, 9\)/);
 });

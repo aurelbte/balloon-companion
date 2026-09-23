@@ -102,6 +102,7 @@ export default function MapPage() {
   const [exportIds, setExportIds] = useState<string[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [showPowerLines, setShowPowerLines] = useState(false);
   const [selectorsVisible, setSelectorsVisible] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -760,6 +761,7 @@ export default function MapPage() {
             analysisKey={`${analysisSessionId}:${createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes)}`}
             baseMap={baseMap}
             layers={layers}
+            showPowerLines={showPowerLines}
             recenterToken={recenterToken}
             airspaces={airspaceCoverage.airspaces}
             onAirspacesSelected={selectAirspaces}
@@ -886,6 +888,10 @@ export default function MapPage() {
                   }
                   className="h-5 w-5 accent-[var(--bc-color-action)]"
                 />
+              </label>
+              <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
+                Lignes électriques
+                <input type="checkbox" checked={showPowerLines} onChange={(event) => setShowPowerLines(event.target.checked)} className="h-5 w-5 accent-[var(--bc-color-action)]" />
               </label>
             </FloatingPanel>
           )}

@@ -65,6 +65,7 @@ interface PreparationMapProps {
   analysisKey: string;
   baseMap: BaseMap;
   layers: AnalysisLayerSettings;
+  showPowerLines: boolean;
   airspaces?: AirspaceFeatureCollection;
   recenterToken?: number;
   onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
@@ -214,6 +215,7 @@ export default function PreparationMap({
   analysisKey,
   baseMap,
   layers,
+  showPowerLines,
   airspaces = EMPTY_AIRSPACES,
   recenterToken = 0,
   onAirspacesSelected,
@@ -403,7 +405,7 @@ export default function PreparationMap({
           '<a href="https://www.openaip.net/" target="_blank">© openAIP</a> — CC BY-NC 4.0',
       });
       map.addSource(POWER_LINES_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      const powerLineLayout = { "line-cap": "round" as const, "line-join": "round" as const };
+      const powerLineLayout = { "line-cap": "round" as const, "line-join": "round" as const, visibility: showPowerLines ? "visible" as const : "none" as const };
       map.addLayer({
         id: POWER_LINES_CASING_LAYER, type: "line", source: POWER_LINES_SOURCE,
         filter: ["==", ["get", "power"], "line"], minzoom: 8, layout: powerLineLayout,
@@ -663,6 +665,19 @@ export default function PreparationMap({
     const map = mapRef.current;
     if (!map) return;
     const sync = () => {
+      for (const layerId of [POWER_LINES_CASING_LAYER, POWER_LINES_LAYER]) {
+        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
+      }
+    };
+    if (map.loaded()) sync();
+    else map.once("load", sync);
+    return () => { map.off("load", sync); };
+  }, [showPowerLines]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const sync = () => {
       const prepared = prepareAirspacesForMap(airspaces, {
         currentAltitudeMeters: null,
       });
@@ -825,7 +840,7 @@ export default function PreparationMap({
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
-      {powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{powerLineStatusLabel(powerLineState)}</p>}
+      {showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{powerLineStatusLabel(powerLineState)}</p>}
       {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>
