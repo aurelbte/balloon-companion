@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { R2FlightTrackBlobProvider } from "./flightTrackBlobProvider.ts";
 import { authorizeFlightTrack } from "./flightTrackR2Authorization.ts";
@@ -40,7 +42,33 @@ test("provider R2 demande une URL courte puis transfère directement sans secret
   assert.equal(JSON.parse(calls[0].init.body).action, "UPLOAD_URL");
   assert.equal(calls[1].url, "https://signed.example/put");
   assert.equal(calls[1].init.method, "PUT");
+  assert.equal(calls[1].init.headers["content-type"], "application/json");
   assert.equal(calls[1].init.headers["x-amz-meta-sha256"], "a".repeat(64));
+});
+
+test("la présignature PUT exclut le checksum du corps vide et signe exactement les headers envoyés", async () => {
+  const client = new S3Client({
+    region: "auto",
+    endpoint: "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
+    credentials: { accessKeyId: "x".repeat(32), secretAccessKey: "y".repeat(64) },
+    requestChecksumCalculation: "WHEN_REQUIRED",
+  });
+  const url = await getSignedUrl(client, new PutObjectCommand({
+    Bucket: "balloon-companion-flight-tracks",
+    Key: "users/user-a/flights/flight-a/track-v1.json",
+    ContentType: "application/json",
+    Metadata: { sha256: "a".repeat(64) },
+  }), {
+    expiresIn: 300,
+    signableHeaders: new Set(["content-type"]),
+    unhoistableHeaders: new Set(["x-amz-meta-sha256"]),
+  });
+  const signed = new URL(url);
+  assert.equal(signed.searchParams.has("x-amz-sdk-checksum-algorithm"), false);
+  assert.equal(signed.searchParams.has("x-amz-checksum-crc32"), false);
+  assert.equal(signed.searchParams.has("x-amz-meta-sha256"), false);
+  assert.equal(signed.searchParams.get("X-Amz-SignedHeaders"), "content-type;host;x-amz-meta-sha256");
+  assert.equal(signed.searchParams.get("X-Amz-Expires"), "300");
 });
 
 test("provider R2 expose les erreurs endpoint 5xx au retry existant", async () => {
@@ -80,6 +108,9 @@ test("configuration et route R2 restent server-only avec URLs cinq minutes et mi
   const env = await fs.readFile(new URL("../../.env.example", import.meta.url), "utf8");
   assert.match(server, /import "server-only"/);
   assert.match(server, /SIGNED_URL_TTL_SECONDS = 300/);
+  assert.match(server, /requestChecksumCalculation: "WHEN_REQUIRED"/);
+  assert.match(server, /signableHeaders: new Set\(\["content-type"\]\)/);
+  assert.match(server, /unhoistableHeaders: new Set\(\["x-amz-meta-sha256"\]\)/);
   assert.match(server, /getSignedUrl/);
   assert.match(server, /legacyObjectRetained: true/);
   assert.match(server, /alreadyMigrated: true/);

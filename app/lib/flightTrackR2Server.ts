@@ -19,14 +19,27 @@ export function r2Config(environment: NodeJS.ProcessEnv = process.env): R2Config
 }
 
 function client(config: R2Config): S3Client {
-  return new S3Client({ region: "auto", endpoint: config.endpoint, credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey } });
+  return new S3Client({
+    region: "auto",
+    endpoint: config.endpoint,
+    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    requestChecksumCalculation: "WHEN_REQUIRED",
+  });
 }
 
 export async function createR2UploadUrl(target: AuthorizedFlightTrack, input: Readonly<{ sizeBytes: unknown; checksum: unknown }>, environment?: NodeJS.ProcessEnv, diagnostics = false) {
   if (target.deletedAt) throw new Error("FLIGHT_DELETED");
   if (!Number.isInteger(input.sizeBytes) || Number(input.sizeBytes) < 1 || Number(input.sizeBytes) > MAX_FLIGHT_TRACK_BYTES || typeof input.checksum !== "string" || !/^[a-f0-9]{64}$/.test(input.checksum)) throw new Error("INVALID_TRACK_UPLOAD_METADATA");
   const config = r2Config(environment);
-  const url = await getSignedUrl(client(config), new PutObjectCommand({ Bucket: config.bucket, Key: target.objectKey, ContentType: "application/json", Metadata: { sha256: input.checksum } }), { expiresIn: SIGNED_URL_TTL_SECONDS });
+  const url = await getSignedUrl(
+    client(config),
+    new PutObjectCommand({ Bucket: config.bucket, Key: target.objectKey, ContentType: "application/json", Metadata: { sha256: input.checksum } }),
+    {
+      expiresIn: SIGNED_URL_TTL_SECONDS,
+      signableHeaders: new Set(["content-type"]),
+      unhoistableHeaders: new Set(["x-amz-meta-sha256"]),
+    },
+  );
   return { url, objectKey: target.objectKey, expiresInSeconds: SIGNED_URL_TTL_SECONDS, ...(diagnostics ? { bucket: config.bucket, endpoint: config.endpoint } : {}) };
 }
 
