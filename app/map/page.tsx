@@ -45,7 +45,7 @@ import { formatInTimeZone } from "../lib/timeZone.ts";
 import type { GroundTemperature } from "../lib/loadPerformance/types";
 import { balloonDisplayName } from "../lib/balloons";
 import type { StoredFlightPreparationV2 } from "../lib/flightStorage";
-import { selectIntersectedAirspaces } from "../lib/trajectoryAirspaces";
+import { selectTrajectoryAirspaces } from "../lib/trajectoryAirspaces";
 import {
   ALTITUDE_OPTIONS,
   altitudeKey,
@@ -460,7 +460,7 @@ export default function MapPage() {
     position: null,
     isPositionStale: true,
     viewport,
-    explorationEnabled: layers.airspaces || arrivalDetailsOpen,
+    explorationEnabled: viewport !== null,
   });
   const displayedTraces = useMemo(
     () =>
@@ -474,11 +474,8 @@ export default function MapPage() {
     [selectedAltitudes, selectedModels, traces],
   );
   const intersectedAirspaces = useMemo(
-    () =>
-      selectIntersectedAirspaces(
-        displayedTraces,
-        airspaceCoverage.airspaces,
-      ),
+    () => [...new Map(displayedTraces.flatMap((trace) => selectTrajectoryAirspaces(trace, airspaceCoverage.airspaces))
+      .map((airspace) => [airspace.airspaceCompositeKey || airspace.airspaceId, airspace])).values()],
     [airspaceCoverage.airspaces, displayedTraces],
   );
   const selectedAirspaceFrequencies = useMemo(
@@ -1040,8 +1037,11 @@ export default function MapPage() {
               <p className="mt-4 text-2xl font-semibold tracking-tight">
                 {airspaceCoverage.visibleLoading
                   ? "…"
-                  : `${intersectedAirspaces.length}`}
+                  : airspaceCoverage.visibleCoverage.status === "COMPLETE"
+                    ? `${intersectedAirspaces.length}`
+                    : "?"}
               </p>
+              <p className="mt-1 text-[9px] leading-tight text-[var(--bc-color-text-muted)]">{airspaceCoverage.visibleCoverage.status === "COMPLETE" ? "Croisements potentiels" : airspaceCoverage.visibleCoverage.status === "PARTIAL" ? "Couverture partielle" : airspaceCoverage.visibleLoading ? "Chargement…" : "Données indisponibles"}</p>
             </button>
 
             <button

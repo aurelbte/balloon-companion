@@ -245,6 +245,30 @@ test("le cadrage final attend MapLibre idle et partage une seule fonction de fit
   assert.equal(source.match(/map\.fitBounds/g).length, 1);
 });
 
+test("l'Analyse charge les espaces indépendamment de leur visibilité et réutilise C10 pour les lignes", () => {
+  const page = readFileSync(new URL("../map/page.tsx", import.meta.url), "utf8");
+  const map = readFileSync(new URL("../components/PreparationMap.tsx", import.meta.url), "utf8");
+  assert.match(page, /explorationEnabled: viewport !== null/);
+  assert.match(page, /selectTrajectoryAirspaces/);
+  assert.match(page, /visibleCoverage\.status === "COMPLETE"/);
+  assert.match(page, /Croisements potentiels/);
+  assert.match(map, /PowerLineRuntime/);
+  assert.match(map, /powerLineStatusLabel/);
+  assert.match(map, /POWER_LINES_SOURCE/);
+  assert.match(map, /trace\.projection\.points\.at\(-1\)/);
+  assert.match(map, /\.slice\(0, 9\)/);
+});
+
+test("le sélecteur de date garde une zone native desktop complète et un focus visible", () => {
+  const page = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../prepare/Prepare.module.css", import.meta.url), "utf8");
+  assert.match(page, /className=\{styles\.dateInput\}/);
+  assert.match(page, /styles\.dateField/);
+  assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/);
+  assert.match(css, /\.dateInput::\-webkit-calendar-picker-indicator[\s\S]*inset: 0/);
+  assert.match(css, /\.dateField:focus-within/);
+});
+
 test("Prépa affiche deux steppers facultatifs en m\/s sans clavier", () => {
   const source = readFileSync(new URL("../prepare/page.tsx", import.meta.url), "utf8");
   assert.match(source, /ascentRateMps/);

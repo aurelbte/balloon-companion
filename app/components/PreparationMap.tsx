@@ -40,6 +40,7 @@ import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, countValidTrajectoryPoints, createTrajectoryFitKey, trajectoryContentKey, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
 import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
 import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
+import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../lib/powerLinesRuntime";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -51,6 +52,9 @@ const TIME_SOURCE = "analysis-time-markers";
 const ARRIVAL_SOURCE = "analysis-arrivals";
 const START_SOURCE = "analysis-start";
 const LANDING_ZONE_SOURCE = "analysis-landing-zone";
+const POWER_LINES_SOURCE = "analysis-power-lines";
+const POWER_LINES_CASING_LAYER = "analysis-power-lines-casing";
+const POWER_LINES_LAYER = "analysis-power-lines-layer";
 
 interface PreparationMapProps {
   traces: WeatherAnalysisTrace[];
@@ -222,6 +226,8 @@ export default function PreparationMap({
   const lastCompletedTrajectoryFitKey = useRef("");
   const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [powerLineState, setPowerLineState] = useState<PowerLineState | null>(null);
+  const powerLineRuntimeRef = useRef<PowerLineRuntime | null>(null);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
   const mapPressRef = useRef(onMapPress);
@@ -251,6 +257,15 @@ export default function PreparationMap({
   const initialStartData = useRef(startData);
   const selectedTrace = traces.find((trace) => trace.traceId === selectedTraceId) ?? null;
   const landingZoneData = useMemo(() => landingZoneCollection(selectedTrace), [selectedTrace]);
+
+  useEffect(() => {
+    const runtime = new PowerLineRuntime((state) => {
+      setPowerLineState(state);
+      (mapRef.current?.getSource(POWER_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(state.data);
+    });
+    powerLineRuntimeRef.current = runtime;
+    return () => { runtime.stop(); if (powerLineRuntimeRef.current === runtime) powerLineRuntimeRef.current = null; };
+  }, []);
 
   useEffect(() => {
     viewportRef.current = onViewportChange;
@@ -332,6 +347,9 @@ export default function PreparationMap({
           north: bounds.getNorth(),
         },
       });
+      void powerLineRuntimeRef.current?.update({
+        west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
+      }, navigator.onLine);
     };
     map.on("moveend", notify);
     map.on("click", (event) => {
@@ -383,6 +401,18 @@ export default function PreparationMap({
         data: EMPTY_AIRSPACES,
         attribution:
           '<a href="https://www.openaip.net/" target="_blank">© openAIP</a> — CC BY-NC 4.0',
+      });
+      map.addSource(POWER_LINES_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      const powerLineLayout = { "line-cap": "round" as const, "line-join": "round" as const };
+      map.addLayer({
+        id: POWER_LINES_CASING_LAYER, type: "line", source: POWER_LINES_SOURCE,
+        filter: ["==", ["get", "power"], "line"], minzoom: 8, layout: powerLineLayout,
+        paint: { "line-color": "rgba(7, 17, 31, 0.82)", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4.6, 14, 7] },
+      });
+      map.addLayer({
+        id: POWER_LINES_LAYER, type: "line", source: POWER_LINES_SOURCE,
+        filter: ["==", ["get", "power"], "line"], minzoom: 8, layout: powerLineLayout,
+        paint: { "line-color": "#dc2626", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.8, 14, 4.6] },
       });
       for (const category of AIRSPACE_RENDER_ORDER) {
         const style = getAirspaceCategoryStyle(category);
@@ -754,9 +784,48 @@ export default function PreparationMap({
     };
   }, [analysisKey, launchSite, mapDimensions.height, mapDimensions.width, recenterToken, traces, visibleTraceIds]);
 
+  useEffect(() => {
+    const refresh = () => {
+      const map = mapRef.current;
+      if (!map) return;
+      const bounds = map.getBounds();
+      void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+    };
+    window.addEventListener("online", refresh);
+    return () => window.removeEventListener("online", refresh);
+  }, []);
+
+  useEffect(() => {
+    const runtime = powerLineRuntimeRef.current;
+    const map = mapRef.current;
+    if (!runtime || !map || !navigator.onLine) return;
+    const seen = new Set<string>();
+    const arrivals = traces.flatMap((trace) => {
+      if (!visibleTraceIds.includes(trace.traceId)) return [];
+      const point = trace.projection.points.at(-1);
+      if (!point) return [];
+      const key = `${point.latitude.toFixed(2)}:${point.longitude.toFixed(2)}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [point];
+    }).slice(0, 9);
+    let cancelled = false;
+    void (async () => {
+      for (const point of arrivals) {
+        if (cancelled) return;
+        await runtime.update({ west: point.longitude - 0.06, south: point.latitude - 0.06, east: point.longitude + 0.06, north: point.latitude + 0.06 }, true);
+      }
+      if (cancelled || mapRef.current !== map) return;
+      const bounds = map.getBounds();
+      await runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+    })();
+    return () => { cancelled = true; runtime.stop(); };
+  }, [traces, visibleTraceIds]);
+
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
+      {powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{powerLineStatusLabel(powerLineState)}</p>}
       {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>

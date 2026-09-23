@@ -555,7 +555,7 @@ export default function PreparePage() {
 
           <div className="grid grid-cols-3 gap-2">
             <label
-              className="relative flex min-h-14 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-2"
+              className={`${styles.dateField} relative flex min-h-14 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-2`}
               style={{
                 background: "rgb(255 255 255 / 3%)",
                 borderColor: "var(--bc-border)",
@@ -580,7 +580,7 @@ export default function PreparePage() {
                 type="date"
                 value={form.date}
                 onChange={(event) => update("date", event.target.value)}
-                className="absolute inset-0 cursor-pointer opacity-0"
+                className={styles.dateInput}
                 aria-label="Date"
               />
             </label>
