@@ -36,7 +36,7 @@ test("premier login importe profil, préférences, ballons, Journal et ascension
   assert.deepEqual(completion.journalFlights.map(({ sourceFlightId }) => sourceFlightId), ["f1"]);
   assert.deepEqual(completion.officialAscensions.map(({ id }) => id), ["a1"]);
   assert.equal(storage.getItem(guest("balloon-companion-flight-completion-v1")), entries[guest("balloon-companion-flight-completion-v1")]);
-  assert.deepEqual(queue.mutations.map(({ entityType, entityId }) => [entityType, entityId]), [["pilot-profile", "singleton"], ["weather-preferences", "singleton"], ["balloon", "b1"], ["flight-completion", "singleton"], ["flight", "f1"], ["logbook-entry", "a1"]]);
+  assert.deepEqual(queue.mutations.map(({ entityType, entityId }) => [entityType, entityId]), [["pilot-profile", "singleton"], ["weather-preferences", "singleton"], ["balloon", "b1"], ["flight", "f1"], ["logbook-entry", "a1"]]);
 });
 
 test("merge additif protège IDs USER, sourceFlightId dupliqué et collisions", async () => {

@@ -20,6 +20,7 @@ import { balloonDisplayName } from "./balloons.ts";
 import type { BalloonDocument } from "./balloonDocuments.ts";
 import { IndexedDbBalloonDocumentStorage } from "./balloonDocumentStorage.ts";
 import { FLIGHT_COMPLETION_STORAGE_KEY } from "./flightCompletionStorage.ts";
+import { recoverLegacyFlightCompletionMutation } from "./legacyFlightCompletionMutationRecovery.ts";
 import { officialAscensionFlightNature, officialAscensionMovementCounts, type FlightCompletionState } from "./flightCompletion.ts";
 import type { RecordedFlight } from "./recordedFlight.ts";
 import { IndexedDbRecordedFlightStorage } from "./recordedFlightStorage.ts";
@@ -292,10 +293,14 @@ export function createBrowserCloudSyncService(input: Readonly<{
 }>): CloudSyncService {
   const payloads = new BrowserCloudSyncPayloadProvider(input.storage, input.scope);
   const outbox = new IndexedDbSyncOutboxStorage(input.scope);
+  const issues = new BrowserCloudSyncIssueRepository(input.storage, input.scope);
   return new CloudSyncService({
     outbox,
-    recoverLocalMutations: () => recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox, input.signal),
-    issues: new BrowserCloudSyncIssueRepository(input.storage, input.scope),
+    recoverLocalMutations: async () => {
+      await recoverBrowserLocalSyncIntents(input.storage, input.scope, outbox, input.signal);
+      await recoverLegacyFlightCompletionMutation({ storage: input.storage, scope: input.scope, outbox, issues });
+    },
+    issues,
     getScope: input.getScope,
     getOnlineUserId: async () => {
       const { data, error } = await input.client.auth.getUser();

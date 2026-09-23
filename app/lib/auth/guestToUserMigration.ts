@@ -375,8 +375,9 @@ export async function migrateGuestAndLegacyToUser(input: Readonly<{ userId: stri
         const sourceValue = parsed(source.raw), sourceRecord = object(sourceValue);
         if (!sourceRecord.openingBalance || !Array.isArray(sourceRecord.journalFlights) || !Array.isArray(sourceRecord.officialAscensions)) continue;
         const result = mergeCompletion(destination, sourceValue, source.source, collisions);
-        if (result.journalAdditions.length || result.ascensionAdditions.length || !same(object(destination).openingBalance, result.value.openingBalance) || !input.storage.getItem(destinationKey)) {
-          await enqueue({ entityType: "flight-completion", entityId: "singleton", operation: "UPSERT", baseRevision: 0 });
+        const openingBalanceChanged = !same(object(destination).openingBalance, result.value.openingBalance);
+        if (result.journalAdditions.length || result.ascensionAdditions.length || openingBalanceChanged || !input.storage.getItem(destinationKey)) {
+          if (openingBalanceChanged) await enqueue({ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT", baseRevision: 0 });
           for (const item of result.journalAdditions) await enqueue({ entityType: "flight", entityId: journalIdentity(item), operation: "UPSERT", baseRevision: 0 });
           for (const item of result.ascensionAdditions) await enqueue({ entityType: "logbook-entry", entityId: String(item.id), operation: "UPSERT", baseRevision: 0 });
           destination = result.value; input.storage.setItem(destinationKey, JSON.stringify(destination)); imported += result.journalAdditions.length + result.ascensionAdditions.length;

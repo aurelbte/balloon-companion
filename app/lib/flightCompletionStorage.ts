@@ -373,7 +373,6 @@ export function saveFlightCompletionState(state: FlightCompletionState): boolean
       ...(JSON.stringify(previousState.openingBalance) !== JSON.stringify(lightweightState.openingBalance) ? [{ entityType: "pilot-profile", entityId: "singleton", operation: "UPSERT" as const }] : []),
     ];
     if (!writeBusinessValueWithSync(window.localStorage, STORAGE_KEY, JSON.stringify(lightweightState), changes)) return false;
-    enqueueLocalSyncMutation("flight-completion", "singleton");
     if (changes.some(({ entityType }) => entityType === "pilot-profile")) enqueueLocalSyncMutation("pilot-profile", "singleton");
     for (const mutation of journalFlightCloudMutations(previousState.journalFlights, lightweightState.journalFlights)) {
       enqueueLocalSyncMutation("flight", mutation.entityId, mutation.operation);
