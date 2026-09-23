@@ -4,7 +4,7 @@ import { cloudSyncVerdictGeneration, invalidateCloudSyncObservation } from "../.
 
 import { useEffect } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
-import { getRuntimeDataScope, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, getRuntimeDataScopeGeneration, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "../../lib/cloudSyncBrowser.ts";
 import { createScopeUnavailableControlledApi, inspectControlledCloudSyncSources, isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client.ts";
@@ -34,6 +34,7 @@ import { BrowserFlightTrackCloudService } from "../../lib/flightTrackCloudBrowse
 import { migrateFlightTrackSupabaseToR2Targeted, migrateLegacyFlightTrackToR2Targeted, replayFlightTrackSupabaseToR2Targeted } from "../../lib/flightTrackBlobProvider.ts";
 import { discoverAndDrainFlightTracks, drainFlightTrackQueue, enqueueFlightTrackJob, FLIGHT_TRACK_QUEUE_CHANGED_EVENT, IndexedDbFlightTrackQueueStorage, isFlightTrackQueueRunning, nextFlightTrackRetryAt } from "../../lib/flightTrackQueue.ts";
 import { recoverMissingFlightTrackDownloads } from "../../lib/flightTrackDownloadRecovery.ts";
+import { requestCloudSyncPostCleanupRecheck } from "../../lib/cloudSyncPostCleanupRecheck.ts";
 import {
   loadFlightCompletionState,
   persistJournalFlight,
@@ -180,6 +181,7 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
   },
   push: async (userId, signal) => {
     const scope = `USER:${userId}` as const;
+    const scopeGeneration = getRuntimeDataScopeGeneration();
     const client = createBrowserSupabaseClient();
     const report = await createBrowserCloudSyncService({ client, storage: window.localStorage, scope, getScope: getRuntimeDataScope, signal }).syncPendingMutations();
     signal?.throwIfAborted();
@@ -188,11 +190,13 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
     const queue = new IndexedDbFlightTrackQueueStorage(scope);
     traceVerdictEvidence.set(scope, { complete: false, generation: null });
     let downloadsChecked = false;
+    let removedOrphanedDownloads = 0;
     try {
       const result = await discoverAndDrainFlightTracks({
         signal,
         discover: async () => {
-          await recoverMissingFlightTrackDownloads({ scope, storage: window.localStorage, queue, outbox: new IndexedDbSyncOutboxStorage(scope), inspectLocal: (id) => new IndexedDbRecordedFlightStorage().inspectForBlockedMutationResolution(id), restoreFromCloud: (id) => tracks.restoreMissingLocalMetadata(id) });
+          const recovery = await recoverMissingFlightTrackDownloads({ scope, storage: window.localStorage, queue, outbox: new IndexedDbSyncOutboxStorage(scope), inspectLocal: (id) => new IndexedDbRecordedFlightStorage().inspectForBlockedMutationResolution(id), restoreFromCloud: (id) => tracks.restoreMissingLocalMetadata(id) });
+          removedOrphanedDownloads += recovery.removed;
           await tracks.discoverPendingJobs(queue);
           await tracks.discoverMissingDownloadJobs(queue);
           downloadsChecked = true;
@@ -203,6 +207,9 @@ const automaticCloudSyncController = new CloudSyncRuntimeController({
       if (getRuntimeDataScope() === scope) traceVerdictEvidence.set(scope, { complete: result.discoveryComplete && !result.drain.stoppedForUserSwitch, downloadsChecked: result.discoveryComplete && downloadsChecked, discoveryError: result.discoveryError, generation: cloudSyncVerdictGeneration() });
       if (!result.discoveryComplete || result.drain.state === "TIMEOUT") return { ...report, state: "STOPPED_ERROR" as const };
     } catch { return { ...report, state: "STOPPED_ERROR" as const }; }
+    finally {
+      if (removedOrphanedDownloads > 0) void requestCloudSyncPostCleanupRecheck({ scope, generation: scopeGeneration, getScope: getRuntimeDataScope, getGeneration: getRuntimeDataScopeGeneration, synchronize: () => automaticCloudSyncController.synchronizeNow() }).catch(() => undefined);
+    }
     return report;
   },
   getNextEligibleRetryAt: async (userId) => {
