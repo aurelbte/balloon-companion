@@ -15,9 +15,9 @@ export type TerrainSelectorProps = {
   hasSelectedTerrain: boolean;
   suggestions: readonly GeocodingResult[];
   searching: boolean;
+  searchFeedback: string | null;
   locating: boolean;
   onValueChange: (value: string) => void;
-  onSearch: () => void;
   onLocate: () => void;
   onSelectSuggestion: (terrain: GeocodingResult) => void;
   onSelectFavorite: (terrain: GeocodingResult) => void;
@@ -39,9 +39,9 @@ export default function TerrainSelector({
   hasSelectedTerrain,
   suggestions,
   searching,
+  searchFeedback,
   locating,
   onValueChange,
-  onSearch,
   onLocate,
   onSelectSuggestion,
   onSelectFavorite,
@@ -91,12 +91,13 @@ export default function TerrainSelector({
           <MapPin size={19} style={{ color: "var(--bc-accent)" }} />
           <span className="min-w-0 flex-1">
             <span className="block text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--bc-color-text-muted)" }}>Terrain</span>
-            <input type="search" enterKeyHint="search" value={value} onChange={(event) => onValueChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onSearch(); }} className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-base font-semibold outline-none" placeholder="Rechercher un terrain" aria-label="Rechercher un terrain" />
+            <input type="search" enterKeyHint="search" value={value} onChange={(event) => onValueChange(event.target.value)} className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-base font-semibold outline-none" placeholder="Rechercher un terrain" aria-label="Rechercher un terrain" aria-describedby={searchFeedback ? "terrain-search-feedback" : undefined} />
           </span>
         </label>
-        <button type="button" onClick={onSearch} disabled={searching} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Rechercher le terrain"><Search size={18} /></button>
         <button type="button" onClick={onLocate} disabled={locating} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Utiliser ma position">{hasSelectedTerrain ? <Check size={19} style={{ color: "var(--bc-success)" }} /> : <LocateFixed size={19} />}</button>
       </div>
+
+      {searchFeedback && <p id="terrain-search-feedback" role={searching ? "status" : "alert"} className="mt-1.5 px-1 text-xs" style={{ color: searching ? "var(--bc-color-text-muted)" : "var(--bc-color-text-secondary)" }}>{searchFeedback}</p>}
 
       {suggestions.length > 0 && !managerOpen && (
         <div className="absolute left-0 right-0 top-12 z-50 mt-2 max-h-56 overflow-y-auto rounded-2xl border p-2 shadow-2xl" style={{ background: "var(--bc-background-elevated)", borderColor: "var(--bc-border)" }}>

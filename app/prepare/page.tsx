@@ -171,6 +171,7 @@ export default function PreparePage() {
   const [formDirty, setFormDirty] = useState(false);
   const [suggestions, setSuggestions] = useState<GeocodingResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [terrainSearchFeedback, setTerrainSearchFeedback] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [customDurationOpen, setCustomDurationOpen] = useState(false);
   const [customDuration, setCustomDuration] = useState("");
@@ -182,6 +183,7 @@ export default function PreparePage() {
   const [launchPointDraft, setLaunchPointDraft] =
     useState<GeocodingResult | null>(null);
   const submissionRef = useRef(false);
+  const terrainSearchSequence = useRef(0);
 
   useEffect(() => {
     const stored = loadPreparationDraft();
@@ -259,6 +261,41 @@ export default function PreparePage() {
     return () => controller.abort();
   }, [form.launchSite, form.weatherModel]);
 
+  useEffect(() => {
+    const query = form.launchSearch.trim();
+    const sequence = ++terrainSearchSequence.current;
+    const controller = new AbortController();
+    if (form.launchSite || query.length < 3) {
+      setSearching(false);
+      setTerrainSearchFeedback(null);
+      return () => controller.abort();
+    }
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      setTerrainSearchFeedback("Recherche en cours…");
+      void fetch(`/api/geocoding/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then(async (response) => {
+          const payload: unknown = await response.json();
+          if (!response.ok || typeof payload !== "object" || payload === null || !("results" in payload) || !Array.isArray(payload.results)) throw new Error("geocoding");
+          if (controller.signal.aborted || terrainSearchSequence.current !== sequence) return;
+          setSuggestions(payload.results as GeocodingResult[]);
+          setTerrainSearchFeedback(payload.results.length === 0 ? "Aucun lieu trouvé. Précisez la recherche." : null);
+        })
+        .catch((reason: unknown) => {
+          if (controller.signal.aborted || terrainSearchSequence.current !== sequence || reason instanceof DOMException && reason.name === "AbortError") return;
+          setSuggestions([]);
+          setTerrainSearchFeedback("La recherche de lieu est indisponible.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted && terrainSearchSequence.current === sequence) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [form.launchSearch, form.launchSite]);
+
   const update = <Key extends keyof TrajectoryFormState>(
     key: Key,
     value: TrajectoryFormState[Key],
@@ -311,37 +348,6 @@ export default function PreparePage() {
       const next = updater(current);
       return saveFavoriteLaunchSites(next) ? next : current;
     });
-  };
-
-  const searchLaunchSite = async () => {
-    const query = form.launchSearch.trim();
-    if (query.length < 2 || searching) return;
-    setSearching(true);
-    setError(null);
-    setSuggestions([]);
-    try {
-      const response = await fetch(
-        `/api/geocoding/search?q=${encodeURIComponent(query)}`,
-      );
-      const payload: unknown = await response.json();
-      if (
-        !response.ok ||
-        typeof payload !== "object" ||
-        payload === null ||
-        !("results" in payload) ||
-        !Array.isArray(payload.results)
-      ) {
-        throw new Error("geocoding");
-      }
-      setSuggestions(payload.results as GeocodingResult[]);
-      if (payload.results.length === 0) {
-        setError("Aucun lieu trouvé. Précisez la recherche.");
-      }
-    } catch {
-      setError("La recherche de lieu est indisponible.");
-    } finally {
-      setSearching(false);
-    }
   };
 
   const useCurrentPosition = () => {
@@ -500,14 +506,15 @@ export default function PreparePage() {
             hasSelectedTerrain={Boolean(form.launchSite)}
             suggestions={suggestions}
             searching={searching}
+            searchFeedback={terrainSearchFeedback}
             locating={locating}
             onValueChange={(value) => {
               update("launchSearch", value);
               update("launchSite", null);
               update("launchTimeZone", undefined);
               setSuggestions([]);
+              setTerrainSearchFeedback(null);
             }}
-            onSearch={() => void searchLaunchSite()}
             onLocate={useCurrentPosition}
             favoriteTerrains={favoriteTerrains}
             selectedTerrain={form.launchSite}
