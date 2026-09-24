@@ -24,7 +24,13 @@ export default function BalloonSelector({
 
   return (
     <section
-      className="px-0.5"
+      className="rounded-[24px] border p-3 sm:p-4"
+      style={{
+        background:
+          "linear-gradient(145deg, var(--bc-color-surface), var(--bc-color-canvas-elevated))",
+        borderColor: "var(--bc-border)",
+        boxShadow: "var(--bc-shadow-panel)",
+      }}
       aria-labelledby="balloon-selector-title"
     >
       <h2
@@ -37,10 +43,10 @@ export default function BalloonSelector({
 
       {balloons.length > 0 ? (
         <label
-          className="relative flex min-h-14 items-center gap-3 rounded-2xl border px-3"
+          className="relative flex min-h-12 items-center gap-3 rounded-2xl border px-3"
           style={{
-            background: "rgb(255 255 255 / 2.5%)",
-            borderColor: "var(--bc-color-border-glass)",
+            background: "rgb(255 255 255 / 3%)",
+            borderColor: "var(--bc-border)",
           }}
         >
           <Balloon size={20} style={{ color: "var(--bc-accent)" }} />
