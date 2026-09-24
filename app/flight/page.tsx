@@ -1020,13 +1020,16 @@ export default function FlightPage() {
       )}
 
       {weatherLaunchNotice && !weatherFlightAlreadyActive && <p role="status" style={{ position: "fixed", bottom: "110px", left: "16px", zIndex: 60, background: "#101c2c", color: "white", padding: "12px" }}>{weatherLaunchNotice}</p>}
-      {weatherLaunchConfirmation && !weatherFlightAlreadyActive && <div role="dialog" aria-modal="true" aria-labelledby="weather-launch-title" style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.8)", display: "grid", placeItems: "center", padding: "24px" }}>
-        <section style={{ background: "#101c2c", color: "white", padding: "24px", maxWidth: "420px" }}>
-          <h2 id="weather-launch-title">{weatherLaunchConfirmation.status === "EXPIRED" ? "Données météo périmées" : "La fraîcheur de ces données météo ne peut pas être vérifiée"}</h2>
-          <p>{retrievalLabel(weatherLaunchConfirmation.snapshot?.weatherFetchedAt)}</p>{weatherLaunchNotice && <p>{weatherLaunchNotice}</p>}<p>Continuer avec ces données ?</p>
-          <Button onClick={() => { weatherLaunchConfirmation.resolve(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }}>Annuler</Button>
-          {typeof navigator !== "undefined" && navigator.onLine && <Button onClick={() => { weatherLaunchConfirmation.resolve(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); router.push("/map"); }}>Actualiser l’analyse</Button>}
-          <Button onClick={() => { weatherLaunchConfirmation.resolve(true); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }}>Continuer avec ces données</Button>
+      {weatherLaunchConfirmation && !weatherFlightAlreadyActive && <div role="dialog" aria-modal="true" aria-labelledby="weather-launch-title" aria-describedby="weather-launch-description" style={{ position: "fixed", inset: 0, zIndex: 100, background: "var(--bc-color-surface-overlay)", display: "grid", placeItems: "center", padding: "max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom))" }}>
+        <section style={{ width: "min(100%, 400px)", maxHeight: "100%", overflowY: "auto", border: "1px solid var(--bc-color-border-strong)", borderRadius: "24px", background: "var(--bc-color-canvas-elevated)", color: "var(--bc-color-text)", padding: "clamp(20px, 6vw, 28px)", boxShadow: "var(--bc-shadow-floating)" }}>
+          <h2 id="weather-launch-title" style={{ margin: 0, fontSize: "clamp(1.3rem, 6vw, 1.65rem)", lineHeight: 1.15 }}>Données météo non vérifiables</h2>
+          <p id="weather-launch-description" style={{ margin: "14px 0 0", color: "var(--bc-color-text-secondary)", lineHeight: 1.5 }}>L’heure de récupération de ces données est inconnue et leur actualisation a échoué.</p>
+          <p style={{ margin: "14px 0 0", borderLeft: "3px solid var(--bc-color-warning)", padding: "10px 12px", borderRadius: "0 10px 10px 0", background: "color-mix(in srgb, var(--bc-color-warning) 12%, transparent)", color: "var(--bc-color-text)", lineHeight: 1.4 }}>Ces données peuvent ne plus représenter les conditions actuelles.</p>
+          <div style={{ display: "grid", gap: "10px", marginTop: "22px" }}>
+            {typeof navigator !== "undefined" && navigator.onLine && <Button fullWidth style={{ minHeight: "48px" }} onClick={() => { weatherLaunchConfirmation.resolve(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); router.push("/map"); }}>Actualiser</Button>}
+            <Button fullWidth variant="secondary" style={{ minHeight: "48px" }} onClick={() => { weatherLaunchConfirmation.resolve(true); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }}>Continuer avec ces données</Button>
+            <Button fullWidth variant="secondary" style={{ minHeight: "44px", background: "transparent", color: "var(--bc-color-text-secondary)" }} onClick={() => { weatherLaunchConfirmation.resolve(false); weatherDecisionRef.current = null; setWeatherLaunchConfirmation(null); }}>Annuler</Button>
+          </div>
         </section>
       </div>}
       {pendingNavigationTarget && isTracking && (
