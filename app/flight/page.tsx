@@ -1018,7 +1018,7 @@ export default function FlightPage() {
         />
       )}
 
-      {weatherLaunchNotice && <p role="status" style={{ position: "fixed", bottom: "110px", left: "16px", zIndex: 60, background: "#101c2c", color: "white", padding: "12px" }}>{weatherLaunchNotice}</p>}
+      {weatherLaunchNotice && !weatherFlightAlreadyActive && <p role="status" style={{ position: "fixed", bottom: "110px", left: "16px", zIndex: 60, background: "#101c2c", color: "white", padding: "12px" }}>{weatherLaunchNotice}</p>}
       {weatherLaunchConfirmation && !weatherFlightAlreadyActive && <div role="dialog" aria-modal="true" aria-labelledby="weather-launch-title" style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.8)", display: "grid", placeItems: "center", padding: "24px" }}>
         <section style={{ background: "#101c2c", color: "white", padding: "24px", maxWidth: "420px" }}>
           <h2 id="weather-launch-title">{weatherLaunchConfirmation.status === "EXPIRED" ? "Données météo périmées" : "La fraîcheur de ces données météo ne peut pas être vérifiée"}</h2>
