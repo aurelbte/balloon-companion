@@ -212,6 +212,7 @@ interface FlightMapProps {
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
   showPowerLines: boolean;
+  showPowerLineStatus: boolean;
   selectedAirspaceId: string | null;
   showGpsProjection: boolean;
   showWeatherProjection: boolean;
@@ -281,6 +282,7 @@ export default function FlightMap({
   airspaces,
   showAirspaces,
   showPowerLines,
+  showPowerLineStatus,
   selectedAirspaceId,
   showGpsProjection,
   showWeatherProjection,
@@ -1685,7 +1687,7 @@ export default function FlightMap({
 
   return (
     <>
-      {showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "70px", left: "12px", right: "12px", zIndex: 15, margin: 0, padding: "6px 9px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: "11px", borderRadius: "8px", pointerEvents: "none" }}>{powerLineStatusLabel(powerLineState)}</p>}
+      {showPowerLineStatus && showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "70px", left: "12px", right: "12px", zIndex: 15, margin: 0, padding: "6px 9px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: "11px", borderRadius: "8px", pointerEvents: "none" }}>{powerLineStatusLabel(powerLineState)}</p>}
       <style>{`
         .flight-map .maplibregl-ctrl-bottom-left {
           bottom: calc(max(6px, env(safe-area-inset-bottom)) + 124px);

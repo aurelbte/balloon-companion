@@ -779,6 +779,7 @@ export default function FlightPage() {
           airspaces={airspaces}
           showAirspaces={layerSettings.airspaces}
           showPowerLines={layerSettings.powerLines}
+          showPowerLineStatus={!weatherFlightAlreadyActive}
           selectedAirspaceId={selectedAirspace?.airspaceId ?? null}
           showGpsProjection={
             layerSettings.gpsProjection && flightSession.state.isRecording
