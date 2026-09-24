@@ -85,17 +85,17 @@ export default function TerrainSelector({
   };
 
   return (
-    <div className="relative mb-2">
+    <div className="relative">
       <div className="flex gap-2">
-        <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-2xl border px-3" style={{ background: "rgb(255 255 255 / 3%)", borderColor: "var(--bc-border)" }}>
-          <MapPin size={19} style={{ color: "var(--bc-accent)" }} />
+        <label className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-[20px] border px-3.5" style={{ background: "rgb(255 255 255 / 4%)", borderColor: "var(--bc-color-border-strong)" }}>
+          <MapPin size={22} style={{ color: "var(--bc-accent)" }} />
           <span className="min-w-0 flex-1">
             <span className="block text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--bc-color-text-muted)" }}>Terrain</span>
-            <input type="search" enterKeyHint="search" value={value} onChange={(event) => onValueChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onSearch(); }} className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-base font-semibold outline-none" placeholder="Rechercher un terrain" aria-label="Rechercher un terrain" />
+            <input type="search" enterKeyHint="search" value={value} onChange={(event) => onValueChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onSearch(); }} className="mt-0.5 w-full truncate border-0 bg-transparent p-0 text-[17px] font-semibold outline-none" placeholder="Rechercher un terrain" aria-label="Rechercher un terrain" />
           </span>
         </label>
-        <button type="button" onClick={onSearch} disabled={searching} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Rechercher le terrain"><Search size={18} /></button>
-        <button type="button" onClick={onLocate} disabled={locating} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-2xl border" style={{ borderColor: "var(--bc-border)" }} aria-label="Utiliser ma position">{hasSelectedTerrain ? <Check size={19} style={{ color: "var(--bc-success)" }} /> : <LocateFixed size={19} />}</button>
+        <button type="button" onClick={onSearch} disabled={searching} className="flex h-16 w-12 shrink-0 items-center justify-center rounded-2xl border" style={{ background: "rgb(255 255 255 / 3%)", borderColor: "var(--bc-color-border-glass)" }} aria-label="Rechercher le terrain"><Search size={19} /></button>
+        <button type="button" onClick={onLocate} disabled={locating} className="flex h-16 w-12 shrink-0 items-center justify-center rounded-2xl border" style={{ background: "rgb(255 255 255 / 3%)", borderColor: "var(--bc-color-border-glass)" }} aria-label="Utiliser ma position">{hasSelectedTerrain ? <Check size={20} style={{ color: "var(--bc-success)" }} /> : <LocateFixed size={20} />}</button>
       </div>
 
       {suggestions.length > 0 && !managerOpen && (
@@ -107,7 +107,7 @@ export default function TerrainSelector({
         </div>
       )}
 
-      <div className="mt-2">
+      <div className="mt-3">
         <div className="mb-1 flex items-center justify-between">
           <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--bc-color-text-muted)" }}>Favoris</p>
           <button type="button" onClick={() => setEditor({ mode: "list" })} className="min-h-9 px-1 text-xs font-semibold" style={{ color: "var(--bc-accent)" }}>Gérer</button>
@@ -126,7 +126,7 @@ export default function TerrainSelector({
         ) : <p className="text-xs" style={{ color: "var(--bc-color-text-muted)" }}>Aucun favori enregistré.</p>}
       </div>
 
-      {onRequestMapSelection && <button type="button" onClick={onRequestMapSelection} disabled={!hasSelectedTerrain} className="mt-1 flex min-h-11 items-center gap-2 text-xs font-semibold disabled:opacity-40" style={{ color: "var(--bc-accent)" }}><Map size={15} /> Préciser le point sur la carte</button>}
+      {onRequestMapSelection && <button type="button" onClick={onRequestMapSelection} disabled={!hasSelectedTerrain} className="mt-1 flex min-h-10 items-center gap-2 text-xs font-semibold disabled:opacity-40" style={{ color: "var(--bc-accent)" }}><Map size={15} /> Préciser le point sur la carte</button>}
 
       {managerOpen && (
         <div className="fixed inset-0 z-[100] flex items-end bg-black/55 p-3 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="favorite-manager-title">

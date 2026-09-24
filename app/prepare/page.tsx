@@ -455,9 +455,9 @@ export default function PreparePage() {
   };
 
   return (
-    <main className="min-h-dvh pb-[calc(82px+env(safe-area-inset-bottom))] pt-[max(8px,env(safe-area-inset-top))]">
+    <main className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))]">
       <div className={`${styles.content} mx-auto w-full max-w-3xl px-4 sm:px-6`}>
-        <header className="mb-1">
+        <header className={styles.pageHeader}>
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.2em]"
             style={{ color: "var(--bc-accent)" }}
@@ -468,7 +468,7 @@ export default function PreparePage() {
             Préparation du vol
           </h1>
           <p
-            className="max-w-lg text-[11px] leading-tight"
+            className="max-w-lg text-xs leading-relaxed"
             style={{ color: "var(--bc-color-text-secondary)" }}
           >
             Définissez le contexte, puis ouvrez l’analyse des trajectoires.
@@ -478,7 +478,7 @@ export default function PreparePage() {
         <div className={styles.columns}>
           <div className={styles.primaryColumn}>
         <section
-          className="relative rounded-[24px] border p-2 sm:p-3"
+          className={styles.contextCard}
           style={{
             background:
               "linear-gradient(145deg, var(--bc-color-surface), var(--bc-color-canvas-elevated))",
@@ -489,7 +489,7 @@ export default function PreparePage() {
         >
           <h2
             id="flight-context-title"
-            className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+            className={styles.eyebrow}
             style={{ color: "var(--bc-color-text-muted)" }}
           >
             Contexte du vol
@@ -558,12 +558,11 @@ export default function PreparePage() {
             }}
           />
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className={styles.scheduleRow}>
             <label
-              className={`${styles.dateField} relative flex min-h-14 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-2`}
+              className={`${styles.dateField} ${styles.scheduleField} relative cursor-pointer overflow-hidden`}
               style={{
-                background: "rgb(255 255 255 / 3%)",
-                borderColor: "var(--bc-border)",
+                borderColor: "transparent",
               }}
             >
               <CalendarDays
@@ -591,12 +590,11 @@ export default function PreparePage() {
             </label>
 
             <label
-              className="flex min-h-14 cursor-text flex-col justify-between rounded-2xl border p-2 text-left"
+              className={`${styles.scheduleField} cursor-text text-left`}
               style={{
-                background: "rgb(255 255 255 / 3%)",
                 borderColor: timeError
                   ? "var(--bc-danger)"
-                  : "var(--bc-border)",
+                  : "transparent",
               }}
             >
               <Clock3
@@ -642,12 +640,11 @@ export default function PreparePage() {
                 setCustomDuration(form.durationMinutes);
                 setCustomDurationOpen(true);
               }}
-              className="flex min-h-14 flex-col justify-between rounded-2xl border p-2 text-left"
+              className={`${styles.scheduleField} text-left`}
               style={{
-                background: "rgb(255 255 255 / 3%)",
                 borderColor:
                   !form.durationMinutes || selectedDurationIsPreset
-                  ? "var(--bc-border)"
+                  ? "transparent"
                   : "var(--bc-accent)",
               }}
             >
@@ -667,7 +664,7 @@ export default function PreparePage() {
           </div>
           {sunTimes && (
             <p
-              className="mt-2 flex items-center justify-center gap-2 text-xs font-semibold tabular-nums"
+              className={styles.sunTimes}
               style={{ color: "var(--bc-color-text-secondary)" }}
               aria-label={`Lever du soleil ${sunTimes.sunrise}, coucher du soleil ${sunTimes.sunset}`}
             >
@@ -697,12 +694,12 @@ export default function PreparePage() {
 
           <div className={styles.secondaryColumn}>
 
-        <section className="mt-1.5 rounded-[20px] border p-2" style={{ background: "var(--bc-surface)", borderColor: "var(--bc-border)" }} aria-labelledby="vertical-rates-title">
-          <div className="mb-1 flex items-center justify-between">
+        <section className={styles.compactSection} aria-labelledby="vertical-rates-title">
+          <div className="flex items-center justify-between">
             <h2 id="vertical-rates-title" className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--bc-color-text-muted)" }}>Profil vertical</h2>
             <span className="text-[10px]" style={{ color: "var(--bc-color-text-muted)" }}>Facultatif</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className={styles.verticalGrid}>
             {([
               ["ascentRateMps", "Montée", 1],
               ["descentRateMps", "Descente", -1],
@@ -713,7 +710,7 @@ export default function PreparePage() {
                 ? "0"
                 : `${sign > 0 ? "+" : "−"}${magnitude.toFixed(1).replace(".", ",")}`;
               return (
-                <div key={field} className="rounded-xl border px-1 py-1" style={{ borderColor: "var(--bc-border)" }}>
+                <div key={field} className={styles.rateControl}>
                   <span className="sr-only">{label}</span>
                   <div className="flex items-center justify-center gap-0.5">
                     <button type="button" onClick={() => setMagnitude(stepVerticalRateMps(magnitude, -1))} disabled={magnitude === 0} className="grid size-11 shrink-0 place-items-center rounded-lg border text-xl disabled:opacity-30" style={{ borderColor: "var(--bc-border)" }} aria-label={`Réduire le taux de ${label.toLowerCase()}`}>−</button>
@@ -726,7 +723,7 @@ export default function PreparePage() {
           </div>
         </section>
 
-        <div className="mt-1.5">
+        <div className={styles.balloonSection}>
           <BalloonSelector
             balloons={balloons}
             selectedBalloonId={
@@ -749,12 +746,11 @@ export default function PreparePage() {
           />
         </div>
 
-        <section
-          className="mt-1.5 rounded-[24px] border p-2.5 transition-opacity sm:p-3"
+        {form.balloonName && <section
+          className={styles.loadSection}
           style={{
             background: "var(--bc-surface)",
             borderColor: "var(--bc-border)",
-            opacity: form.balloonName ? 1 : 0.5,
           }}
           aria-labelledby="charge-title"
         >
@@ -765,7 +761,7 @@ export default function PreparePage() {
           >
             Charge
           </h2>
-          {form.balloonName && <label className="flex min-h-12 items-center justify-between gap-4 rounded-2xl border px-3">
+          <label className="flex min-h-12 items-center justify-between gap-4 rounded-2xl border px-3">
             <span>
               <span className="block text-sm font-semibold">
                 Pilote + passagers
@@ -801,16 +797,8 @@ export default function PreparePage() {
                 kg
               </span>
             </span>
-          </label>}
-          {!form.balloonName && (
-            <p
-              className="text-xs leading-snug"
-              style={{ color: "var(--bc-color-text-muted)" }}
-            >
-              Sélectionnez un ballon pour calculer la charge.
-            </p>
-          )}
-        </section>
+          </label>
+        </section>}
           </div>
         </div>
 
@@ -831,7 +819,7 @@ export default function PreparePage() {
           type="button"
           onClick={() => void submitProjection()}
           disabled={submitting}
-          className="mt-2 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-semibold transition-[transform,background-color] active:scale-[0.99] disabled:opacity-60"
+          className={styles.analysisButton}
           style={{
             background: "var(--bc-accent)",
             color: "var(--bc-accent-foreground)",
