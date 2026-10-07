@@ -612,7 +612,8 @@ export default function PreparationMap({
           layers.arrivalMarkers ? "visible" : "none",
         );
     };
-    if (map.loaded()) sync();
+    // Sources remain writable while tiles or other sources are loading.
+    if ([TRACE_SOURCE, TIME_SOURCE, ARRIVAL_SOURCE, START_SOURCE].every((id) => map.getSource(id))) sync();
     else map.once("load", sync);
     return () => {
       map.off("load", sync);
@@ -623,7 +624,7 @@ export default function PreparationMap({
     const map = mapRef.current;
     if (!map) return;
     const sync = () => (map.getSource(LANDING_ZONE_SOURCE) as GeoJSONSource | undefined)?.setData(landingZoneData);
-    if (map.loaded()) sync();
+    if (map.getSource(LANDING_ZONE_SOURCE)) sync();
     else map.once("load", sync);
     return () => { map.off("load", sync); };
   }, [landingZoneData]);
@@ -654,7 +655,7 @@ export default function PreparationMap({
         }
       }
     };
-    if (map.loaded()) sync();
+    if (map.getLayer("plan-base")) sync();
     else map.once("load", sync);
     return () => {
       map.off("load", sync);
@@ -669,7 +670,7 @@ export default function PreparationMap({
         if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
       }
     };
-    if (map.loaded()) sync();
+    if (map.getSource(POWER_LINES_SOURCE)) sync();
     else map.once("load", sync);
     return () => { map.off("load", sync); };
   }, [showPowerLines]);
@@ -711,7 +712,7 @@ export default function PreparationMap({
         }
       }
     };
-    if (map.loaded()) sync();
+    if (map.getSource(AIRSPACE_SOURCE)) sync();
     else map.once("load", sync);
     return () => {
       map.off("load", sync);
