@@ -8,11 +8,20 @@ import type { JournalFlight } from "../../lib/journalMockData";
 import { TWO_DIMENSIONAL_MAP_OPTIONS } from "../../lib/mapInteraction";
 import { useRecordedFlightJournalPointsState } from "../../hooks/useRecordedFlightJournalPoints";
 
+import { useAirspaceCoverage, type AirspaceCoverageViewport } from "../../hooks/useAirspaceCoverage";
+import { AIRSPACE_RENDER_ORDER, getAirspaceCategoryStyle, prepareAirspacesForMap } from "../../lib/airspaceMapStyle";
+import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../../lib/powerLinesRuntime";
+
 type JournalFlightMapProps = {
   flight: JournalFlight;
 };
 
 const SOURCE_ID = "journal-flight-track";
+const AIRSPACE_SOURCE = "journal-airspaces";
+const POWER_SOURCE = "journal-power-lines";
+const POWER_LAYERS = ["journal-power-casing", "journal-power-line"] as const;
+const EMPTY_DATA: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+const airspaceLayerId = (category: string, kind: string) => `journal-airspace-${category}-${kind}`;
 
 function compactMapPadding(container: HTMLDivElement): number {
   return Math.max(18, Math.min(32, Math.round(container.clientHeight * 0.14)));
@@ -75,6 +84,19 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
   const traceRef = useRef<JournalFlight | null>(null);
   const [hasTrace, setHasTrace] = useState(false);
 
+  const [satellite, setSatellite] = useState(false);
+  const [showAirspaces, setShowAirspaces] = useState(false);
+  const [showPowerLines, setShowPowerLines] = useState(false);
+  const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
+  const [powerState, setPowerState] = useState<PowerLineState | null>(null);
+  const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim() ?? "";
+  const coverage = useAirspaceCoverage({
+    position: null,
+    isPositionStale: true,
+    viewport,
+    explorationEnabled: expanded && showAirspaces && viewport !== null,
+  });
+
   useEffect(() => {
     // An intermediate empty hydration result must not erase an already visible track.
     if (!points.length) return;
@@ -131,6 +153,39 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
       "top-left",
     );
     map.on("load", () => {
+      if (mapTilerKey) {
+        map.addSource("journal-satellite", {
+          type: "raster",
+          tiles: [`https://api.maptiler.com/maps/hybrid-v4/256/{z}/{x}/{y}@2x.jpg?key=${encodeURIComponent(mapTilerKey)}`],
+          tileSize: 256,
+          maxzoom: 22,
+          attribution: '<a href="https://www.maptiler.com/copyright/" target="_blank">© MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a>',
+        });
+        map.addLayer({ id: "journal-satellite", type: "raster", source: "journal-satellite", layout: { visibility: "none" } });
+      }
+      map.addSource(AIRSPACE_SOURCE, { type: "geojson", data: EMPTY_DATA, attribution: '<a href="https://www.openaip.net/" target="_blank">© openAIP</a> — CC BY-NC 4.0' });
+      for (const category of AIRSPACE_RENDER_ORDER) {
+        const style = getAirspaceCategoryStyle(category);
+        const common = {
+          source: AIRSPACE_SOURCE,
+          filter: ["==", ["get", "visualCategory"], category] as maplibregl.FilterSpecification,
+          minzoom: style.minZoom,
+          ...(style.maxZoom === undefined ? {} : { maxzoom: style.maxZoom }),
+          layout: { visibility: "none" as const },
+        };
+        map.addLayer({ ...common, id: airspaceLayerId(category, "fill"), type: "fill", paint: { "fill-color": style.color, "fill-opacity": style.fillOpacity } });
+        map.addLayer({ ...common, id: airspaceLayerId(category, "outline"), type: "line", paint: { "line-color": style.color, "line-width": style.lineWidth, "line-opacity": style.lineOpacity } });
+      }
+      map.addSource(POWER_SOURCE, { type: "geojson", data: EMPTY_DATA, attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>' });
+      POWER_LAYERS.forEach((id, index) => map.addLayer({
+        id, type: "line", source: POWER_SOURCE, minzoom: 8,
+        filter: ["==", ["get", "power"], "line"],
+        layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+        paint: {
+          "line-color": index === 0 ? "rgba(7, 17, 31, 0.82)" : "#dc2626",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, index === 0 ? 4.6 : 2.8, 14, index === 0 ? 7 : 4.6],
+        },
+      }));
       const hydratedFlight = traceRef.current;
       map.addSource(SOURCE_ID, { type: "geojson", data: hydratedFlight ? flightGeoJson(hydratedFlight) : { type: "FeatureCollection", features: [] } });
       map.addLayer({
@@ -178,6 +233,76 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !expanded) return;
+    const updateViewport = () => {
+      const center = map.getCenter(), bounds = map.getBounds();
+      setViewport({ latitude: center.lat, longitude: center.lng, bounds: {
+        west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
+      } });
+    };
+    map.on("moveend", updateViewport);
+    if (map.getSource(SOURCE_ID)) updateViewport();
+    else map.once("load", updateViewport);
+    return () => { map.off("moveend", updateViewport); map.off("load", updateViewport); };
+  }, [expanded]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const sync = () => {
+      const useSatellite = expanded && satellite && Boolean(map.getLayer("journal-satellite"));
+      map.setLayoutProperty("journal-plan", "visibility", useSatellite ? "none" : "visible");
+      if (map.getLayer("journal-satellite")) map.setLayoutProperty("journal-satellite", "visibility", useSatellite ? "visible" : "none");
+      for (const category of AIRSPACE_RENDER_ORDER) {
+        for (const kind of ["fill", "outline"]) map.setLayoutProperty(airspaceLayerId(category, kind), "visibility", expanded && showAirspaces ? "visible" : "none");
+      }
+      for (const id of POWER_LAYERS) map.setLayoutProperty(id, "visibility", expanded && showPowerLines ? "visible" : "none");
+    };
+    // The track source is created after all optional sources/layers, on initial load.
+    if (map.getSource(SOURCE_ID)) sync();
+    else map.once("load", sync);
+    return () => { map.off("load", sync); };
+  }, [expanded, satellite, showAirspaces, showPowerLines]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const sync = () => (map.getSource(AIRSPACE_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      prepareAirspacesForMap(coverage.airspaces, { currentAltitudeMeters: null }),
+    );
+    if (map.getSource(AIRSPACE_SOURCE)) sync();
+    else map.once("load", sync);
+    return () => { map.off("load", sync); };
+  }, [coverage.airspaces]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !expanded || !showPowerLines) return;
+    const runtime = new PowerLineRuntime((state) => {
+      setPowerState(state);
+      (map.getSource(POWER_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(state.data);
+    });
+    const refresh = () => {
+      if (!map.getSource(POWER_SOURCE)) return;
+      const bounds = map.getBounds();
+      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+    };
+    if (map.getSource(POWER_SOURCE)) refresh();
+    else map.once("load", refresh);
+    map.on("moveend", refresh);
+    window.addEventListener("online", refresh);
+    window.addEventListener("offline", refresh);
+    return () => {
+      runtime.stop();
+      map.off("load", refresh);
+      map.off("moveend", refresh);
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("offline", refresh);
+    };
+  }, [expanded, showPowerLines]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -233,6 +358,25 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
     >
       <div ref={containerRef} className={`h-full w-full ${hasTrace ? "" : "invisible"}`} />
       {!hasTrace && points.length === 0 && <p className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-[var(--bc-text-secondary)]">{trackState === "LOADING_CLOUD" ? "Chargement de la trace…" : trackState === "CLOUD_OFFLINE" ? "Trace disponible dans le Cloud — connexion requise" : flight.origin === "REAL_GPS" ? "La trace s’affichera ici lorsqu’elle sera disponible." : "Trace indisponible"}</p>}
+      {expanded && (
+        <div className="absolute inset-x-3 bottom-[max(36px,env(safe-area-inset-bottom))] z-10 mx-auto max-w-md rounded-2xl border border-white/20 bg-[var(--bc-color-surface-glass)] p-2 text-white shadow-lg">
+          <div role="group" aria-label="Couches de la carte" className="flex flex-wrap justify-center gap-1">
+            {[
+              { label: "Satellite", active: satellite, toggle: () => setSatellite((value) => !value), disabled: !mapTilerKey },
+              { label: "Espaces aériens", active: showAirspaces, toggle: () => setShowAirspaces((value) => !value), disabled: false },
+              { label: "Lignes électriques", active: showPowerLines, toggle: () => setShowPowerLines((value) => !value), disabled: false },
+            ].map(({ label, active, toggle, disabled }) => (
+              <button key={label} type="button" aria-pressed={active} disabled={disabled} onClick={toggle}
+                title={disabled ? "Satellite indisponible : fond non configuré" : undefined}
+                className={`min-h-11 rounded-xl border px-2 text-xs font-semibold disabled:opacity-40 ${active ? "border-sky-300 bg-sky-700" : "border-white/20 bg-black/30"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {showAirspaces && coverage.statusMessage && <p role="status" className="px-1 pt-1 text-xs">{coverage.statusMessage}</p>}
+          {showPowerLines && powerState && powerLineStatusLabel(powerState) && <p role="status" className="px-1 pt-1 text-xs">{powerLineStatusLabel(powerState)}</p>}
+        </div>
+      )}
       {expanded ? (
         <button
           type="button"
