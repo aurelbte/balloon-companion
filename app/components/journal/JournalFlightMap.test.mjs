@@ -48,7 +48,7 @@ function harness(t, satelliteKey = "test-key") {
     setLayoutProperty(id, property, value) { const layer = this.layers.get(id); assert.ok(layer, id); (layer.layout ??= {})[property] = value; }
     fitBounds() { this.fits++; } resize() { this.resizes++; } remove() { this.removed++; }
   }
-  let hydrated = { points: [], trackState: "UNAVAILABLE" };
+  let hydrated = { points: [], trackState: "LOADING_CLOUD" };
   let coverage = { airspaces: { type: "FeatureCollection", features: [] }, statusMessage: null };
   let coverageInput;
   const runtimes = [];
@@ -220,4 +220,22 @@ test("sans clé MapTiler le satellite est désactivé et OSM reste visible", t =
   assert.equal(findButton(tree, "Satellite").props.disabled, true);
   assert.equal(h.maps[0].getLayer("journal-satellite"), undefined);
   assert.equal(visibility(h.maps[0], "journal-plan"), "visible");
+});
+
+
+test("messages de trace : chargement, hors ligne, absence distante et échec distincts", t => {
+  const h = harness(t);
+  for (const [trackState, expected] of [
+    ["LOADING_CLOUD", /Chargement de la trace/],
+    ["CLOUD_OFFLINE", /Hors ligne — connexion requise/],
+    ["REMOTE_UNAVAILABLE", /Trace non disponible dans le Cloud/],
+    ["DOWNLOAD_ERROR", /Impossible de charger la trace/],
+  ]) {
+    h.setHydrated({ points: [], trackState });
+    assert.match(text(h.render()), expected);
+  }
+  h.maps[0].handlers.load();
+  h.setHydrated({ points, trackState: "LOCAL" }); h.render();
+  assert.doesNotMatch(text(h.render()), /Impossible de charger|Trace non disponible|Chargement de la trace/);
+  assert.equal(h.maps[0].sources["journal-flight-track"].data.features[0].geometry.coordinates.length, 2);
 });

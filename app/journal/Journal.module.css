@@ -81,6 +81,7 @@
 }
 
 .flightCard {
+  flex: 1;
   position: relative;
   z-index: 2;
   display: block;
@@ -101,6 +102,8 @@
 .automaticRouteTitle { margin: 3px 0 0; color: var(--bc-text-secondary); font-size: .82rem; }
 
 .flightCardShell {
+  display: flex;
+  flex-direction: column;
   position: relative;
   min-width: 0;
   overflow: hidden;

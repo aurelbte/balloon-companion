@@ -357,7 +357,7 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
       aria-label={expanded ? `Trace du vol ${flight.departure} vers ${flight.arrival}` : undefined}
     >
       <div ref={containerRef} className={`h-full w-full ${hasTrace ? "" : "invisible"}`} />
-      {!hasTrace && points.length === 0 && <p className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-[var(--bc-text-secondary)]">{trackState === "LOADING_CLOUD" ? "Chargement de la trace…" : trackState === "CLOUD_OFFLINE" ? "Trace disponible dans le Cloud — connexion requise" : flight.origin === "REAL_GPS" ? "La trace s’affichera ici lorsqu’elle sera disponible." : "Trace indisponible"}</p>}
+      {!hasTrace && points.length === 0 && <p className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-[var(--bc-text-secondary)]">{trackState === "LOADING_CLOUD" ? "Chargement de la trace…" : trackState === "CLOUD_OFFLINE" ? "Hors ligne — connexion requise pour récupérer la trace." : trackState === "REMOTE_UNAVAILABLE" ? "Trace non disponible dans le Cloud. Vérifiez sa synchronisation sur l’appareil d’origine." : trackState === "DOWNLOAD_ERROR" ? "Impossible de charger la trace. Réessayez en rouvrant le vol." : "Trace indisponible sur cet appareil."}</p>}
       {expanded && (
         <div className="absolute inset-x-3 bottom-[max(36px,env(safe-area-inset-bottom))] z-10 mx-auto max-w-md rounded-2xl border border-white/20 bg-[var(--bc-color-surface-glass)] p-2 text-white shadow-lg">
           <div role="group" aria-label="Couches de la carte" className="flex flex-wrap justify-center gap-1">

@@ -25,3 +25,14 @@ test("la miniature reste secondaire et le swipe conserve ses seuils", () => {
   assert.match(sharedSwipe, /journalSwipeDestination/);
   assert.match(sharedSwipe, /JOURNAL_SWIPE_ACTIONS_WIDTH_PX/);
 });
+
+
+test("la carte couvre toute la hauteur de sa cellule desktop et les actions swipe restent présentes", () => {
+  const shell = css.match(/\.flightCardShell\s*\{([^}]+)\}/)[1];
+  const card = css.match(/\.flightCard\s*\{([^}]+)\}/)[1];
+  assert.match(shell, /display:\s*flex/);
+  assert.match(shell, /flex-direction:\s*column/);
+  assert.match(card, /flex:\s*1\s*;/);
+  assert.match(component, /className=\{styles.flightSwipeActions\}/);
+  assert.match(component, /onClick=\{onDelete\}/);
+});
