@@ -1,11 +1,13 @@
 "use client";
 
+import { getFlightTrackDebugSnapshot } from "../../lib/flightTrackDebugSnapshot";
+
 import { cloudSyncObservationVersion, cloudSyncVerdictGeneration, invalidateCloudSyncObservation } from "../../lib/cloudSyncVerdict.ts";
 import { inspectBrowserCloudSyncVerdict, readBrowserCloudSyncEvidence } from "../../lib/cloudSyncVerdictBrowser.ts";
 
 import { useEffect } from "react";
 import { useBalloonAuth } from "../../contexts/AuthContext.tsx";
-import { getRuntimeDataScope, getRuntimeDataScopeGeneration, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
+import { getRuntimeDataScope, getRuntimeDataScopeGeneration, scopedIndexedDbName, scopedBusinessStorageKey } from "../../lib/auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository, BrowserCloudSyncPayloadProvider, createBrowserCloudSyncService } from "../../lib/cloudSyncBrowser.ts";
 import { createScopeUnavailableControlledApi, inspectControlledCloudSyncSources, isAutomaticCloudSyncBlockedForControlledTest } from "../../lib/cloudSyncTestControl.ts";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client.ts";
@@ -137,6 +139,7 @@ declare global {
     }>;
     getCloudSyncConflictDebugInfo?: () => Promise<unknown>;
     getCloudSyncRuntimeDebugInfo?: () => ReturnType<typeof getCloudSyncRuntimeDebugInfo>;
+    getFlightTrackDebugSnapshot?: () => Promise<unknown>;
     getCloudSyncC1DebugSnapshot?: () => Promise<unknown>;
   }
 }
@@ -1431,6 +1434,21 @@ async function inspectCloudBootstrapState(scope: `USER:${string}`) {
 
 export default function CloudSyncRuntime(): null {
   const auth = useBalloonAuth();
+
+  // Temporary observer is available even when the normal sync gate refuses to run.
+  useEffect(() => {
+    const flightTrackDebug = () => getFlightTrackDebugSnapshot({
+      getScope: getRuntimeDataScope,
+      getGeneration: getRuntimeDataScopeGeneration,
+      databaseName: scopedIndexedDbName,
+      getRuntime: () => automaticCloudSyncController.inspect(),
+      getDiscovery: () => ({ ...inspectCloudSyncTraceEvidence(), known: traceVerdictEvidence.has(getRuntimeDataScope() ?? "") }),
+      getGate: () => ({ controlledMode: controlledTestMode(), localDataReady: auth.localDataMigrationState === "MIGRATION_COMPLETE" || auth.localDataMigrationState === "MIGRATION_IMPORT_SKIPPED", localCollisionCount: auth.localDataMigrationCollisions.length }),
+      factory: typeof indexedDB === "undefined" ? undefined : indexedDB,
+    });
+    window.getFlightTrackDebugSnapshot = flightTrackDebug;
+    return () => { if (window.getFlightTrackDebugSnapshot === flightTrackDebug) delete window.getFlightTrackDebugSnapshot; };
+  }, [auth.localDataMigrationState, auth.localDataMigrationCollisions]);
 
   useEffect(() => {
     const releaseRuntimeMount = acquireRuntimeMount();
