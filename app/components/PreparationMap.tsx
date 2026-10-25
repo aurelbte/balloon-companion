@@ -230,6 +230,7 @@ export default function PreparationMap({
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [powerLineState, setPowerLineState] = useState<PowerLineState | null>(null);
   const powerLineRuntimeRef = useRef<PowerLineRuntime | null>(null);
+  const powerLineStateRef = useRef<PowerLineState | null>(null);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
   const mapPressRef = useRef(onMapPress);
@@ -262,6 +263,7 @@ export default function PreparationMap({
 
   useEffect(() => {
     const runtime = new PowerLineRuntime((state) => {
+      powerLineStateRef.current = state;
       setPowerLineState(state);
       (mapRef.current?.getSource(POWER_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(state.data);
     });
@@ -827,9 +829,14 @@ export default function PreparationMap({
     }).slice(0, 9);
     let cancelled = false;
     void (async () => {
+      const visibleBounds = map.getBounds();
+      await runtime.update({ west: visibleBounds.getWest(), south: visibleBounds.getSouth(), east: visibleBounds.getEast(), north: visibleBounds.getNorth() }, navigator.onLine);
+      // Arrival prefetch must not delay the visible area or multiply failed requests.
+      if (cancelled || mapRef.current !== map || !powerLineStateRef.current?.covered) return;
       for (const point of arrivals) {
-        if (cancelled) return;
+        if (cancelled || mapRef.current !== map || !navigator.onLine) return;
         await runtime.update({ west: point.longitude - 0.06, south: point.latitude - 0.06, east: point.longitude + 0.06, north: point.latitude + 0.06 }, true);
+        if (!powerLineStateRef.current?.covered) break;
       }
       if (cancelled || mapRef.current !== map) return;
       const bounds = map.getBounds();

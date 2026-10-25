@@ -11,8 +11,10 @@ const OVERPASS_PROVIDERS = [
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
 // Two attempts including body reads fit inside the client's 15-second timeout.
 const TOTAL_BUDGET_MS = 14_000;
-const PRIMARY_TIMEOUT_MS = 1_000;
+const PRIMARY_TIMEOUT_MS = 12_000;
 const SECONDARY_TIMEOUT_MS = 13_000;
+// Avoid a near-certain failed fallback after the primary exhausts its budget.
+const MIN_FALLBACK_BUDGET_MS = 3_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(request: Request) {
@@ -32,6 +34,7 @@ export async function GET(request: Request) {
   for (const [index, provider] of OVERPASS_PROVIDERS.entries()) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
+    if (index > 0 && remaining < MIN_FALLBACK_BUDGET_MS) break;
     const providerTimeout = index === 0 ? PRIMARY_TIMEOUT_MS : SECONDARY_TIMEOUT_MS;
     const signal = AbortSignal.timeout(Math.min(providerTimeout, remaining));
     let status: number | undefined;
