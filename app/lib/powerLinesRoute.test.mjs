@@ -34,15 +34,16 @@ for (const status of [429, 502, 503, 504]) test(`HTTP ${status} falls back once 
   assert.equal(data.features.length, 1);
   assert.equal(data.complete, true);
   assert.match(result.headers.get('Cache-Control'), /max-age=3600/);
-  assert.deepEqual(h.calls.map(call => call.url), ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter']);
+  assert.deepEqual(h.calls.map(call => call.url), ['https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter']);
   assert.equal(h.calls[1].options.method, 'POST');
   assert.equal(h.calls[0].options.body.toString(), h.calls[1].options.body.toString());
   assert.equal(h.logs[0][1].status, status);
+  assert.deepEqual(h.budgets, [1000, 13000]);
 });
 test('timeout falls back with a bounded remaining budget', async t => {
-  const h = harness(t, [() => { h.advance(6500); throw new DOMException('expired', 'TimeoutError'); }, success]);
+  const h = harness(t, [() => { h.advance(1500); throw new DOMException('expired', 'TimeoutError'); }, success]);
   assert.equal((await h.GET(request())).status, 200);
-  assert.deepEqual(h.budgets, [6000, 5500]);
+  assert.deepEqual(h.budgets, [1000, 12500]);
   assert.equal(h.logs[0][1].cause, 'timeout');
 });
 for (const [name, outcome] of [
@@ -65,10 +66,10 @@ test('both failures stop after two attempts and never cache errors', async t => 
   assert.deepEqual(await result.json(), { error: 'Données indisponibles' });
   assert.equal(result.headers.get('Cache-Control'), 'no-store');
   assert.equal(h.calls.length, 2);
-  assert.equal(h.budgets.reduce((a, b) => a + b), 12000);
+  assert.equal(h.budgets.reduce((a, b) => a + b), 14000);
 });
 test('expired total budget prevents a second request', async t => {
-  const h = harness(t, [() => { h.advance(12000); throw new DOMException('expired', 'TimeoutError'); }]);
+  const h = harness(t, [() => { h.advance(14000); throw new DOMException('expired', 'TimeoutError'); }]);
   assert.equal((await h.GET(request())).status, 503);
   assert.equal(h.calls.length, 1);
 });
@@ -89,6 +90,7 @@ test('primary success does not contact secondary', async t => {
   assert.equal((await h.GET(request())).status, 200);
   assert.equal(h.calls.length, 1);
   assert.equal(h.logs.length, 0);
+  assert.deepEqual(h.budgets, [1000]);
 });
 test('timeout while reading response body also falls back', async t => {
   const h = harness(t, [() => ({ ok: true, status: 200, json: async () => { throw new DOMException('body timeout', 'TimeoutError'); } }), success]);

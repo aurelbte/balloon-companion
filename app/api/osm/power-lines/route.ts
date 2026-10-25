@@ -6,12 +6,13 @@ import {
 
 const OVERPASS_PROVIDERS = [
   "https://overpass-api.de/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
 // Two attempts including body reads fit inside the client's 15-second timeout.
-const TOTAL_BUDGET_MS = 12_000;
-const PROVIDER_TIMEOUT_MS = 6_000;
+const TOTAL_BUDGET_MS = 14_000;
+const PRIMARY_TIMEOUT_MS = 1_000;
+const SECONDARY_TIMEOUT_MS = 13_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(request: Request) {
@@ -28,10 +29,11 @@ export async function GET(request: Request) {
   }
 
   const deadline = Date.now() + TOTAL_BUDGET_MS;
-  for (const provider of OVERPASS_PROVIDERS) {
+  for (const [index, provider] of OVERPASS_PROVIDERS.entries()) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
-    const signal = AbortSignal.timeout(Math.min(PROVIDER_TIMEOUT_MS, remaining));
+    const providerTimeout = index === 0 ? PRIMARY_TIMEOUT_MS : SECONDARY_TIMEOUT_MS;
+    const signal = AbortSignal.timeout(Math.min(providerTimeout, remaining));
     let status: number | undefined;
     let phase = "network";
     try {
