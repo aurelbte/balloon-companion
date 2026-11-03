@@ -1,8 +1,7 @@
-import maplibregl from "maplibre-gl";
+import type maplibregl from "maplibre-gl";
 
 export const BOURROUS_ZONE_URL = "/geo/zone-vol-bourrous.geojson";
 const SOURCE = "bourrous-flight-zone";
-const LABEL_POSITION: [number, number] = [-7.80, 31.755]; // Inside the supplied polygon.
 
 /** Local geographic overlay, independent of aeronautical visibility and selection. */
 export function addBourrousFlightZone(map: maplibregl.Map) {
@@ -23,21 +22,4 @@ export function addBourrousFlightZone(map: maplibregl.Map) {
     paint: { "line-color": "#c084fc", "line-width": 4, "line-opacity": 1 },
   });
 
-  // DOM text uses the system font, including offline (no glyph endpoint required).
-  const label = document.createElement("div");
-  label.textContent = "Zone montgolfière Bourrous";
-  Object.assign(label.style, {
-    color: "#f3e8ff",
-    background: "rgba(59, 7, 100, 0.85)",
-    border: "1px solid #c084fc",
-    borderRadius: "6px",
-    padding: "4px 7px",
-    font: "600 12px system-ui, sans-serif",
-    whiteSpace: "nowrap",
-    pointerEvents: "none",
-  });
-  const marker = new maplibregl.Marker({ element: label, anchor: "center" })
-    .setLngLat(LABEL_POSITION)
-    .addTo(map);
-  map.once("remove", () => marker.remove());
 }

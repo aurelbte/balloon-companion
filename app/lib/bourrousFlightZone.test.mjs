@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 
-const geojson = JSON.parse(readFileSync(new URL('../../public/geo/zone-vol-bourrous.geojson', import.meta.url), 'utf8'));
 function setup() {
   const sources = new Map(), layers = [], markers = [], events = new Map();
   const map = { getSource: id => sources.get(id), addSource: (id, source) => sources.set(id, source), addLayer: layer => layers.push(layer), once: (name, handler) => events.set(name, handler) };
@@ -28,28 +27,11 @@ test('Bourrous polygon and outline are visible independently, without remote gly
   assert.equal(h.layers[0].paint['fill-color'], '#a855f7');
   assert.ok(h.layers[0].paint['fill-opacity'] > 0 && h.layers[0].paint['fill-opacity'] < 1);
   assert.equal(h.layers[1].paint['line-width'], 4);
-  assert.equal(h.markers[0].options.element.textContent, 'Zone montgolfière Bourrous');
-  assert.equal(h.markers[0].options.element.style.pointerEvents, 'none');
+  assert.equal(h.markers.length, 0);
   assert.ok(!h.events.has('click'));
   h.addBourrousFlightZone(h.map);
   assert.equal(h.layers.length, 2);
-  assert.equal(h.markers.length, 1);
-  h.events.get('remove')();
-  assert.equal(h.markers[0].removed, true);
-});
-test('label anchor lies inside the supplied valid closed polygon', () => {
-  const h = setup(); h.addBourrousFlightZone(h.map);
-  assert.equal(geojson.type, 'FeatureCollection');
-  assert.equal(geojson.features[0].geometry.type, 'Polygon');
-  const ring = geojson.features[0].geometry.coordinates[0];
-  assert.deepEqual(ring[0], ring.at(-1));
-  const [x, y] = h.markers[0].position;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i], [xj, yj] = ring[j];
-    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
-  }
-  assert.equal(inside, true);
+  assert.equal(h.markers.length, 0);
 });
 test('only Preparation and Flight install the shared overlay on map load', () => {
   for (const file of ['../components/PreparationMap.tsx', '../components/flight/FlightMap.tsx']) {
