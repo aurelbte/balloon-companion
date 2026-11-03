@@ -53,6 +53,7 @@ import {
   TWO_DIMENSIONAL_MAP_OPTIONS,
 } from "../../lib/mapInteraction";
 import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../../lib/powerLinesRuntime";
+import { addBourrousFlightZone } from "../../lib/bourrousFlightZone";
 // Coverage is checked with powerLineBoundsContain in the shared reader.
 
 import {
@@ -845,6 +846,7 @@ export default function FlightMap({
         });
       }
 
+      addBourrousFlightZone(map.current);
       const powerLineLayout = {
         "line-cap": "round" as const,
         "line-join": "round" as const,

@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Flight Area Bourrous",
+        "source": "User-provided Google My Maps KML",
+        "regulatory_status": "unverified"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -7.9333762,
+              31.8083235
+            ],
+            [
+              -7.9333762,
+              31.7667663
+            ],
+            [
+              -7.8500429,
+              31.7000267
+            ],
+            [
+              -7.6666712,
+              31.700015
+            ],
+            [
+              -7.6635235,
+              31.753318
+            ],
+            [
+              -7.9333762,
+              31.8083235
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

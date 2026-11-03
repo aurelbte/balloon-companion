@@ -22,6 +22,7 @@ async function fixture(t) {
     ".next/static/chunks/style.css": '@font-face { src: url(../media/font.woff2); }',
     ".next/static/media/font.woff2": "font-bytes",
     ".next/static/chunks/journal-unrelated.js": "not flight",
+    "public/geo/zone-vol-bourrous.geojson": await readFile(new URL("../public/geo/zone-vol-bourrous.geojson", import.meta.url), "utf8"),
   };
   for (const [name, content] of Object.entries(files)) {
     await mkdir(resolve(root, name, ".."), { recursive: true });
@@ -67,7 +68,7 @@ function workerHarness(worker, resources, cachesData = new Map(), scope = "/") {
 
 test("build : deux shells statiques + fermeture des dépendances JS/CSS/polices, sans autres routes", async t => {
   const { root, manifest } = await fixture(t);
-  assert.deepEqual(manifest.assets.map(({ url }) => url), ["/_next/static/chunks/complete.js", "/_next/static/chunks/flight.js", "/_next/static/chunks/lazy.js", "/_next/static/chunks/style.css", "/_next/static/media/font.woff2"]);
+  assert.deepEqual(manifest.assets.map(({ url }) => url), ["/_next/static/chunks/complete.js", "/_next/static/chunks/flight.js", "/_next/static/chunks/lazy.js", "/_next/static/chunks/style.css", "/_next/static/media/font.woff2", "/geo/zone-vol-bourrous.geojson"]);
   const before = manifest.version;
   await writeFile(resolve(root, ".next/static/chunks/lazy.js"), "new build content");
   assert.notEqual((await buildFlightOffline(root)).version, before);
@@ -208,4 +209,21 @@ test("shell de finalisation manquant ou modifié : installation entière refusé
   }
   await writeFile(resolve(root, ".next/prerender-manifest.json"), JSON.stringify({ routes: { "/flight": { initialRevalidateSeconds: false }, "/flight/complete": { initialRevalidateSeconds: 60 } } }));
   await assert.rejects(buildFlightOffline(root), /Offline \/flight\/complete requires a static/);
+});
+
+test('Bourrous est préchargé avant consultation et disponible hors ligne avec son empreinte de build', async t => {
+  const { root, manifest, resources, worker } = await fixture(t);
+  const url = '/geo/zone-vol-bourrous.geojson';
+  const h = workerHarness(worker, resources);
+  await h.lifecycle('install'); await h.lifecycle('activate'); h.offline();
+  const response = await h.request(url, { mode: 'cors' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), JSON.parse(resources.get(url).toString()));
+  assert.ok(h.fetched.some(item => item.url === url));
+  await writeFile(resolve(root, 'public/geo/zone-vol-bourrous.geojson'), resources.get(url).toString() + '\n');
+  assert.notEqual((await buildFlightOffline(root)).version, manifest.version);
+  const corrupt = new Map(resources); corrupt.set(url, Buffer.from('{}'));
+  const broken = workerHarness(worker, corrupt);
+  await assert.rejects(broken.lifecycle('install'), /different build/);
+  assert.equal(broken.cachesData.size, 0);
 });

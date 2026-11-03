@@ -41,6 +41,7 @@ import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, coun
 import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
 import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
 import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../lib/powerLinesRuntime";
+import { addBourrousFlightZone } from "../lib/bourrousFlightZone";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -453,6 +454,7 @@ export default function PreparationMap({
           },
         });
       }
+      addBourrousFlightZone(map);
       map.addSource(TRACE_SOURCE, {
         type: "geojson",
         data: initialTraceData.current,

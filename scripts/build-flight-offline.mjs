@@ -45,6 +45,11 @@ export async function buildFlightOffline(root = process.cwd()) {
     if (/\.(js|css)$/.test(url)) pending.push(...staticReferences(bytes.toString(), url));
   }
   if (![...assets.keys()].some(url => url.endsWith(".js"))) throw new Error("No flight JavaScript found");
+  // Explicit local map data: preload even when the user has never viewed Bourrous.
+  for (const url of ["/geo/zone-vol-bourrous.geojson"]) {
+    const bytes = await readFile(resolve(root, "public", url.slice(1)));
+    assets.set(url, { url, sha256: hash(bytes) });
+  }
   const entries = [...assets.values()].sort((a, b) => a.url.localeCompare(b.url));
   const version = hash(buildId + hash(html) + hash(completionHtml) + JSON.stringify(entries) + template).slice(0, 24);
   const shell = { url: `/flight-offline/${version}/shell.html`, sha256: hash(html) };
