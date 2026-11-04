@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { prepareFlightDossierOperations } from "../lib/flightDossierOperations";
 import { prepareFlightDossier } from "../lib/flightDossierEntry";
+import FlightDossierAction from "../components/FlightDossierAction";
+import { resolveLoadGroundTemperature } from "../lib/loadGroundTemperatureSelection";
 import PreparationMap from "../components/PreparationMap";
 import AirspaceDetails from "../components/flight/AirspaceDetails";
 import {
@@ -102,6 +104,9 @@ export default function MapPage() {
   const [visibleTraceIds, setVisibleTraceIds] = useState<string[]>([]);
   const [arrivalDetailsOpen, setArrivalDetailsOpen] = useState(false);
   const [exportIds, setExportIds] = useState<string[]>([]);
+  const [selectedDossierTraceId, setSelectedDossierTraceId] = useState<string | null>(null);
+  const [temperatureMode, setTemperatureMode] = useState<"auto" | "manual">("auto");
+  const [manualTemperatureInput, setManualTemperatureInput] = useState("");
   const [legendOpen, setLegendOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [showPowerLines, setShowPowerLines] = useState(false);
@@ -478,6 +483,8 @@ export default function MapPage() {
       ),
     [selectedAltitudes, selectedModels, traces],
   );
+  const dossierTrace = displayedTraces.find((trace) => trace.traceId === selectedDossierTraceId)
+    ?? (exportIds.length === 1 ? displayedTraces.find((trace) => trace.traceId === exportIds[0]) : undefined);
   const intersectedAirspaces = useMemo(
     () => [...new Map(displayedTraces.flatMap((trace) => selectTrajectoryAirspaces(trace, airspaceCoverage.airspaces))
       .map((airspace) => [airspace.airspaceCompositeKey || airspace.airspaceId, airspace])).values()],
@@ -497,9 +504,10 @@ export default function MapPage() {
   const groundTemperatureRequest = temperatureLaunchSite && temperatureDateTime ? { latitude: temperatureLaunchSite.latitude, longitude: temperatureLaunchSite.longitude, dateTime: temperatureDateTime, provider: GROUND_TEMPERATURE_PROVIDER_ID, ...(config?.request.launchTimeZone ?? preparation?.launchTimeZone ? { timeZone: config?.request.launchTimeZone ?? preparation?.launchTimeZone } : {}) } : null;
   const groundTemperatureFetchEnabled = groundTemperatureRequest !== null && canFetchGroundTemperature(groundTemperatureRequest);
   const groundTemperatureKey = groundTemperatureRequest ? groundTemperatureRequestKey(groundTemperatureRequest) : "";
-  const groundTemperature = groundTemperatureRequest && groundTemperatureState?.key === groundTemperatureKey
+  const automaticGroundTemperature = groundTemperatureRequest && groundTemperatureState?.key === groundTemperatureKey
     ? usableGroundTemperature(groundTemperatureState.value, groundTemperatureRequest) : null;
-  const groundTemperatureLoading = groundTemperatureFetchEnabled && groundTemperaturePendingKey === groundTemperatureKey;
+  const groundTemperature = resolveLoadGroundTemperature(temperatureMode, manualTemperatureInput, automaticGroundTemperature, temperatureDateTime);
+  const groundTemperatureLoading = temperatureMode === "auto" && groundTemperatureFetchEnabled && groundTemperaturePendingKey === groundTemperatureKey;
   const loadInput = buildLoadCalculationInput({
     balloon: selectedBalloon,
     occupantsWeightKg: preparation?.occupantsWeightKg,
@@ -774,11 +782,7 @@ export default function MapPage() {
             onMapPress={handleMapPress}
             onViewportChange={setViewport}
             onArrivalSelectionChange={setArrivalDetailsOpen}
-            onFlightDossier={(traceId) => {
-              const dossier = prepareFlightDossier(traceId, displayedTraces, selectedBalloon);
-              if (dossier.status !== "READY") return dossier;
-              return { ...dossier, data: { ...dossier.data, launchSiteName: config.request.launchSite.name, launchTimeZone: config.request.launchTimeZone, operations: prepareFlightDossierOperations(dossier.data, loadInput, airspaceCoverage.airspaces, testLoadEnabled) } };
-            }}
+            onSelectedTraceChange={setSelectedDossierTraceId}
           />
         {displayedTraces.length === 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-16 text-center text-sm font-semibold text-white/80">{loading ? "Calcul des trajectoires…" : selectedModels.length === 0 || selectedAltitudes.length === 0 ? "Sélectionnez un modèle et une altitude." : "Aucune trajectoire disponible"}</div>}
         {profileDebugEnabled && (
@@ -918,7 +922,7 @@ export default function MapPage() {
 
         <FloatingAction onClick={() => setRecenterToken((value) => value + 1)} className="absolute right-3 top-16 z-20 rounded-full" aria-label="Recentrer les trajectoires"><LocateFixed size={18} /></FloatingAction>
 
-      <section className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-[var(--bc-radius-dock)] border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
+      <section style={{ zIndex: dossierTrace ? 35 : 20 }} className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-[var(--bc-radius-dock)] border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
         <button
           type="button"
           onClick={() => {
@@ -931,6 +935,12 @@ export default function MapPage() {
           <span>Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
         </button>
+        {dossierTrace && <FlightDossierAction key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
+          onFlightDossier={(traceId) => {
+              const dossier = prepareFlightDossier(traceId, displayedTraces, selectedBalloon);
+              if (dossier.status !== "READY") return dossier;
+              return { ...dossier, data: { ...dossier.data, launchSiteName: config.request.launchSite.name, launchTimeZone: config.request.launchTimeZone, operations: prepareFlightDossierOperations(dossier.data, loadInput, airspaceCoverage.airspaces, testLoadEnabled) } };
+            }} />}
         {legendOpen && (
           <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-[var(--bc-color-surface-glass)] p-2.5">
             <div>
@@ -986,6 +996,22 @@ export default function MapPage() {
         aria-label="Paramètres des trajectoires"
       >
         <div className="mx-auto max-w-3xl">
+          <fieldset className="mb-2 rounded-lg border p-2" style={{ borderColor: "var(--bc-border)" }}>
+            <legend className="px-1 text-xs font-semibold">Température au sol pour la charge</legend>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex min-h-11 items-center gap-2 text-sm">Source
+                <select aria-label="Source de température au sol" value={temperatureMode} onChange={(event) => setTemperatureMode(event.target.value as "auto" | "manual")} className="min-h-11 rounded-lg border bg-[var(--bc-surface)] px-2">
+                  <option value="auto">Auto</option><option value="manual">Manuel</option>
+                </select>
+              </label>
+              {temperatureMode === "manual" && <div className="flex items-center gap-2"><label className="flex min-h-11 items-center gap-2 text-sm">Température (°C)
+                <input type="text" inputMode="decimal" value={manualTemperatureInput} onChange={(event) => setManualTemperatureInput(event.target.value)} aria-label="Température au sol manuelle en degrés Celsius" aria-invalid={!groundTemperature} placeholder="Valeur en °C" className="min-h-11 w-28 rounded-lg border bg-[var(--bc-surface)] px-2" />
+              </label>
+                <button type="button" aria-label="Changer le signe de la température manuelle" onClick={() => setManualTemperatureInput((value) => value.trim().startsWith("-") ? value.trim().slice(1) : `-${value.trim().replace(/^\+/, "")}`)} className="min-h-11 min-w-11 rounded-lg border px-2">±</button>
+              </div>}
+            </div>
+            {temperatureMode === "manual" && !groundTemperature && <p role="status" className="mt-1 text-xs">Saisissez une température valide en °C pour calculer la charge. Aucune température automatique ne sera utilisée en mode manuel.</p>}
+          </fieldset>
           <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             <div
               role="button"
@@ -1025,7 +1051,7 @@ export default function MapPage() {
                   <div><dt className="inline">mode DEMO : </dt><dd className="inline">{testLoadEnabled ? "ON" : "OFF"}</dd></div>
                 </dl>
               )}
-              {groundTemperature ? <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperature.provider} · Prévision {formatInTimeZone(groundTemperature.validTime, groundTemperature.requestIdentity.timeZone, { dateStyle: "short", timeStyle: "short" })} · Récupérée {new Date(groundTemperature.fetchedAt).toLocaleString("fr-FR")}</p> : <p role="status" className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperatureLoading ? "Température sol : actualisation… Calcul indisponible." : "Température actuelle indisponible pour le calcul de charge."}</p>}
+              {groundTemperature ? <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{temperatureMode === "manual" ? `Saisie manuelle · ${groundTemperature.temperatureC.toLocaleString("fr-FR")} °C` : `${groundTemperature.provider} · Prévision ${formatInTimeZone(groundTemperature.validTime, automaticGroundTemperature?.requestIdentity.timeZone, { dateStyle: "short", timeStyle: "short" })} · Récupérée ${new Date(automaticGroundTemperature!.fetchedAt).toLocaleString("fr-FR")}`}</p> : <p role="status" className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{groundTemperatureLoading ? "Température sol : actualisation… Calcul indisponible." : "Température actuelle indisponible pour le calcul de charge."}</p>}
               {temperatureDebugEnabled && <div className="mt-1 text-[8px] font-semibold leading-tight text-[var(--bc-color-text-muted)]"><p>TEMP FETCH : {groundTemperatureFetchEnabled ? "ON" : "OFF"}</p><p>TEMP VALUE : {groundTemperature ? groundTemperature.temperatureC.toLocaleString("fr-FR") : "—"}</p><p>TEMP ERROR : {groundTemperatureErrorCode ?? "—"}</p></div>}
               <label className="mt-1.5 block">
                 <span className="block text-[9px] font-semibold leading-tight">Altitude max</span>
@@ -1148,8 +1174,8 @@ export default function MapPage() {
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Température utilisée</dt><dd>{formatWeatherTemperature(loadResult.groundTemperatureC, units.weather.temperatureUnit)}</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Masse autorisée de démonstration</dt><dd>{Math.floor(loadResult.permittedTotalMassKg)} kg</dd></div>
                 <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Marge de démonstration</dt><dd style={{ color: marginColor }}>{displayedMargin! >= 0 ? "+" : "−"}{Math.abs(displayedMargin!)} kg</dd></div>
-                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Prévision</dt><dd>{formatInTimeZone(groundTemperature.validTime, groundTemperature.requestIdentity.timeZone, { hour: "2-digit", minute: "2-digit" })}</dd></div>
-                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Décalage</dt><dd>{(groundTemperature.forecastOffsetMinutes ?? 0) >= 0 ? "+" : "−"}{Math.abs(Math.round(groundTemperature.forecastOffsetMinutes ?? 0))} min</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">{temperatureMode === "manual" ? "Saisie manuelle" : "Prévision"}</dt><dd>{temperatureMode === "manual" ? "Pas une prévision météo" : formatInTimeZone(groundTemperature.validTime, automaticGroundTemperature?.requestIdentity.timeZone, { hour: "2-digit", minute: "2-digit" })}</dd></div>
+                <div><dt className="text-xs text-[var(--bc-color-text-muted)]">Décalage</dt><dd>{temperatureMode === "manual" ? "Indisponible" : `${(groundTemperature.forecastOffsetMinutes ?? 0) >= 0 ? "+" : "−"}${Math.abs(Math.round(groundTemperature.forecastOffsetMinutes ?? 0))} min`}</dd></div>
                 <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Source</dt><dd>{groundTemperature.provider ?? "Open-Meteo"} · {groundTemperature.sourceModel}</dd></div>
                 <div className="col-span-2"><dt className="text-xs text-[var(--bc-color-text-muted)]">Dataset</dt><dd>Données synthétiques pour test UX</dd></div>
               </dl>

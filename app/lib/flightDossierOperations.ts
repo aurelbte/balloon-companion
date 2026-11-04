@@ -26,6 +26,7 @@ export function prepareDossierLoad(balloon: Balloon, input: LoadCalculationInput
     : { status: "UNAVAILABLE" as const, source: demo || mismatch ? null : parameters?.source ?? null, points: null, notice: "Aucune courbe numérique applicable disponible ; aucune courbe synthétique générée." };
   return {
     balloon,
+    temperature: demo || mismatch ? null : input.groundTemperature ?? null,
     status: available ? "AVAILABLE" as const : "UNAVAILABLE" as const,
     manufacturerParameters: demo || mismatch ? null : parameters ?? null,
     calculationStatus: available?.calculationStatus ?? "UNAVAILABLE" as const,

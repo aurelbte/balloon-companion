@@ -217,6 +217,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     layout.paragraph(`${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`, { bold: true, size: 12 });
     layout.paragraph(`Disponibilité : ${status(load.status)}. Statut du calcul constructeur : ${status(load.calculationStatus)}.`);
     if (load.message) layout.paragraph(load.message);
+    layout.paragraph(`Température au sol utilisée pour la charge : ${number(load.temperature?.temperatureC)} °C | Source : ${load.temperature?.provider || load.temperature?.sourceModel || absent}.`);
     layout.table(["Masse prévue (kg)", "Limite applicable (kg)", "Marge signée (kg)"], [170, 170, WIDTH - 340], [[number(load.plannedMassKg), number(load.applicableLimitKg), load.signedMarginKg || absent]]);
     layout.paragraph("Marge affichée arrondie vers le bas par le moteur existant. Les données de démonstration sont exclues.", { muted: true });
     if (load.result?.status === "AVAILABLE") {
