@@ -65,8 +65,8 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
     }
   };
   return (
-    <div className="relative shrink-0">
-      <button type="button" aria-label="Dossier de vol PDF" title={`Dossier PDF : ${trace.model.label} ${trace.label}`} aria-busy={dossierPending} disabled={dossierPending} onClick={requestDossier} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-slate-950 text-white shadow-sm disabled:opacity-50">{dossierPending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <FileDown size={18} aria-hidden="true" />}</button>
+    <div className="pointer-events-auto relative shrink-0">
+      <button type="button" aria-label="Dossier de vol PDF" title={`Dossier PDF : ${trace.model.label} ${trace.label}`} aria-busy={dossierPending} disabled={dossierPending} onClick={requestDossier} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md disabled:opacity-50">{dossierPending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <FileDown size={18} aria-hidden="true" />}</button>
       {feedbackOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-[40dvh] w-[min(280px,calc(100vw-88px))] overflow-y-auto rounded-xl border border-white/20 bg-slate-950 p-3 text-xs text-white shadow-xl">
       <div className="flex items-center justify-between gap-2"><p>{trace.model.label} · {trace.label}</p><button type="button" aria-label="Fermer le suivi du dossier PDF" className="min-h-11 min-w-11" onClick={() => setFeedbackOpen(false)}><X size={16} /></button></div>
       {dossier && (dossier.status === "INVALID" ? <p role="alert">{dossier.message}</p> : <div role="status">

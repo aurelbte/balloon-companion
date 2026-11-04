@@ -927,22 +927,16 @@ export default function MapPage() {
         <FloatingAction onClick={() => setRecenterToken((value) => value + 1)} className="absolute right-3 top-16 z-20 rounded-full" aria-label="Recentrer les trajectoires"><LocateFixed size={18} /></FloatingAction>
 
 
-      {(notice || loading) && (
-        <p className="absolute left-1/2 top-[max(14px,env(safe-area-inset-top))] z-40 -translate-x-1/2 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] px-3 py-2 text-[10px] font-bold text-white shadow-[var(--bc-shadow-low)]">
-          {loading ? "Mise à jour météo…" : notice}
-        </p>
-      )}
-      </div>
-
-      <section aria-label="Actions de l’analyse" className="relative z-40 mx-auto w-full max-w-3xl px-3 py-2">
+      <section aria-label="Actions de l’analyse" className="pointer-events-none absolute bottom-[max(40px,calc(env(safe-area-inset-bottom)+12px))] left-[max(12px,env(safe-area-inset-left))] right-[max(52px,calc(env(safe-area-inset-right)+52px))] z-40 max-w-[420px]">
         <div className="flex items-stretch gap-2">
         <button
           type="button"
+          aria-expanded={legendOpen}
           onClick={() => {
             setDisplayOpen(false);
             setLegendOpen((value) => !value);
           }}
-          className="flex h-14 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/15 bg-slate-950 px-3 text-left text-xs font-semibold leading-tight text-white shadow-sm"
+          className="pointer-events-auto flex h-14 min-w-0 flex-1 items-center gap-2 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] px-3 text-left text-[11px] font-semibold leading-tight text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md"
         >
           <Navigation className="shrink-0" size={15} style={{ color: "var(--bc-accent)" }} />
           <span>Utiliser cette analyse en Vol</span>
@@ -956,7 +950,7 @@ export default function MapPage() {
             }} />}
         </div>
         {legendOpen && (
-          <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-slate-950 p-2.5 text-white">
+          <div className="pointer-events-auto absolute bottom-full left-0 right-0 mb-2 grid max-h-[34vh] gap-2 overflow-y-auto rounded-[var(--bc-radius-control)] border border-white/20 bg-[var(--bc-color-surface-glass)] p-2.5 text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
             {!dossierTrace && displayedTraces.length > 1 && <p className="text-[10px]">Pour le PDF, cochez une seule stratégie ou touchez son point d’arrivée.</p>}
             <div>
               <div className="grid grid-cols-2 gap-1">
@@ -994,6 +988,15 @@ export default function MapPage() {
           </div>
         )}
       </section>
+
+      {(notice || loading) && (
+        <p className="absolute left-1/2 top-[max(14px,env(safe-area-inset-top))] z-40 -translate-x-1/2 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] px-3 py-2 text-[10px] font-bold text-white shadow-[var(--bc-shadow-low)]">
+          {loading ? "Mise à jour météo…" : notice}
+        </p>
+      )}
+      </div>
+
+
 
       <section
         className="relative z-30 border-t px-3 py-2.5"
