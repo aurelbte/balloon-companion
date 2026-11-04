@@ -43,6 +43,9 @@ import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
 import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../lib/powerLinesRuntime";
 import { addBourrousFlightZone } from "../lib/bourrousFlightZone";
 import { syncMapRelief } from "../lib/mapRelief";
+import { OBSTACLE_MIN_ZOOM } from "../lib/obstacles";
+import { obstacleStatusLabel, type ObstacleState } from "../lib/obstacleRuntime";
+import { addObstacleLayer, clearObstacleInfo, OBSTACLE_SOURCE, setObstaclesVisible, showObstacleInfo } from "../lib/mapObstacles";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -69,6 +72,7 @@ interface PreparationMapProps {
   layers: AnalysisLayerSettings;
   showPowerLines: boolean;
   showRelief?: boolean;
+  showObstacles?: boolean;
   airspaces?: AirspaceFeatureCollection;
   recenterToken?: number;
   onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
@@ -220,6 +224,7 @@ export default function PreparationMap({
   layers,
   showPowerLines,
   showRelief = false,
+  showObstacles = false,
   airspaces = EMPTY_AIRSPACES,
   recenterToken = 0,
   onAirspacesSelected,
@@ -234,6 +239,8 @@ export default function PreparationMap({
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [powerLineState, setPowerLineState] = useState<PowerLineState | null>(null);
   const powerLineRuntimeRef = useRef<PowerLineRuntime | null>(null);
+  const showObstaclesRef = useRef(showObstacles);
+  const [obstacleState, setObstacleState] = useState<ObstacleState | null>(null);
   const powerLineStateRef = useRef<PowerLineState | null>(null);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
@@ -270,6 +277,9 @@ export default function PreparationMap({
       powerLineStateRef.current = state;
       setPowerLineState(state);
       (mapRef.current?.getSource(POWER_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(state.data);
+    }, undefined, (state) => {
+      setObstacleState(state);
+      (mapRef.current?.getSource(OBSTACLE_SOURCE) as GeoJSONSource | undefined)?.setData(state.data);
     });
     powerLineRuntimeRef.current = runtime;
     return () => { runtime.stop(); if (powerLineRuntimeRef.current === runtime) powerLineRuntimeRef.current = null; };
@@ -357,7 +367,7 @@ export default function PreparationMap({
       });
       void powerLineRuntimeRef.current?.update({
         west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
-      }, navigator.onLine);
+      }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
     };
     map.on("moveend", notify);
     map.on("click", (event) => {
@@ -372,6 +382,7 @@ export default function PreparationMap({
         arrivalSelectionRef.current?.(true);
         return;
       }
+      if (showObstacleInfo(map, event.point)) return;
       if (!showAirspacesRef.current) return;
       const layerIds = AIRSPACE_RENDER_ORDER.flatMap((category) => [
         airspaceLayerId(category, "fill"),
@@ -458,6 +469,7 @@ export default function PreparationMap({
         });
       }
       addBourrousFlightZone(map);
+      addObstacleLayer(map, showObstaclesRef.current);
       map.addSource(TRACE_SOURCE, {
         type: "geojson",
         data: initialTraceData.current,
@@ -569,6 +581,7 @@ export default function PreparationMap({
       notify();
     });
     return () => {
+      clearObstacleInfo(map);
       map.remove();
       mapRef.current = null;
     };
@@ -677,6 +690,15 @@ export default function PreparationMap({
     else map.once("load", sync);
     return () => { map.off("load", sync); };
   }, [showRelief, mapTilerKey, initialLatitude, initialLongitude]);
+
+  useEffect(() => {
+    showObstaclesRef.current = showObstacles;
+    const map = mapRef.current;
+    if (!map?.getSource(OBSTACLE_SOURCE)) return; // Existing load handler uses the ref.
+    setObstaclesVisible(map, showObstacles);
+    const bounds = map.getBounds();
+    void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstacles && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+  }, [showObstacles, initialLatitude, initialLongitude]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -821,7 +843,7 @@ export default function PreparationMap({
       const map = mapRef.current;
       if (!map) return;
       const bounds = map.getBounds();
-      void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+      void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
     };
     window.addEventListener("online", refresh);
     return () => window.removeEventListener("online", refresh);
@@ -844,7 +866,7 @@ export default function PreparationMap({
     let cancelled = false;
     void (async () => {
       const visibleBounds = map.getBounds();
-      await runtime.update({ west: visibleBounds.getWest(), south: visibleBounds.getSouth(), east: visibleBounds.getEast(), north: visibleBounds.getNorth() }, navigator.onLine);
+      await runtime.update({ west: visibleBounds.getWest(), south: visibleBounds.getSouth(), east: visibleBounds.getEast(), north: visibleBounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
       // Arrival prefetch must not delay the visible area or multiply failed requests.
       if (cancelled || mapRef.current !== map || !powerLineStateRef.current?.covered) return;
       for (const point of arrivals) {
@@ -854,7 +876,7 @@ export default function PreparationMap({
       }
       if (cancelled || mapRef.current !== map) return;
       const bounds = map.getBounds();
-      await runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+      await runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
     })();
     return () => { cancelled = true; runtime.stop(); };
   }, [traces, visibleTraceIds]);
@@ -862,6 +884,7 @@ export default function PreparationMap({
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
+      {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" className="pointer-events-none absolute left-14 right-14 z-10 rounded bg-slate-950/90 px-2 py-1 text-center text-[10px] text-white" style={{ top: showPowerLines ? 100 : 58 }}>{obstacleStatusLabel(obstacleState)}</p>}
       {showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{powerLineStatusLabel(powerLineState)}</p>}
       {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>

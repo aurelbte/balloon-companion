@@ -1,10 +1,11 @@
+import { buildObstaclesQuery, obstacleKind, obstacleQueryBounds, parseObstacles } from './obstacles.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { buildPowerLinesQuery, parsePowerLines, validatePowerLineResult } from './powerLines.ts';
 
-const raw = readFileSync(new URL('../api/osm/power-lines/route.ts', import.meta.url), 'utf8').replace(/import\s*\{[\s\S]*?\}\s*from\s*[^;]+;/, '');
+const raw = readFileSync(new URL('../api/osm/power-lines/route.ts', import.meta.url), 'utf8').replace(/import\s*\{[\s\S]*?\}\s*from\s*[^;]+;/g, '');
 const code = ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const bounds = { west: 3, south: 50.6, east: 3.15, north: 50.7 };
 const request = () => new Request(`http://localhost/api/osm/power-lines?${new URLSearchParams(bounds)}`);
@@ -19,8 +20,8 @@ function harness(t, outcomes) {
     assert.ok(outcome, 'unexpected extra provider attempt');
     return outcome();
   };
-  new Function('exports', 'buildPowerLinesQuery', 'parsePowerLines', 'fetch', 'console', 'Date', 'AbortSignal', code)(
-    exports, buildPowerLinesQuery, parsePowerLines, fetcher, { warn: (...args) => logs.push(args) },
+  new Function('exports', 'buildPowerLinesQuery', 'parsePowerLines', 'buildObstaclesQuery', 'obstacleKind', 'obstacleQueryBounds', 'parseObstacles', 'fetch', 'console', 'Date', 'AbortSignal', code)(
+    exports, buildPowerLinesQuery, parsePowerLines, buildObstaclesQuery, obstacleKind, obstacleQueryBounds, parseObstacles, fetcher, { warn: (...args) => logs.push(args) },
     class extends Date { static now() { return now; } },
     { timeout(ms) { budgets.push(ms); return new AbortController().signal; } },
   );
@@ -98,4 +99,23 @@ test('timeout while reading response body also falls back', async t => {
   assert.equal(h.calls.length, 2);
   assert.equal(h.logs[0][1].status, 200);
   assert.equal(h.logs[0][1].cause, 'timeout');
+});
+
+test('combined Overpass request preserves strict C10 while exposing separate obstacle coverage', async t => {
+ const line={id:1,type:'way',tags:{power:'line'},geometry:[{lon:3.01,lat:50.61},{lon:3.02,lat:50.62}]};
+ const tower={id:1,type:'node',tags:{power:'tower',height:'40'},lon:3.01,lat:50.61};
+ const h=harness(t,[()=>Response.json({elements:[line,tower]})]);
+ const result=await h.GET(new Request(request().url+'&obstacles=1'));
+ const data=await result.json();
+ assert.equal(result.status,200);validatePowerLineResult(data,bounds);
+ assert.equal(data.complete,true);assert.equal(data.features.length,1);
+ assert.equal(data.obstacles.features[0].id,'node/1');assert.equal(data.obstacles.features[0].properties.heightM,40);
+ assert.deepEqual(data.obstacles.bounds,obstacleQueryBounds(bounds));assert.equal(data.obstacles.complete,true);
+ assert.equal(h.calls.length,1);assert.match(h.calls[0].options.body.get('data'),/out geom;.*nwr/s);
+});
+test('malformed obstacle is partial and no-store without corrupting complete line collection', async t => {
+ const h=harness(t,[()=>Response.json({elements:[{id:2,type:'way',tags:{man_made:'mast'}}]})]);
+ const result=await h.GET(new Request(request().url+'&obstacles=1'));const data=await result.json();
+ validatePowerLineResult(data,bounds);assert.equal(data.complete,true);assert.equal(data.obstacles.complete,false);assert.equal(data.obstacles.emptyConfirmed,false);
+ assert.equal(result.headers.get('Cache-Control'),'no-store');
 });

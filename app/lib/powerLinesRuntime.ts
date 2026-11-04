@@ -1,21 +1,31 @@
 import { getPowerLineQueryBounds, powerLineBoundsContain, powerLineBoundsKey, validatePowerLineResult, type PowerLineBounds, type PowerLineResult } from "./powerLines.ts";
+import { obstacleQueryBounds, validateObstacleResult } from "./obstacles.ts";
+import { ObstacleMemoryStore, ObstacleRuntime, type ObstacleState } from "./obstacleRuntime.ts";
 export type PowerLineStatus = "LOADING" | "AVAILABLE" | "EMPTY_CONFIRMED" | "UNAVAILABLE" | "INCOMPLETE" | "UNKNOWN_COVERAGE";
 export type PowerLineState = { status: PowerLineStatus; loading: boolean; covered: boolean; offline: boolean; data: GeoJSON.FeatureCollection; fetchedAt?: string; retained: boolean };
 export class PowerLineMemoryStore {
+  readonly obstacles = new ObstacleMemoryStore();
   readonly results = new Map<string, PowerLineResult>();
   readonly partialResults = new Map<string, PowerLineResult>();
   private requests = new Map<string, Promise<PowerLineResult>>();
   private fetcher: typeof fetch;
   constructor(fetcher: typeof fetch = (...args) => fetch(...args)) { this.fetcher = fetcher; }
-  async load(bounds: PowerLineBounds): Promise<PowerLineResult> {
+  async load(bounds: PowerLineBounds, includeObstacles = false): Promise<PowerLineResult> {
     const key = powerLineBoundsKey(bounds);
-    const existing = this.requests.get(key);
+    const requestKey = includeObstacles ? `${key}:obstacles-v1` : key;
+    const existing = this.requests.get(requestKey);
     if (existing) return existing;
     const request = (async () => {
       const params = new URLSearchParams(Object.entries(bounds).map(([name, value]) => [name, String(value)]));
+      if (includeObstacles) params.set("obstacles", "1");
       const response = await this.fetcher(`/api/osm/power-lines?${params}`, { signal: AbortSignal.timeout(15_000) });
       if (!response.ok) throw new Error("Données de lignes indisponibles");
-      const result = validatePowerLineResult(await response.json(), bounds);
+      const payload = await response.json();
+      if (includeObstacles) {
+        try { this.obstacles.put(validateObstacleResult(payload.obstacles, obstacleQueryBounds(bounds))); }
+        catch { /* Invalid obstacles must not invalidate valid C10 lines. */ }
+      }
+      const result = validatePowerLineResult(payload, bounds);
       if (result.complete) {
         this.results.set(key, result);
         const partial = this.partialResults.get(key);
@@ -24,8 +34,8 @@ export class PowerLineMemoryStore {
       else this.partialResults.set(key, result);
       return result;
     })();
-    this.requests.set(key, request);
-    try { return await request; } finally { if (this.requests.get(key) === request) this.requests.delete(key); }
+    this.requests.set(requestKey, request);
+    try { return await request; } finally { if (this.requests.get(requestKey) === request) this.requests.delete(requestKey); }
   }
 }
 export const powerLineMemoryStore = new PowerLineMemoryStore();
@@ -55,8 +65,12 @@ export class PowerLineRuntime {
   private generation = 0;
   private publish: (state: PowerLineState) => void;
   private store: PowerLineMemoryStore;
-  constructor(publish: (state: PowerLineState) => void, store = powerLineMemoryStore) { this.publish = publish; this.store = store; }
-  stop() { this.generation++; }
+  private obstacles?: ObstacleRuntime;
+  constructor(publish: (state: PowerLineState) => void, store = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void) {
+    this.publish = publish; this.store = store;
+    if (publishObstacles) this.obstacles = new ObstacleRuntime(publishObstacles, store.obstacles, bounds => store.load(bounds, true));
+  }
+  stop() { this.generation++; this.obstacles?.stop(); }
   private snapshot(viewport: PowerLineBounds, offline: boolean): PowerLineState {
     const results = [...this.store.results.values()];
     const covering = results.filter(result => result.complete && powerLineBoundsContain(result.bounds, viewport));
@@ -80,7 +94,10 @@ export class PowerLineRuntime {
     const status = relevantPartials.length ? "INCOMPLETE" : covered ? hasRelevantFeatures || covering.some(result => !result.emptyConfirmed) ? "AVAILABLE" : "EMPTY_CONFIRMED" : references.length ? "UNKNOWN_COVERAGE" : "UNAVAILABLE";
     return { status, covered, loading: false, offline, data, fetchedAt, retained: references.length > 0 };
   }
-  async update(viewport: PowerLineBounds, online: boolean): Promise<void> {
+  async update(viewport: PowerLineBounds, online: boolean, includeObstacles = false): Promise<void> {
+    await Promise.all([this.updateLines(viewport, online, includeObstacles), this.obstacles?.update(viewport, online, includeObstacles)]);
+  }
+  private async updateLines(viewport: PowerLineBounds, online: boolean, includeObstacles: boolean): Promise<void> {
     const generation = ++this.generation;
     const previous = this.snapshot(viewport, !online);
     this.publish(previous);
@@ -89,7 +106,7 @@ export class PowerLineRuntime {
     try {
       const bounds = getPowerLineQueryBounds(viewport);
       const cached = [...this.store.results.values()].find(result => result.complete && powerLineBoundsContain(result.bounds, bounds));
-      const result = cached ?? await this.store.load(bounds);
+      const result = cached ?? await this.store.load(bounds, includeObstacles);
       if (generation !== this.generation) return;
       const next = this.snapshot(viewport, !online);
       this.publish({ ...next, status: !result.complete ? "INCOMPLETE" : next.covered ? next.status : "UNKNOWN_COVERAGE" });

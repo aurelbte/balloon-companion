@@ -3,6 +3,7 @@ import {
   parsePowerLines,
   type PowerLineBounds,
 } from "../../../lib/powerLines";
+import { buildObstaclesQuery, obstacleKind, obstacleQueryBounds, parseObstacles } from "../../../lib/obstacles";
 
 const OVERPASS_PROVIDERS = [
   "https://overpass-api.de/api/interpreter",
@@ -19,6 +20,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
+  const includeObstacles = params.get("obstacles") === "1";
   const bounds: PowerLineBounds = {
     west: Number(params.get("west")),
     south: Number(params.get("south")),
@@ -46,7 +48,7 @@ export async function GET(request: Request) {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "BalloonCompanion/1.0",
         },
-        body: new URLSearchParams({ data: buildPowerLinesQuery(bounds) }),
+        body: new URLSearchParams({ data: buildPowerLinesQuery(bounds) + (includeObstacles ? buildObstaclesQuery(bounds) : "") }),
         signal,
       });
       status = response.status;
@@ -60,9 +62,15 @@ export async function GET(request: Request) {
       phase = "json";
       const payload = await response.json();
       phase = "validation";
-      const data = parsePowerLines(payload);
-      const result = { ...data, bounds, fetchedAt: new Date().toISOString() };
-      return Response.json(result, { headers: { "Cache-Control": data.complete ? "public, max-age=3600, stale-while-revalidate=86400" : "no-store" } });
+      // Keep the strict C10 parser on its original collection, never on obstacle points.
+      const linePayload = includeObstacles && Array.isArray(payload?.elements)
+        ? { ...payload, elements: payload.elements.filter((item: { tags?: Record<string, unknown> }) => !obstacleKind(item?.tags) || item?.tags?.power === "line") }
+        : payload;
+      const data = parsePowerLines(linePayload);
+      const fetchedAt = new Date().toISOString();
+      const obstacles = includeObstacles ? { ...parseObstacles(payload), bounds: obstacleQueryBounds(bounds), fetchedAt } : undefined;
+      const result = { ...data, bounds, fetchedAt, ...(obstacles ? { obstacles } : {}) };
+      return Response.json(result, { headers: { "Cache-Control": data.complete && (!obstacles || obstacles.complete) ? "public, max-age=3600, stale-while-revalidate=86400" : "no-store" } });
     } catch (error) {
       const timeout = signal.aborted || (error instanceof Error && error.name === "TimeoutError");
       console.warn("[power-lines]", { provider, status: status ?? null, cause: timeout ? "timeout" : phase });

@@ -103,6 +103,7 @@ export interface PersistedFlightSession {
  */
 export interface FlightLayerSettings {
   relief?: boolean;
+  obstacles?: boolean;
   gpsProjection: boolean;
   weatherProjection: boolean;
   airspaces: boolean;

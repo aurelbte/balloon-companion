@@ -104,6 +104,7 @@ export default function MapPage() {
   const [displayOpen, setDisplayOpen] = useState(false);
   const [showPowerLines, setShowPowerLines] = useState(false);
   const [showRelief, setShowRelief] = useState(false);
+  const [showObstacles, setShowObstacles] = useState(false);
   const [selectorsVisible, setSelectorsVisible] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -764,6 +765,7 @@ export default function MapPage() {
             layers={layers}
             showPowerLines={showPowerLines}
             showRelief={showRelief}
+            showObstacles={showObstacles}
             recenterToken={recenterToken}
             airspaces={airspaceCoverage.airspaces}
             onAirspacesSelected={selectAirspaces}
@@ -894,6 +896,10 @@ export default function MapPage() {
               <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
                 Lignes électriques
                 <input type="checkbox" checked={showPowerLines} onChange={(event) => setShowPowerLines(event.target.checked)} className="h-5 w-5 accent-[var(--bc-color-action)]" />
+              </label>
+              <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
+                Obstacles
+                <input type="checkbox" checked={showObstacles} onChange={(event) => setShowObstacles(event.target.checked)} className="h-5 w-5 accent-[var(--bc-color-action)]" />
               </label>
               <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
                 Relief

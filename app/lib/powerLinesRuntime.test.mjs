@@ -1,3 +1,4 @@
+import { buildObstaclesQuery, obstacleKind, obstacleQueryBounds, parseObstacles } from './obstacles.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -82,14 +83,14 @@ test('partial retry can complete; partial features do not contradict a later val
 });
 test('UI is gated by enabled option; deactivation invalidates runtime; no absolute absence claim',()=>{
  const map=readFileSync(new URL('../components/flight/FlightMap.tsx',import.meta.url),'utf8');
- assert.match(map,/showPowerLines && powerLineState && powerLineStatusLabel/);assert.match(map,/if \(!showPowerLines\) powerLineRuntimeRef.current\?\.stop/);
+ assert.match(map,/showPowerLines && powerLineState && powerLineStatusLabel/);assert.match(map,/if \(!showPowerLines && !showObstaclesRef.current\) powerLineRuntimeRef.current\?\.stop/);
  assert.doesNotMatch(readFileSync(new URL('./powerLinesRuntime.ts',import.meta.url),'utf8'),/Aucune ligne électrique/);
 });
 test('actual route handles success, invalid/partial provider and exceptions with fake fetch only',async t=>{
  const original=globalThis.fetch;t.after(()=>globalThis.fetch=original);
- const raw=readFileSync(new URL('../api/osm/power-lines/route.ts',import.meta.url),'utf8').replace(/import\s*\{[\s\S]*?\}\s*from\s*[^;]+;/,'');
+ const raw=readFileSync(new URL('../api/osm/power-lines/route.ts',import.meta.url),'utf8').replace(/import\s*\{[\s\S]*?\}\s*from\s*[^;]+;/g,'');
  const code=ts.transpileModule(raw,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- const exports={};new Function('exports','buildPowerLinesQuery','parsePowerLines',code)(exports,()=> 'simulated query',parsePowerLines);
+ const exports={};new Function('exports','buildPowerLinesQuery','parsePowerLines','buildObstaclesQuery','obstacleKind','obstacleQueryBounds','parseObstacles',code)(exports,()=> 'simulated query',parsePowerLines,buildObstaclesQuery,obstacleKind,obstacleQueryBounds,parseObstacles);
  for(const [body,expected]of [[{elements:[way]},200],[{elements:[]},200],[{},503],[{elements:[],remark:'timeout'},200]]){
  globalThis.fetch=async()=>response(body);const result=await exports.GET(new Request('http://localhost/api/osm/power-lines?west=2&south=50&east=2.1&north=50.1'));assert.equal(result.status,expected);
  const payload=await result.json();if(body.remark){assert.equal(payload.emptyConfirmed,false);assert.equal(payload.complete,false);assert.equal(result.headers.get('Cache-Control'),'no-store');}else if(expected===200)assert.ok(Number.isFinite(Date.parse(payload.fetchedAt)));

@@ -99,6 +99,7 @@ export default function FlightPage() {
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
     relief: false,
+    obstacles: false,
     gpsProjection: true,
     weatherProjection: false,
     airspaces: false,
@@ -781,6 +782,7 @@ export default function FlightPage() {
           showAirspaces={layerSettings.airspaces}
           showPowerLines={layerSettings.powerLines}
           showRelief={Boolean(layerSettings.relief)}
+          showObstacles={Boolean(layerSettings.obstacles)}
           showPowerLineStatus={!weatherFlightAlreadyActive}
           selectedAirspaceId={selectedAirspace?.airspaceId ?? null}
           showGpsProjection={
