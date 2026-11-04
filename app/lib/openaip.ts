@@ -68,6 +68,8 @@ export interface AirspaceGeoJsonProperties {
   lowerLimitMin: OpenAipAltitudeLimit | null;
   upperLimitMax: OpenAipAltitudeLimit | null;
   frequencies: OpenAipFrequency[];
+  /** Unmodified upstream frequencies, distinct from display corrections. */
+  sourceFrequencies?: OpenAipFrequency[];
   remarks: string | null;
   country: string | null;
   activity: number | null;
@@ -231,6 +233,7 @@ export function openAipAirspacesToGeoJson(
         lowerLimitMin: airspace.lowerLimitMin ?? null,
         upperLimitMax: airspace.upperLimitMax ?? null,
         frequencies: publishedFrequencies(airspace),
+        sourceFrequencies: (airspace.frequencies ?? []).map((frequency) => ({ ...frequency })),
         remarks: airspace.remarks ?? null,
         country: airspace.country ?? null,
         activity: airspace.activity ?? null,

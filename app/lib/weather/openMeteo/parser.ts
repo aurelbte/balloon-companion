@@ -66,6 +66,8 @@ export function parseOpenMeteoWindColumn(
   payload: unknown,
   sourceModel: OpenMeteoWeatherModel,
   terrainAltitudeAmslM?: number,
+  // Dossier acquisition may retain empty/sparse hours; projection callers keep 2.
+  minimumLevels = 2,
 ): OpenMeteoWindColumn {
   if (!isRecord(payload)) {
     throw new TrajectoryDomainError(
@@ -231,7 +233,7 @@ export function parseOpenMeteoWindColumn(
       levels.push(candidate);
     }
 
-    if (levels.length < 2) return [];
+    if (levels.length < minimumLevels) return [];
     return [{ validAt, levels, rejectedLevels }];
   });
 

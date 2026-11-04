@@ -5,7 +5,7 @@ import type {
   AirspaceGeometry,
 } from "./openaip.ts";
 import type { WeatherAnalysisTrace } from "./trajectory/weatherAnalysisStorage.ts";
-import { calculateAirspaceVerticalContext, normalizeOpenAipAltitudeLimit } from "./airspaceAltitude.ts";
+import { normalizeOpenAipAltitudeLimit } from "./airspaceAltitude.ts";
 
 type Ring = Position[];
 type PolygonCoordinates = Ring[];
@@ -159,16 +159,13 @@ export function selectTrajectoryAirspaces(
     for (let index = 1; index < trace.projection.points.length; index += 1) {
       const previous = trace.projection.points[index - 1];
       const current = trace.projection.points[index];
-      if (!lineIntersectsGeometry([[previous.longitude, previous.latitude], [current.longitude, current.latitude]], feature.geometry)) continue;
-      const altitude = (previous.altitudeAmslM + current.altitudeAmslM) / 2;
-      const vertical = calculateAirspaceVerticalContext(
-        normalizeOpenAipAltitudeLimit(feature.properties.lowerLimit),
-        normalizeOpenAipAltitudeLimit(feature.properties.upperLimit),
-        altitude,
-        null, // No demonstrated vertical uncertainty for this planned segment.
-        "AMSL",
-      );
-      if (vertical.state === "BELOW" || vertical.state === "ABOVE") continue;
+      const lower = normalizeOpenAipAltitudeLimit(feature.properties.lowerLimit);
+      const upper = normalizeOpenAipAltitudeLimit(feature.properties.upperLimit);
+      // The existing map list retains potential zones with unresolved references.
+      // Detailed dossier classification below distinguishes these from 3D matches.
+      if (lower.metersAMSL === null || upper.metersAMSL === null) {
+        if (!lineIntersectsGeometry([[previous.longitude, previous.latitude], [current.longitude, current.latitude]], feature.geometry)) continue;
+      } else if (!intersectPlannedAirspaceSegment(previous, current, feature.geometry, feature.properties).length) continue;
       firstIndex = index;
       break;
     }
@@ -181,4 +178,95 @@ export function selectTrajectoryAirspaces(
     if (!existing || match.index < existing.index) unique.set(key, match);
   }
   return [...unique.values()].sort((left, right) => left.index - right.index).map(({ airspace }) => airspace);
+}
+
+export type PlannedAirspaceInterval = {
+  entryFraction: number;
+  exitFraction: number;
+  verticalStatus: "INTERSECTS" | "UNCERTAIN";
+  reasons: string[];
+};
+
+/** Exact clipping in the same lon/lat segment model as the planned trace. */
+function horizontalIntervals(start: Position, end: Position, geometry: AirspaceGeometry): Array<{ from: number; to: number; boundary: boolean }> {
+  const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+  const at = (t: number): Position => [start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t];
+  const contains = (point: Position) => polygons.some((polygon) => pointInPolygon(point, polygon));
+  const boundary = (point: Position) => polygons.some((polygon) => polygon.some((ring) => ring.slice(1).some((b, index) => Math.abs(orientation(ring[index], b, point)) <= EPSILON && isOnSegment(ring[index], point, b))));
+  const cuts = [0, 1];
+  const dx = end[0] - start[0], dy = end[1] - start[1];
+  const lengthSquared = dx * dx + dy * dy;
+  for (const polygon of polygons) for (const ring of polygon) for (let i = 1; i < ring.length; i++) {
+    const a = ring[i - 1], b = ring[i];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const ax = a[0] - start[0], ay = a[1] - start[1];
+    const determinant = dx * ey - dy * ex;
+    if (Math.abs(determinant) > Number.EPSILON * Math.max(Math.abs(dx * ey), Math.abs(dy * ex), Number.MIN_VALUE) * 8) {
+      const t = (ax * ey - ay * ex) / determinant;
+      const u = (ax * dy - ay * dx) / determinant;
+      if (t >= -EPSILON && t <= 1 + EPSILON && u >= -EPSILON && u <= 1 + EPSILON) cuts.push(Math.max(0, Math.min(1, t)));
+    } else if (lengthSquared > 0 && Math.abs(ax * dy - ay * dx) <= EPSILON) {
+      for (const point of [a, b]) {
+        const t = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / lengthSquared;
+        if (t >= 0 && t <= 1) cuts.push(t);
+      }
+    }
+  }
+  const sorted = cuts.sort((a, b) => a - b).filter((value, i, all) => i === 0 || value - all[i - 1] > EPSILON);
+  const intervals: Array<{ from: number; to: number; boundary: boolean }> = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const from = sorted[i - 1], to = sorted[i], middle = at((from + to) / 2);
+    if (contains(middle) || boundary(middle)) intervals.push({ from, to, boundary: boundary(middle) });
+  }
+  // Tangencies are retained as uncertain contact, not a confirmed traversal.
+  for (const t of sorted) if ((contains(at(t)) || boundary(at(t))) && !intervals.some((item) => t >= item.from - EPSILON && t <= item.to + EPSILON)) intervals.push({ from: t, to: t, boundary: true });
+  return intervals.sort((a, b) => a.from - b.from);
+}
+
+/**
+ * Piecewise-linear planned geometry/altitudes, not a GPS accuracy assessment.
+ * Unknown vertical references are never converted with an assumed terrain/QNH.
+ */
+export function intersectPlannedAirspaceSegment(
+  previous: { latitude: number; longitude: number; altitudeAmslM: number },
+  current: { latitude: number; longitude: number; altitudeAmslM: number },
+  geometry: AirspaceGeometry,
+  properties: Pick<AirspaceGeoJsonProperties, "lowerLimit" | "upperLimit"> & Partial<Pick<AirspaceGeoJsonProperties, "lowerLimitMin" | "upperLimitMax">>,
+): PlannedAirspaceInterval[] {
+  const sameLimit = (a: typeof properties.lowerLimit, b: typeof properties.lowerLimit) => a?.value === b?.value && a?.unit === b?.unit && a?.referenceDatum === b?.referenceDatum;
+  const variableFloor = !!properties.lowerLimitMin && !sameLimit(properties.lowerLimitMin, properties.lowerLimit);
+  const variableCeiling = !!properties.upperLimitMax && !sameLimit(properties.upperLimitMax, properties.upperLimit);
+  const lower = normalizeOpenAipAltitudeLimit(variableFloor ? null : properties.lowerLimit);
+  const upper = normalizeOpenAipAltitudeLimit(variableCeiling ? null : properties.upperLimit);
+  const baseReasons: string[] = [];
+  if (variableFloor) baseReasons.push("VARIABLE_FLOOR_UNRESOLVED");
+  if (variableCeiling) baseReasons.push("VARIABLE_CEILING_UNRESOLVED");
+  if (Math.abs(previous.longitude - current.longitude) > 180 || (geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates).some((polygon) => polygon.some((ring) => ring.some((point, index) => index > 0 && Math.abs(point[0] - ring[index - 1][0]) > 180)))) baseReasons.push("ANTIMERIDIAN_UNRESOLVED");
+  for (const [role, limit] of [["FLOOR", lower], ["CEILING", upper]] as const) {
+    if (limit.metersAMSL === null) baseReasons.push(`${role}_${limit.reference === "FL" ? "FL_REQUIRES_PRESSURE" : limit.reference === "AGL" || limit.reference === "SFC" ? "REQUIRES_LOCAL_TERRAIN" : "REFERENCE_UNKNOWN"}`);
+  }
+  const z0 = previous.altitudeAmslM, dz = current.altitudeAmslM - z0;
+  if (!Number.isFinite(z0) || !Number.isFinite(dz)) baseReasons.push("TRACE_ALTITUDE_INVALID");
+  if (lower.metersAMSL !== null && upper.metersAMSL !== null && lower.metersAMSL > upper.metersAMSL) baseReasons.push("INVALID_VERTICAL_LIMITS");
+  return horizontalIntervals([previous.longitude, previous.latitude], [current.longitude, current.latitude], geometry).flatMap((horizontal) => {
+    let from = horizontal.from, to = horizontal.to;
+    if (!baseReasons.includes("TRACE_ALTITUDE_INVALID") && !baseReasons.includes("INVALID_VERTICAL_LIMITS")) {
+      for (const [limit, floor] of [[lower.metersAMSL, true], [upper.metersAMSL, false]] as const) {
+        if (limit === null) continue;
+        if (dz === 0) {
+          if (floor ? z0 < limit : z0 > limit) return [];
+        } else {
+          const crossing = (limit - z0) / dz;
+          if (floor === (dz > 0)) from = Math.max(from, crossing);
+          else to = Math.min(to, crossing);
+        }
+      }
+    }
+    if (from > to + EPSILON) return [];
+    from = Math.min(from, to);
+    const reasons = [...baseReasons];
+    if (horizontal.boundary) reasons.push("HORIZONTAL_BOUNDARY_CONTACT");
+    if (to - from <= EPSILON || dz === 0 && (z0 === lower.metersAMSL || z0 === upper.metersAMSL)) reasons.push("VERTICAL_BOUNDARY_CONTACT");
+    return [{ entryFraction: from, exitFraction: to, verticalStatus: reasons.length ? "UNCERTAIN" as const : "INTERSECTS" as const, reasons }];
+  });
 }

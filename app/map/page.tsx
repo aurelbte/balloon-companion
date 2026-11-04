@@ -15,6 +15,8 @@ import {
   PanelLeftOpen,
   X,
 } from "lucide-react";
+import { prepareFlightDossierOperations } from "../lib/flightDossierOperations";
+import { prepareFlightDossier } from "../lib/flightDossierEntry";
 import PreparationMap from "../components/PreparationMap";
 import AirspaceDetails from "../components/flight/AirspaceDetails";
 import {
@@ -772,6 +774,11 @@ export default function MapPage() {
             onMapPress={handleMapPress}
             onViewportChange={setViewport}
             onArrivalSelectionChange={setArrivalDetailsOpen}
+            onFlightDossier={(traceId) => {
+              const dossier = prepareFlightDossier(traceId, displayedTraces, selectedBalloon);
+              if (dossier.status !== "READY") return dossier;
+              return { ...dossier, data: { ...dossier.data, launchSiteName: config.request.launchSite.name, launchTimeZone: config.request.launchTimeZone, operations: prepareFlightDossierOperations(dossier.data, loadInput, airspaceCoverage.airspaces, testLoadEnabled) } };
+            }}
           />
         {displayedTraces.length === 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-16 text-center text-sm font-semibold text-white/80">{loading ? "Calcul des trajectoires…" : selectedModels.length === 0 || selectedAltitudes.length === 0 ? "Sélectionnez un modèle et une altitude." : "Aucune trajectoire disponible"}</div>}
         {profileDebugEnabled && (

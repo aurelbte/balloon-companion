@@ -17,6 +17,8 @@ export type OpenMeteoWindColumnRequest = {
   latitude: number;
   longitude: number;
   validAt: string;
+  /** Optional bounded window for dossier acquisition; existing callers are unchanged. */
+  endValidAt?: string;
   weatherModel: OpenMeteoWeatherModel;
   terrainAltitudeAmslM?: number;
 };
@@ -85,6 +87,8 @@ export interface OpenMeteoClient {
     timeZone?: string;
   }): Promise<unknown>;
   fetchHourlyForecast(request: {
+    startAt?: string;
+    endAt?: string;
     latitude: number;
     longitude: number;
     weatherModel: OpenMeteoWeatherModel;

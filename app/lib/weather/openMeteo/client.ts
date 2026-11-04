@@ -148,7 +148,7 @@ export function createOpenMeteoClient(
       url.searchParams.set("wind_speed_unit", "ms");
       url.searchParams.set("timezone", "UTC");
       url.searchParams.set("start_date", datePart(requestedAt));
-      url.searchParams.set("end_date", datePart(addUtcDays(requestedAt, 1)));
+      url.searchParams.set("end_date", datePart(request.endValidAt ? new Date(request.endValidAt) : addUtcDays(requestedAt, 1)));
       url.searchParams.set("models", request.weatherModel);
       addApiKey(url);
       return fetchJson(fetchImpl, url, timeoutMs);
@@ -177,7 +177,13 @@ export function createOpenMeteoClient(
       url.searchParams.set("hourly", ["temperature_2m", "relative_humidity_2m", "precipitation", "weather_code", "cloud_cover", "visibility", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"].join(","));
       url.searchParams.set("wind_speed_unit", "kmh");
       url.searchParams.set("timezone", "auto");
-      url.searchParams.set("forecast_days", "7");
+      if (request.startAt && request.endAt) {
+        url.searchParams.set("timezone", "UTC");
+        url.searchParams.set("start_date", datePart(new Date(request.startAt)));
+        url.searchParams.set("end_date", datePart(new Date(request.endAt)));
+      } else {
+        url.searchParams.set("forecast_days", "7");
+      }
       url.searchParams.set("models", request.weatherModel);
       addApiKey(url);
       return fetchJson(fetchImpl, url, timeoutMs);

@@ -1,4 +1,5 @@
 "use client";
+import type { FlightDossierResult } from "../lib/flightDossierEntry";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
@@ -79,6 +80,7 @@ interface PreparationMapProps {
   onMapPress?: () => void;
   onViewportChange?: (viewport: AirspaceCoverageViewport) => void;
   onArrivalSelectionChange?: (selected: boolean) => void;
+  onFlightDossier?: (traceId: string) => FlightDossierResult;
 }
 
 function airspaceLayerId(category: string, kind: "fill" | "outline") {
@@ -231,6 +233,7 @@ export default function PreparationMap({
   onMapPress,
   onViewportChange,
   onArrivalSelectionChange,
+  onFlightDossier,
 }: PreparationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -886,7 +889,7 @@ export default function PreparationMap({
       <div ref={container} className="h-full w-full" />
       {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" className="pointer-events-none absolute left-14 right-14 z-10 rounded bg-slate-950/90 px-2 py-1 text-center text-[10px] text-white" style={{ top: showPowerLines ? 100 : 58 }}>{obstacleStatusLabel(obstacleState)}</p>}
       {showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{powerLineStatusLabel(powerLineState)}</p>}
-      {selectedTrace && <TrajectoryArrivalDetails trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
+      {selectedTrace && <TrajectoryArrivalDetails key={selectedTrace.traceId} onFlightDossier={onFlightDossier} trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>
   );
