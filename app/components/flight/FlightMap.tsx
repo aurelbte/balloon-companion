@@ -54,6 +54,7 @@ import {
 } from "../../lib/mapInteraction";
 import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../../lib/powerLinesRuntime";
 import { addBourrousFlightZone } from "../../lib/bourrousFlightZone";
+import { RELIEF_SOURCE_ID, syncMapRelief } from "../../lib/mapRelief";
 // Coverage is checked with powerLineBoundsContain in the shared reader.
 
 import {
@@ -213,6 +214,7 @@ interface FlightMapProps {
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
   showPowerLines: boolean;
+  showRelief?: boolean;
   showPowerLineStatus: boolean;
   selectedAirspaceId: string | null;
   showGpsProjection: boolean;
@@ -283,6 +285,7 @@ export default function FlightMap({
   airspaces,
   showAirspaces,
   showPowerLines,
+  showRelief = false,
   showPowerLineStatus,
   selectedAirspaceId,
   showGpsProjection,
@@ -1123,6 +1126,7 @@ export default function FlightMap({
     });
 
     map.current.on("error", (event) => {
+      if ("sourceId" in event && event.sourceId === RELIEF_SOURCE_ID) return;
       if (
         baseMapRef.current !== "satellite" ||
         satelliteFailedRef.current ||
@@ -1209,6 +1213,15 @@ export default function FlightMap({
       }, SATELLITE_LOAD_TIMEOUT_MS);
     }
   }, [baseMap, mapTilerKey]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance) return;
+    const sync = () => syncMapRelief(instance, showRelief, mapTilerKey, [PLAN_LAYER_ID, SATELLITE_LAYER_ID]);
+    if (instance.getLayer(PLAN_LAYER_ID)) sync();
+    else instance.once("load", sync);
+    return () => { instance.off("load", sync); };
+  }, [showRelief, mapTilerKey]);
 
   useEffect(() => {
     if (!map.current || !sourceRef.current) return;

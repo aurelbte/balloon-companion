@@ -102,6 +102,7 @@ export interface PersistedFlightSession {
  * Configuration des couches d'affichage
  */
 export interface FlightLayerSettings {
+  relief?: boolean;
   gpsProjection: boolean;
   weatherProjection: boolean;
   airspaces: boolean;

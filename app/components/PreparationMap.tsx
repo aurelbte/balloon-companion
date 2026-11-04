@@ -42,6 +42,7 @@ import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
 import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
 import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../lib/powerLinesRuntime";
 import { addBourrousFlightZone } from "../lib/bourrousFlightZone";
+import { syncMapRelief } from "../lib/mapRelief";
 
 const EMPTY_AIRSPACES: AirspaceFeatureCollection = {
   type: "FeatureCollection",
@@ -67,6 +68,7 @@ interface PreparationMapProps {
   baseMap: BaseMap;
   layers: AnalysisLayerSettings;
   showPowerLines: boolean;
+  showRelief?: boolean;
   airspaces?: AirspaceFeatureCollection;
   recenterToken?: number;
   onAirspacesSelected?: (airspaces: AirspaceGeoJsonProperties[]) => void;
@@ -217,6 +219,7 @@ export default function PreparationMap({
   baseMap,
   layers,
   showPowerLines,
+  showRelief = false,
   airspaces = EMPTY_AIRSPACES,
   recenterToken = 0,
   onAirspacesSelected,
@@ -665,6 +668,15 @@ export default function PreparationMap({
       map.off("load", sync);
     };
   }, [baseMap, layers.highContrast]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const sync = () => syncMapRelief(map, showRelief, mapTilerKey, ["plan-base", "satellite-base"]);
+    if (map.getLayer("plan-base")) sync();
+    else map.once("load", sync);
+    return () => { map.off("load", sync); };
+  }, [showRelief, mapTilerKey, initialLatitude, initialLongitude]);
 
   useEffect(() => {
     const map = mapRef.current;

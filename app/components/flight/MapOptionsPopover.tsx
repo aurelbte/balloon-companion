@@ -19,6 +19,7 @@ interface MapOptionsPopoverProps {
   settings: FlightLayerSettings;
   baseMap: BaseMap;
   satelliteAvailable: boolean;
+  reliefAvailable?: boolean;
   satelliteMessage: string | null;
   airspacesLoading: boolean;
   airspacesError: string | null;
@@ -29,6 +30,7 @@ interface MapOptionsPopoverProps {
 }
 
 const optionKeys = [
+  ["relief", "Relief"],
   ["airspaces", "Espaces aériens"],
   ["powerLines", "Lignes haute tension"],
   ["gpsProjection", "Projection GPS"],
@@ -42,6 +44,7 @@ export default function MapOptionsPopover({
   settings,
   baseMap,
   satelliteAvailable,
+  reliefAvailable = false,
   satelliteMessage,
   airspacesLoading,
   airspacesError,
@@ -146,13 +149,14 @@ export default function MapOptionsPopover({
         <p style={sectionLabelStyle}>Affichage</p>
         <div style={{ display: "grid", gap: "2px" }}>
           {optionKeys.map(([key, label]) => {
-            const checked = settings[key];
+            const checked = Boolean(settings[key]);
             return (
               <Chip
                 key={key}
                 role="checkbox"
                 aria-checked={checked}
                 selected={checked}
+                disabled={key === "relief" && !reliefAvailable}
                 onClick={() => toggle(key)}
                 style={{
                   width: "100%",
