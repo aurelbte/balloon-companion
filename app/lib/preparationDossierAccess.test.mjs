@@ -9,10 +9,11 @@ test('PDF action shares the flight action row and retains the existing export fl
   const dossierAction = page.indexOf('<FlightDossierAction', flightAction);
   const collapsedSelector = page.indexOf('{legendOpen &&', flightAction);
   assert.ok(flightAction > 0 && dossierAction > flightAction && dossierAction < collapsedSelector);
-  const row = page.lastIndexOf('<div className="flex items-center gap-1 pr-1">', flightAction);
+  const row = page.lastIndexOf('<div className="flex items-stretch gap-2">', flightAction);
   assert.ok(row >= 0 && page.indexOf('</div>', dossierAction) < collapsedSelector);
   assert.match(page, /selectFlightDossierTrace\(displayedTraces, selectedDossierTraceId, exportIds\)/);
-  assert.match(page, /style=\{\{ zIndex: dossierTrace \? 35 : 20 \}\}/);
+  assert.match(page, /aria-label="Actions de l’analyse"/);
+  assert.match(page, /h-14 min-w-0 flex-1/);
   assert.match(page, /onSelectedTraceChange=\{setSelectedDossierTraceId\}/);
   assert.match(page, /prepareFlightDossier\(traceId, displayedTraces, selectedBalloon\)/);
   const map = readFileSync(new URL('../components/PreparationMap.tsx', import.meta.url), 'utf8');
@@ -26,7 +27,8 @@ test('PDF action shares the flight action row and retains the existing export fl
   assert.match(action, /aria-label="Dossier de vol PDF"/);
   assert.match(action, /<FileDown size=\{18\}/);
   assert.equal([...action.matchAll(/exportFlightDossier\(/g)].length, 1);
-  assert.match(action, /min-h-11 min-w-11/);
+  assert.doesNotMatch(action, /useUnitPreferences|windSpeedUnit/);
+  assert.match(action, /h-14 w-14 shrink-0/);
 });
 
 

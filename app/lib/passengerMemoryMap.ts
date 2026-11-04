@@ -1,6 +1,6 @@
 import type { RecordedFlightPoint } from "./recordedFlight.ts";
 
-export type PassengerMemoryMapImage = Readonly<{ png: Uint8Array; background: "OPENSTREETMAP" | "NEUTRAL" }>;
+export type PassengerMemoryMapImage = Readonly<{ png: Uint8Array; background: "OPENSTREETMAP" | "NEUTRAL"; timeMarkers?: number[] }>;
 
 const WIDTH = 1400;
 const HEIGHT = 570;
@@ -111,6 +111,7 @@ export async function renderPassengerMemoryMap(pointsInput: readonly RecordedFli
   for (const [point, color] of [[projected[0], "#45ad7b"], [projected.at(-1)!, "#ffffff"]] as const) {
     context.beginPath(); context.arc(point.x - originX, point.y - originY, 14, 0, Math.PI * 2); context.fillStyle = color; context.fill(); context.lineWidth = 5; context.strokeStyle = "#07111f"; context.stroke();
   }
+  const timeMarkers: number[] = [];
   if (dossierOptions) {
     dossierOptions.signal?.throwIfAborted();
     context.font = "bold 26px sans-serif";
@@ -119,6 +120,18 @@ export async function renderPassengerMemoryMap(pointsInput: readonly RecordedFli
     for (const [label, x, y] of [["D", projected[0].x - originX - 48, projected[0].y - originY + 16], ["A", projected.at(-1)!.x - originX + 18, projected.at(-1)!.y - originY + 10]] as const) {
       context.fillStyle = "#ffffff"; context.fillRect(x, y, 36, 36);
       context.fillStyle = "#07111f"; context.fillText(label, x + 7, y + 27);
+    }
+    // Exact timestamped samples only; omit labels when they would overlap endpoints or one another.
+    const occupied = [projected[0], projected.at(-1)!];
+    for (const minutes of [15, 30, 45]) {
+      const index = points.findIndex((point) => Number.isFinite(point.timestamp) && point.timestamp === points[0].timestamp + minutes * 60_000);
+      if (index < 0 || occupied.some((point) => Math.hypot(point.x - projected[index].x, point.y - projected[index].y) < 100)) continue;
+      const point = projected[index], x = point.x - originX, y = point.y - originY;
+      if (x < 55 || x > WIDTH - 90 || y < 55 || y > HEIGHT - 140) continue;
+      context.beginPath(); context.arc(x, y, 8, 0, Math.PI * 2); context.fillStyle = "#07111f"; context.fill();
+      context.fillStyle = "#ffffff"; context.fillRect(x + 12, y - 17, 92, 34);
+      context.fillStyle = "#07111f"; context.fillText(`${minutes} min`, x + 17, y + 8);
+      occupied.push(point); timeMarkers.push(minutes);
     }
     const middleLatitude = Math.atan(Math.sinh(Math.PI * (1 - 2 * centerY / (256 * 2 ** zoom)))) * 180 / Math.PI;
     const metersPerPixel = 156543.03392804097 * Math.cos(middleLatitude * Math.PI / 180) / 2 ** zoom;
@@ -142,5 +155,5 @@ export async function renderPassengerMemoryMap(pointsInput: readonly RecordedFli
   context.font = "22px sans-serif";
   context.textAlign = "right";
   context.fillText(background === "OPENSTREETMAP" ? "© OpenStreetMap contributors" : dossierOptions ? "Trajectoire prévue - fond indisponible" : "Trajectoire GPS - fond hors ligne", WIDTH - 16, HEIGHT - 14);
-  return { png: await canvasPng(canvas), background };
+  return { png: await canvasPng(canvas), background, ...(dossierOptions ? { timeMarkers } : {}) };
 }

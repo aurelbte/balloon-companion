@@ -15,5 +15,6 @@ export function describePreparationLoad(input: LoadCalculationInput, result: Pic
       ? `${input.manufacturer} ${input.model} : données constructeur présentes (${parameters.source.manualRevision}), mais calcul non activé dans Prépa. La température ne débloque pas ce modèle.`
       : `${input.manufacturer || "Constructeur inconnu"} ${input.model || "modèle inconnu"} : aucun calcul pris en charge pour ce ballon dans Prépa. ${result.message ?? ""}`;
   }
-  return { message, parameterId: parameters?.id ?? null, methodId: parameters?.manufacturerMethodId ?? null, manualRevision: parameters?.source.manualRevision ?? null, parameterStatus: parameters?.verificationStatus ?? null, candidateEnabled: active };
+  const reason = parameters && !active && result.reasonCode === "UNSUPPORTED_MODEL" ? `Calcul ${input.manufacturer} ${input.model} non activé dans Prépa.` : result.message ?? "Données manquantes.";
+  return { message, reason, parameterId: parameters?.id ?? null, methodId: parameters?.manufacturerMethodId ?? null, manualRevision: parameters?.source.manualRevision ?? null, parameterStatus: parameters?.verificationStatus ?? null, candidateEnabled: active };
 }

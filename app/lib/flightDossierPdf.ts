@@ -1,11 +1,12 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { FlightDossierResult } from "./flightDossierEntry.ts";
 import type { FlightDossierWeather } from "./flightDossierWeather.ts";
+import { dossierLocalTime, dossierTimeZone, dossierWind, dossierArrivalWindWarning } from "./flightDossierPresentation.ts";
 import type { DossierAirspacePassage } from "./flightDossierOperations.ts";
 
 export type FlightDossierData = Extract<FlightDossierResult, { status: "READY" }>["data"];
 export type DossierPdfInput = { dossier: FlightDossierData; weather: FlightDossierWeather | null; weatherError?: string | null; generatedAt?: string };
-export type DossierPdfMap = { png: Uint8Array; background: "OPENSTREETMAP" | "NEUTRAL" } | { error: string };
+export type DossierPdfMap = { png: Uint8Array; background: "OPENSTREETMAP" | "NEUTRAL"; timeMarkers?: number[] } | { error: string };
 const A4: [number, number] = [595.28, 841.89];
 const MARGIN = 42;
 const WIDTH = A4[0] - 2 * MARGIN;
@@ -13,7 +14,6 @@ const BOTTOM = 52;
 const INK = rgb(.08, .15, .23), MUTED = rgb(.35, .41, .47), ACCENT = rgb(.06, .36, .48), PALE = rgb(.94, .96, .97);
 const absent = "indisponible";
 const number = (value: number | null | undefined, digits = 1) => value !== null && value !== undefined && Number.isFinite(value) ? value.toLocaleString("fr-FR", { maximumFractionDigits: digits }).replace(/[\u202f\u00a0]/g, " ") : absent;
-const date = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? `${new Date(value).toISOString().replace(".000Z", "Z").replace("T", " ").replace("Z", "")} UTC` : absent;
 const status = (value?: string) => ({ AVAILABLE: "Disponible", PARTIAL: "Partiel", STALE: "Ancien / actualisation échouée", UNAVAILABLE: "Indisponible", OFFICIAL_VALIDATED: "Validé constructeur", CANDIDATE_PILOT_VALIDATION: "Candidat - validation pilote", PENDING_VERIFICATION: "En attente de vérification" }[value ?? ""] ?? value ?? absent);
 
 /** Preserve unsupported characters as visible Unicode escapes, never drop text. */
@@ -61,24 +61,25 @@ class DossierLayout {
     this.y = A4[1] - 84;
   }
   ensure(height: number) { if (!this.page || this.y - height < BOTTOM) this.newPage(); }
-  heading(value: string, newPage = true) {
+  heading(value: string, newPage = false) {
     this.section = value;
     if (newPage || !this.page) this.newPage();
-    const lines = wrapDossierText(value, this.bold, 18, WIDTH);
-    for (const line of lines) { this.ensure(25); this.page.drawText(line, { x: MARGIN, y: this.y - 18, size: 18, font: this.bold, color: ACCENT }); this.y -= 25; }
-    this.y -= 9;
+    this.ensure(65);
+    const lines = wrapDossierText(value, this.bold, 15, WIDTH);
+    for (const line of lines) { this.ensure(22); this.page.drawText(line, { x: MARGIN, y: this.y - 15, size: 15, font: this.bold, color: ACCENT }); this.y -= 22; }
+    this.y -= 6;
   }
   paragraph(value: string, options: { bold?: boolean; size?: number; muted?: boolean } = {}) {
-    const font = options.bold ? this.bold : this.font, size = options.size ?? 9.5, leading = size * 1.45;
+    const font = options.bold ? this.bold : this.font, size = options.size ?? 9, leading = size * 1.25;
     for (const line of wrapDossierText(value, font, size, WIDTH)) {
       this.ensure(leading);
       this.page.drawText(line, { x: MARGIN, y: this.y - size, size, font, color: options.muted ? MUTED : INK });
       this.y -= leading;
     }
-    this.y -= 5;
+    this.y -= 3;
   }
   table(headers: string[], widths: number[], rows: string[][]) {
-    const size = 8, leading = 11.5, padding = 6;
+    const size = 8.2, leading = 10.5, padding = 3;
     const headerLines = headers.map((value, index) => wrapDossierText(value, this.bold, size, widths[index] - padding * 2));
     const headerHeight = Math.max(...headerLines.map((lines) => lines.length)) * leading + padding * 2;
     const drawHeader = () => {
@@ -108,7 +109,7 @@ class DossierLayout {
         offset += count;
       }
     });
-    this.y -= 12;
+    this.y -= 7;
   }
   finish() {
     const pages = this.document.getPages();
@@ -127,12 +128,12 @@ function uncertainty(reason: string): string {
   return ({ ACTIVITY_AT_PASSAGE_UNKNOWN: "Activation aux horaires de passage inconnue", ANTIMERIDIAN_UNRESOLVED: "Passage de l'antiméridien non résolu", TRACE_ALTITUDE_INVALID: "Altitude de trace invalide", INVALID_VERTICAL_LIMITS: "Limites verticales incohérentes", HORIZONTAL_BOUNDARY_CONTACT: "Contact avec une limite horizontale", VERTICAL_BOUNDARY_CONTACT: "Contact avec une limite verticale", TRACE_TIMES_INVALID: "Horaires de trace invalides", VARIABLE_FLOOR_UNRESOLVED: "Plancher variable non résolu", VARIABLE_CEILING_UNRESOLVED: "Plafond variable non résolu" }[reason] ?? `Incertitude source : ${reason}`);
 }
 
-function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage) {
+function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, date: (value: string | null | undefined) => string) {
   layout.ensure(85);
   layout.paragraph(`${item.airspace.name} | Classe ${item.airspace.icaoClassLabel || absent}`, { bold: true, size: 11 });
   layout.paragraph(`${item.airspace.typeLabel || absent} | Plancher : ${item.floor.displayLabel} | Plafond : ${item.ceiling.displayLabel}`);
   layout.paragraph(`Intersection : ${item.spatialStatus === "INTERSECTS_3D" ? "3D sur la trajectoire prévue" : "possible / verticale incertaine"}. Activité : indéterminée.`);
-  layout.table(["Entrée UTC", "Sortie UTC", "Altitude entrée / sortie (m AMSL)", "Qualification"], [127, 127, 130, WIDTH - 384], item.passages.map((passage) => [date(passage.entryAt), date(passage.exitAt), `${number(passage.entryAltitudeAmslM)} / ${number(passage.exitAltitudeAmslM)}`, passage.spatialStatus === "INTERSECTS" ? "Intersection 3D" : "Incertaine"]));
+  layout.table(["Entrée locale / UTC", "Sortie locale / UTC", "Altitude entrée / sortie (m AMSL)", "Qualification"], [127, 127, 130, WIDTH - 384], item.passages.map((passage) => [date(passage.entryAt), date(passage.exitAt), `${number(passage.entryAltitudeAmslM)} / ${number(passage.exitAltitudeAmslM)}`, passage.spatialStatus === "INTERSECTS" ? "Intersection 3D" : "Incertaine"]));
   layout.paragraph(`Fréquences OpenAIP - NON VÉRIFIÉES AIP. ${item.frequencies.notice}`, { bold: true });
   if (!item.frequencies.values.length) layout.paragraph(`Fréquence : ${absent}`);
   item.frequencies.values.forEach((frequency) => layout.paragraph(`${frequency.name || "Station non précisée"} : ${frequency.value || absent}${frequency.primary ? " (principale selon la source)" : ""}${frequency.remarks ? ` ; ${frequency.remarks}` : ""}`));
@@ -145,6 +146,10 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage) {
 
 export async function createFlightDossierPdf(input: DossierPdfInput, map: DossierPdfMap): Promise<Uint8Array> {
   const { dossier, weather } = input;
+  const date = (value: string | null | undefined) => dossierLocalTime(value, dossier.launchTimeZone, true);
+  // PDF convention: convert altitude m/s once; ground values already use km/h.
+  const unit = "km/h";
+  const wind = (value: number | null | undefined, source: "m/s" | "km/h") => value == null || !Number.isFinite(value) ? "-" : number(dossierWind(value, source, unit));
   if (weather && (weather.traceId !== dossier.traceId || weather.weatherModel !== dossier.model.providerModelId) || dossier.operations && dossier.operations.traceId !== dossier.traceId) throw new Error("Les données ne correspondent pas à la stratégie sélectionnée.");
   if (dossier.points.length < 2) throw new Error("Trajectoire sélectionnée invalide.");
   const document = await PDFDocument.create();
@@ -158,12 +163,13 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
   layout.paragraph(dossier.launchSiteName || "Terrain indisponible", { bold: true, size: 15 });
   layout.table(["Informations", "Valeur"], [155, WIDTH - 155], [
     ["Terrain de départ", dossier.launchSiteName || absent], ["Coordonnées départ", coordinates(first)], ["Coordonnées arrivée prévue", coordinates(last)],
-    ["Décollage prévu", date(dossier.startedAt)], ["Atterrissage prévu", date(dossier.landingAt)], ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`],
+    ["Décollage prévu", dossierLocalTime(dossier.startedAt, dossier.launchTimeZone)], ["Atterrissage prévu", dossierLocalTime(dossier.landingAt, dossier.launchTimeZone)], ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`],
     ["Fuseau du terrain", dossier.launchTimeZone || absent], ["Ballon", `${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`],
     ["Modèle météo sélectionné", `${dossier.model.label} (${dossier.model.providerModelId})`], ["Stratégie", dossier.strategyLabel || absent], ["Identifiant de trace", dossier.traceId],
     ["Points horodatés", String(dossier.points.length)], ["Généré le", date(input.generatedAt ?? new Date().toISOString())],
   ]);
-  layout.paragraph("Horaires en UTC dans tous les tableaux. Prévisions et données disponibles au moment de la préparation ; les indisponibilités et incertitudes restent explicites.");
+  layout.paragraph("Horaires locaux du terrain en priorité, UTC entre parenthèses. Prévisions et données disponibles au moment de la préparation ; les indisponibilités et incertitudes restent explicites.");
+  if (!dossierTimeZone(dossier.launchTimeZone)) layout.paragraph("Fuseau du terrain indisponible : horaires affichés en UTC uniquement.");
   layout.paragraph("Sources : Open-Meteo, AviationWeather.gov, OpenAIP et OpenStreetMap. Les fréquences OpenAIP ne sont pas vérifiées dans l'AIP. L'activité des espaces et l'exhaustivité de leur couverture doivent être vérifiées.", { muted: true });
 
   layout.heading("METAR / TAF - Départ et arrivée");
@@ -175,7 +181,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     layout.paragraph(`${location === "departure" ? "Départ" : "Arrivée prévue"} - ${product.toUpperCase()} | ${status(item.status)}`, { bold: true, size: 11 });
     layout.paragraph(item.station ? `${item.station.icao} - ${item.station.name} | Distance : ${number(item.station.distanceKm)} km | ${number(item.station.latitude, 5)}, ${number(item.station.longitude, 5)}` : "Station ICAO, coordonnées et distance : indisponibles");
     layout.paragraph(`Émis : ${date(product === "metar" ? data?.metarIssuedAt : data?.tafIssuedAt)} | Récupéré : ${date(data?.sourceUpdatedAt)}`);
-    if (item.freshness) layout.paragraph(item.freshness.label, { muted: true });
+    if (item.freshness) layout.paragraph(item.freshness.label.replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g, (value) => date(value.replace(" UTC", ":00Z").replace(" ", "T"))), { muted: true });
     layout.paragraph((product === "metar" ? data?.metarRaw : data?.tafRaw) || `Message brut indisponible. ${item.result.error?.message || ""}`);
   }
 
@@ -187,29 +193,39 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     weather.notices.forEach((notice) => layout.paragraph(notice, { muted: true }));
     const altitude = weather.altitudeWind;
     layout.paragraph(`Profils par altitude au départ | ${status(altitude.status)} | Récupéré : ${date(altitude.fetchedAt)} | Run : ${date(altitude.modelRunAt)}`, { bold: true });
+    layout.paragraph(`Maille source départ : ${altitude.sourceLocation ? `${number(altitude.sourceLocation.latitude, 5)}, ${number(altitude.sourceLocation.longitude, 5)}` : absent}.`, { size: 8, muted: true });
     if (altitude.error) layout.paragraph(altitude.error);
-    const altitudeRows: string[][] = [];
+    layout.paragraph(`Vent en ${unit}. Altitudes AMSL ; niveaux source AGL / pression conservés. - : donnée indisponible. Rafales en altitude : indisponibles.`, { muted: true });
     const times = [...new Set([...weather.window.expectedHours, ...altitude.points.map((point) => point.validAt)])].sort((a, b) => Date.parse(a) - Date.parse(b));
     for (const time of times) {
       const points = altitude.points.filter((point) => Date.parse(point.validAt) === Date.parse(time));
-      if (!points.length) altitudeRows.push([date(time), absent, absent, absent, absent, absent]);
+      layout.ensure(Math.min(600, 65 + Math.max(0, ...points.map((point) => point.levels.length)) * 17));
+      layout.paragraph(date(time), { bold: true });
+      if (!points.length) layout.paragraph("Échéance indisponible.");
       for (const point of points) {
-        for (const level of point.levels) altitudeRows.push([date(point.validAt), `${level.sourceLevel || absent}${level.isApproximation ? " (approximation source)" : ""}`, number(level.geopotentialHeightAmslM), number(level.windDirectionFromDeg), number(level.windSpeedMps), absent]);
-        for (const rejected of point.rejectedLevels) altitudeRows.push([date(point.validAt), `${rejected.sourceLevel} : ${rejected.reason}`, absent, absent, absent, absent]);
-        if (!point.levels.length && !point.rejectedLevels.length) altitudeRows.push([date(point.validAt), absent, absent, absent, absent, absent]);
+        if (point.levels.length) layout.table(["Niveau / référence source", "Altitude AMSL (m)", "Direction (°)", `Vent (${unit})`], [205, 110, 90, WIDTH - 405], point.levels.map((level) => [
+          `${level.sourceLevel || absent}${level.isApproximation ? " (approximation source)" : ""}`, number(level.geopotentialHeightAmslM), number(level.windDirectionFromDeg), wind(level.windSpeedMps, "m/s"),
+        ]));
+        else layout.paragraph("Profil exploitable indisponible.");
+        const reasons = new Map<string, string[]>();
+        for (const rejected of point.rejectedLevels) reasons.set(rejected.reason, [...(reasons.get(rejected.reason) ?? []), rejected.sourceLevel]);
+        for (const [reason, levels] of reasons) layout.paragraph(`Niveaux sous terrain / incomplets écartés : ${levels.join(", ")} - ${reason}.`, { size: 8, muted: true });
       }
     }
-    layout.table(["Échéance UTC", "Niveau source", "Altitude AMSL (m)", "Direction (°)", "Vitesse (m/s)", "Rafales (m/s)"], [100, 122, 76, 65, 70, WIDTH - 433], altitudeRows.length ? altitudeRows : [[absent, absent, absent, absent, absent, absent]]);
     const ground = weather.landingGroundWind;
     layout.paragraph(`Vent à 10 m AGL à l'arrivée | ${status(ground.status)} | Récupéré : ${date(ground.fetchedAt)} | Run : ${date(ground.modelRunAt)}`, { bold: true });
+    layout.paragraph(`Maille source arrivée : ${ground.sourceLocation ? `${number(ground.sourceLocation.latitude, 5)}, ${number(ground.sourceLocation.longitude, 5)}` : absent}.`, { size: 8, muted: true });
     if (ground.error) layout.paragraph(ground.error);
     const groundTimes = [...new Set([...weather.window.expectedHours, ...ground.points.map((point) => point.validAt)])].sort((a, b) => Date.parse(a) - Date.parse(b));
-    layout.table(["Échéance UTC", "Direction (°)", "Vent (km/h)", "Rafales (km/h)", "Disponibilité"], [130, 80, 85, 85, WIDTH - 380], groundTimes.flatMap((time) => {
+    layout.table(["Échéance locale / UTC", "Direction (°)", `Vent (${unit})`, `Rafales (${unit})`, "Qualité"], [190, 65, 70, 70, WIDTH - 395], groundTimes.flatMap((time) => {
       const points = ground.points.filter((point) => Date.parse(point.validAt) === Date.parse(time));
-      return points.length ? points.map((point) => [date(point.validAt), number(point.directionFromDeg), number(point.speedKmh), number(point.gustKmh), point.unavailableFields.length ? "Données manquantes visibles dans les cellules" : "Disponible"]) : [[date(time), absent, absent, absent, absent]];
+      return points.length ? points.map((point) => [date(point.validAt), point.directionFromDeg == null ? "-" : number(point.directionFromDeg), wind(point.speedKmh, "km/h"), wind(point.gustKmh, "km/h"), dossierArrivalWindWarning(point) ? "À vérifier *" : point.unavailableFields.length ? "Incomplet" : "Source"]) : [[date(time), "-", "-", "-", "Absente"]];
     }));
+    if (ground.points.some((point) => dossierArrivalWindWarning(point))) layout.paragraph(`* ${dossierArrivalWindWarning(ground.points.find((point) => dossierArrivalWindWarning(point))!)}`, { bold: true });
+
   }
 
+  layout.ensure(210);
   layout.heading("Charge et référence constructeur");
   const load = dossier.operations?.load;
   if (!load) layout.paragraph("Charge, limite, marge et courbe : indisponibles.");
@@ -217,6 +233,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     layout.paragraph(`${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`, { bold: true, size: 12 });
     layout.paragraph(`Disponibilité : ${status(load.status)}. Statut du calcul constructeur : ${status(load.calculationStatus)}.`);
     if (load.message) layout.paragraph(load.message);
+    if (dossier.balloon.manufacturer?.toLowerCase().includes("ultramagic") && dossier.balloon.model?.replace(/[^a-z0-9]/gi, "").toUpperCase() === "T150" && load.status !== "AVAILABLE") layout.paragraph("Ultramagic T150 : FM04 reste candidat, non activé dans Prépa. Limite et courbe personnalisée indisponibles.");
     layout.paragraph(`Température au sol utilisée pour la charge : ${number(load.temperature?.temperatureC)} °C | Source : ${load.temperature?.provider || load.temperature?.sourceModel || absent}.`);
     layout.table(["Masse prévue (kg)", "Limite applicable (kg)", "Marge signée (kg)"], [170, 170, WIDTH - 340], [[number(load.plannedMassKg), number(load.applicableLimitKg), load.signedMarginKg || absent]]);
     layout.paragraph("Marge affichée arrondie vers le bas par le moteur existant. Les données de démonstration sont exclues.", { muted: true });
@@ -226,7 +243,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     }
     if (load.manufacturerParameters) layout.paragraph(`Référence : ${load.manufacturerParameters.source.manualId} ; ${load.manufacturerParameters.source.manualRevision} ; pages ${load.manufacturerParameters.source.pages.join(", ")}. Vérification des paramètres : ${status(load.manufacturerParameters.verificationStatus)}.`);
     const curve = load.curve;
-    if (curve.status === "SOURCE_DATA_AVAILABLE" && curve.points.length >= 2 && curve.points.every((point) => [point.temperatureC, point.liftUnits, point.altitudeMslFt].every(Number.isFinite))) {
+    if (load.status === "AVAILABLE" && load.calculationStatus === "OFFICIAL_VALIDATED" && curve.status === "SOURCE_DATA_AVAILABLE" && curve.usedByCalculation && curve.points.length >= 2 && curve.points.every((point) => [point.temperatureC, point.liftUnits, point.altitudeMslFt].every(Number.isFinite))) {
       layout.paragraph(`Courbe source : ${curve.source.title} ; ${curve.source.revision} ; ${curve.source.page}. Statut : ${status(curve.verificationStatus)}.`);
       layout.paragraph(curve.notice);
       layout.paragraph(`Source : ${curve.source.url}`);
@@ -264,17 +281,18 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     airspaces.notices.forEach((notice) => layout.paragraph(notice));
     layout.paragraph(`Traversées confirmées : ${airspaces.confirmed.length}`, { bold: true, size: 12 });
     if (!airspaces.confirmed.length) layout.paragraph("Aucune traversée active confirmée par les données disponibles ; cela ne signifie pas absence d'espaces.");
-    airspaces.confirmed.forEach((item) => airspaceSection(layout, item));
+    airspaces.confirmed.forEach((item) => airspaceSection(layout, item, date));
     layout.paragraph(`Intersections possibles ou activité incertaine : ${airspaces.uncertain.length}`, { bold: true, size: 12 });
     if (!airspaces.uncertain.length) layout.paragraph("Aucun espace identifié dans la couverture disponible. Exhaustivité du trajet non démontrée.");
-    airspaces.uncertain.forEach((item) => airspaceSection(layout, item));
+    airspaces.uncertain.forEach((item) => airspaceSection(layout, item, date));
     if (airspaces.invalidSegments) layout.paragraph(`Segments avec horaires invalides : ${airspaces.invalidSegments}.`);
   }
 
-  layout.heading("Carte - Stratégie sélectionnée");
+  layout.heading("Carte - Stratégie sélectionnée", true);
   layout.paragraph(`${dossier.strategyLabel || dossier.traceId} | D : départ / A : arrivée prévue. Nord en haut.`, { size: 9 });
   if ("error" in map) layout.paragraph(`Carte indisponible : ${map.error}`);
   else {
+    if (map.timeMarkers?.length) layout.paragraph(`Repères après décollage : ${map.timeMarkers.join(" / ")} min (points source, sans interpolation).`, { size: 8 });
     const image = await document.embedPng(map.png);
     const availableHeight = layout.y - BOTTOM - 33;
     const scale = Math.min(WIDTH / image.width, availableHeight / image.height);

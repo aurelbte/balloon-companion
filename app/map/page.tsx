@@ -926,18 +926,26 @@ export default function MapPage() {
 
         <FloatingAction onClick={() => setRecenterToken((value) => value + 1)} className="absolute right-3 top-16 z-20 rounded-full" aria-label="Recentrer les trajectoires"><LocateFixed size={18} /></FloatingAction>
 
-      <section style={{ zIndex: dossierTrace ? 35 : 20 }} className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-[var(--bc-radius-dock)] border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
-        <div className="flex items-center gap-1 pr-1">
+
+      {(notice || loading) && (
+        <p className="absolute left-1/2 top-[max(14px,env(safe-area-inset-top))] z-40 -translate-x-1/2 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] px-3 py-2 text-[10px] font-bold text-white shadow-[var(--bc-shadow-low)]">
+          {loading ? "Mise à jour météo…" : notice}
+        </p>
+      )}
+      </div>
+
+      <section aria-label="Actions de l’analyse" className="relative z-40 mx-auto w-full max-w-3xl px-3 py-2">
+        <div className="flex items-stretch gap-2">
         <button
           type="button"
           onClick={() => {
             setDisplayOpen(false);
             setLegendOpen((value) => !value);
           }}
-          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-3 text-[11px] font-semibold"
+          className="flex h-14 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/15 bg-slate-950 px-3 text-left text-xs font-semibold leading-tight text-white shadow-sm"
         >
-          <Navigation size={15} style={{ color: "var(--bc-accent)" }} />
-          <span className="truncate">Utiliser cette analyse en Vol</span>
+          <Navigation className="shrink-0" size={15} style={{ color: "var(--bc-accent)" }} />
+          <span>Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
         </button>
         {dossierTrace && <FlightDossierAction key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
@@ -948,7 +956,7 @@ export default function MapPage() {
             }} />}
         </div>
         {legendOpen && (
-          <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-[var(--bc-color-surface-glass)] p-2.5">
+          <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-slate-950 p-2.5 text-white">
             {!dossierTrace && displayedTraces.length > 1 && <p className="text-[10px]">Pour le PDF, cochez une seule stratégie ou touchez son point d’arrivée.</p>}
             <div>
               <div className="grid grid-cols-2 gap-1">
@@ -986,13 +994,6 @@ export default function MapPage() {
           </div>
         )}
       </section>
-
-      {(notice || loading) && (
-        <p className="absolute left-1/2 top-[max(14px,env(safe-area-inset-top))] z-40 -translate-x-1/2 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] px-3 py-2 text-[10px] font-bold text-white shadow-[var(--bc-shadow-low)]">
-          {loading ? "Mise à jour météo…" : notice}
-        </p>
-      )}
-      </div>
 
       <section
         className="relative z-30 border-t px-3 py-2.5"
@@ -1128,25 +1129,26 @@ export default function MapPage() {
         <section role="dialog" aria-modal="true" aria-labelledby="preparation-load-title" className="max-h-[75dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4 shadow-2xl" style={{ background: "var(--bc-color-canvas-elevated)", borderColor: "var(--bc-border)" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") setLoadPanelOpen(false); }}>
           <div className="flex items-center justify-between gap-2"><h2 id="preparation-load-title" className="text-sm font-bold">Charge</h2><button autoFocus type="button" aria-label="Fermer le panneau charge" className="min-h-11 min-w-11" onClick={() => setLoadPanelOpen(false)}><X className="mx-auto" size={18} /></button></div>
           <p className="mb-2 text-sm">{selectedBalloon ? balloonDisplayName(selectedBalloon) : "Aucun ballon sélectionné dans Prépa"}</p>
-          <fieldset className="mb-2 rounded-lg border p-2" style={{ borderColor: "var(--bc-border)" }}>
-            <legend className="px-1 text-xs font-semibold">Température au sol pour la charge</legend>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex min-h-11 items-center gap-2 text-sm">Source
-                <select aria-label="Source de température au sol" value={temperatureMode} onChange={(event) => setTemperatureMode(event.target.value as "auto" | "manual")} className="min-h-11 rounded-lg border bg-[var(--bc-surface)] px-2">
-                  <option value="auto">Auto</option><option value="manual">Manuel</option>
-                </select>
-              </label>
-              {temperatureMode === "manual" && <div className="flex items-center gap-2"><label className="flex min-h-11 items-center gap-2 text-sm">Température (°C)
-                <input type="text" inputMode="decimal" value={manualTemperatureInput} onChange={(event) => setManualTemperatureInput(event.target.value)} aria-label="Température au sol manuelle en degrés Celsius" aria-invalid={!groundTemperature} placeholder="Valeur en °C" className="min-h-11 w-28 rounded-lg border bg-[var(--bc-surface)] px-2" />
-              </label>
-                <button type="button" aria-label="Changer le signe de la température manuelle" onClick={() => setManualTemperatureInput((value) => value.trim().startsWith("-") ? value.trim().slice(1) : `-${value.trim().replace(/^\+/, "")}`)} className="min-h-11 min-w-11 rounded-lg border px-2">±</button>
-              </div>}
+          <fieldset className="mb-3 grid grid-cols-2 gap-3">
+            <legend className="sr-only">Température au sol pour la charge</legend>
+            <label className="grid min-w-0 gap-1 text-xs font-semibold">Source
+              <select aria-label="Source de température au sol" value={temperatureMode} onChange={(event) => setTemperatureMode(event.target.value as "auto" | "manual")} className="h-12 w-full rounded-lg border bg-[var(--bc-surface)] px-2 text-sm">
+                <option value="auto">Auto</option><option value="manual">Manuel</option>
+              </select>
+            </label>
+            <div className="grid min-w-0 gap-1 text-xs font-semibold">
+              <label htmlFor="preparation-manual-temperature">Température (°C)</label>
+              {temperatureMode === "manual" ? <div className="flex min-w-0 gap-1">
+                <input id="preparation-manual-temperature" type="text" inputMode="decimal" value={manualTemperatureInput} onChange={(event) => setManualTemperatureInput(event.target.value)} aria-label="Température au sol manuelle en degrés Celsius" aria-invalid={!groundTemperature} placeholder="°C" className="h-12 min-w-0 w-full rounded-lg border bg-[var(--bc-surface)] px-2 text-base" />
+                <button type="button" aria-label="Changer le signe de la température manuelle" onClick={() => setManualTemperatureInput((value) => value.trim().startsWith("-") ? value.trim().slice(1) : `-${value.trim().replace(/^\+/, "")}`)} className="h-12 w-11 shrink-0 rounded-lg border">±</button>
+              </div> : <output id="preparation-manual-temperature" className="flex h-12 items-center rounded-lg bg-black/5 px-2 text-base">{groundTemperature ? groundTemperature.temperatureC.toLocaleString("fr-FR") : "Indisponible"}</output>}
             </div>
-            {temperatureMode === "manual" && !groundTemperature && <p role="status" className="mt-1 text-xs">Saisissez une température valide en °C pour calculer la charge. Aucune température automatique ne sera utilisée en mode manuel.</p>}
           </fieldset>
-          <p role="status" className="text-sm">Température effective : {groundTemperature ? `${groundTemperature.temperatureC.toLocaleString("fr-FR")} °C` : "indisponible"} · Source : {groundTemperature?.provider ?? "indisponible"}</p>
-          <p className="mt-2 text-sm">{testLoadEnabled ? "Mode de démonstration" : loadSupport.message}</p>
-          <details className="mt-2 text-xs"><summary>Ballon et données constructeur utilisés</summary>
+          <p role="status" className="text-xs text-[var(--bc-color-text-muted)]">Température effective : {groundTemperature ? `${groundTemperature.temperatureC.toLocaleString("fr-FR")} °C` : "indisponible"} · {temperatureMode === "manual" ? "Manuel" : "Auto"} ({groundTemperature?.provider ?? "source indisponible"})</p>
+          {temperatureMode === "manual" && !groundTemperature && <p className="mt-1 text-xs">Saisissez une température valide. Aucune valeur Auto utilisée en mode Manuel.</p>}
+          <p className="mt-3 text-sm"><strong>{testLoadEnabled ? "Démonstration" : loadResult.status === "AVAILABLE" ? "Charge disponible" : "Charge indisponible"}</strong>{loadResult.status === "UNAVAILABLE" && ` · ${loadSupport.reason}`}</p>
+          <details className="mt-2 text-xs"><summary>Références constructeur et détails</summary>
+            <p>{loadSupport.message}</p>
             <p>Identifiant Prépa : {selectedBalloonId || "indisponible"}</p>
             <p>Mapping : {loadInput.manufacturer || "indisponible"} / {loadInput.model || "indisponible"} / {loadInput.volumeM3 ?? "indisponible"} m³</p>
             <p>Paramètres : {loadSupport.parameterId ?? "indisponibles"} · Méthode : {loadSupport.methodId ?? "indisponible"}</p>
