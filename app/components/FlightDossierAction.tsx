@@ -1,4 +1,5 @@
 "use client";
+import { FileDown, LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import FlightDossierOperationsSummary from "./FlightDossierOperationsSummary";
 import FlightDossierWeatherSummary from "./FlightDossierWeatherSummary";
@@ -17,9 +18,11 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
   const [dossierWeather, setDossierWeather] = useState<FlightDossierWeather | null>(null);
   const [dossierWeatherError, setDossierWeatherError] = useState<string | null>(null);
   const [dossierDownload, setDossierDownload] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [dossierPending, setDossierPending] = useState(false);
   const dossierRequest = useRef<AbortController | null>(null);
   useEffect(() => {
+    setFeedbackOpen(false);
     setDossierDownload(null);
     setDossier(null);
     setDossierWeather(null);
@@ -31,6 +34,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
     if (!onFlightDossier || dossierRequest.current && !dossierRequest.current.signal.aborted) return;
     const controller = new AbortController();
     dossierRequest.current = controller;
+    setFeedbackOpen(true);
     setDossierPending(true);
     setDossierDownload(null);
     setDossierWeather(null);
@@ -61,10 +65,10 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
     }
   };
   return (
-    <section className="border-t border-white/15 px-2.5 py-2" aria-label="Dossier de vol PDF">
-      <button type="button" disabled={dossierPending} onClick={requestDossier} className="flex min-h-11 w-full items-center justify-center rounded-lg bg-[var(--bc-accent)] px-3 text-xs font-bold text-[var(--bc-accent-foreground)] disabled:opacity-50">Dossier de vol PDF</button>
-      <p className="mt-1 text-[10px]">{trace.model.label} · {trace.label}</p>
-      <div className="max-h-[24dvh] overflow-y-auto text-xs">
+    <div className="relative shrink-0">
+      <button type="button" aria-label="Dossier de vol PDF" title={`Dossier PDF : ${trace.model.label} ${trace.label}`} aria-busy={dossierPending} disabled={dossierPending} onClick={requestDossier} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-[var(--bc-accent)] text-[var(--bc-accent-foreground)] disabled:opacity-50">{dossierPending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <FileDown size={18} aria-hidden="true" />}</button>
+      {feedbackOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-[40dvh] w-[min(280px,calc(100vw-88px))] overflow-y-auto rounded-xl border border-white/20 bg-slate-950 p-3 text-xs text-white shadow-xl">
+      <div className="flex items-center justify-between gap-2"><p>{trace.model.label} · {trace.label}</p><button type="button" aria-label="Fermer le suivi du dossier PDF" className="min-h-11 min-w-11" onClick={() => setFeedbackOpen(false)}><X size={16} /></button></div>
       {dossier && (dossier.status === "INVALID" ? <p role="alert">{dossier.message}</p> : <div role="status">
         <p>Données de la stratégie sélectionnée.</p>
         <p>{dossier.data.model.label} · {dossier.data.points.length} points · {time(dossier.data.startedAt, timeZone)} → {time(dossier.data.landingAt, timeZone)} · {duration(dossier.data.durationSeconds)}</p>
@@ -75,7 +79,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
       {dossierDownload && <p role="status">{dossierDownload}</p>}
       {dossierWeatherError && <p role="alert">{dossierWeatherError}</p>}
       {dossierWeather && <FlightDossierWeatherSummary data={dossierWeather} />}
-      </div>
-    </section>
+      </div>}
+    </div>
   );
 }

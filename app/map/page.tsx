@@ -16,7 +16,8 @@ import {
   X,
 } from "lucide-react";
 import { prepareFlightDossierOperations } from "../lib/flightDossierOperations";
-import { prepareFlightDossier } from "../lib/flightDossierEntry";
+import { describePreparationLoad } from "../lib/preparationLoadSupport";
+import { prepareFlightDossier, selectFlightDossierTrace } from "../lib/flightDossierEntry";
 import FlightDossierAction from "../components/FlightDossierAction";
 import { resolveLoadGroundTemperature } from "../lib/loadGroundTemperatureSelection";
 import PreparationMap from "../components/PreparationMap";
@@ -127,6 +128,7 @@ export default function MapPage() {
   const [testLoadEnabled, setTestLoadEnabled] = useState(false);
   const [showSyntheticMargin, setShowSyntheticMargin] = useState(false);
   const [loadDetailOpen, setLoadDetailOpen] = useState(false);
+  const [loadPanelOpen, setLoadPanelOpen] = useState(false);
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
@@ -483,8 +485,7 @@ export default function MapPage() {
       ),
     [selectedAltitudes, selectedModels, traces],
   );
-  const dossierTrace = displayedTraces.find((trace) => trace.traceId === selectedDossierTraceId)
-    ?? (exportIds.length === 1 ? displayedTraces.find((trace) => trace.traceId === exportIds[0]) : undefined);
+  const dossierTrace = selectFlightDossierTrace(displayedTraces, selectedDossierTraceId, exportIds);
   const intersectedAirspaces = useMemo(
     () => [...new Map(displayedTraces.flatMap((trace) => selectTrajectoryAirspaces(trace, airspaceCoverage.airspaces))
       .map((airspace) => [airspace.airspaceCompositeKey || airspace.airspaceId, airspace])).values()],
@@ -585,7 +586,10 @@ export default function MapPage() {
     PENDING_VERIFICATION: ["Paramètres constructeur", "en attente"],
   } as const)[loadResult.reasonCode] : null;
 
-  const openLoadCard = () => {
+  const loadSupport = describePreparationLoad(loadInput, loadResult);
+  const openLoadCard = () => setLoadPanelOpen(true);
+  const openLoadDetails = () => {
+    setLoadPanelOpen(false);
     const correctionPath = !testLoadEnabled ? loadCardBalloonCorrectionPath(selectedBalloon?.id, loadResult) : null;
     if (correctionPath) {
       router.push(correctionPath);
@@ -923,16 +927,17 @@ export default function MapPage() {
         <FloatingAction onClick={() => setRecenterToken((value) => value + 1)} className="absolute right-3 top-16 z-20 rounded-full" aria-label="Recentrer les trajectoires"><LocateFixed size={18} /></FloatingAction>
 
       <section style={{ zIndex: dossierTrace ? 35 : 20 }} className="absolute bottom-[max(6px,env(safe-area-inset-bottom))] left-3 z-20 w-[min(316px,calc(100vw-72px))] rounded-[var(--bc-radius-dock)] border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md">
+        <div className="flex items-center gap-1 pr-1">
         <button
           type="button"
           onClick={() => {
             setDisplayOpen(false);
             setLegendOpen((value) => !value);
           }}
-          className="flex min-h-10 w-full items-center gap-2 px-3 text-[11px] font-semibold"
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-3 text-[11px] font-semibold"
         >
           <Navigation size={15} style={{ color: "var(--bc-accent)" }} />
-          <span>Utiliser cette analyse en Vol</span>
+          <span className="truncate">Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
         </button>
         {dossierTrace && <FlightDossierAction key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
@@ -941,8 +946,10 @@ export default function MapPage() {
               if (dossier.status !== "READY") return dossier;
               return { ...dossier, data: { ...dossier.data, launchSiteName: config.request.launchSite.name, launchTimeZone: config.request.launchTimeZone, operations: prepareFlightDossierOperations(dossier.data, loadInput, airspaceCoverage.airspaces, testLoadEnabled) } };
             }} />}
+        </div>
         {legendOpen && (
           <div className="grid max-h-[34vh] gap-2 overflow-y-auto rounded-b-[var(--bc-radius-control)] border-t border-white/15 bg-[var(--bc-color-surface-glass)] p-2.5">
+            {!dossierTrace && displayedTraces.length > 1 && <p className="text-[10px]">Pour le PDF, cochez une seule stratégie ou touchez son point d’arrivée.</p>}
             <div>
               <div className="grid grid-cols-2 gap-1">
                 {displayedTraces.map((trace) => (
@@ -996,28 +1003,12 @@ export default function MapPage() {
         aria-label="Paramètres des trajectoires"
       >
         <div className="mx-auto max-w-3xl">
-          <fieldset className="mb-2 rounded-lg border p-2" style={{ borderColor: "var(--bc-border)" }}>
-            <legend className="px-1 text-xs font-semibold">Température au sol pour la charge</legend>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex min-h-11 items-center gap-2 text-sm">Source
-                <select aria-label="Source de température au sol" value={temperatureMode} onChange={(event) => setTemperatureMode(event.target.value as "auto" | "manual")} className="min-h-11 rounded-lg border bg-[var(--bc-surface)] px-2">
-                  <option value="auto">Auto</option><option value="manual">Manuel</option>
-                </select>
-              </label>
-              {temperatureMode === "manual" && <div className="flex items-center gap-2"><label className="flex min-h-11 items-center gap-2 text-sm">Température (°C)
-                <input type="text" inputMode="decimal" value={manualTemperatureInput} onChange={(event) => setManualTemperatureInput(event.target.value)} aria-label="Température au sol manuelle en degrés Celsius" aria-invalid={!groundTemperature} placeholder="Valeur en °C" className="min-h-11 w-28 rounded-lg border bg-[var(--bc-surface)] px-2" />
-              </label>
-                <button type="button" aria-label="Changer le signe de la température manuelle" onClick={() => setManualTemperatureInput((value) => value.trim().startsWith("-") ? value.trim().slice(1) : `-${value.trim().replace(/^\+/, "")}`)} className="min-h-11 min-w-11 rounded-lg border px-2">±</button>
-              </div>}
-            </div>
-            {temperatureMode === "manual" && !groundTemperature && <p role="status" className="mt-1 text-xs">Saisissez une température valide en °C pour calculer la charge. Aucune température automatique ne sera utilisée en mode manuel.</p>}
-          </fieldset>
           <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             <div
               role="button"
               tabIndex={0}
               onClick={openLoadCard}
-              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openLoadCard(); }}
+              onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openLoadCard(); } }}
               className="min-h-[118px] rounded-[16px] border p-2.5 text-left transition-transform active:scale-[0.98]"
               style={{
                 background: "var(--bc-surface)",
@@ -1033,7 +1024,7 @@ export default function MapPage() {
               </h2>
               {loadDisplay.showSyntheticBadge && <span className="mt-1 inline-block rounded bg-orange-600 px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white">{DEMO_LOAD_BADGE} — DONNÉES SYNTHÉTIQUES</span>}
               {!testLoadEnabled && candidateLoadResult && <span className="mt-0.5 block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
-              {!testLoadEnabled && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p></div>}
+              {!testLoadEnabled && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p>{loadResult.reasonCode === "UNSUPPORTED_MODEL" && <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{selectedBalloon?.manufacturer} {selectedBalloon?.model} · Toucher pour la raison</p>}</div>}
               {(!testLoadEnabled && displayedMargin !== null) && <p className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={`Marge de charge ${displayedMargin} kilogrammes`}>{`${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}</p>}
               {testLoadEnabled && <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>{blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}</p>}
               {testLoadEnabled && loadResult.status === "AVAILABLE" && !loadDisplay.showSyntheticMargin && <p className="mt-1 text-[9px] font-semibold leading-tight text-[var(--bc-color-text-muted)]">Dataset officiel Cameron requis</p>}
@@ -1133,6 +1124,38 @@ export default function MapPage() {
           frequencies={selectedAirspaceFrequencies}
         />
       )}
+      {loadPanelOpen && <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 p-3 pb-[max(12px,env(safe-area-inset-bottom))]" onClick={() => setLoadPanelOpen(false)}>
+        <section role="dialog" aria-modal="true" aria-labelledby="preparation-load-title" className="max-h-[75dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4 shadow-2xl" style={{ background: "var(--bc-color-canvas-elevated)", borderColor: "var(--bc-border)" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") setLoadPanelOpen(false); }}>
+          <div className="flex items-center justify-between gap-2"><h2 id="preparation-load-title" className="text-sm font-bold">Charge</h2><button autoFocus type="button" aria-label="Fermer le panneau charge" className="min-h-11 min-w-11" onClick={() => setLoadPanelOpen(false)}><X className="mx-auto" size={18} /></button></div>
+          <p className="mb-2 text-sm">{selectedBalloon ? balloonDisplayName(selectedBalloon) : "Aucun ballon sélectionné dans Prépa"}</p>
+          <fieldset className="mb-2 rounded-lg border p-2" style={{ borderColor: "var(--bc-border)" }}>
+            <legend className="px-1 text-xs font-semibold">Température au sol pour la charge</legend>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex min-h-11 items-center gap-2 text-sm">Source
+                <select aria-label="Source de température au sol" value={temperatureMode} onChange={(event) => setTemperatureMode(event.target.value as "auto" | "manual")} className="min-h-11 rounded-lg border bg-[var(--bc-surface)] px-2">
+                  <option value="auto">Auto</option><option value="manual">Manuel</option>
+                </select>
+              </label>
+              {temperatureMode === "manual" && <div className="flex items-center gap-2"><label className="flex min-h-11 items-center gap-2 text-sm">Température (°C)
+                <input type="text" inputMode="decimal" value={manualTemperatureInput} onChange={(event) => setManualTemperatureInput(event.target.value)} aria-label="Température au sol manuelle en degrés Celsius" aria-invalid={!groundTemperature} placeholder="Valeur en °C" className="min-h-11 w-28 rounded-lg border bg-[var(--bc-surface)] px-2" />
+              </label>
+                <button type="button" aria-label="Changer le signe de la température manuelle" onClick={() => setManualTemperatureInput((value) => value.trim().startsWith("-") ? value.trim().slice(1) : `-${value.trim().replace(/^\+/, "")}`)} className="min-h-11 min-w-11 rounded-lg border px-2">±</button>
+              </div>}
+            </div>
+            {temperatureMode === "manual" && !groundTemperature && <p role="status" className="mt-1 text-xs">Saisissez une température valide en °C pour calculer la charge. Aucune température automatique ne sera utilisée en mode manuel.</p>}
+          </fieldset>
+          <p role="status" className="text-sm">Température effective : {groundTemperature ? `${groundTemperature.temperatureC.toLocaleString("fr-FR")} °C` : "indisponible"} · Source : {groundTemperature?.provider ?? "indisponible"}</p>
+          <p className="mt-2 text-sm">{testLoadEnabled ? "Mode de démonstration" : loadSupport.message}</p>
+          <details className="mt-2 text-xs"><summary>Ballon et données constructeur utilisés</summary>
+            <p>Identifiant Prépa : {selectedBalloonId || "indisponible"}</p>
+            <p>Mapping : {loadInput.manufacturer || "indisponible"} / {loadInput.model || "indisponible"} / {loadInput.volumeM3 ?? "indisponible"} m³</p>
+            <p>Paramètres : {loadSupport.parameterId ?? "indisponibles"} · Méthode : {loadSupport.methodId ?? "indisponible"}</p>
+            <p>Référence : {loadSupport.manualRevision ?? "indisponible"} · Statut : {loadSupport.parameterStatus ?? "indisponible"}</p>
+            <p>Résultat moteur : {loadResult.status}{loadResult.status === "UNAVAILABLE" ? ` / ${loadResult.reasonCode} : ${loadResult.message}` : ""}</p>
+          </details>
+          {(loadResult.status === "AVAILABLE" || loadCardBalloonCorrectionPath(selectedBalloon?.id, loadResult)) && <button type="button" onClick={openLoadDetails} className="mt-3 min-h-11 w-full rounded-lg border px-3 text-sm">{loadResult.status === "AVAILABLE" ? "Détail du calcul" : "Compléter la fiche ballon"}</button>}
+        </section>
+      </div>}
       {loadDetailOpen && !testLoadEnabled && candidateLoadResult && selectedBalloon && groundTemperature && (
         <div className="fixed inset-0 z-[80] flex items-end overflow-y-auto overscroll-contain bg-black/45 pt-[max(12px,env(safe-area-inset-top))]" onClick={() => setLoadDetailOpen(false)}>
           <section className="max-h-[calc(100dvh-12px)] w-full overflow-y-auto overscroll-contain rounded-t-[24px] border border-white/10 bg-[var(--bc-color-canvas-elevated)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={(event) => event.stopPropagation()} aria-label="Détail du calcul de charge Cameron">
