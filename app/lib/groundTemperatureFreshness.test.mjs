@@ -3,6 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import {GROUND_TEMPERATURE_TTL_MS as TTL, GROUND_TEMPERATURE_PROVIDER_ID as ID, usableGroundTemperature, groundTemperatureRequestKey, OpenMeteoGroundTemperatureProvider, canFetchGroundTemperature} from './loadPerformance/groundTemperatureProvider.ts';
+import {resolveLoadGroundTemperature} from './loadGroundTemperatureSelection.ts';
 import {buildLoadCalculationInput} from './loadPerformance/balloonInput.ts';
 const now=Date.parse('2026-09-18T08:00:00Z');
 const request={latitude:48,longitude:2,dateTime:'2026-09-20T08:00:00Z',provider:ID};
@@ -35,12 +36,13 @@ for(const changes of [{latitude:49},{longitude:3},{dateTime:'2026-09-21T08:00:00
 const source=readFileSync(new URL('../map/page.tsx',import.meta.url),'utf8');
 const ast=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 let effect;const expressions={};
-function visit(node){if(ts.isCallExpression(node)&&node.expression.getText(ast)==='useEffect'&&node.arguments[0]?.getText(ast).includes('new OpenMeteoGroundTemperatureProvider()'))effect=node.arguments[0].getText(ast);if(ts.isVariableDeclaration(node)&&['groundTemperature','loadInput'].includes(node.name.getText(ast)))expressions[node.name.getText(ast)]=node.initializer.getText(ast);ts.forEachChild(node,visit);}visit(ast);
+function visit(node){if(ts.isCallExpression(node)&&node.expression.getText(ast)==='useEffect'&&node.arguments[0]?.getText(ast).includes('new OpenMeteoGroundTemperatureProvider()'))effect=node.arguments[0].getText(ast);if(ts.isVariableDeclaration(node)&&['groundTemperatureRequest','automaticGroundTemperature','groundTemperature','loadInput'].includes(node.name.getText(ast)))expressions[node.name.getText(ast)]=node.initializer.getText(ast);ts.forEachChild(node,visit);}visit(ast);
 function execute(text,bindings){const code=ts.transpileModule(`const result=(${text});`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;return new Function(...Object.keys(bindings),code+'\nreturn result;')(...Object.values(bindings));}
 const flush=async()=>{for(let i=0;i<25;i++)await Promise.resolve();};
-function mount(e){let state=null,pending=null,error=null;const config={request:{launchSite:request,launchDateTimeIso:request.dateTime}};
- const cleanup=execute(effect,{window:e.win,document:e.doc,navigator:globalThis.navigator,config,preparation:null,canFetchGroundTemperature,GROUND_TEMPERATURE_PROVIDER_ID:ID,GROUND_TEMPERATURE_TTL_MS:TTL,groundTemperatureRequestKey,OpenMeteoGroundTemperatureProvider,usableGroundTemperature,setGroundTemperatureState:v=>{state=v;},setGroundTemperaturePendingKey:v=>{pending=v;},setGroundTemperatureErrorCode:v=>{error=v;}})();
- return {cleanup,get pending(){return pending;},get error(){return error;},input(){const groundTemperature=execute(expressions.groundTemperature,{groundTemperatureRequest:request,groundTemperatureState:state,groundTemperatureKey:groundTemperatureRequestKey(request),usableGroundTemperature});return execute(expressions.loadInput,{buildLoadCalculationInput,selectedBalloon:undefined,preparation:null,config,launchElevationMslM:100,plannedMaximumAltitudeMslM:500,groundTemperature});}};
+function mount(e, identity=request){let state=null,pending=null,error=null;const config={request:{launchSite:identity,launchDateTimeIso:identity.dateTime}};
+ const groundTemperatureRequest=execute(expressions.groundTemperatureRequest,{useMemo:fn=>fn(),temperatureLaunchSite:identity,temperatureDateTime:identity.dateTime,temperatureTimeZone:identity.timeZone,GROUND_TEMPERATURE_PROVIDER_ID:ID});
+ const cleanup=execute(effect,{window:e.win,document:e.doc,navigator:globalThis.navigator,config,preparation:null,groundTemperatureRequest,canFetchGroundTemperature,GROUND_TEMPERATURE_PROVIDER_ID:ID,GROUND_TEMPERATURE_TTL_MS:TTL,groundTemperatureRequestKey,OpenMeteoGroundTemperatureProvider,usableGroundTemperature,setGroundTemperatureState:v=>{state=v;},setGroundTemperaturePendingKey:v=>{pending=v;},setGroundTemperatureErrorCode:v=>{error=v;}})();
+ return {cleanup,get pending(){return pending;},get error(){return error;},input(mode='auto',manualInput=''){const automaticGroundTemperature=execute(expressions.automaticGroundTemperature,{groundTemperatureRequest,groundTemperatureState:state,groundTemperatureKey:groundTemperatureRequestKey(groundTemperatureRequest),usableGroundTemperature});const groundTemperature=execute(expressions.groundTemperature,{resolveLoadGroundTemperature,temperatureMode:mode,manualTemperatureInput:manualInput,automaticGroundTemperature,temperatureDateTime:identity.dateTime});return execute(expressions.loadInput,{buildLoadCalculationInput,selectedBalloon:undefined,preparation:null,config,launchElevationMslM:100,plannedMaximumAltitudeMslM:500,groundTemperature});}};
 }
 for(const outcome of ['success','error','offline'])test(`B4 map memory expiry without remount: ${outcome}`,async t=>{
  t.mock.timers.enable({apis:['Date','setTimeout'],now});const e=env(t,()=>Date.now());const page=mount(e);t.after(page.cleanup);await flush();assert.equal(page.input().groundTemperature.temperatureC,12);
@@ -52,7 +54,7 @@ for(const outcome of ['success','error','offline'])test(`B4 map memory expiry wi
 });
 test('B4 map calculation gate rejects invalid or expired in-memory values',()=>{
  for(const value of [data(TTL+1),{...data(),temperatureC:'12'},{...data(),fetchedAt:undefined}]){
-  const groundTemperature=execute(expressions.groundTemperature,{groundTemperatureRequest:request,groundTemperatureState:{key:groundTemperatureRequestKey(request),value},groundTemperatureKey:groundTemperatureRequestKey(request),usableGroundTemperature:(v,r)=>usableGroundTemperature(v,r,now)});
+  const groundTemperature=execute(expressions.automaticGroundTemperature,{groundTemperatureRequest:request,groundTemperatureState:{key:groundTemperatureRequestKey(request),value},groundTemperatureKey:groundTemperatureRequestKey(request),usableGroundTemperature:(v,r)=>usableGroundTemperature(v,r,now)});
   assert.equal(buildLoadCalculationInput({groundTemperature:groundTemperature??undefined}).groundTemperature,undefined);
  }
 });
@@ -61,7 +63,7 @@ test('B4 map resume checks expiry even when background timer was suspended',asyn
  time+=TTL+1;navigator.onLine=false;e.doc.dispatchEvent(new Event('visibilitychange'));assert.equal(page.input().groundTemperature,undefined);
  navigator.onLine=true;e.win.dispatchEvent(new Event('online'));await flush();assert.ok(page.input().groundTemperature);assert.equal(e.calls,1);
 });
-test('B4 UI exposes source, forecast and retrieval date or unavailable calculation',()=>{assert.match(source,/groundTemperature\.provider.*Prévision.*groundTemperature\.validTime.*Récupérée.*groundTemperature\.fetchedAt/);assert.match(source,/Température actuelle indisponible pour le calcul de charge/);});
+test('B4 UI exposes source, forecast and retrieval date or unavailable calculation',()=>{assert.match(source,/groundTemperature\.provider.*Prévision.*groundTemperature\.validTime.*Récupérée.*automaticGroundTemperature.*fetchedAt/);assert.match(source,/Température actuelle indisponible pour le calcul de charge/);});
 
 test('B4 invalid network cannot overwrite a healthy entry behind an invalid pointer',async t=>{
  const e=env(t);e.cache(data());e.values.set(e.base+':latest','invalid-pointer');const before=[...e.values];
@@ -76,4 +78,31 @@ test('B4 fresh offline cache remains usable within TTL',async t=>{
 test('B4 unreadable cache and optional cache write failure still permit validated live data',async t=>{
  const e=env(t);e.win.localStorage.getItem=()=>{throw Error('SecurityError');};e.win.localStorage.setItem=()=>{throw Error('QuotaExceededError');};
  assert.equal((await new OpenMeteoGroundTemperatureProvider(()=>now).getGroundTemperature({...request,weatherModel:'ignored'})).temperatureC,12);
+});
+
+
+test('map Auto shares the complete timezone identity across acquisition, persisted cache and reading', async t => {
+ t.mock.timers.enable({apis:['Date','setTimeout'],now});
+ const e=env(t,()=>Date.now());
+ const identity={...request,timeZone:'Europe/Paris'};
+ e.network(url=>{assert.equal(new URL(url,'http://localhost').searchParams.get('timeZone'),'Europe/Paris');return e.reply();});
+ const page=mount(e,identity);t.after(page.cleanup);
+ await flush();
+ assert.equal(page.input().groundTemperature.temperatureC,12);
+ const key=groundTemperatureRequestKey(identity);
+ const base='balloon-companion:ground-temperature:v1:'+key;
+ const pointer=e.values.get(base+':latest');
+ assert.ok(pointer?.startsWith(base+':run:'));
+ const cached=JSON.parse(e.values.get(pointer));
+ assert.equal(groundTemperatureRequestKey(cached.requestIdentity),key);
+ assert.equal(usableGroundTemperature(cached,identity,now).temperatureC,12);
+ assert.equal(usableGroundTemperature(cached,request,now),null);
+ assert.equal(usableGroundTemperature(cached,{...identity,timeZone:'UTC'},now),null);
+ assert.equal(page.input('manual','15').groundTemperature.temperatureC,15);
+ navigator.onLine=false;
+ const cacheHit=await new OpenMeteoGroundTemperatureProvider(()=>now).getGroundTemperature({...identity,weatherModel:'ignored'});
+ assert.equal(cacheHit.temperatureC,12);assert.equal(e.calls,1);
+ t.mock.timers.tick(TTL+1);await flush();
+ assert.equal(page.input().groundTemperature,undefined);
+ assert.equal(page.input('manual','15').groundTemperature.temperatureC,15);
 });

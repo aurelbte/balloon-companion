@@ -212,17 +212,14 @@ export default function MapPage() {
     return () => { active = false; };
   }, [config]);
 
+  const temperatureLaunchSite = config?.request.launchSite ?? preparation?.launchSite;
+  const temperatureDateTime = config?.request.launchDateTimeIso ?? preparation?.departureTime;
+  const temperatureTimeZone = config?.request.launchTimeZone ?? preparation?.launchTimeZone;
+  const groundTemperatureRequest = useMemo(() => temperatureLaunchSite && temperatureDateTime ? { latitude: temperatureLaunchSite.latitude, longitude: temperatureLaunchSite.longitude, dateTime: temperatureDateTime, provider: GROUND_TEMPERATURE_PROVIDER_ID, ...(temperatureTimeZone ? { timeZone: temperatureTimeZone } : {}) } : null, [temperatureLaunchSite, temperatureDateTime, temperatureTimeZone]);
+
   useEffect(() => {
-    const launchSite = config?.request.launchSite ?? preparation?.launchSite;
-    const dateTime = config?.request.launchDateTimeIso ?? preparation?.departureTime;
-    if (!launchSite || !dateTime) return;
-    const requestIdentity = {
-      latitude: launchSite.latitude,
-      longitude: launchSite.longitude,
-      dateTime,
-      provider: GROUND_TEMPERATURE_PROVIDER_ID,
-    };
-    if (!canFetchGroundTemperature(requestIdentity)) return;
+    if (!groundTemperatureRequest || !canFetchGroundTemperature(groundTemperatureRequest)) return;
+    const requestIdentity = groundTemperatureRequest;
     let active = true;
     const controller = new AbortController();
     const key = groundTemperatureRequestKey(requestIdentity);
@@ -275,7 +272,7 @@ export default function MapPage() {
       window.removeEventListener("focus", checkTemperature);
       document.removeEventListener("visibilitychange", resume);
     };
-  }, [config, preparation]);
+  }, [groundTemperatureRequest]);
 
   useEffect(() => {
     if (!ready || !config || !traces.length || analysisFreshness === "FRESH") return;
@@ -500,9 +497,6 @@ export default function MapPage() {
   );
   const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
   const plannedMaximumAltitudeMslM = maximumAltitudeInput.trim() === "" ? undefined : Number(maximumAltitudeInput);
-  const temperatureLaunchSite = config?.request.launchSite ?? preparation?.launchSite;
-  const temperatureDateTime = config?.request.launchDateTimeIso ?? preparation?.departureTime;
-  const groundTemperatureRequest = temperatureLaunchSite && temperatureDateTime ? { latitude: temperatureLaunchSite.latitude, longitude: temperatureLaunchSite.longitude, dateTime: temperatureDateTime, provider: GROUND_TEMPERATURE_PROVIDER_ID, ...(config?.request.launchTimeZone ?? preparation?.launchTimeZone ? { timeZone: config?.request.launchTimeZone ?? preparation?.launchTimeZone } : {}) } : null;
   const groundTemperatureFetchEnabled = groundTemperatureRequest !== null && canFetchGroundTemperature(groundTemperatureRequest);
   const groundTemperatureKey = groundTemperatureRequest ? groundTemperatureRequestKey(groundTemperatureRequest) : "";
   const automaticGroundTemperature = groundTemperatureRequest && groundTemperatureState?.key === groundTemperatureKey
@@ -545,6 +539,7 @@ export default function MapPage() {
     occupantsWeight: typeof preparation?.occupantsWeightKg === "number" && preparation.occupantsWeightKg > 0,
     maximumAltitude: typeof plannedMaximumAltitudeMslM === "number" && Number.isFinite(plannedMaximumAltitudeMslM),
   })}${!groundTemperature && groundTemperatureErrorCode ? ` · ${groundTemperatureErrorCode}` : ""}`;
+  const loadSupport = describePreparationLoad(loadInput, loadResult);
   const blockingMessage = testLoadEnabled
     ? loadResult.status === "AVAILABLE"
       ? "Flux technique validé"
@@ -558,7 +553,7 @@ export default function MapPage() {
     NO_MAXIMUM_ALTITUDE: "Saisissez l’altitude maximale",
     NO_LAUNCH_ELEVATION: "Altitude terrain indisponible",
     NO_GROUND_TEMPERATURE: groundTemperatureLoading ? "Température sol : récupération…" : "Température au sol indisponible",
-    UNSUPPORTED_MODEL: "Modèle non pris en charge",
+    UNSUPPORTED_MODEL: loadSupport.inactiveCandidate ? "Calcul constructeur non activé" : "Modèle non pris en charge",
     UNSUPPORTED_OFFICIAL_DATASET: "Données constructeur non encore intégrées",
     OUTSIDE_OFFICIAL_TABLE: loadResult.message,
     OUTSIDE_DEMO_TABLE: loadResult.message,
@@ -575,7 +570,7 @@ export default function MapPage() {
     NO_MAXIMUM_ALTITUDE: ["Altitude maximale", "à renseigner"],
     NO_LAUNCH_ELEVATION: ["Altitude terrain", "indisponible"],
     NO_GROUND_TEMPERATURE: ["Température sol", groundTemperatureLoading ? "récupération…" : "indisponible"],
-    UNSUPPORTED_MODEL: ["Modèle", "non pris en charge"],
+    UNSUPPORTED_MODEL: loadSupport.inactiveCandidate ? ["Calcul constructeur", "non activé"] : ["Modèle", "non pris en charge"],
     UNSUPPORTED_OFFICIAL_DATASET: ["Données constructeur", "non intégrées"],
     OUTSIDE_OFFICIAL_TABLE: ["Conditions", "hors domaine"],
     OUTSIDE_DEMO_TABLE: ["Conditions test", "hors domaine"],
@@ -586,7 +581,6 @@ export default function MapPage() {
     PENDING_VERIFICATION: ["Paramètres constructeur", "en attente"],
   } as const)[loadResult.reasonCode] : null;
 
-  const loadSupport = describePreparationLoad(loadInput, loadResult);
   const openLoadCard = () => setLoadPanelOpen(true);
   const openLoadDetails = () => {
     setLoadPanelOpen(false);

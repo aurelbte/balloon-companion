@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describePreparationLoad } from './preparationLoadSupport.ts';
 import { calculateOfficialLoad } from './loadPerformance/engine.ts';
 import { buildLoadCalculationInput } from './loadPerformance/balloonInput.ts';
@@ -31,6 +32,7 @@ test('Cameron alias mapping remains enabled while unknown models remain unavaila
   const unknown = { ...input, model: 'UNKNOWN' };
   const diagnosis = describePreparationLoad(unknown, calculateOfficialLoad(unknown));
   assert.equal(diagnosis.parameterId, null);
+  assert.equal(diagnosis.inactiveCandidate, false);
   assert.match(diagnosis.message, /UNKNOWN.*aucun calcul pris en charge/);
 });
 const trace = { traceId: 'one', model: { label: 'AROME', providerModelId: 'arome_seamless' }, projection: { startedAt: '2026-11-05T10:00:00Z', durationSeconds: 60, points: [{ latitude: 50, longitude: 3, altitudeAmslM: 100, timestamp: '2026-11-05T10:00:00Z' }, { latitude: 50.01, longitude: 3.01, altitudeAmslM: 200, timestamp: '2026-11-05T10:01:00Z' }] } };
@@ -54,9 +56,31 @@ test('CN-CHA / Ultramagic T150 at manual 15 C maps to FM04 Rev30 but remains una
   assert.equal(result.status, 'UNAVAILABLE');
   assert.equal(result.reasonCode, 'UNSUPPORTED_MODEL');
   const diagnosis = describePreparationLoad(input, result);
+  assert.equal(diagnosis.inactiveCandidate, true);
+  assert.equal(diagnosis.reason, 'Calcul constructeur non activé');
   assert.equal(diagnosis.parameterId, 'ULTRAMAGIC_T150');
   assert.equal(diagnosis.manualRevision, 'FM04_REVISION_30');
   assert.equal(diagnosis.parameterStatus, 'CANDIDATE_PILOT_VALIDATION');
   assert.equal(diagnosis.candidateEnabled, false);
   assert.match(diagnosis.message, /T150.*calcul non activé dans Prépa/);
+});
+
+
+test('missing temperature keeps its own reason even for an inactive candidate model', () => {
+ const input=inputFor({...balloon,manufacturer:'Ultramagic',model:'T150',volumeM3:4245});
+ delete input.groundTemperature;
+ const result=calculateOfficialLoad(input);
+ const diagnosis=describePreparationLoad(input,result);
+ assert.equal(result.reasonCode,'NO_GROUND_TEMPERATURE');
+ assert.equal(diagnosis.inactiveCandidate,false);
+ assert.equal(diagnosis.reason,'Température au sol indisponible.');
+});
+
+
+test('map card and blocking label distinguish inactive candidates while preserving manufacturer details', () => {
+ const source=readFileSync(new URL('../map/page.tsx',import.meta.url),'utf8');
+ assert.match(source,/UNSUPPORTED_MODEL: loadSupport.inactiveCandidate \? "Calcul constructeur non activé" : "Modèle non pris en charge"/);
+ assert.match(source,/UNSUPPORTED_MODEL: loadSupport.inactiveCandidate \? \["Calcul constructeur", "non activé"\] : \["Modèle", "non pris en charge"\]/);
+ assert.match(source,/Référence : \{loadSupport.manualRevision/);
+ assert.match(source,/Statut : \{loadSupport.parameterStatus/);
 });
