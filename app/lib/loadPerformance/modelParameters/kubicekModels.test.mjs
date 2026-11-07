@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { findExactKubicekModel, kubicekModelParameters } from "./kubicekModels.ts";
 
-test("registre Kubíček Rev.19 traçable et sans identifiant dupliqué", () => {
+test("registre Kubíček Rev.22 traçable et sans identifiant dupliqué", () => {
   assert.equal(new Set(kubicekModelParameters.map(({ id }) => id)).size, kubicekModelParameters.length);
   for (const model of kubicekModelParameters) {
     assert.ok(model.volumeM3 > 0);
     assert.ok(model.volumeCuFt > 0);
     assert.ok(model.standardMtomKg > 0);
-    assert.equal(model.source.manualId, "KUBICEK_B3102_ED3_REV19");
-    assert.match(model.source.manualRevision, /Revision 19/);
+    assert.equal(model.source.manualId, "KUBICEK_B3102_ED3_REV22");
+    assert.match(model.source.manualRevision, /Revision 22/);
     assert.ok(model.source.pages.length > 0);
     assert.equal(model.verificationStatus, "CANDIDATE_PILOT_VALIDATION");
     assert.equal(model.reducedMtomKg, undefined);

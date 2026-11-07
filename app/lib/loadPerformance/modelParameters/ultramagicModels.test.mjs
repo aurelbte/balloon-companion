@@ -19,13 +19,13 @@ test("le registre Ultramagic FM04 Revision 30 est complet et non activé", () =>
   }
 });
 
-test("l’audit trace les 50 modèles sans supplément indispensable", () => {
+test("l’audit trace les 50 modèles avec suppléments à vérifier", () => {
   const audit = buildUltramagicTraceabilityAudit();
   assert.equal(audit.length, 50);
   assert.ok(audit.every(({ volume }) => volume === "CONFIRMED"));
   assert.ok(audit.every(({ mtom }) => mtom === "STANDARD_AND_REDUCED_DOCUMENTED"));
   assert.ok(audit.every(({ fm04 }) => fm04 === "APPLICABLE"));
-  assert.ok(audit.every(({ supplement }) => supplement === "NOT_REQUIRED"));
+  assert.ok(audit.every(({ supplement }) => supplement === "TO_VERIFY"));
   assert.ok(audit.every(({ status }) => status === "CANDIDATE_PILOT_VALIDATION"));
 });
 
@@ -34,4 +34,10 @@ test("les variantes proches restent des entrées exactes distinctes", () => {
   assert.notEqual(byModel.get("M56")?.id, byModel.get("M56C")?.id);
   assert.notEqual(byModel.get("M65")?.id, byModel.get("M65Z")?.id);
   assert.notEqual(byModel.get("N425")?.id, byModel.get("N450")?.id);
+});
+
+
+test("volumes M70Z et N500 conformes à FM04 Rev30 p. 5.8", () => {
+  assert.equal(ultramagicModelParameters.find(({model}) => model === 'M70Z').volumeM3, 1982);
+  assert.equal(ultramagicModelParameters.find(({model}) => model === 'N500').volumeM3, 14412);
 });

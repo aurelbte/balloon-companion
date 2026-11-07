@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
+import { kubicekModelParameters } from "../modelParameters/kubicekModels.ts";
+import { calculateOfficialLoad } from "../engine.ts";
+import { kubicekBB74ZDocumentation, kubicekB3102Ed3Rev22Source, kubicekB3102Ed3Rev22Rows } from "../datasets/kubicekB3102Ed3Rev22.ts";
 import { calculateManufacturerLoad } from "../manufacturerDispatcher.ts";
 import { findExactKubicekModel } from "../modelParameters/kubicekModels.ts";
 import {
@@ -12,7 +16,7 @@ import {
 const bb20 = findExactKubicekModel("BB20");
 assert.ok(bb20);
 const input = {
-  manufacturer: "Kubíček", model: "BB20", applicableMtowKg: 630,
+  manufacturer: "Kubíček", model: "BB20", volumeM3: 2000, applicableMtowKg: 630,
   balloonEquipmentWeightKg: 300, occupantsWeightKg: 150,
   launchElevationMslM: 0, plannedMaximumAltitudeMslM: 6000 * 0.3048,
   groundTemperature: { temperatureC: 17.8872, sourceModel: "TEST", forecastRun: "TEST", validTime: "TEST" },
@@ -49,11 +53,11 @@ test("lignes kg officielles B.3102 pages 5-4 et 5-5 représentatives", () => {
   assert.equal(interpolateKubicekLoadingTable("BB184P", 23), 5095);
 });
 
-test("le Loading Chart vectoriel reproduit le cas officiel 6000 ft / 6 °C", () => {
+test("le Loading Chart conserve le point extrait et distingue la lecture constructeur sans arrondi imposé", () => {
   const liftUnits = lookupKubicekLiftUnits(6000 * 0.3048, 6);
   assert.ok(liftUnits !== null);
-  assert.equal(Number(liftUnits.toFixed(1)), 16.5);
-  assert.ok(Math.abs(liftUnits - 16.5) < 0.05);
+  assert.equal(liftUnits, 16.539624);
+  assert.notEqual(liftUnits, 16.5);
 });
 
 test("le Loading Chart n'extrapole ni altitude, ni température, ni domaine LU", () => {
@@ -77,8 +81,8 @@ test("les limites basse et haute présentes dans le JSON restent consultables", 
 });
 
 test("MTOW et RMTOW explicites deviennent limitantes", () => {
-  assert.equal(calculateKubicekMassFromLiftUnits({ ...input, applicableMtowKg: 520 }, bb20, 16.5)?.permittedTotalMassKg, 520);
-  assert.equal(calculateKubicekMassFromLiftUnits({ ...input, applicableMtowKg: 500 }, bb20, 16.5)?.permittedTotalMassKg, 500);
+  assert.equal(calculateKubicekMassFromLiftUnits({ ...input, applicableMtowKg: 520 }, bb20, 16.5)?.candidateMassCeilingKg, 520);
+  assert.equal(calculateKubicekMassFromLiftUnits({ ...input, applicableMtowKg: 500 }, bb20, 16.5)?.candidateMassCeilingKg, 500);
 });
 
 test("la décroissance standard est appliquée et une hauteur négative est refusée", () => {
@@ -88,10 +92,12 @@ test("la décroissance standard est appliquée et une hauteur négative est refu
 
 test("le dispatcher branche le cas officiel BB20 sans arrondir le résultat interne", () => {
   const result = calculateManufacturerLoad("Kubíček", "BB20", input);
-  assert.equal(result?.status, "AVAILABLE");
-  assert.equal(result?.calculationStatus, "CANDIDATE_PILOT_VALIDATION");
-  assert.ok(Math.abs(result.performanceLimitedMassKg - 534.267968) < 0.0001);
-  assert.equal(result.permittedTotalMassKg, result.performanceLimitedMassKg);
+  assert.equal(result?.status, "NON_VALIDÉ");
+  assert.equal(result.theoretical.performanceLimitedMassKg, 534.267968);
+  assert.equal(result.theoretical.candidateMassCeilingKg, 534.267968);
+  assert.ok(result.reasons.includes("LU_METHOD_NOT_VALIDATED"));
+  assert.equal("marginKg" in result, false);
+  assert.equal("permittedTotalMassKg" in result, false);
 });
 
 test("les conditions hors graphique sont refusées sans fallback", () => {
@@ -100,7 +106,44 @@ test("les conditions hors graphique sont refusées sans fallback", () => {
     groundTemperature: { ...input.groundTemperature, temperatureC: 100 },
   }), {
     status: "UNAVAILABLE",
-    reasonCode: "CONDITIONS_OUTSIDE_METHOD_DOMAIN",
+    reasonCode: "OUTSIDE_OFFICIAL_TABLE",
     message: "Altitude ou température hors du domaine officiel du Loading Chart Kubíček.",
   });
+});
+
+
+test("les 1106 valeurs des 79 tables historiques restent strictement inchangées", () => {
+  const models = kubicekModelParameters.map(({ model }) => model).filter((model) => model !== "BB74Z").sort();
+  assert.equal(models.length, 79);
+  const tables = Object.fromEntries(models.map((model) => [model,
+    Array.from({ length: 14 }, (_, index) => interpolateKubicekLoadingTable(model, index + 10)),
+  ]));
+  // Empreinte des 79 lignes avant consolidation Rev.22 (clés triées, JSON compact).
+  assert.equal(createHash("sha256").update(JSON.stringify(tables)).digest("hex"),
+    "b8215eff545a265c37056e8b4a5aea9c7c174eec727bb61c91d9b5d0cc9a90e0");
+});
+
+test("BB74Z : données Rev.22 complètes, références de compatibilité sans approbation ni activation", () => {
+  const parameters = findExactKubicekModel("BB74Z");
+  assert.ok(parameters);
+  assert.equal(parameters.volumeM3, 7400);
+  assert.equal(parameters.volumeCuFt, 263400);
+  assert.equal(parameters.standardMtomKg, 2450);
+  assert.equal(kubicekBB74ZDocumentation.minimumLandingWeightKg, 1130);
+  assert.deepEqual(Array.from({ length: 14 }, (_, i) => interpolateKubicekLoadingTable("BB74Z", i + 10)),
+    [1196,1315,1435,1554,1674,1794,1913,2033,2152,2272,2391,2450,2450,2450]);
+  assert.equal(interpolateKubicekLoadingTable("BB74Z", 10.5), 1255.5);
+  assert.deepEqual(kubicekBB74ZDocumentation.basketMatrix.row, ["BB70D", "BB70Z", "BB74Z"]);
+  assert.deepEqual(kubicekBB74ZDocumentation.burnerMatrix.row, ["BB74Z", "BB78Z"]);
+  assert.equal(kubicekBB74ZDocumentation.configurationStatus, "NOT_VERIFIED");
+  assert.equal(kubicekB3102Ed3Rev22Source.pageRevisions["8-1"].revision, 15);
+  for (const page of ["2-5", "2-9", "2-10", "2-11", "5-4", "5-5", "8-2"]) {
+    assert.equal(kubicekB3102Ed3Rev22Source.pageRevisions[page].revision, 22);
+  }
+  assert.deepEqual(kubicekB3102Ed3Rev22Rows, []);
+  for (const model of kubicekModelParameters) {
+    const result = calculateOfficialLoad({ ...input, balloonId: "TEST", model: model.model, configurationLimitsConfirmed: true });
+    assert.equal(result.status, "UNAVAILABLE", model.model);
+    assert.equal(result.reasonCode, "UNSUPPORTED_MODEL", model.model);
+  }
 });

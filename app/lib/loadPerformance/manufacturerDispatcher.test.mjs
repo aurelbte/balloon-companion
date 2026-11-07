@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateCameronMethodA2Candidate } from "./cameron/officialCalculation.ts";
 import { calculateManufacturerLoad } from "./manufacturerDispatcher.ts";
+import { ultramagicModelParameters } from "./modelParameters/ultramagicModels.ts";
 import { resolveCameronModelParameters } from "./modelParameters/cameronModels.ts";
 
 const parameters = resolveCameronModelParameters("Z-120");
@@ -30,12 +31,13 @@ test("le dispatcher Cameron retourne strictement le calcul A2 existant", () => {
   assert.deepEqual(dispatched, direct);
 });
 
-test("les autres constructeurs conservent strictement leur comportement", () => {
-  assert.deepEqual(calculateManufacturerLoad("Ultramagic", "H65", { ...inputs, volumeM3: 1_840 }), {
-    status: "UNAVAILABLE",
-    reasonCode: "CONFIGURATION_LIMITS_UNCONFIRMED",
-    message: "Confirmez les limites du ballon dans sa fiche.",
-  });
+test("Ultramagic reste non validé et un constructeur inconnu reste rejeté", () => {
+  const h65 = ultramagicModelParameters.find(({ model }) => model === "H65");
+  const ultramagic = calculateManufacturerLoad("Ultramagic", "H65", { ...inputs, volumeM3: h65.volumeM3, applicableMtowKg: h65.standardMtomKg });
+  assert.equal(ultramagic.status, "NON_VALIDÉ");
+  assert.ok(ultramagic.reasons.includes("CONFIGURATION_LIMITS_UNCONFIRMED"));
+  assert.ok(ultramagic.reasons.includes("APPLICABLE_SUPPLEMENTS_UNVERIFIED"));
+  assert.equal("marginKg" in ultramagic, false);
   assert.deepEqual(calculateManufacturerLoad("Inconnu", "X", inputs), {
     status: "UNSUPPORTED_MANUFACTURER",
     manufacturer: "Inconnu",

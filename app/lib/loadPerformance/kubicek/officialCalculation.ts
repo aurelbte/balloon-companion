@@ -1,12 +1,29 @@
-import type { LoadCalculationInput, LoadCalculationResult, LoadUnavailableReasonCode } from "../types.ts";
+import type { LoadCalculationInput, LoadCalculationResult } from "../types.ts";
 import type { LoadModelParameterSet } from "../modelParameters/types.ts";
+import { findExactKubicekModel } from "../modelParameters/kubicekModels.ts";
+import { evaluateKubicekEvidence, kubicekMinimumLandingMassKg, type KubicekCandidateInput, type KubicekBlock } from "./validation.ts";
 import loadingChartAudit from "../datasets/audits/kubicek-b3102-ed3-rev19-loading-chart.json" with { type: "json" };
 
 export const KUBICEK_LOADING_TABLE_MIN_LU = 10;
 export const KUBICEK_LOADING_TABLE_MAX_LU = 23;
 const METERS_PER_FOOT = 0.3048;
-const CONDITIONS_OUTSIDE_METHOD_DOMAIN = "CONDITIONS_OUTSIDE_METHOD_DOMAIN" as LoadUnavailableReasonCode;
+export type KubicekLoadCandidateCalculation = Readonly<{
+  status: "NON_VALIDÉ";
+  reasons: readonly string[];
+  blocks: readonly KubicekBlock[];
+  message: string;
+  theoretical?: Readonly<{
+    liftUnits: number;
+    performanceLimitedMassKg: number;
+    candidateMassCeilingKg: number;
+    inputMassSumKg: number;
+    documentedTakeoffMassKg?: number;
+  }>;
+}>;
+export type KubicekCandidateResult = KubicekLoadCandidateCalculation | Extract<LoadCalculationResult, { status: "UNAVAILABLE" }>;
 
+
+/** Tables kg : B.3102 Ed.3 Rev.22, p.5-4 Rev.22 ; provenance détaillée dans kubicekB3102Ed3Rev22.ts. */
 const rows: Readonly<Record<string, readonly number[]>> = {
   BB9: [145,160,175,189,204,218,233,247,262,276,291,295,295,295], BB9E: [145,160,175,189,204,218,233,247,262,276,291,295,295,295], BB9EF: [145,160,175,189,204,218,233,247,262,276,291,295,295,295],
   BB12: [194,213,233,252,271,291,310,330,349,368,385,385,385,385], BB12E: [194,213,233,252,271,291,310,330,349,368,385,385,385,385], BB12EF: [194,213,233,252,271,291,310,330,349,368,385,385,385,385],
@@ -33,6 +50,7 @@ const rows: Readonly<Record<string, readonly number[]>> = {
   BB60D: [969,1066,1163,1260,1357,1454,1551,1648,1745,1842,1939,1940,1940,1940], BB60N: [969,1066,1163,1260,1357,1454,1551,1648,1745,1842,1939,1940,1940,1940], BB60Z: [969,1066,1163,1260,1357,1454,1551,1648,1745,1842,1939,1940,1940,1940],
   BB64Z: [1034,1138,1241,1344,1448,1551,1655,1758,1861,1965,2068,2100,2100,2100],
   BB70D: [1131,1244,1357,1470,1583,1697,1810,1923,2036,2149,2262,2300,2300,2300], BB70Z: [1131,1244,1357,1470,1583,1697,1810,1923,2036,2149,2262,2300,2300,2300],
+  BB74Z: [1196,1315,1435,1554,1674,1794,1913,2033,2152,2272,2391,2450,2450,2450],
   BB78Z: [1260,1386,1512,1638,1764,1890,2017,2143,2269,2395,2521,2600,2600,2600],
   BB85D: [1373,1511,1648,1785,1923,2060,2197,2335,2472,2610,2747,2820,2820,2820], BB85Z: [1373,1511,1648,1785,1923,2060,2197,2335,2472,2610,2747,2820,2820,2820],
   BB92Z: [1487,1635,1784,1933,2081,2230,2378,2527,2676,2824,2973,3000,3000,3000],
@@ -117,27 +135,30 @@ export function calculateKubicekMassFromLiftUnits(
   modelParameters: LoadModelParameterSet,
   liftUnits: number,
 ) {
+  const canonical = findExactKubicekModel(modelParameters.model);
+  if (!canonical || modelParameters.manufacturer !== "Kubíček" || input.model !== canonical.model
+    || input.volumeM3 !== canonical.volumeM3 || modelParameters.volumeM3 !== canonical.volumeM3
+    || modelParameters.standardMtomKg !== canonical.standardMtomKg) return null;
   const performanceLimitedMassKg = interpolateKubicekLoadingTable(modelParameters.model, liftUnits);
   const applicableMtowKg = input.applicableMtowKg;
   const equipment = input.balloonEquipmentWeightKg;
   const occupants = input.occupantsWeightKg;
   if (performanceLimitedMassKg === null || ![applicableMtowKg, equipment, occupants].every((value) => typeof value === "number" && Number.isFinite(value))) return null;
-  const permittedTotalMassKg = Math.min(performanceLimitedMassKg, applicableMtowKg!);
-  const actualTotalMassKg = equipment! + occupants!;
+  if (applicableMtowKg! <= 0 || applicableMtowKg! > canonical.standardMtomKg! || equipment! <= 0 || occupants! < 0) return null;
+  const inputMassSumKg = equipment! + occupants!;
+  if (!Number.isFinite(inputMassSumKg)) return null;
+  // Numerical diagnostic only. This helper never exposes an admissible margin/capacity.
   return {
     performanceLimitedMassKg,
-    permittedTotalMassKg,
-    actualTotalMassKg,
-    availableOccupantsCapacityKg: permittedTotalMassKg - equipment!,
-    marginKg: permittedTotalMassKg - actualTotalMassKg,
-    limitingRule: applicableMtowKg! < performanceLimitedMassKg ? "APPLICABLE_MTOW" : "KUBICEK_LOADING_TABLE",
+    candidateMassCeilingKg: Math.min(performanceLimitedMassKg, applicableMtowKg!),
+    inputMassSumKg,
   } as const;
 }
 
 export function calculateKubicekLoadCandidate(
-  input: LoadCalculationInput,
+  input: KubicekCandidateInput,
   modelParameters: LoadModelParameterSet,
-): LoadCalculationResult {
+): KubicekCandidateResult {
   const groundTemperatureC = input.groundTemperature?.temperatureC;
   const launchElevationMslM = input.launchElevationMslM;
   const maximumAltitudeMslM = input.plannedMaximumAltitudeMslM;
@@ -155,34 +176,37 @@ export function calculateKubicekLoadCandidate(
   if (liftUnits === null) {
     return {
       status: "UNAVAILABLE",
-      reasonCode: CONDITIONS_OUTSIDE_METHOD_DOMAIN,
+      reasonCode: "OUTSIDE_OFFICIAL_TABLE",
       message: "Altitude ou température hors du domaine officiel du Loading Chart Kubíček.",
     };
   }
-  const mass = calculateKubicekMassFromLiftUnits(input, modelParameters, liftUnits);
-  if (!mass) {
-    return {
-      status: "UNAVAILABLE",
-      reasonCode: CONDITIONS_OUTSIDE_METHOD_DOMAIN,
-      message: "Données de masse incomplètes ou Lift Units hors de la Loading Table Kubíček.",
-    };
+  const verification = evaluateKubicekEvidence(input);
+  const blocks = [...verification.blocks];
+  const canonical = findExactKubicekModel(input.model ?? "");
+  if (!canonical || modelParameters.id !== canonical.id || modelParameters.manufacturer !== "Kubíček"
+    || modelParameters.model !== input.model || modelParameters.volumeM3 !== canonical.volumeM3
+    || modelParameters.standardMtomKg !== canonical.standardMtomKg) {
+    blocks.push({ code: "MODEL_PARAMETERS_MISMATCH", source: "2-5 / 8-1 / 8-2", message: "Paramètres incompatibles avec le modèle exact du registre." });
   }
+  const mass = calculateKubicekMassFromLiftUnits(input, modelParameters, liftUnits);
+  if (!mass) blocks.push({ code: "INVALID_NUMERICAL_INPUT", source: "2-5 / 5-1", message: "Masses, volume ou MTOW absents, invalides ou incohérents." });
+  const takeoff = verification.takeoffMassKg;
+  const maximumFlight = verification.maximumFlightMassKg;
+  if (mass && (takeoff !== undefined && takeoff > mass.performanceLimitedMassKg || maximumFlight !== undefined && maximumFlight > mass.performanceLimitedMassKg)) {
+    blocks.push({ code: "LIFT_EXCEEDED", source: "2-4 Rev.0 / 5-1 Rev.0", message: "Masse documentée supérieure à la capacité théorique candidate." });
+  }
+  const mlw = kubicekMinimumLandingMassKg(input.model ?? "");
+  if (mass && mlw !== undefined && mass.candidateMassCeilingKg < mlw) {
+    blocks.push({ code: "NO_FEASIBLE_WEIGHT_RANGE", source: "2-4 Rev.0 / 2-5 Rev.22", message: "Plafond candidat inférieur à la MLW constructeur." });
+  }
+  // Geometric agreement with Rev.22 does not resolve the manufacturer's precision
+  // or certify automated LU interpolation (notably 16.539624 versus example 16.5).
+  blocks.push({ code: "LU_METHOD_NOT_VALIDATED", source: "5-2 Rev.16 / 5-3 Rev.17", message: "Méthode numérique LU candidate : précision et interpolation automatisée non validées ; aucune marge admissible." });
   return {
-    status: "AVAILABLE",
-    calculationStatus: "CANDIDATE_PILOT_VALIDATION",
-    ...mass,
-    manufacturerMethodId: modelParameters.manufacturerMethodId,
-    modelParameterSetId: modelParameters.id,
-    manufacturer: "Kubíček",
-    model: modelParameters.model,
-    datasetId: "KUBICEK_B3102_ED3_REV19_LOADING_CHART_VECTOR",
-    manualRevision: modelParameters.source.manualRevision,
-    launchElevationMslM,
-    maximumAltitudeMslM,
-    limitingAltitudeMslM: maximumAltitudeMslM,
-    groundTemperatureC,
-    groundTemperatureSource: input.groundTemperature?.provider ?? input.groundTemperature?.sourceModel ?? "UNKNOWN",
-    manufacturerTemperatureMethod: "B3102_STANDARD_TEMPERATURE_DECREASE",
-    calculatedAt: new Date().toISOString(),
+    status: "NON_VALIDÉ",
+    reasons: [...new Set(blocks.map(({ code }) => code))],
+    blocks,
+    message: `NON_VALIDÉ : ${blocks.map(({ message }) => message).join(" ")}`,
+    ...(mass ? { theoretical: { ...mass, liftUnits, documentedTakeoffMassKg: takeoff } } : {}),
   };
 }

@@ -1,4 +1,5 @@
 import type { LoadModelParameterSet } from "./types.ts";
+import { kubicekB3102Ed3Rev22Source } from "../datasets/kubicekB3102Ed3Rev22.ts";
 
 export const KUBICEK_LIFT_UNITS_METHOD_ID = "KUBICEK_B3102_LIFT_UNITS_TABLE";
 export const KUBICEK_B3102_ED3_REV19_SOURCE_URL =
@@ -42,6 +43,7 @@ const envelopeRows: readonly KubicekEnvelopeRow[] = [
   { models: ["BB60Z"], volumeM3: 5_950, volumeCuFt: 209_700, mtowKg: 1_940 },
   { models: ["BB64Z"], volumeM3: 6_400, volumeCuFt: 227_900, mtowKg: 2_100 },
   { models: ["BB70D", "BB70Z"], volumeM3: 7_000, volumeCuFt: 249_200, mtowKg: 2_300 },
+  { models: ["BB74Z"], volumeM3: 7_400, volumeCuFt: 263_400, mtowKg: 2_450 },
   { models: ["BB78Z"], volumeM3: 7_800, volumeCuFt: 277_600, mtowKg: 2_600 },
   { models: ["BB85D", "BB85Z"], volumeM3: 8_500, volumeCuFt: 302_600, mtowKg: 2_820 },
   { models: ["BB92Z"], volumeM3: 9_200, volumeCuFt: 327_500, mtowKg: 3_000 },
@@ -58,7 +60,7 @@ const envelopeRows: readonly KubicekEnvelopeRow[] = [
 
 export const kubicekModelParameters = Object.freeze(
   envelopeRows.flatMap((row) => row.models.map((model) => ({
-    id: `KUBICEK_${model}_B3102_ED3_REV19`,
+    id: `KUBICEK_${model}_B3102_ED3_REV22`,
     manufacturer: "Kubíček" as const,
     manufacturerModelId: model,
     model,
@@ -68,14 +70,16 @@ export const kubicekModelParameters = Object.freeze(
     standardMtomKg: row.mtowKg,
     tableRowId: `B3102_LOADING_TABLE_${model}`,
     source: {
-      manualId: "KUBICEK_B3102_ED3_REV19",
-      manualRevision: "Edition 3 Revision 19 — 18 December 2024",
+      manualId: kubicekB3102Ed3Rev22Source.manualId,
+      manualRevision: kubicekB3102Ed3Rev22Source.manualRevision,
       pages: ["2-5", "5-4", "5-5", "8-1", "8-2"],
     },
     verificationStatus: "CANDIDATE_PILOT_VALIDATION" as const,
     notes: [
       "MTOW issue de la table Envelope Weight Limits ; aucune RMTOW générique.",
       "La RMTOW éventuelle est propre au ballon et inscrite en page II.",
+      "Révisions des pages : 2-5, 5-4, 5-5 et 8-2 Rev.22 ; 8-1 Rev.15 (27 February 2023).",
+      ...(model === "BB74Z" ? ["MLW documentaire : 1130 kg (2-5 Rev.22), non contrôlée par le moteur candidat.", "Compatibilités : 2-9, 2-10, 2-11 Rev.22 ; aucune configuration réelle validée."] : []),
     ],
   } satisfies LoadModelParameterSet))),
 );

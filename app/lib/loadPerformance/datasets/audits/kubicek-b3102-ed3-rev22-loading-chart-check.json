@@ -1,0 +1,207 @@
+{
+  "manual": "B.3102 Edition 3 Revision 22, 30 October 2025",
+  "sourceSha256": "c32dd501b7761b1b03974aa8e39b6d4e20efc9e304c1a520ecc37c03bf721c30",
+  "page": "5-3",
+  "pdfPage": 69,
+  "pageRevision": 17,
+  "pageRevisionDate": "2024-05-20",
+  "method": "Independent line/cubic intersection from local PDF content; affine axes from printed endpoints; no LU rounding",
+  "axes": {
+    "lu10X": 489.7491,
+    "lu23X": 131.6316,
+    "minus40CY": 105.6082,
+    "plus35CY": 722.7112
+  },
+  "curveCount": 15,
+  "comparedPointCount": 713,
+  "maximumAbsoluteDeltaLiftUnits": 1.481388561330732e-05,
+  "checks": [
+    {
+      "altitudeMslFt": 0,
+      "temperatureC": 20,
+      "liftUnits": 16.832152,
+      "independentlyReadLiftUnits": 16.832140703159354,
+      "deltaLiftUnits": -1.1296840646934925e-05,
+      "pdfSegment": [
+        [
+          301.50440000000003,
+          599.2423
+        ],
+        [
+          302.5784,
+          600.6743
+        ],
+        [
+          303.77139999999997,
+          601.9863
+        ],
+        [
+          304.96439999999996,
+          603.4173000000001
+        ]
+      ]
+    },
+    {
+      "altitudeMslFt": 3000,
+      "temperatureC": 0,
+      "liftUnits": 19.938618,
+      "independentlyReadLiftUnits": 19.93860980197353,
+      "deltaLiftUnits": -8.19802647100687e-06,
+      "pdfSegment": [
+        [
+          212.5125,
+          430.5623
+        ],
+        [
+          213.58549999999997,
+          431.9933
+        ],
+        [
+          214.7785,
+          433.30629999999996
+        ],
+        [
+          215.9715,
+          434.7373
+        ]
+      ]
+    },
+    {
+      "altitudeMslFt": 6000,
+      "temperatureC": 6,
+      "liftUnits": 16.539624,
+      "independentlyReadLiftUnits": 16.539616633995035,
+      "deltaLiftUnits": -7.366004965092543e-06,
+      "pdfSegment": [
+        [
+          306.6342,
+          479.9493
+        ],
+        [
+          307.70820000000003,
+          481.3813
+        ],
+        [
+          308.6622,
+          482.69329999999997
+        ],
+        [
+          309.6172,
+          484.1253
+        ]
+      ]
+    },
+    {
+      "altitudeMslFt": 10000,
+      "temperatureC": -10,
+      "liftUnits": 17.326598,
+      "independentlyReadLiftUnits": 17.326593320094602,
+      "deltaLiftUnits": -4.679905398319306e-06,
+      "pdfSegment": [
+        [
+          287.90569999999997,
+          352.4253
+        ],
+        [
+          288.7407,
+          353.8573
+        ],
+        [
+          289.6947,
+          355.16929999999996
+        ],
+        [
+          290.5297,
+          356.6003
+        ]
+      ]
+    },
+    {
+      "altitudeMslFt": 15000,
+      "temperatureC": 0,
+      "liftUnits": 12.962167,
+      "independentlyReadLiftUnits": 12.962161835044538,
+      "deltaLiftUnits": -5.1649554624333405e-06,
+      "pdfSegment": [
+        [
+          406.12469999999996,
+          430.5623
+        ],
+        [
+          406.7217,
+          431.9933
+        ],
+        [
+          407.4367,
+          433.30629999999996
+        ],
+        [
+          408.1527,
+          434.7373
+        ]
+      ]
+    },
+    {
+      "altitudeMslFt": 20000,
+      "temperatureC": -20,
+      "liftUnits": 13.342419,
+      "independentlyReadLiftUnits": 13.34241777411553,
+      "deltaLiftUnits": -1.225884469491234e-06,
+      "pdfSegment": [
+        [
+          397.65520000000004,
+          270.1133
+        ],
+        [
+          398.1322,
+          271.5443
+        ],
+        [
+          398.7282,
+          272.8573
+        ],
+        [
+          399.3252,
+          274.2883
+        ]
+      ]
+    },
+    {
+      "altitudeMslFt": 30000,
+      "temperatureC": -35,
+      "liftUnits": 10.571775,
+      "independentlyReadLiftUnits": 10.571775158891256,
+      "deltaLiftUnits": 1.588912557082267e-07,
+      "pdfSegment": [
+        [
+          472.9291,
+          142.58929999999998
+        ],
+        [
+          473.2871,
+          144.02030000000002
+        ],
+        [
+          473.6441,
+          145.3323
+        ],
+        [
+          474.0021,
+          146.7643
+        ]
+      ]
+    }
+  ],
+  "manufacturerExample": {
+    "liftUnits": 16.5,
+    "massKg": 533,
+    "page": "5-2",
+    "pageRevision": 16
+  },
+  "validationStatus": "PENDING_MANUFACTURER_PRECISION_VALIDATION",
+  "limitations": [
+    "Geometric comparison is not manufacturer certification of automated interpolation.",
+    "No acceptance tolerance or rounding rule is specified by the manufacturer.",
+    "Original LU JSON and BB20 numerical result are preserved."
+  ]
+}

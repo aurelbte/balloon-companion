@@ -6,13 +6,14 @@ import { kubicekModelParameters } from "../modelParameters/kubicekModels.ts";
 const plannedMaximumAltitudeMslM = 6000 * 0.3048;
 const groundTemperature = {
   temperatureC: 17.8872,
-  sourceModel: "KUBICEK_79_MODEL_VALIDATION",
+  sourceModel: "KUBICEK_MODEL_VALIDATION",
   forecastRun: "TEST",
   validTime: "TEST",
 };
 
 function inputFor(modelParameters, overrides = {}) {
   return {
+    volumeM3: modelParameters.volumeM3,
     manufacturer: "Kubíček",
     model: modelParameters.model,
     applicableMtowKg: modelParameters.standardMtomKg,
@@ -31,19 +32,22 @@ function assertFiniteCalculation(result) {
   }
 }
 
-test("les 79 modèles Kubíček satisfont les invariants du moteur branché", () => {
-  assert.equal(kubicekModelParameters.length, 79);
+test("les 80 modèles Kubíček satisfont les invariants du moteur branché", () => {
+  assert.equal(kubicekModelParameters.length, 80);
   const failures = [];
 
   for (const parameters of kubicekModelParameters) {
     try {
       assert.equal(parameters.verificationStatus, "CANDIDATE_PILOT_VALIDATION");
       const baseline = calculateManufacturerLoad("Kubíček", parameters.model, inputFor(parameters));
-      assert.equal(baseline?.status, "AVAILABLE", "dispatcher Kubíček indisponible");
-      assert.equal(baseline.calculationStatus, "CANDIDATE_PILOT_VALIDATION");
-      assertFiniteCalculation(baseline);
-      assert.ok(baseline.performanceLimitedMassKg > 0);
-      assert.ok(baseline.permittedTotalMassKg <= parameters.standardMtomKg);
+      assert.equal(baseline?.status, "NON_VALIDÉ");
+      assert.ok(baseline.reasons.includes("AIRCRAFT_EVIDENCE_UNVERIFIED"));
+      assert.ok(baseline.reasons.includes("LU_METHOD_NOT_VALIDATED"));
+      assert.equal("marginKg" in baseline, false);
+      assert.equal("permittedTotalMassKg" in baseline, false);
+      assertFiniteCalculation(baseline.theoretical);
+      assert.ok(baseline.theoretical.performanceLimitedMassKg > 0);
+      assert.ok(baseline.theoretical.candidateMassCeilingKg <= parameters.standardMtomKg);
 
       const occupantsPlus10 = calculateManufacturerLoad(
         "Kubíček",
@@ -55,20 +59,20 @@ test("les 79 modèles Kubíček satisfont les invariants du moteur branché", ()
         parameters.model,
         inputFor(parameters, { balloonEquipmentWeightKg: 110 }),
       );
-      assert.equal(occupantsPlus10?.status, "AVAILABLE");
-      assert.equal(equipmentPlus10?.status, "AVAILABLE");
-      assert.equal(occupantsPlus10.marginKg, baseline.marginKg - 10);
-      assert.equal(equipmentPlus10.marginKg, baseline.marginKg - 10);
+      assert.equal(occupantsPlus10?.status, "NON_VALIDÉ");
+      assert.equal(equipmentPlus10?.status, "NON_VALIDÉ");
+      assert.equal(occupantsPlus10.theoretical.inputMassSumKg, baseline.theoretical.inputMassSumKg + 10);
+      assert.equal(equipmentPlus10.theoretical.inputMassSumKg, baseline.theoretical.inputMassSumKg + 10);
 
-      const restrictiveMtowKg = Math.max(1, Math.min(parameters.standardMtomKg, baseline.performanceLimitedMassKg) - 1);
+      const restrictiveMtowKg = Math.max(1, Math.min(parameters.standardMtomKg, baseline.theoretical.performanceLimitedMassKg) - 1);
       const mtowLimited = calculateManufacturerLoad(
         "Kubíček",
         parameters.model,
         inputFor(parameters, { applicableMtowKg: restrictiveMtowKg }),
       );
-      assert.equal(mtowLimited?.status, "AVAILABLE");
-      assert.equal(mtowLimited.permittedTotalMassKg, restrictiveMtowKg);
-      assert.equal(mtowLimited.limitingRule, "APPLICABLE_MTOW");
+      assert.equal(mtowLimited?.status, "NON_VALIDÉ");
+      assert.equal(mtowLimited.theoretical.candidateMassCeilingKg, restrictiveMtowKg);
+      assert.ok(mtowLimited.reasons.includes("RMTOW_UNVERIFIED"));
 
       const rmtowKg = Math.max(1, restrictiveMtowKg - 1);
       const rmtowLimited = calculateManufacturerLoad(
@@ -76,8 +80,9 @@ test("les 79 modèles Kubíček satisfont les invariants du moteur branché", ()
         parameters.model,
         inputFor(parameters, { applicableMtowKg: rmtowKg }),
       );
-      assert.equal(rmtowLimited?.status, "AVAILABLE");
-      assert.equal(rmtowLimited.permittedTotalMassKg, rmtowKg);
+      assert.equal(rmtowLimited?.status, "NON_VALIDÉ");
+      assert.equal(rmtowLimited.theoretical.candidateMassCeilingKg, rmtowKg);
+      assert.ok(rmtowLimited.reasons.includes("RMTOW_UNVERIFIED"));
 
       const outside = calculateManufacturerLoad(
         "Kubíček",
@@ -86,7 +91,7 @@ test("les 79 modèles Kubíček satisfont les invariants du moteur branché", ()
       );
       assert.deepEqual(outside, {
         status: "UNAVAILABLE",
-        reasonCode: "CONDITIONS_OUTSIDE_METHOD_DOMAIN",
+        reasonCode: "OUTSIDE_OFFICIAL_TABLE",
         message: "Altitude ou température hors du domaine officiel du Loading Chart Kubíček.",
       });
     } catch (error) {

@@ -1,140 +1,100 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateManufacturerLoad } from "../manufacturerDispatcher.ts";
+import { calculateOfficialLoad } from "../engine.ts";
 import { ultramagicModelParameters } from "../modelParameters/ultramagicModels.ts";
+import { enabledPilotValidationLoadConfigurations, enabledOfficialLoadParameterCombinations } from "../modelParameters/activationRegistry.ts";
+import { fm04MinimumTom } from "./fm04Rules.ts";
 import { calculateUltramagicLoadCandidate } from "./officialCalculation.ts";
 
 const parameters = ultramagicModelParameters.find(({ model }) => model === "H65");
-assert.ok(parameters);
 const input = {
-  balloonId: "ULTRAMAGIC_CANDIDATE_TEST",
-  manufacturer: "Ultramagic",
-  model: "H65",
-  volumeM3: 999_999,
-  applicableMtowKg: parameters.standardMtomKg,
-  balloonEquipmentWeightKg: 200,
-  occupantsWeightKg: 100,
-  launchElevationMslM: 300,
-  plannedMaximumAltitudeMslM: 3_000,
-  groundTemperature: {
-    temperatureC: 20,
-    sourceModel: "TEST_ONLY",
-    forecastRun: "2026-08-08T00:00:00.000Z",
-    validTime: "2026-08-08T00:00:00.000Z",
-  },
+  balloonId: "ULTRAMAGIC_CANDIDATE_TEST", manufacturer: "Ultramagic", model: "H65",
+  volumeM3: parameters.volumeM3, applicableMtowKg: parameters.standardMtomKg,
+  balloonEquipmentWeightKg: 200, occupantsWeightKg: 100,
+  launchElevationMslM: 300, plannedMaximumAltitudeMslM: 3_000,
+  groundTemperature: { temperatureC: 20, sourceModel: "TEST_ONLY", forecastRun: "test", validTime: "2026-08-08T00:00:00.000Z" },
 };
+const noAdmissibleResult = result => {
+  assert.equal(result.status, "NON_VALIDÉ");
+  for (const key of ['marginKg', 'permittedTotalMassKg', 'availableOccupantsCapacityKg', 'calculationStatus']) assert.equal(key in result, false, key);
+};
+const missingEvidence = ["MINIMUM_TOM_UNVERIFIED", "BASKET_LIMIT_AND_COMPATIBILITY_UNVERIFIED", "COMPLETE_MASSES_UNVERIFIED", "APPLICABLE_SUPPLEMENTS_UNVERIFIED"];
 
-test("H-65 à 20 °C utilise le volume officiel et reproduit la portance FM04", () => {
-  const result = calculateUltramagicLoadCandidate(input, parameters);
-  assert.ok(result);
-  assert.ok(Math.abs(result.liftKgPer1000Ft3 - 6.55) <= 0.02);
-  assert.ok(Math.abs(result.performanceLimitedMassKg - 426) <= 1);
-  assert.equal(result.limitingRule, "ULTRAMAGIC_LIFT");
-});
-
-test("H-65 à 10 °C reproduit le second exemple FM04", () => {
-  const result = calculateUltramagicLoadCandidate({
-    ...input,
-    groundTemperature: { ...input.groundTemperature, temperatureC: 10 },
-  }, parameters);
-  assert.ok(result);
-  assert.ok(Math.abs(result.performanceLimitedMassKg - 488) <= 1);
-});
-
-test("MTOM, masses et marge respectent les invariants sans arrondi", () => {
-  const mtomKg = 400;
-  const baseline = calculateUltramagicLoadCandidate({ ...input, applicableMtowKg: mtomKg }, parameters);
-  assert.ok(baseline);
-  assert.equal(baseline.permittedTotalMassKg, mtomKg);
-  assert.equal(baseline.limitingRule, "APPLICABLE_MTOW");
-  assert.equal(baseline.marginKg, baseline.availableOccupantsCapacityKg - input.occupantsWeightKg);
-
-  const occupants = calculateUltramagicLoadCandidate({
-    ...input,
-    applicableMtowKg: mtomKg,
-    occupantsWeightKg: input.occupantsWeightKg + 10,
-  }, parameters);
-  const equipment = calculateUltramagicLoadCandidate({
-    ...input,
-    applicableMtowKg: mtomKg,
-    balloonEquipmentWeightKg: input.balloonEquipmentWeightKg + 10,
-  }, parameters);
-  assert.ok(occupants);
-  assert.ok(equipment);
-  assert.equal(occupants.marginKg, baseline.marginKg - 10);
-  assert.equal(equipment.marginKg, baseline.marginKg - 10);
-});
-
-test("le dispatcher expose un candidat confirmé sans fallback Cameron/DEMO", () => {
-  const dispatched = calculateManufacturerLoad("Ultramagic", "H65", {
-    ...input,
-    volumeM3: parameters.volumeM3,
-    configurationLimitsConfirmed: true,
+for (const [temperatureC, expectedLift] of [[20, 426], [10, 488]]) {
+  test(`H65 at ${temperatureC} C retains FM04 theoretical lift without approving the flight`, () => {
+    const result = calculateUltramagicLoadCandidate({ ...input, groundTemperature: { ...input.groundTemperature, temperatureC } }, parameters);
+    noAdmissibleResult(result);
+    assert.ok(Math.abs(result.theoretical.performanceLimitedMassKg - expectedLift) <= 1);
+    if (temperatureC === 20) assert.ok(Math.abs(result.theoretical.liftKgPer1000Ft3 - 6.55) <= .02);
+    for (const reason of missingEvidence) assert.ok(result.reasons.includes(reason));
   });
-  assert.equal(dispatched.status, "AVAILABLE");
-  assert.equal(dispatched.calculationStatus, "CANDIDATE_PILOT_VALIDATION");
-  assert.ok(Number.isFinite(dispatched.marginKg));
-  assert.ok(!dispatched.datasetId.includes("DEMO"));
-  assert.equal(dispatched.manufacturerMethodId, parameters.manufacturerMethodId);
-  assert.equal("calculationMode" in dispatched, false);
+}
+
+test('MTOM above manufacturer ceiling is refused even when lift would already limit the mass', () => {
+  const result = calculateUltramagicLoadCandidate({ ...input, applicableMtowKg: parameters.standardMtomKg + 1 }, parameters);
+  noAdmissibleResult(result);
+  assert.deepEqual(result.reasons, ['MTOM_EXCEEDS_MANUFACTURER_LIMIT']);
+  assert.equal(result.theoretical, undefined);
 });
 
-test("un modèle sans confirmation réelle ne produit aucun kilogramme", () => {
-  const dispatched = calculateManufacturerLoad("Ultramagic", "H65", {
-    ...input,
-    volumeM3: parameters.volumeM3,
-    configurationLimitsConfirmed: false,
+test('no automatic reduced MTOM selection and no approval from a generic confirmation checkbox', () => {
+  const nominal = calculateUltramagicLoadCandidate({ ...input, configurationLimitsConfirmed: true, launchElevationMslM: 0, plannedMaximumAltitudeMslM: 0, groundTemperature: { ...input.groundTemperature, temperatureC: -10 } }, parameters);
+  noAdmissibleResult(nominal);
+  assert.equal(nominal.theoretical.candidateMassCeilingKg, parameters.standardMtomKg);
+  assert.ok(!nominal.reasons.includes('REDUCED_MTOM_DOCUMENTATION_UNVERIFIED'));
+  const reduced = calculateUltramagicLoadCandidate({ ...input, applicableMtowKg: parameters.reducedMtomKg }, parameters);
+  noAdmissibleResult(reduced);
+  assert.ok(reduced.reasons.includes('REDUCED_MTOM_DOCUMENTATION_UNVERIFIED'));
+  const absent = calculateUltramagicLoadCandidate({ ...input, applicableMtowKg: undefined }, parameters);
+  noAdmissibleResult(absent); assert.equal(absent.theoretical, undefined);
+});
+
+for (const overrides of [{ occupantsWeightKg: undefined }, { balloonEquipmentWeightKg: NaN }, { groundTemperature: undefined }, { applicableMtowKg: -1 }]) {
+  test(`incomplete or invalid input is explicit, not replaced: ${JSON.stringify(overrides)}`, () => {
+    const result = calculateUltramagicLoadCandidate({ ...input, ...overrides }, parameters);
+    noAdmissibleResult(result);
+    assert.deepEqual(result.reasons, ['INVALID_OR_MISSING_INPUT']);
+    assert.equal(result.theoretical, undefined);
   });
-  assert.equal(dispatched.status, "UNAVAILABLE");
-  assert.equal(dispatched.reasonCode, "CONFIGURATION_LIMITS_UNCONFIRMED");
-  assert.equal("marginKg" in dispatched, false);
+}
+
+test('invalid model and altitude remain blocked', () => {
+  assert.deepEqual(calculateUltramagicLoadCandidate({ ...input, model: 'T150' }, parameters).reasons, ['MODEL_MISMATCH']);
+  assert.deepEqual(calculateUltramagicLoadCandidate({ ...input, plannedMaximumAltitudeMslM: 200 }, parameters).reasons, ['OUTSIDE_METHOD_DOMAIN']);
+});
+
+test('dispatcher propagates NON_VALIDÉ and never wraps the diagnostics in AVAILABLE', () => {
+  for (const confirmation of [false, true]) {
+    const result = calculateManufacturerLoad('Ultramagic', 'H65', { ...input, configurationLimitsConfirmed: confirmation });
+    noAdmissibleResult(result);
+    for (const reason of missingEvidence) assert.ok(result.reasons.includes(reason));
+    assert.equal(result.reasons.includes('CONFIGURATION_LIMITS_UNCONFIRMED'), !confirmation);
+  }
+  const mismatch = calculateManufacturerLoad('Ultramagic', 'H65', { ...input, volumeM3: 999_999 });
+  noAdmissibleResult(mismatch); assert.deepEqual(mismatch.reasons, ['VOLUME_MISMATCH']);
 });
 
 for (const modelParameters of ultramagicModelParameters) {
-  test(`${modelParameters.model} respecte les invariants du moteur commun FM04`, () => {
-    assert.equal(modelParameters.verificationStatus, "CANDIDATE_PILOT_VALIDATION");
-    const modelInput = {
-      ...input,
-      model: modelParameters.model,
-      volumeM3: 999_999,
-      applicableMtowKg: modelParameters.standardMtomKg,
-      launchElevationMslM: 0,
-      plannedMaximumAltitudeMslM: 0,
-      groundTemperature: { ...input.groundTemperature, temperatureC: 0 },
-    };
+  test(`${modelParameters.model}: theoretical bookkeeping, missing proof and production non-activation`, () => {
+    const modelInput = { ...input, model: modelParameters.model, volumeM3: modelParameters.volumeM3, applicableMtowKg: modelParameters.standardMtomKg, configurationLimitsConfirmed: true, launchElevationMslM: 0, plannedMaximumAltitudeMslM: 0, groundTemperature: { ...input.groundTemperature, temperatureC: 0 } };
     const baseline = calculateUltramagicLoadCandidate(modelInput, modelParameters);
-    const otherFreeVolume = calculateUltramagicLoadCandidate({
-      ...modelInput,
-      volumeM3: 1,
-    }, modelParameters);
-    assert.ok(baseline);
-    assert.deepEqual(otherFreeVolume, baseline);
-    assert.ok(Object.values(baseline).filter((value) => typeof value === "number").every(Number.isFinite));
-    assert.ok(baseline.permittedTotalMassKg <= modelParameters.standardMtomKg);
-    assert.equal("datasetId" in baseline, false);
-    assert.equal("calculationMode" in baseline, false);
-
-    const occupants = calculateUltramagicLoadCandidate({
-      ...modelInput,
-      occupantsWeightKg: modelInput.occupantsWeightKg + 10,
-    }, modelParameters);
-    const equipment = calculateUltramagicLoadCandidate({
-      ...modelInput,
-      balloonEquipmentWeightKg: modelInput.balloonEquipmentWeightKg + 10,
-    }, modelParameters);
-    assert.ok(occupants);
-    assert.ok(equipment);
-    assert.equal(occupants.marginKg, baseline.marginKg - 10);
-    assert.equal(equipment.marginKg, baseline.marginKg - 10);
-
-    if (modelParameters.reducedMtomKg !== undefined) {
-      const reduced = calculateUltramagicLoadCandidate({
-        ...modelInput,
-        applicableMtowKg: modelParameters.reducedMtomKg,
-      }, modelParameters);
-      assert.ok(reduced);
-      assert.equal(reduced.permittedTotalMassKg, modelParameters.reducedMtomKg);
-      assert.equal(reduced.limitingRule, "APPLICABLE_MTOW");
-    }
+    noAdmissibleResult(baseline);
+    for (const reason of missingEvidence.filter(reason => reason !== "MINIMUM_TOM_UNVERIFIED")) assert.ok(baseline.reasons.includes(reason));
+    assert.equal(baseline.reasons.includes("MINIMUM_TOM_UNVERIFIED"), fm04MinimumTom(modelParameters.model).state === "NOT_INDICATED");
+    const minimum = fm04MinimumTom(modelParameters.model);
+    assert.equal(baseline.reasons.includes("LANDING_MASS_UNVERIFIED"), minimum.state === "NUMERIC" && !!minimum.landingSource);
+    assert.ok(Object.values(baseline.theoretical).every(Number.isFinite));
+    assert.ok(baseline.theoretical.candidateMassCeilingKg <= modelParameters.standardMtomKg);
+    assert.equal(baseline.theoretical.actualTotalMassKg, 300);
+    const heavier = calculateUltramagicLoadCandidate({ ...modelInput, occupantsWeightKg: 110, balloonEquipmentWeightKg: 210 }, modelParameters);
+    assert.equal(heavier.theoretical.actualTotalMassKg, 320);
+    const reduced = calculateUltramagicLoadCandidate({ ...modelInput, applicableMtowKg: modelParameters.reducedMtomKg }, modelParameters);
+    noAdmissibleResult(reduced);
+    assert.ok(reduced.theoretical.candidateMassCeilingKg <= modelParameters.reducedMtomKg);
+    assert.ok(reduced.reasons.includes('REDUCED_MTOM_DOCUMENTATION_UNVERIFIED'));
+    const production = calculateOfficialLoad(modelInput);
+    assert.equal(production.status, 'UNAVAILABLE'); assert.equal(production.reasonCode, 'UNSUPPORTED_MODEL');
+    for (const registry of [enabledPilotValidationLoadConfigurations, enabledOfficialLoadParameterCombinations]) assert.ok(!registry.some(entry => entry.modelParameterSetId === modelParameters.id));
   });
 }

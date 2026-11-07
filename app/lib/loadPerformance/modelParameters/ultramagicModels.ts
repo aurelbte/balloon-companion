@@ -32,11 +32,11 @@ const rows: readonly UltramagicRegistryRow[] = [
   ["M77C", 2_200, 756, 732], ["M90", 2_550, 880, 855], ["M105", 2_950, 1_032, 998],
   ["M120", 3_400, 1_173, 1_140], ["M130", 3_680, 1_365, 1_235], ["M145", 4_105, 1_436, 1_378],
   ["M160", 4_550, 1_569, 1_506], ["M56Z", 1_590, 549, 531], ["M60Z", 1_700, 588, 568],
-  ["M65Z", 1_840, 636, 615], ["M70Z", 1_980, 686, 663], ["M74Z", 2_100, 710, 687],
+  ["M65Z", 1_840, 636, 615], ["M70Z", 1_982, 686, 663], ["M74Z", 2_100, 710, 687],
   ["N180", 5_100, 1_754, 1_710], ["N210", 6_000, 2_064, 1_995], ["N250", 7_000, 2_408, 2_375],
   ["N300", 8_500, 2_924, 2_845], ["N355", 10_000, 3_450, 3_373], ["N370", 10_480, 3_450, 3_370],
   ["N390", 11_045, 3_795, 3_552], ["N415", 11_750, 3_950, 3_780], ["N425", 12_000, 4_140, 3_995],
-  ["N450", 12_750, 4_140, 3_995], ["N500", 14_415, 5_000, 3_995], ["N550", 15_574, 5_000, 4_100],
+  ["N450", 12_750, 4_140, 3_995], ["N500", 14_412, 5_000, 3_995], ["N550", 15_574, 5_000, 4_100],
   ["Z90", 2_550, 894, 855], ["G90", 2_550, 878, 855],
   ["T150", 4_245, 1_465, 1_425], ["T180", 5_100, 1_754, 1_710], ["T210", 6_000, 2_070, 1_995],
 ];
@@ -77,7 +77,7 @@ export type UltramagicTraceabilityAuditRow = Readonly<{
   volume: "CONFIRMED";
   mtom: "STANDARD_AND_REDUCED_DOCUMENTED";
   fm04: "APPLICABLE";
-  supplement: "NOT_REQUIRED";
+  supplement: "TO_VERIFY";
   status: "CANDIDATE_PILOT_VALIDATION";
 }>;
 
@@ -87,7 +87,7 @@ export function buildUltramagicTraceabilityAudit(): readonly UltramagicTraceabil
     volume: "CONFIRMED",
     mtom: "STANDARD_AND_REDUCED_DOCUMENTED",
     fm04: "APPLICABLE",
-    supplement: "NOT_REQUIRED",
+    supplement: "TO_VERIFY",
     status: "CANDIDATE_PILOT_VALIDATION",
   }));
 }
