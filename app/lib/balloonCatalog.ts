@@ -131,6 +131,7 @@ export const BALLOON_CATALOG: readonly BalloonCatalogManufacturer[] = [
       { model: "Z180", volumeM3: 5_097 },
       { model: "Z210", volumeM3: 5_947 },
       { model: "Z250", volumeM3: 7_079 },
+      { model: "Z275", volumeM3: 7_788 },
       { model: "Z300", volumeM3: 8_495 },
       { model: "Z350", volumeM3: 9_911 },
       { model: "Z425", volumeM3: 12_035 },
