@@ -62,7 +62,7 @@ export function calculateUltramagicLoadCandidate(
     maximumAltitudeMslM: input.plannedMaximumAltitudeMslM!,
   });
   if (liftKgPer1000Ft3 === null) {
-    return unvalidatedUltramagicLoad(["OUTSIDE_METHOD_DOMAIN"], "Conditions non exploitables par la méthode candidate.");
+    return unvalidatedUltramagicLoad(["OUTSIDE_METHOD_DOMAIN"], "Conditions hors du graphique FM04 p.5.3 Rev.23, ou construction hors de sa fenêtre de lecture.");
   }
   const performanceLimitedMassKg = liftKgPer1000Ft3
     * modelParameters.volumeM3! / FM04_CUBIC_METRES_PER_1000_CUBIC_FEET;
@@ -79,7 +79,7 @@ export function calculateUltramagicLoadCandidate(
     if (!approval || typeof approval.logbookReference !== "string" || !approval.logbookReference.trim() || approval.mtomKg !== input.applicableMtowKg) reasons.push("REDUCED_MTOM_DOCUMENTATION_UNVERIFIED");
   }
   return {
-    ...unvalidatedUltramagicLoad(reasons, `NON_VALIDÉ : ${reasons.join(", ")}. Méthode candidate non validée ; aucune marge admissible.`),
+    ...unvalidatedUltramagicLoad(reasons, `NON_VALIDÉ : ${reasons.join(", ")}. Formule analytique et précision constructeur non démontrées par les deux exemples H65 ; aucune marge admissible.`),
     theoretical: {
       liftKgPer1000Ft3, performanceLimitedMassKg, manufacturerMtomCeilingKg,
       // The entered value is never replaced with the documentary reduced MTOM.

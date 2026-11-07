@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { prepareFlightDossierOperations } from "../lib/flightDossierOperations";
 import { describePreparationLoad } from "../lib/preparationLoadSupport";
+import { describePreparationLoadEstimate } from "../lib/preparationLoadEstimate";
 import { prepareFlightDossier, selectFlightDossierTrace } from "../lib/flightDossierEntry";
 import FlightDossierAction from "../components/FlightDossierAction";
 import { resolveLoadGroundTemperature } from "../lib/loadGroundTemperatureSelection";
@@ -516,14 +517,15 @@ export default function MapPage() {
   const loadResult = testLoadEnabled
     ? calculateDemoLoad(loadInput, true)
     : calculateOfficialLoad(loadInput);
+  const loadEstimate = testLoadEnabled ? null : describePreparationLoadEstimate(loadInput, loadResult);
   const loadDisplay = loadDisplayPolicy({
     demoEnabled: testLoadEnabled,
     syntheticMarginRequested: showSyntheticMargin,
     resultAvailable: loadResult.status === "AVAILABLE",
   });
-  const candidateLoadResult = loadResult.status === "AVAILABLE" && "calculationStatus" in loadResult
+  const candidateLoadResult = !loadEstimate && loadResult.status === "AVAILABLE" && "calculationStatus" in loadResult
     && loadResult.calculationStatus === "CANDIDATE_PILOT_VALIDATION" ? loadResult : null;
-  const displayedMargin = loadResult.status === "AVAILABLE" && (!testLoadEnabled || loadDisplay.showSyntheticMargin)
+  const displayedMargin = !loadEstimate && loadResult.status === "AVAILABLE" && (!testLoadEnabled || loadDisplay.showSyntheticMargin)
     ? displayLoadMarginKg(loadResult.marginKg)
     : null;
   const marginTone = displayedMargin === null ? null : loadMarginTone(displayedMargin);
@@ -589,7 +591,7 @@ export default function MapPage() {
       router.push(correctionPath);
       return;
     }
-    if ((testLoadEnabled && loadDisplay.openSyntheticDetail) || (!testLoadEnabled && loadResult.status === "AVAILABLE")) setLoadDetailOpen(true);
+    if ((testLoadEnabled && loadDisplay.openSyntheticDetail) || (!testLoadEnabled && !loadEstimate && loadResult.status === "AVAILABLE")) setLoadDetailOpen(true);
   };
 
   const updateMaximumAltitude = (value: string) => {
@@ -1022,7 +1024,8 @@ export default function MapPage() {
               </h2>
               {loadDisplay.showSyntheticBadge && <span className="mt-1 inline-block rounded bg-orange-600 px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white">{DEMO_LOAD_BADGE} — DONNÉES SYNTHÉTIQUES</span>}
               {!testLoadEnabled && candidateLoadResult && <span className="mt-0.5 block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
-              {!testLoadEnabled && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p>{loadResult.reasonCode === "UNSUPPORTED_MODEL" && <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{selectedBalloon?.manufacturer} {selectedBalloon?.model} · Toucher pour la raison</p>}</div>}
+              {loadEstimate && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">Estimation non validée</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{loadEstimate.kind === "VALUES" ? "Valeurs théoriques · toucher" : "Refus · toucher pour le motif"}</p></div>}
+              {!testLoadEnabled && !loadEstimate && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p>{loadResult.reasonCode === "UNSUPPORTED_MODEL" && <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{selectedBalloon?.manufacturer} {selectedBalloon?.model} · Toucher pour la raison</p>}</div>}
               {(!testLoadEnabled && displayedMargin !== null) && <p className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={`Marge de charge ${displayedMargin} kilogrammes`}>{`${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}</p>}
               {testLoadEnabled && <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>{blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}</p>}
               {testLoadEnabled && loadResult.status === "AVAILABLE" && !loadDisplay.showSyntheticMargin && <p className="mt-1 text-[9px] font-semibold leading-tight text-[var(--bc-color-text-muted)]">Dataset officiel Cameron requis</p>}
@@ -1143,16 +1146,23 @@ export default function MapPage() {
           </fieldset>
           <p role="status" className="text-xs text-[var(--bc-color-text-muted)]">Température effective : {groundTemperature ? `${groundTemperature.temperatureC.toLocaleString("fr-FR")} °C` : "indisponible"} · {temperatureMode === "manual" ? "Manuel" : "Auto"} ({groundTemperature?.provider ?? "source indisponible"})</p>
           {temperatureMode === "manual" && !groundTemperature && <p className="mt-1 text-xs">Saisissez une température valide. Aucune valeur Auto utilisée en mode Manuel.</p>}
-          <p className="mt-3 text-sm"><strong>{testLoadEnabled ? "Démonstration" : loadResult.status === "AVAILABLE" ? "Charge disponible" : "Charge indisponible"}</strong>{loadResult.status === "UNAVAILABLE" && ` · ${loadSupport.reason}`}</p>
+          {loadEstimate ? <div className="mt-3 text-sm">
+            <p role="status" className="font-semibold">{loadEstimate.warning}</p>
+            {loadEstimate.kind === "VALUES" ? <dl className="mt-2 space-y-2">
+              {loadEstimate.values.map(({ label, value, unit }) => <div key={label}><dt className="text-xs text-[var(--bc-color-text-muted)]">{label}</dt><dd>{value.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} {unit}</dd></div>)}
+            </dl> : <p className="mt-2">Estimation refusée : {loadEstimate.reason}</p>}
+            {loadEstimate.kind === "VALUES" && loadEstimate.admissibilityReasonCodes.length > 0 && <p className="mt-2 text-xs text-[var(--bc-color-text-muted)]">Configuration et justificatifs individuels non validés : aucune charge admissible déterminée. Motifs dans les détails ci-dessous.</p>}
+          </div> : <p className="mt-3 text-sm"><strong>{testLoadEnabled ? "Démonstration" : loadResult.status === "AVAILABLE" ? "Charge disponible" : "Charge indisponible"}</strong>{loadResult.status === "UNAVAILABLE" && ` · ${loadSupport.reason}`}</p>}
           <details className="mt-2 text-xs"><summary>Références constructeur et détails</summary>
             <p>{loadSupport.message}</p>
             <p>Identifiant Prépa : {selectedBalloonId || "indisponible"}</p>
             <p>Mapping : {loadInput.manufacturer || "indisponible"} / {loadInput.model || "indisponible"} / {loadInput.volumeM3 ?? "indisponible"} m³</p>
             <p>Paramètres : {loadSupport.parameterId ?? "indisponibles"} · Méthode : {loadSupport.methodId ?? "indisponible"}</p>
             <p>Référence : {loadSupport.manualRevision ?? "indisponible"} · Statut : {loadSupport.parameterStatus ?? "indisponible"}</p>
+            {loadEstimate && <><p>Consultation : {loadEstimate.status} · {loadEstimate.reasonCodes.join(", ")}</p><p>{loadEstimate.details}</p></>}
             <p>Résultat moteur : {loadResult.status}{loadResult.status === "UNAVAILABLE" ? ` / ${loadResult.reasonCode} : ${loadResult.message}` : ""}</p>
           </details>
-          {(loadResult.status === "AVAILABLE" || loadCardBalloonCorrectionPath(selectedBalloon?.id, loadResult)) && <button type="button" onClick={openLoadDetails} className="mt-3 min-h-11 w-full rounded-lg border px-3 text-sm">{loadResult.status === "AVAILABLE" ? "Détail du calcul" : "Compléter la fiche ballon"}</button>}
+          {((!loadEstimate && loadResult.status === "AVAILABLE") || loadCardBalloonCorrectionPath(selectedBalloon?.id, loadResult)) && <button type="button" onClick={openLoadDetails} className="mt-3 min-h-11 w-full rounded-lg border px-3 text-sm">{loadResult.status === "AVAILABLE" ? "Détail du calcul" : "Compléter la fiche ballon"}</button>}
         </section>
       </div>}
       {loadDetailOpen && !testLoadEnabled && candidateLoadResult && selectedBalloon && groundTemperature && (

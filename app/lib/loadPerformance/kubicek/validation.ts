@@ -1,9 +1,10 @@
+import { kubicekB3102Ed3Rev23Source, kubicekRev23CompatibilityRows, kubicekOrigoEquipment, KUBICEK_MAXIMUM_ENVELOPE_TEMPERATURE_C } from "../datasets/kubicekB3102Ed3Rev23.ts";
 import type { LoadCalculationInput } from "../types.ts";
 import { findExactKubicekModel } from "../modelParameters/kubicekModels.ts";
 
-/** B.3102 Ed.3 Rev.22, 2-5 Rev.22, 30 October 2025. MLW applies throughout flight (2-4 Rev.0). */
+/** B.3102 Ed.3 Rev.23, 2-5/2-6 Rev.23. MLW applies throughout flight (2-4 Rev.23). */
 const mlwRows: readonly (readonly [readonly string[], number])[] = [
-  [["BB9","BB9E","BB9EF"],135], [["BB12","BB12E","BB12EF"],180], [["BB14XR"],210],
+  [["BB9","BB9E","BB9EF"],135], [["BB12","BB12E","BB12EF"],180], [["BB14XR"],210], [["Origo 15"],220], [["Origo 18"],255],
   [["BB16","BB16E","BB16EF","BB16XR"],230], [["BB17GP","BB17XR"],250], [["BB18E","BB18XR"],255],
   [["BB20","BB20E","BB20ED","BB20GP","BB20XR"],280],
   [["BB22","BB22D","BB22ED","BB22E","BB22N","BB22Z","BB22XR","BB22M"],300],
@@ -18,9 +19,9 @@ const mlwRows: readonly (readonly [readonly string[], number])[] = [
 ];
 export const kubicekMinimumLandingMassKg = (model: string) => mlwRows.find(([models]) => models.includes(model))?.[1];
 
-/** 2-6 Rev.18 / 2-7 Rev.3. Serial numbers <400 require Appendix 4, not these limits. */
+/** 2-6 Rev.23 / 2-7 Rev.5. Serial numbers <400 require Appendix 4, not these limits. */
 const baskets: Readonly<Record<string, readonly [number, number]>> = {
-  K7:[450,2], K10:[600,3], K10C:[455,2], K10S:[455,3], K11:[650,3], K12:[700,4], K12A:[700,4],
+  ORIGO:[kubicekOrigoEquipment.basketMaximumCarriedKg,kubicekOrigoEquipment.maximumOccupants], K7:[450,2], K10:[600,3], K10C:[455,2], K10S:[455,3], K11:[650,3], K12:[700,4], K12A:[700,4],
   K13:[700,4], K13C:[550,3], K13S:[550,3], K14:[800,5], K15:[800,5], K16:[900,5], K17:[900,5],
   K18:[950,6], K19:[950,6], K19L:[950,6], K22:[980,8], K23:[980,6], K25P:[1000,8], K28:[1100,8],
   K28H:[1100,8], K30PP:[1100,10], K32Y:[1100,10], K32T:[1100,10], K32TT:[1100,10],
@@ -29,9 +30,9 @@ const baskets: Readonly<Record<string, readonly [number, number]>> = {
   K60:[1800,18], K60X:[1800,18], K65TTA:[2500,20], K70:[3000,22], K70TTA:[3000,22],
   K80:[3400,26], K85:[3400,26], K90:[3400,26], K100:[4000,30], K110:[4000,34],
 };
-/** 2-10 Rev.22: [volume at 7.5 m/s, optional volume at 5.5 m/s]. */
-const frames: Readonly<Record<string, readonly [number, number?]>> = {
-  SIRIUS:[4000], BASIC:[4500], VARIO:[4500], K23:[4500], K25P:[6000], K30PP:[7000],
+/** 2-10 Rev.23: [volume at 7.5 m/s, optional volume at 5.5 m/s]. */
+const frames: Readonly<Record<string, readonly [number | null, number?]>> = {
+  ORIGO:[null,kubicekOrigoEquipment.frameMaximumVolumeM3], SIRIUS:[4000], BASIC:[4500], VARIO:[4500], K23:[4500], K25P:[6000], K30PP:[7000],
   K32T:[6000,7000], K32TT:[7000], K50:[8500,9200], K50TT:[8500], K60:[12000],
   "K60 STRONG":[14200], K60X:[14200], K100:[14200], "K100 STRONG":[14200,18400],
 };
@@ -43,13 +44,14 @@ type Review = Readonly<{
 }>;
 /** Explicit aircraft documentary evidence; never populated by /map's generic confirmation checkbox. */
 export type KubicekEvidence = Readonly<{
-  balloonId: string; model: string; manualRevision: "B3102_ED3_REV22";
+  balloonId: string; model: string; manualRevision: typeof kubicekB3102Ed3Rev23Source.evidenceRevision;
   weightRecord?: Readonly<{ reference: string; applicableMtowKg: number; minimumCrewAndEquipmentKg: number; reducedMtowCountersignedByKubicek: boolean }>;
   configuration?: Readonly<{
     reference: string; basketModel: string; basketSerialNumber: number; frameModel: string; frameSerialNumber: string;
     frameHasSnMark: boolean; burnerModel: string; burnerSerialNumber: string;
     envelopeBasket: Review; envelopeBurner: Review; basketFrame: Review;
     flyingWiresAndAirworthinessVerified: boolean; occupancyAndCylinderLayoutVerified: boolean;
+    rotationVentFitted?: boolean; plannedMaximumEnvelopeTemperatureC?: number;
     envelopeTemperatureLimitsVerified: boolean; envelopeTemperatureLimitReference: string;
     occupantCount: number; maximumSurfaceWindMs: number;
     basketPlate: Readonly<{ reference: string; model: string; serialNumber: number; emptyWeightKg: number; maximumCarriedKg?: number }>;
@@ -78,16 +80,16 @@ export function evaluateKubicekEvidence(input: KubicekCandidateInput) {
   const parameters = findExactKubicekModel(input.model ?? "");
   const supplied = input.kubicekEvidence;
   const e = supplied && ref(input.balloonId) && supplied.balloonId === input.balloonId
-    && supplied.model === input.model && supplied.manualRevision === "B3102_ED3_REV22" ? supplied : undefined;
-  if (!e) block("AIRCRAFT_EVIDENCE_UNVERIFIED", "II Rev.12", "Preuves absentes ou identité ballon/modèle/révision incohérente.");
+    && supplied.model === input.model && supplied.manualRevision === kubicekB3102Ed3Rev23Source.evidenceRevision ? supplied : undefined;
+  if (!e) block("AIRCRAFT_EVIDENCE_UNVERIFIED", "II Rev.23", "Preuves absentes ou identité ballon/modèle/révision incohérente.");
   if (!parameters || input.manufacturer?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() !== "KUBICEK") block("MODEL_MISMATCH", "2-5 / 8-1 / 8-2", "Modèle constructeur exact non identifié.");
-  if (!positive(input.volumeM3) || input.volumeM3 !== parameters?.volumeM3) block("VOLUME_MISMATCH", "8-1 Rev.15 / 8-2 Rev.22", "Volume absent ou différent du volume documentaire exact.");
+  if (!positive(input.volumeM3) || input.volumeM3 !== parameters?.volumeM3) block("VOLUME_MISMATCH", "8-1 Rev.23 / 8-2 Rev.22", "Volume absent ou différent du volume documentaire exact.");
   const mtow = input.applicableMtowKg;
   const standard = parameters?.standardMtomKg;
-  if (!positive(mtow) || !positive(standard) || mtow > standard) block("MTOW_INVALID", "2-4 Rev.0 / 2-5 Rev.22", "MTOW absente, invalide ou supérieure au plafond constructeur.");
+  if (!positive(mtow) || !positive(standard) || mtow > standard) block("MTOW_INVALID", "2-4 Rev.23 / 2-5/2-6 Rev.23", "MTOW absente, invalide ou supérieure au plafond constructeur.");
   const record = e?.weightRecord;
-  if (!record || !ref(record.reference) || record.applicableMtowKg !== mtow || !positive(record.minimumCrewAndEquipmentKg)) block("WEIGHT_RECORD_UNVERIFIED", "II Rev.12 / 2-4 Rev.0", "MTOW/RMTOW individuelle et masse minimale complète non documentées.");
-  if (positive(mtow) && positive(standard) && mtow < standard && (!record || record.reducedMtowCountersignedByKubicek !== true || !positive(record.minimumCrewAndEquipmentKg) || mtow < Math.max(0.55*standard,record.minimumCrewAndEquipmentKg))) block("RMTOW_UNVERIFIED", "II Rev.12 / 2-4 Rev.0", "RMTOW : accord Kubicek et plancher réglementaire constructeur non prouvés.");
+  if (!record || !ref(record.reference) || record.applicableMtowKg !== mtow || !positive(record.minimumCrewAndEquipmentKg)) block("WEIGHT_RECORD_UNVERIFIED", "II Rev.23 / 2-4 Rev.23", "MTOW/RMTOW individuelle et masse minimale complète non documentées.");
+  if (positive(mtow) && positive(standard) && mtow < standard && (!record || record.reducedMtowCountersignedByKubicek !== true || !positive(record.minimumCrewAndEquipmentKg) || mtow < Math.max(0.55*standard,record.minimumCrewAndEquipmentKg))) block("RMTOW_UNVERIFIED", "II Rev.23 / 2-4 Rev.23", "RMTOW : accord Kubicek et plancher réglementaire constructeur non prouvés.");
 
   const m = e?.masses;
   const equipment = m ? m.envelopeKg+m.emptyBasketKg+m.burnerAndFrameKg+m.fullCylindersKg+m.otherEquipmentKg : NaN;
@@ -97,57 +99,76 @@ export function evaluateKubicekEvidence(input: KubicekCandidateInput) {
     && [m.otherEquipmentKg,m.occupantsKg,m.baggageKg,m.basketCarriedKg].every(nonnegative)
     && Number.isFinite(takeoff) && positive(input.balloonEquipmentWeightKg) && nonnegative(input.occupantsWeightKg)
     && sameMass(equipment,input.balloonEquipmentWeightKg) && sameMass(m.occupantsKg,input.occupantsWeightKg);
-  if (!massesOK) block("COMPLETE_MASSES_UNVERIFIED", "II Rev.12 / 5-1 Rev.0 / 5-2 Rev.16", "Masses complètes et cylindres pleins absents, invalides ou incohérents.");
+  if (!massesOK) block("COMPLETE_MASSES_UNVERIFIED", "II Rev.23 / 5-1 Rev.0 / 5-2 Rev.16", "Masses complètes et cylindres pleins absents, invalides ou incohérents.");
   const carriedOK = massesOK && ref(m.carriageAllocationReference) && m.basketCarriedKg >= m.occupantsKg
     && m.basketCarriedKg <= takeoff-m.envelopeKg-m.emptyBasketKg;
-  if (!carriedOK) block("BASKET_CARRIED_MASS_UNVERIFIED", "2-7 Rev.3 / 5-1 Rev.0", "Charge réellement transportée par la nacelle non documentée (hors nacelle vide).");
-  if (massesOK && positive(mtow) && takeoff > mtow) block("TAKEOFF_EXCEEDS_MTOW", "2-4 Rev.0 / 5-1 Rev.0", "Masse au décollage supérieure à la MTOW/RMTOW applicable.");
+  if (!carriedOK) block("BASKET_CARRIED_MASS_UNVERIFIED", "2-7 Rev.5 / 5-1 Rev.0", "Charge réellement transportée par la nacelle non documentée (hors nacelle vide).");
+  if (massesOK && positive(mtow) && takeoff > mtow) block("TAKEOFF_EXCEEDS_MTOW", "2-4 Rev.23 / 5-1 Rev.0", "Masse au décollage supérieure à la MTOW/RMTOW applicable.");
   const mlw = kubicekMinimumLandingMassKg(input.model ?? "");
-  if (mlw === undefined) block("MLW_UNVERIFIED", "2-5 Rev.22", "MLW du modèle non documentée.");
-  if (massesOK && mlw !== undefined && takeoff < mlw) block("TAKEOFF_BELOW_MLW", "2-4 Rev.0 / 2-5 Rev.22", "Masse au décollage inférieure à la MLW.");
+  if (mlw === undefined) block("MLW_UNVERIFIED", "2-5/2-6 Rev.23", "MLW du modèle non documentée.");
+  if (massesOK && mlw !== undefined && takeoff < mlw) block("TAKEOFF_BELOW_MLW", "2-4 Rev.23 / 2-5/2-6 Rev.23", "Masse au décollage inférieure à la MLW.");
   const flight = e?.flightMasses;
   const flightOK = !!flight && ref(flight.reference) && flight.complete === true
     && [flight.landingKg,flight.minimumKg,flight.maximumKg].every(positive) && massesOK
     && flight.minimumKg <= Math.min(takeoff,flight.landingKg) && flight.maximumKg >= Math.max(takeoff,flight.landingKg);
-  if (!flightOK) block("FLIGHT_AND_LANDING_MASSES_UNVERIFIED", "2-4 Rev.0", "Masse à l'atterrissage et bornes de masse pendant tout le vol non prouvées.");
-  if (flightOK && mlw !== undefined && flight.minimumKg < mlw) block("FLIGHT_BELOW_MLW", "2-4 Rev.0 / 2-5 Rev.22", "Masse en vol ou à l'atterrissage inférieure à la MLW.");
-  if (flightOK && positive(mtow) && flight.maximumKg > mtow) block("FLIGHT_EXCEEDS_MTOW", "2-4 Rev.0", "Masse en vol supérieure à la MTOW/RMTOW.");
+  if (!flightOK) block("FLIGHT_AND_LANDING_MASSES_UNVERIFIED", "2-4 Rev.23", "Masse à l'atterrissage et bornes de masse pendant tout le vol non prouvées.");
+  if (flightOK && mlw !== undefined && flight.minimumKg < mlw) block("FLIGHT_BELOW_MLW", "2-4 Rev.23 / 2-5/2-6 Rev.23", "Masse en vol ou à l'atterrissage inférieure à la MLW.");
+  if (flightOK && positive(mtow) && flight.maximumKg > mtow) block("FLIGHT_EXCEEDS_MTOW", "2-4 Rev.23", "Masse en vol supérieure à la MTOW/RMTOW.");
 
   const c = e?.configuration;
   const configurationOK = !!c && ref(c.reference) && ref(c.basketModel) && Number.isInteger(c.basketSerialNumber) && c.basketSerialNumber > 0
     && ref(c.frameModel) && ref(c.frameSerialNumber) && typeof c.frameHasSnMark === "boolean" && ref(c.burnerModel) && ref(c.burnerSerialNumber);
-  if (!configurationOK || input.configurationLimitsConfirmed !== true) block("CONFIGURATION_UNVERIFIED", "II Rev.12 / 2.11", "Nacelle, cadre et brûleur réels non identifiés et documentés.");
+  if (!configurationOK || input.configurationLimitsConfirmed !== true) block("CONFIGURATION_UNVERIFIED", "II Rev.23 / 2.11", "Nacelle, cadre et brûleur réels non identifiés et documentés.");
   const componentIds = c ? [input.model, c.basketModel, c.basketSerialNumber, c.frameModel, c.frameSerialNumber, c.burnerModel, c.burnerSerialNumber] : [];
   const reviewed = (r: Review | undefined, pages: string[]) => !!r && ref(r.reference) && pages.includes(r.page)
     && r.approved === true && r.conditionsSatisfied === true && Array.isArray(r.componentIds)
     && r.componentIds.length === componentIds.length && r.componentIds.every((value,index) => value === componentIds[index]);
   // Human documentary reviews must concern this evidence's exact named components.
   // No matrix cell or approved combination is inferred from the volume or model family.
-  if (!configurationOK || !reviewed(c.envelopeBasket,["2-8","2-9"])) block("ENVELOPE_BASKET_UNVERIFIED", "2-8 Rev.18 / 2-9 Rev.22", "Cellule enveloppe/nacelle et conditions RV/40 kN non vérifiées.");
-  if (!configurationOK || !reviewed(c.envelopeBurner,["2-11"])) block("ENVELOPE_BURNER_UNVERIFIED", "2-11 Rev.22", "Cellule enveloppe/brûleur et conditions de numéro de série non vérifiées.");
-  if (!configurationOK || !reviewed(c.basketFrame,c.basketSerialNumber >= 400 ? ["8-3","8-4"] : ["9-5"]) || c.flyingWiresAndAirworthinessVerified !== true) block("BASKET_FRAME_UNVERIFIED", "II Rev.12 / 8.2 / Appendice 4", "Cadre/nacelle, longueur des câbles et navigabilité non vérifiés.");
+  if (!configurationOK || !reviewed(c.envelopeBasket,["2-8","2-9"])) block("ENVELOPE_BASKET_UNVERIFIED", "2-8/2-9 Rev.23", "Cellule enveloppe/nacelle et conditions RV/40 kN non vérifiées.");
+  if (!configurationOK || !reviewed(c.envelopeBurner,["2-11"])) block("ENVELOPE_BURNER_UNVERIFIED", "2-11 Rev.23", "Cellule enveloppe/brûleur et conditions de numéro de série non vérifiées.");
+  if (!configurationOK || !reviewed(c.basketFrame,c.basketSerialNumber >= 400 ? ["8-3","8-4"] : ["9-5"]) || c.flyingWiresAndAirworthinessVerified !== true) block("BASKET_FRAME_UNVERIFIED", "II Rev.23 / 8.2 / Appendice 4", "Cadre/nacelle, longueur des câbles et navigabilité non vérifiés.");
   if (configurationOK) {
-    if (c.envelopeTemperatureLimitsVerified !== true || !ref(c.envelopeTemperatureLimitReference)) block("ENVELOPE_TEMPERATURE_LIMIT_UNVERIFIED", "2-4 Rev.0 §2.8", "Limite de température de l'enveloppe réelle (fabric index plate si nécessaire) non vérifiée.");
+    if (c.envelopeTemperatureLimitsVerified !== true || !ref(c.envelopeTemperatureLimitReference)) block("ENVELOPE_TEMPERATURE_LIMIT_UNVERIFIED", "2-4 Rev.23 §2.8", "Limite maximale d’enveloppe 124 °C (Rev.23) non vérifiée pour la configuration réelle.");
+    if (c.plannedMaximumEnvelopeTemperatureC !== undefined && (!Number.isFinite(c.plannedMaximumEnvelopeTemperatureC)
+      || c.plannedMaximumEnvelopeTemperatureC > KUBICEK_MAXIMUM_ENVELOPE_TEMPERATURE_C)) block("ENVELOPE_TEMPERATURE_EXCEEDED", "2-4 Rev.23 §2.8", "Température maximale d’enveloppe supérieure à 124 °C ou invalide.");
+    const changedRow = kubicekRev23CompatibilityRows[input.model ?? ""];
+    if (changedRow?.basketPage && c.envelopeBasket?.page !== changedRow.basketPage) block("ENVELOPE_BASKET_UNVERIFIED", "2-8/2-9 Rev.23", "La revue ne référence pas la page de la ligne Origo exacte.");
+    if (changedRow?.baskets && !changedRow.baskets.includes(c.basketModel)
+      || c.basketModel === "ORIGO" && !["Origo 15","Origo 18"].includes(input.model ?? "")) block("ENVELOPE_BASKET_INCOMPATIBLE", "2-8/2-9 Rev.23", "Combinaison enveloppe/nacelle non approuvée dans les cellules Origo transcrites.");
+    if (changedRow?.rotationVentBaskets?.includes(c.basketModel) && c.rotationVentFitted !== true) block("ROTATION_VENT_UNVERIFIED", "2-8/2-9 Rev.23", "Rotation vent requis (RV) pour cette combinaison et non prouvé.");
+    if (changedRow && !changedRow.burners.includes(c.burnerModel)
+      || c.burnerModel === "ORIGO" && !["Origo 15","Origo 18"].includes(input.model ?? "")) block("ENVELOPE_BURNER_INCOMPATIBLE", "2-11 Rev.23", "Combinaison enveloppe/brûleur non approuvée dans la ligne exacte transcrite.");
+    const serial = /^\d+$/.test(c.burnerSerialNumber) ? Number(c.burnerSerialNumber) : NaN;
+    if (changedRow && (c.burnerModel === "KOMET DUO UP TO 104" || c.burnerModel === "KOMET DUO 105+")) {
+      if (!Number.isSafeInteger(serial) || serial <= 0) block("BURNER_SERIAL_UNVERIFIED", "2-11 Rev.23", "Numéro de série KOMET DUO non vérifiable.");
+      else if (c.burnerModel === "KOMET DUO UP TO 104" ? serial > 104 : serial < 105) block("BURNER_SERIAL_INCOMPATIBLE", "2-11 Rev.23", "Numéro de série différent de la colonne KOMET DUO sélectionnée.");
+    }
+    if (changedRow?.ignisTwoUnitsMinimumSerial && c.burnerModel === "IGNIS - 2 units"
+      && (!Number.isSafeInteger(serial) || serial < changedRow.ignisTwoUnitsMinimumSerial)) block("BURNER_SERIAL_UNVERIFIED", "2-11 Rev.23", "IGNIS 2 units : S/N 516 ou supérieur requis pour cette ligne.");
+    if ((c.basketModel === "ORIGO" || c.burnerModel === "ORIGO") && c.frameModel !== "ORIGO"
+      || c.frameModel === "ORIGO" && (c.basketModel !== "ORIGO" || c.burnerModel !== "ORIGO")) block("ORIGO_FRAME_INCOMPATIBLE", "8-3/8-5 Rev.23", "La nacelle et le brûleur Origo exigent le cadre Origo ; pas d’interchangeabilité déduite.");
     const basket = c.basketSerialNumber >= 400 ? baskets[c.basketModel] : undefined;
-    if (!basket) block("BASKET_LIMITS_UNVERIFIED", "2-6 Rev.18 / 2-7 Rev.3 / Appendice 4", "Nacelle non couverte ; pour S/N <400, limites Appendice 4 à vérifier.");
+    if (!basket) block("BASKET_LIMITS_UNVERIFIED", "2-6 Rev.23 / 2-7 Rev.5 / Appendice 4", "Nacelle non couverte ; pour S/N <400, limites Appendice 4 à vérifier.");
     const plate = c.basketPlate;
     const plateOK = !!plate && ref(plate.reference) && plate.model === c.basketModel && plate.serialNumber === c.basketSerialNumber && positive(plate.emptyWeightKg)
       && massesOK && sameMass(plate.emptyWeightKg,m.emptyBasketKg)
       && (plate.maximumCarriedKg === undefined || positive(plate.maximumCarriedKg));
-    if (!plateOK) block("BASKET_PLATE_UNVERIFIED", "II Rev.12 / 2.10", "Identification et masse à vide de la nacelle réelle non documentées ou incohérentes.");
-    if (carriedOK && (basket && m.basketCarriedKg > basket[0] || plateOK && positive(plate.maximumCarriedKg) && m.basketCarriedKg > plate.maximumCarriedKg)) block("BASKET_OVERLOADED", "2-6 Rev.18 / 2-7 Rev.3", "Charge transportée supérieure à la limite nacelle ou à sa plaque.");
+    if (!plateOK) block("BASKET_PLATE_UNVERIFIED", "II Rev.23 / 2.10", "Identification et masse à vide de la nacelle réelle non documentées ou incohérentes.");
+    if (carriedOK && (basket && m.basketCarriedKg > basket[0] || plateOK && positive(plate.maximumCarriedKg) && m.basketCarriedKg > plate.maximumCarriedKg)) block("BASKET_OVERLOADED", "2-6 Rev.23 / 2-7 Rev.5", "Charge transportée supérieure à la limite nacelle ou à sa plaque.");
     if (!Number.isInteger(c.occupantCount) || c.occupantCount < 1 || !basket || c.occupantCount > basket[1] || c.occupancyAndCylinderLayoutVerified !== true) block("BASKET_OCCUPANCY_UNVERIFIED", "2.10 / Appendice 2 (9-2 Rev.0)", "Occupation et surface résiduelle par compartiment avec cylindres non vérifiées.");
     const frame = frames[c.frameModel];
     const wind = c.maximumSurfaceWindMs;
     const maxVolume = frame && nonnegative(wind) && wind <= 7.5 ? (wind <= 5.5 ? frame[1] ?? frame[0] : frame[0]) : undefined;
-    if (!maxVolume || !positive(input.volumeM3)) block("FRAME_LIMITS_UNVERIFIED", "2-10 Rev.22", "Type de cadre ou vent maximal non exploitable.");
-    else if (input.volumeM3 > maxVolume) block("FRAME_VOLUME_EXCEEDED", "2-10 Rev.22", "Volume supérieur à la limite du cadre pour le vent prévu.");
-    if (c.frameModel === "K50" && positive(input.volumeM3) && input.volumeM3 >= 7400 && c.frameHasSnMark !== true) block("FRAME_SN_MARK_REQUIRED", "2-10 Rev.22", "K50 de 7400 à 9200 m³ : marquage S/N requis.");
+    if (c.frameModel === "ORIGO" && nonnegative(wind) && wind > kubicekOrigoEquipment.frameMaximumSurfaceWindMs) block("FRAME_WIND_EXCEEDED", "2-10 Rev.23", "Cadre Origo : vent maximal de 5,5 m/s dépassé.");
+    if (!maxVolume || !positive(input.volumeM3)) block("FRAME_LIMITS_UNVERIFIED", "2-10 Rev.23", "Type de cadre ou vent maximal non exploitable.");
+    else if (input.volumeM3 > maxVolume) block("FRAME_VOLUME_EXCEEDED", "2-10 Rev.23", "Volume supérieur à la limite du cadre pour le vent prévu.");
+    if (c.frameModel === "K50" && positive(input.volumeM3) && input.volumeM3 >= 7400 && c.frameHasSnMark !== true) block("FRAME_SN_MARK_REQUIRED", "2-10 Rev.23", "K50 de 7400 à 9200 m³ : marquage S/N requis.");
     const appendix6Wind = input.model === "BB70Z" ? 5.5 : ["BB60N","BB60Z"].includes(input.model ?? "") ? 6 : undefined;
     if (["K32T","K40Y"].includes(c.basketModel) && c.frameHasSnMark === false && appendix6Wind !== undefined
       && (!nonnegative(wind) || wind > appendix6Wind)) block("APPENDIX_6_WIND_LIMIT", "9-7 Rev.0", "Vent supérieur à la limite Appendice 6, ou non documenté, pour ce modèle et cadre sans marquage S/N.");
   }
-  if (!e?.supplements || !ref(e.supplements.reference) || !["NONE_APPLICABLE","REVIEWED"].includes(e.supplements.applicability) || e.supplements.requirementsVerified !== true) block("SUPPLEMENTS_UNVERIFIED", "II Rev.12 / Section 9", "Applicabilité et exigences des suppléments/appendices non documentées.");
+  if (!e?.supplements || !ref(e.supplements.reference) || !["NONE_APPLICABLE","REVIEWED"].includes(e.supplements.applicability) || e.supplements.requirementsVerified !== true) block("SUPPLEMENTS_UNVERIFIED", "II Rev.23 / Section 9", "Applicabilité et exigences des suppléments/appendices non documentées.");
   if (!e?.temperatureAssessment || !ref(e.temperatureAssessment.reference) || e.temperatureAssessment.inversionReviewed !== true || e.temperatureAssessment.standardDecreaseApplicable !== true) block("TEMPERATURE_ASSUMPTION_UNVERIFIED", "5-1 Rev.0 §5.2 / §5.3", "Décroissance standard/inversion non vérifiée ; ne pas substituer silencieusement une température.");
   return { blocks, takeoffMassKg: massesOK ? takeoff : undefined, maximumFlightMassKg: flightOK ? flight.maximumKg : undefined };
 }

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { kubicekB3102Ed3Rev23Source, kubicekB3102Ed3Rev23Rows, kubicekRev23CompatibilityRows, KUBICEK_MAXIMUM_ENVELOPE_TEMPERATURE_C } from "../datasets/kubicekB3102Ed3Rev23.ts";
+import { kubicekMinimumLandingMassKg } from "./validation.ts";
 import { createHash } from "node:crypto";
 import { kubicekModelParameters } from "../modelParameters/kubicekModels.ts";
 import { calculateOfficialLoad } from "../engine.ts";
@@ -113,7 +116,7 @@ test("les conditions hors graphique sont refusées sans fallback", () => {
 
 
 test("les 1106 valeurs des 79 tables historiques restent strictement inchangées", () => {
-  const models = kubicekModelParameters.map(({ model }) => model).filter((model) => model !== "BB74Z").sort();
+  const models = kubicekModelParameters.map(({ model }) => model).filter((model) => model.startsWith("BB") && model !== "BB74Z").sort();
   assert.equal(models.length, 79);
   const tables = Object.fromEntries(models.map((model) => [model,
     Array.from({ length: 14 }, (_, index) => interpolateKubicekLoadingTable(model, index + 10)),
@@ -123,7 +126,7 @@ test("les 1106 valeurs des 79 tables historiques restent strictement inchangées
     "b8215eff545a265c37056e8b4a5aea9c7c174eec727bb61c91d9b5d0cc9a90e0");
 });
 
-test("BB74Z : données Rev.22 complètes, références de compatibilité sans approbation ni activation", () => {
+test("BB74Z : archive Rev.22 préservée et modèles actuels non activés", () => {
   const parameters = findExactKubicekModel("BB74Z");
   assert.ok(parameters);
   assert.equal(parameters.volumeM3, 7400);
@@ -147,5 +150,39 @@ test("BB74Z : données Rev.22 complètes, références de compatibilité sans ap
     assert.equal(result.reasonCode, "PENDING_VERIFICATION", model.model);
     assert.match(result.message, /LU_METHOD_NOT_VALIDATED/);
     assert.equal("marginKg" in result, false);
+  }
+});
+
+
+test("Rev.23 : Origo 15 vérifié p.5-4, Origo 18 partage BB18E, volumes documentaires exacts", () => {
+  const a=findExactKubicekModel("Origo 15"), b=findExactKubicekModel("Origo 18");
+  assert.deepEqual([a.volumeM3,a.volumeCuFt,a.standardMtomKg,kubicekMinimumLandingMassKg(a.model)],[1500,53000,450,220]);
+  assert.deepEqual([b.volumeM3,b.volumeCuFt,b.standardMtomKg,kubicekMinimumLandingMassKg(b.model)],[1800,64100,550,255]);
+  assert.deepEqual(Array.from({length:14},(_,i)=>interpolateKubicekLoadingTable(a.model,i+10)),[250,275,301,326,351,376,401,426,450,450,450,450,450,450]);
+  assert.equal(interpolateKubicekLoadingTable(a.model,13.5),338.5);
+  for(let lu=10;lu<=23;lu++) assert.equal(interpolateKubicekLoadingTable(b.model,lu),interpolateKubicekLoadingTable("BB18E",lu));
+  assert.equal(findExactKubicekModel("ORIGO15"),undefined); // No undocumented alias.
+});
+
+test("Rev.23 préserve les 80 lignes BB en kg et le fichier des 713 points LU, octet pour octet",()=>{
+  const models=kubicekModelParameters.map(p=>p.model).filter(m=>m.startsWith("BB")).sort();
+  assert.equal(models.length,80);
+  const rows=Object.fromEntries(models.map(m=>[m,Array.from({length:14},(_,i)=>interpolateKubicekLoadingTable(m,i+10))]));
+  assert.equal(createHash("sha256").update(JSON.stringify(rows)).digest("hex"),"96401ba5f362b5de4952eab21cd13e725028970c2b1b525f77fdb95cbf34d2cc");
+  assert.equal(createHash("sha256").update(readFileSync(new URL("../datasets/audits/kubicek-b3102-ed3-rev19-loading-chart.json",import.meta.url))).digest("hex"),"748ecb76f300c011d7a11dac928133aa581cdd4efd9084b853efa21afd0368e4");
+});
+
+test("traçabilité Rev.23 distincte, correction lb documentaire seulement, aucune activation",()=>{
+  assert.equal(kubicekB3102Ed3Rev23Source.manualId,"KUBICEK_B3102_ED3_REV23");
+  assert.equal(kubicekB3102Ed3Rev23Source.pageRevisions["5-3"],17);
+  assert.equal(kubicekB3102Ed3Rev23Source.pageRevisions["8-2"],22);
+  assert.equal(kubicekB3102Ed3Rev23Source.loadingChartChanged,false);
+  assert.equal(kubicekB3102Ed3Rev23Source.loadingTableUnit,"kg");
+  assert.deepEqual(kubicekB3102Ed3Rev23Rows,[]);
+  assert.deepEqual(kubicekB3102Ed3Rev23Source.unusedPoundTableCorrection,{models:["BB16","BB16E","BB16EF","BB16XR"],liftUnits:[19,20,21,22,23],valueLb:1035});
+  assert.equal(KUBICEK_MAXIMUM_ENVELOPE_TEMPERATURE_C,124);
+  for(const model of ["BB74Z","BB78Z"]) {
+    assert.deepEqual(kubicekRev23CompatibilityRows[model].burnerRow,[model]);
+    assert.equal(kubicekRev23CompatibilityRows[model].ignisTwoUnitsMinimumSerial,516);
   }
 });

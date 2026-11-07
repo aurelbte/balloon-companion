@@ -1,5 +1,5 @@
 import type { LoadModelParameterSet } from "./types.ts";
-import { kubicekB3102Ed3Rev22Source } from "../datasets/kubicekB3102Ed3Rev22.ts";
+import { kubicekB3102Ed3Rev23Source } from "../datasets/kubicekB3102Ed3Rev23.ts";
 
 export const KUBICEK_LIFT_UNITS_METHOD_ID = "KUBICEK_B3102_LIFT_UNITS_TABLE";
 export const KUBICEK_B3102_ED3_REV19_SOURCE_URL =
@@ -16,9 +16,10 @@ const envelopeRows: readonly KubicekEnvelopeRow[] = [
   { models: ["BB9", "BB9E", "BB9EF"], volumeM3: 900, volumeCuFt: 31_800, mtowKg: 295 },
   { models: ["BB12", "BB12E", "BB12EF"], volumeM3: 1_200, volumeCuFt: 42_700, mtowKg: 385 },
   { models: ["BB14XR"], volumeM3: 1_400, volumeCuFt: 49_400, mtowKg: 420 },
+  { models: ["Origo 15"], volumeM3: 1_500, volumeCuFt: 53_000, mtowKg: 450 },
   { models: ["BB16", "BB16E", "BB16EF", "BB16XR"], volumeM3: 1_600, volumeCuFt: 57_000, mtowKg: 470 },
   { models: ["BB17GP", "BB17XR"], volumeM3: 1_700, volumeCuFt: 59_900, mtowKg: 495 },
-  { models: ["BB18E"], volumeM3: 1_800, volumeCuFt: 64_100, mtowKg: 550 },
+  { models: ["BB18E", "Origo 18"], volumeM3: 1_800, volumeCuFt: 64_100, mtowKg: 550 },
   { models: ["BB18XR"], volumeM3: 1_800, volumeCuFt: 64_100, mtowKg: 570 },
   { models: ["BB20", "BB20E", "BB20ED"], volumeM3: 2_000, volumeCuFt: 71_200, mtowKg: 630 },
   { models: ["BB20GP", "BB20XR"], volumeM3: 2_000, volumeCuFt: 71_200, mtowKg: 730 },
@@ -60,7 +61,7 @@ const envelopeRows: readonly KubicekEnvelopeRow[] = [
 
 export const kubicekModelParameters = Object.freeze(
   envelopeRows.flatMap((row) => row.models.map((model) => ({
-    id: `KUBICEK_${model}_B3102_ED3_REV22`,
+    id: `KUBICEK_${model.replaceAll(" ", "")}_B3102_ED3_REV23`,
     manufacturer: "Kubíček" as const,
     manufacturerModelId: model,
     model,
@@ -70,16 +71,16 @@ export const kubicekModelParameters = Object.freeze(
     standardMtomKg: row.mtowKg,
     tableRowId: `B3102_LOADING_TABLE_${model}`,
     source: {
-      manualId: kubicekB3102Ed3Rev22Source.manualId,
-      manualRevision: kubicekB3102Ed3Rev22Source.manualRevision,
-      pages: ["2-5", "5-4", "5-5", "8-1", "8-2"],
+      manualId: kubicekB3102Ed3Rev23Source.manualId,
+      manualRevision: kubicekB3102Ed3Rev23Source.manualRevision,
+      pages: ["2-5", "2-6", "5-4", "5-5", "8-1", "8-2"],
     },
     verificationStatus: "CANDIDATE_PILOT_VALIDATION" as const,
     notes: [
       "MTOW issue de la table Envelope Weight Limits ; aucune RMTOW générique.",
       "La RMTOW éventuelle est propre au ballon et inscrite en page II.",
-      "Révisions des pages : 2-5, 5-4, 5-5 et 8-2 Rev.22 ; 8-1 Rev.15 (27 February 2023).",
-      ...(model === "BB74Z" ? ["MLW documentaire : 1130 kg (2-5 Rev.22), non contrôlée par le moteur candidat.", "Compatibilités : 2-9, 2-10, 2-11 Rev.22 ; aucune configuration réelle validée."] : []),
+      "Révisions des pages : 2-5, 2-6, 5-4, 5-5 et 8-1 Rev.23 ; 8-2 Rev.22.",
+      ...(model === "BB74Z" ? ["MLW : 1130 kg (2-5 Rev.23), contrôlée du décollage à l’atterrissage.", "Compatibilités : 2-9, 2-10, 2-11 Rev.23 ; ligne brûleur BB74Z distincte de BB78Z, aucune configuration réelle validée."] : []),
     ],
   } satisfies LoadModelParameterSet))),
 );

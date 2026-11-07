@@ -2,6 +2,7 @@ import type { LoadCalculationInput, LoadCalculationResult } from "../types.ts";
 import type { LoadModelParameterSet } from "../modelParameters/types.ts";
 import { findExactKubicekModel } from "../modelParameters/kubicekModels.ts";
 import { evaluateKubicekEvidence, kubicekMinimumLandingMassKg, type KubicekCandidateInput, type KubicekBlock } from "./validation.ts";
+import { kubicekOrigo15LoadingTableKg } from "../datasets/kubicekB3102Ed3Rev23.ts";
 import loadingChartAudit from "../datasets/audits/kubicek-b3102-ed3-rev19-loading-chart.json" with { type: "json" };
 
 export const KUBICEK_LOADING_TABLE_MIN_LU = 10;
@@ -23,8 +24,10 @@ export type KubicekLoadCandidateCalculation = Readonly<{
 export type KubicekCandidateResult = KubicekLoadCandidateCalculation | Extract<LoadCalculationResult, { status: "UNAVAILABLE" }>;
 
 
-/** Tables kg : B.3102 Ed.3 Rev.22, p.5-4 Rev.22 ; provenance détaillée dans kubicekB3102Ed3Rev22.ts. */
+/** Tables kg : B.3102 Ed.3 Rev.23, p.5-4 Rev.23 ; valeurs BB existantes inchangées. */
 const rows: Readonly<Record<string, readonly number[]>> = {
+  "Origo 15": kubicekOrigo15LoadingTableKg,
+  "Origo 18": [291,320,349,378,407,436,465,494,524,550,550,550,550,550], // Explicit shared BB18E row, p.5-4 Rev.23.
   BB9: [145,160,175,189,204,218,233,247,262,276,291,295,295,295], BB9E: [145,160,175,189,204,218,233,247,262,276,291,295,295,295], BB9EF: [145,160,175,189,204,218,233,247,262,276,291,295,295,295],
   BB12: [194,213,233,252,271,291,310,330,349,368,385,385,385,385], BB12E: [194,213,233,252,271,291,310,330,349,368,385,385,385,385], BB12EF: [194,213,233,252,271,291,310,330,349,368,385,385,385,385],
   BB14XR: [226,249,271,294,317,339,362,385,407,420,420,420,420,420],
@@ -193,15 +196,15 @@ export function calculateKubicekLoadCandidate(
   const takeoff = verification.takeoffMassKg;
   const maximumFlight = verification.maximumFlightMassKg;
   if (mass && (takeoff !== undefined && takeoff > mass.performanceLimitedMassKg || maximumFlight !== undefined && maximumFlight > mass.performanceLimitedMassKg)) {
-    blocks.push({ code: "LIFT_EXCEEDED", source: "2-4 Rev.0 / 5-1 Rev.0", message: "Masse documentée supérieure à la capacité théorique candidate." });
+    blocks.push({ code: "LIFT_EXCEEDED", source: "2-4 Rev.23 / 5-1 Rev.0", message: "Masse documentée supérieure à la capacité théorique candidate." });
   }
   const mlw = kubicekMinimumLandingMassKg(input.model ?? "");
   if (mass && mlw !== undefined && mass.candidateMassCeilingKg < mlw) {
-    blocks.push({ code: "NO_FEASIBLE_WEIGHT_RANGE", source: "2-4 Rev.0 / 2-5 Rev.22", message: "Plafond candidat inférieur à la MLW constructeur." });
+    blocks.push({ code: "NO_FEASIBLE_WEIGHT_RANGE", source: "2-4 Rev.23 / 2-5 Rev.23", message: "Plafond candidat inférieur à la MLW constructeur." });
   }
   // Geometric agreement with Rev.22 does not resolve the manufacturer's precision
   // or certify automated LU interpolation (notably 16.539624 versus example 16.5).
-  blocks.push({ code: "LU_METHOD_NOT_VALIDATED", source: "5-2 Rev.16 / 5-3 Rev.17", message: "Méthode numérique LU candidate : précision et interpolation automatisée non validées ; aucune marge admissible." });
+  blocks.push({ code: "LU_METHOD_NOT_VALIDATED", source: "5-2 Rev.16 / 5-3 Rev.17", message: "Points LU et arithmétique contrôlés ; borne d’erreur acceptée par le constructeur et validité entre courbes d’altitude non démontrées ; aucune marge admissible." });
   return {
     status: "NON_VALIDÉ",
     reasons: [...new Set(blocks.map(({ code }) => code))],

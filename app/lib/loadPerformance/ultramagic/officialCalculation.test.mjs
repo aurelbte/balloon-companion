@@ -40,7 +40,7 @@ test('MTOM above manufacturer ceiling is refused even when lift would already li
 });
 
 test('no automatic reduced MTOM selection and no approval from a generic confirmation checkbox', () => {
-  const nominal = calculateUltramagicLoadCandidate({ ...input, configurationLimitsConfirmed: true, launchElevationMslM: 0, plannedMaximumAltitudeMslM: 0, groundTemperature: { ...input.groundTemperature, temperatureC: -10 } }, parameters);
+  const nominal = calculateUltramagicLoadCandidate({ ...input, configurationLimitsConfirmed: true, launchElevationMslM: 0, plannedMaximumAltitudeMslM: 0, groundTemperature: { ...input.groundTemperature, temperatureC: -1 } }, parameters);
   noAdmissibleResult(nominal);
   assert.equal(nominal.theoretical.candidateMassCeilingKg, parameters.standardMtomKg);
   assert.ok(!nominal.reasons.includes('REDUCED_MTOM_DOCUMENTATION_UNVERIFIED'));

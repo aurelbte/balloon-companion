@@ -32,8 +32,8 @@ function assertFiniteCalculation(result) {
   }
 }
 
-test("les 80 modèles Kubíček satisfont les invariants du moteur branché", () => {
-  assert.equal(kubicekModelParameters.length, 80);
+test("les 82 modèles Kubíček satisfont les invariants du moteur branché", () => {
+  assert.equal(kubicekModelParameters.length, 82);
   const failures = [];
 
   for (const parameters of kubicekModelParameters) {

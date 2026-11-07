@@ -113,6 +113,6 @@ test("FM04 : aucune extrapolation mathématique hors du graphique ne devient une
     const output=calculateOfficialLoad({...inputFor(p),...overrides});
     assertBlocked(output);
     assert.equal(output.reasonCode,"PENDING_VERIFICATION");
-    assert.match(output.message,/METHOD_NOT_VALIDATED/);
+    assert.match(output.message,/OUTSIDE_METHOD_DOMAIN/);
   }
 });

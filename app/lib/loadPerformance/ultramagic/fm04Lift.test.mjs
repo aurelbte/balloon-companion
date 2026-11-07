@@ -34,3 +34,19 @@ test("FM04 refuse une altitude maximale sous le terrain", () => {
     maximumAltitudeMslM: 300,
   }), null);
 });
+
+
+const liftAt = (temperatureC, launchElevationMslM=0, maximumAltitudeMslM=launchElevationMslM) => calculateFm04LiftKgPer1000Ft3({groundTemperatureC:temperatureC,launchElevationMslM,maximumAltitudeMslM});
+test("FM04 : limites imprimées incluses, aucun dépassement de température ou altitude",()=>{
+  assert.ok(liftAt(40)!==null);
+  assert.ok(liftAt(-50,7000)!==null);
+  assert.ok(liftAt(0,0,7000)!==null);
+  for(const args of [[40.000001],[-50.000001,7000],[0,-0.000001],[0,0,7000.000001],[0,7000.000001]]) assert.equal(liftAt(...args),null,JSON.stringify(args));
+});
+test("FM04 : la température à l'altitude maximale et les courbes tronquées sont aussi bornées",()=>{
+  assert.equal(liftAt(-40,0,2000),null); // -53 C at maximum, although ground temperature is on the axis.
+  assert.equal(liftAt(-50),null); // Lift >10: clipped low-altitude curve, no clamping.
+  assert.equal(liftAt(40,7000),null); // Lift <4.5: clipped high-altitude curve.
+  assert.equal(liftAt(-10,0,3000),null); // Launch point unreadable even if final point fits.
+  for(const args of [[NaN],[Infinity],[0,NaN],[0,0,Infinity]]) assert.equal(liftAt(...args),null);
+});

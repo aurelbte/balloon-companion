@@ -1,0 +1,193 @@
+{
+  "case20C": {
+    "status": "EXACT_PUBLISHED_PATH_REPLAYED_DERIVATION_REFUSED",
+    "sourceSha256": "b6f45b47fce6c7ff74802a260fa03459d8b38f967a5ef1f396132e004374deab",
+    "pages": "5.3 Rev.23 / 5.5 Rev.25, PDF 42 / 44",
+    "axes": {
+      "x": "Temperature C, printed -50 to +40",
+      "y": "Lift kg/1000 ft3, printed 4.5 to 10; envelope 100 C"
+    },
+    "isa": {
+      "guide": "ISA 0",
+      "representation": "65 filled disconnected cubic dot contours",
+      "identicalClippedCopies": 4,
+      "compoundSha256": "8128992bb7067590d5ad513f5e640a51dce3f02796831ce86eed063de34a6e4e",
+      "continuousReferenceCurveDefined": false,
+      "centresOrConnectionsFitted": false,
+      "status": "DOTTED_REFERENCE_IDENTIFIED_NO_CONTINUOUS_TRANSPORT_RULE"
+    },
+    "input": {
+      "model": "H65",
+      "groundC": 20,
+      "launchM": 300,
+      "maximumM": 3000
+    },
+    "pointsExact": {
+      "1": [
+        "991/2",
+        "66823/1000"
+      ],
+      "2": [
+        "49579/100",
+        "19057/50"
+      ],
+      "3": [
+        "38521/100",
+        "31557/100"
+      ],
+      "4": [
+        "8277/125",
+        "31557/100"
+      ]
+    },
+    "replay": {
+      "verticalCubic": [
+        [
+          "991/2",
+          "66823/1000"
+        ],
+        [
+          "49579/100",
+          "19057/50"
+        ],
+        [
+          "49579/100",
+          "19057/50"
+        ],
+        [
+          "49579/100",
+          "19057/50"
+        ]
+      ],
+      "parallelAnnotationCubic": [
+        [
+          "49579/100",
+          "19057/50"
+        ],
+        [
+          "46831/100",
+          "9403/25"
+        ],
+        [
+          "10569/25",
+          "34687/100"
+        ],
+        [
+          "38521/100",
+          "31557/100"
+        ]
+      ],
+      "outputLine": [
+        [
+          "38521/100",
+          "31557/100"
+        ],
+        [
+          "8277/125",
+          "31557/100"
+        ]
+      ]
+    },
+    "steps": [
+      {
+        "step": 1,
+        "prescribed": "20 C vertical to the 300 m curve",
+        "reproduced": "Published green path P1 to P2",
+        "derivation": "REFUSED_300M_CURVE_NOT_PUBLISHED"
+      },
+      {
+        "step": 2,
+        "prescribed": "Parallel to ISA until the 3000 m curve",
+        "reproduced": "Published green cubic P2 to P3",
+        "derivation": "REFUSED_CONTINUOUS_ISA_AND_DISPLACEMENT_RULE_NOT_DEFINED"
+      },
+      {
+        "step": 3,
+        "prescribed": "Horizontal from intersection to the lift axis",
+        "reproduced": "Published horizontal P3 to P4",
+        "derivation": "P3_NOT_EXACTLY_ON_3000M_FILLED_CONTOUR"
+      }
+    ],
+    "annotatedFirstLegDeltaXExact": "29/100",
+    "launchIntersectionEvidence": {
+      "seaLevelYAtP2XExact": [
+        "24981281508715423680941497095387/61897001964269013744956211200",
+        "20285318522152436300484430540899/49517601571415210995964968960"
+      ],
+      "altitude1000mYAtP2XExact": [
+        "1504046475520392345167210039210061/4951760157141521099596496896000",
+        "24504063205479647309846794533823833/79228162514264337593543950336000"
+      ],
+      "p2BetweenTheseCurves": true,
+      "altitude300mIntersectionCertified": false
+    },
+    "actual3000mInkBoundaryCrossings": [
+      {
+        "status": "UNIQUE_FILLED_CONTOUR_BOUNDARY_CROSSING_ENCLOSED",
+        "parameterExact": [
+          "130583037/134217728",
+          "261166075/268435456"
+        ],
+        "xExact": [
+          "751038312814956762116536363789/1934281311383406679529881600",
+          "18775957840890969837386792911/48357032784585166988247040"
+        ],
+        "yExact": [
+          "307655095983908446284877852287/967140655691703339764940800",
+          "38456887040105369046789173513/120892581961462917470617600"
+        ],
+        "stoppedOnUnresolvedSign": true,
+        "arithmetic": "Exact rational de Casteljau; retained outer control hulls"
+      },
+      {
+        "status": "UNIQUE_FILLED_CONTOUR_BOUNDARY_CROSSING_ENCLOSED",
+        "parameterExact": [
+          "33209541/33554432",
+          "66419083/67108864"
+        ],
+        "xExact": [
+          "11677328345165871982152909277/30223145490365729367654400",
+          "1459666049514674342258215091/3777893186295716170956800"
+        ],
+        "yExact": [
+          "191333353368977799933169095/604462909807314587353088",
+          "597916731917349204831018689/1888946593147858085478400"
+        ],
+        "stoppedOnUnresolvedSign": true,
+        "arithmetic": "Exact rational de Casteljau; retained outer control hulls"
+      }
+    ],
+    "blackOutlineAtP3XExact": [
+      "126221033326556023805346731013549/396140812571321687967719751680",
+      "24454121274388299302880004381/75557863725914323419136000"
+    ],
+    "publishedReadoutKgPer1000Ft3": "6.55",
+    "exactProductOfPublishedReadoutAndNominalVolumeKg": "425.75",
+    "publishedTotalLiftKg": 426,
+    "existingDocumentaryInkInterval": [
+      "6.5",
+      "7"
+    ],
+    "discrepancies": "No snapping of P3, fitted ISA, interpolation at 300 m or inferred rounding rule",
+    "reconstructedIsaTransport": false,
+    "activation": false,
+    "admissibleLoad": false
+  },
+  "case10C": {
+    "status": "REFUSED",
+    "input": {
+      "model": "H65",
+      "groundC": 10,
+      "launchM": 300,
+      "maximumM": 3000
+    },
+    "publishedApproximateTotalLiftKg": 488,
+    "reasons": [
+      "SECOND_CASE_HAS_NO_PUBLISHED_VECTOR_CONSTRUCTION",
+      "ISA_TRANSPORT_RULE_NOT_DEFINED",
+      "300M_ALTITUDE_CURVE_NOT_PUBLISHED"
+    ],
+    "activation": false,
+    "admissibleLoad": false
+  }
+}

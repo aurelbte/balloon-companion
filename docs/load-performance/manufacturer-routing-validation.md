@@ -43,9 +43,10 @@ minima 5.8 Rev.30 et charge nacelle 5.9 Rev.27.
   ou 487.67266152940033 kg pour 1840 m³. Ne pas mélanger volume nominal et conversion métrique.
   La note du manuel accepte qualitativement des écarts graphiques négligeables, sans fournir
   de tolérance chiffrée. Les anciens seuils de tests ±1 kg / ±0.02 LU ne prouvaient donc rien.
-- Domaine : contrôle physique (valeurs finies, kelvin et pression positifs, maximum au-dessus
-  du terrain), **pas encore de domaine graphique constructeur intégral encodé**. Une sortie
-  théorique hors graphique ne vaut pas extrapolation autorisée. La page 5.3 montre -50 à +40 °C,
+- Domaine désormais borné aux axes/courbes imprimés : valeurs finies, départ et maximum entre
+  0 et 7000 m AMSL, maximum au-dessus du terrain, température du départ et à l’altitude maximale
+  entre -50 et +40 °C, portance calculée aux deux extrémités dans la fenêtre 4.5–10 kg/1000 ft³.
+  Tout dépassement est refusé, sans écrêtage ni arrondi. La page 5.3 montre -50 à +40 °C,
   des courbes du niveau de la mer à 7000 m AMSL et une fenêtre de lecture 4.5–10 kg/1000 ft³ ;
   les courbes sont tronquées à cette fenêtre, pas un domaine rectangulaire d’extrapolation.
   Pas de validation par les seuls
@@ -102,3 +103,29 @@ Source locale : `.load-performance-work/manuals/kubicek-b3102-rev22.pdf`, SHA-25
    global de fiche ne peut combler les lacunes. Validation des matrices et cas anciens manquants.
 4. Puis seulement : statut documentaire vérifié, activation exacte dans le dépôt, moteur capable
    de produire son propre résultat validé après tous ses gardes, et tests de non-régression.
+
+
+## Vérification numérique complémentaire ciblée
+
+- FM04 : aucune correction des coefficients démontrée par les deux exemples disponibles.
+  Le domaine est maintenant strictement borné ; l'ancien cas de test à -10 °C au niveau de
+  la mer était au-dessus de la fenêtre graphique (portance >10 kg/1000 ft³). Le contrôle MTOM
+  correspondant utilise désormais -1 °C, dans la fenêtre, sans changer son assertion de plafond.
+- Kubicek : restitution exacte des 713 nœuds inchangés ; pondération arithmétique contrôlée
+  à 25/50/75 % entre températures voisines et entre altitudes lorsque les points vérifiés
+  fournissent les bornes. Pas d'arrondi, extrapolation ou changement des Loading Tables.
+- Sur les sept segments PDF indépendants déjà disponibles : 21 points fractionnaires
+  supplémentaires (paramètres de segment 0.25/0.5/0.75), écart maximal observé entre lecture
+  géométrique directe et interpolation du moteur **0.003489400791625741 LU**.
+  Cette mesure est un résultat de comparaison, pas une tolérance fabricant ni une borne
+  démontrée sur tout le graphique. Les courbes d'altitude intermédiaires ne disposent pas
+  d'une validation indépendante constructeur par ces seuls points.
+- Dernier verrou de méthode FM04 : validation de la reconstruction analytique et précision
+  acceptable non démontrées par les deux exemples H65 (`METHOD_NOT_VALIDATED`).
+- Dernier verrou de méthode Kubicek : borne d'erreur acceptable et validité entre courbes
+  non démontrées (`LU_METHOD_NOT_VALIDATED`). L'interpolation en table reste confirmée par
+  l'exemple BB20 ; le résultat interne 534.267968 kg n'est pas forcé à 533 kg.
+- Les verrous propres à chaque appareil restent cumulatifs : Build Standard/configuration,
+  masses, minima, nacelle/cadre/brûleur, atterrissage et suppléments. Aucun appareil ne
+  possède ici un dossier de preuves complet permettant de lever ces verrous. Aucun modèle
+  nouvellement activé ; registres d'activation et Cameron inchangés.

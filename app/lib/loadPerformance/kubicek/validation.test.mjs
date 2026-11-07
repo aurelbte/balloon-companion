@@ -17,7 +17,7 @@ function fixture(model = "BB20") {
     launchElevationMslM:0, plannedMaximumAltitudeMslM:6000*0.3048,
     groundTemperature:{ temperatureC:17.8872, sourceModel:"TEST", forecastRun:"TEST", validTime:"TEST" },
     kubicekEvidence:{
-      balloonId:"TEST_ONLY", model, manualRevision:"B3102_ED3_REV22",
+      balloonId:"TEST_ONLY", model, manualRevision:"B3102_ED3_REV23",
       weightRecord:{ reference:"TEST_II", applicableMtowKg:parameters.standardMtomKg, minimumCrewAndEquipmentKg:300, reducedMtowCountersignedByKubicek:false },
       masses:{ reference:"TEST_MASSES", complete:true, fullCylindersVerified:true, envelopeKg:100, emptyBasketKg:70,
         burnerAndFrameKg:30, fullCylindersKg:80, otherEquipmentKg:20, occupantsKg:150, baggageKg:10,
@@ -101,7 +101,7 @@ test("cohérence modèle, volume et paramètres ; aucun alias proche", () => {
   assert.ok(calculateManufacturerLoad("Kubíček","BB20",{...input,model:"BB20E"}).reasons.includes("MODEL_PARAMETERS_MISMATCH"));
 });
 
-test("MLW couvre les 80 modèles ; décollage, atterrissage et tout le vol", () => {
+test("MLW couvre les 82 modèles ; décollage, atterrissage et tout le vol", () => {
   for (const p of kubicekModelParameters) assert.ok(kubicekMinimumLandingMassKg(p.model)>0,p.model);
   assert.equal(kubicekMinimumLandingMassKg("BB74Z"),1130);
   assert.equal(kubicekMinimumLandingMassKg("BB74"),undefined);
@@ -186,4 +186,73 @@ test("preuves invalides de charge, occupation, supplément et inversion n'expose
   const calculated=result(input);
   for (const code of ["SUPPLEMENTS_UNVERIFIED","ENVELOPE_TEMPERATURE_LIMIT_UNVERIFIED","BASKET_OCCUPANCY_UNVERIFIED","FLIGHT_EXCEEDS_MTOW","LIFT_EXCEEDED"]) assert.ok(calculated.reasons.includes(code),code);
   assert.equal("marginKg" in calculated,false);
+});
+
+
+function origoFixture(model="Origo 15") {
+  const input=fixture(model), e=input.kubicekEvidence, c=e.configuration;
+  input.occupantsWeightKg=100; e.masses.occupantsKg=100; e.masses.basketCarriedKg=200;
+  Object.assign(e.flightMasses,{landingKg:330,minimumKg:330,maximumKg:410});
+  Object.assign(c,{basketModel:"ORIGO",frameModel:"ORIGO",burnerModel:"ORIGO",rotationVentFitted:true,maximumSurfaceWindMs:5.5});
+  c.basketPlate.model="ORIGO"; c.basketPlate.maximumCarriedKg=455;
+  const componentIds=[model,c.basketModel,c.basketSerialNumber,c.frameModel,c.frameSerialNumber,c.burnerModel,c.burnerSerialNumber];
+  for(const review of [c.envelopeBasket,c.envelopeBurner,c.basketFrame]) review.componentIds=[...componentIds];
+  c.envelopeBasket.page=model==="Origo 15"?"2-8":"2-9";
+  return input;
+}
+test("Origo 15/18 : limites et matrices documentées ne lèvent pas le blocage de méthode",()=>{
+  for(const model of ["Origo 15","Origo 18"]) {
+    const input=origoFixture(model);
+    assert.deepEqual(codes(input),[]);
+    const calculated=result(input);
+    assert.deepEqual(calculated.reasons,["LU_METHOD_NOT_VALIDATED"]);
+    assert.equal("marginKg" in calculated,false);
+  }
+});
+test("cadre Origo : 1800 m³ et 5.5 m/s inclus, dépassements et autre cadre refusés",()=>{
+  const input=origoFixture("Origo 18"), c=input.kubicekEvidence.configuration;
+  assert.ok(!codes(input).some(code=>code.startsWith("FRAME_")));
+  c.maximumSurfaceWindMs=5.500001;
+  assert.ok(codes(input).includes("FRAME_WIND_EXCEEDED"));
+  c.maximumSurfaceWindMs=5.5; input.volumeM3=1800.001;
+  assert.ok(codes(input).includes("FRAME_VOLUME_EXCEEDED"));
+  input.volumeM3=1800; c.frameModel="BASIC";
+  assert.ok(codes(input).includes("ORIGO_FRAME_INCOMPATIBLE"));
+});
+test("matrices Origo : cellules blanches, RV manquant et revue d'une autre page bloquent",()=>{
+  const input=origoFixture(), c=input.kubicekEvidence.configuration;
+  c.rotationVentFitted=false;
+  assert.ok(codes(input).includes("ROTATION_VENT_UNVERIFIED"));
+  c.envelopeBasket.page="2-9";
+  assert.ok(codes(input).includes("ENVELOPE_BASKET_UNVERIFIED"));
+  c.basketModel="K14";
+  assert.ok(codes(input).includes("ENVELOPE_BASKET_INCOMPATIBLE"));
+  c.burnerModel="IGNIS - 2 units";
+  assert.ok(codes(input).includes("ENVELOPE_BURNER_INCOMPATIBLE"));
+  const larger=origoFixture("Origo 18"); larger.kubicekEvidence.configuration.burnerModel="IGNIS - 2 units";
+  assert.ok(!codes(larger).includes("ENVELOPE_BURNER_INCOMPATIBLE")); // One cell only, not the entire configuration.
+  const old=fixture(); old.kubicekEvidence.configuration.basketModel="ORIGO"; old.kubicekEvidence.configuration.burnerModel="ORIGO";
+  assert.ok(codes(old).includes("ENVELOPE_BASKET_INCOMPATIBLE"));
+  assert.ok(codes(old).includes("ENVELOPE_BURNER_INCOMPATIBLE"));
+});
+test("Rev.23 : 124 C vérifié, dépassement et anciennes preuves Rev.22 refusés",()=>{
+  const input=origoFixture(), c=input.kubicekEvidence.configuration;
+  c.plannedMaximumEnvelopeTemperatureC=124;
+  assert.ok(!codes(input).includes("ENVELOPE_TEMPERATURE_EXCEEDED"));
+  c.plannedMaximumEnvelopeTemperatureC=124.001;
+  assert.ok(codes(input).includes("ENVELOPE_TEMPERATURE_EXCEEDED"));
+  c.plannedMaximumEnvelopeTemperatureC=NaN;
+  assert.ok(codes(input).includes("ENVELOPE_TEMPERATURE_EXCEEDED"));
+  input.kubicekEvidence.manualRevision="B3102_ED3_REV22";
+  assert.ok(codes(input).includes("AIRCRAFT_EVIDENCE_UNVERIFIED"));
+});
+test("BB74Z et BB78Z distincts : condition IGNIS 2 S/N 516 inchangée, aucun regroupement implicite",()=>{
+  for(const model of ["BB74Z","BB78Z"]) {
+    const input=fixture(model), c=input.kubicekEvidence.configuration;
+    c.burnerModel="IGNIS - 2 units";c.burnerSerialNumber="515";
+    assert.ok(codes(input).includes("BURNER_SERIAL_UNVERIFIED"));
+    c.burnerSerialNumber="516";
+    assert.ok(!codes(input).includes("BURNER_SERIAL_UNVERIFIED"));
+    assert.equal(result(input).status,"NON_VALIDÉ");
+  }
 });

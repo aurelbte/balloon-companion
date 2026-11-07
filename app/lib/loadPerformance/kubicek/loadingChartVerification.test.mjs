@@ -35,3 +35,48 @@ test("vérification indépendante locale : sept points, 15 courbes et 713 compar
   assert.equal(audit.manufacturerExample.liftUnits,16.5);
   assert.equal(audit.manufacturerExample.massKg,533);
 });
+
+
+test("713 nœuds LU inchangés et interpolation en température exactement pondérée sans arrondi",()=>{
+  for(const p of source.points) {
+    assert.equal(lookupKubicekLiftUnits(p.altitudeMslFt*0.3048,p.temperatureC),p.liftUnits);
+    const next=source.points.find((q)=>q.altitudeMslFt===p.altitudeMslFt && q.temperatureC===p.temperatureC+1);
+    if(!next) continue;
+    for(const weight of [0.25,0.5,0.75]) {
+      const actual=lookupKubicekLiftUnits(p.altitudeMslFt*0.3048,p.temperatureC+weight);
+      assert.equal(actual,p.liftUnits+(next.liftUnits-p.liftUnits)*weight);
+      assert.ok(actual>=Math.min(p.liftUnits,next.liftUnits) && actual<=Math.max(p.liftUnits,next.liftUnits));
+    }
+  }
+});
+test("interpolation d'altitude entre sept points déjà vérifiés : pondération exacte, pas de certification implicite",()=>{
+  const altitudes=[...new Set(source.points.map((p)=>p.altitudeMslFt))].sort((a,b)=>a-b);
+  for(const p of audit.checks) {
+    const nextAltitude=altitudes[altitudes.indexOf(p.altitudeMslFt)+1];
+    if(nextAltitude===undefined) continue;
+    const next=source.points.find((q)=>q.altitudeMslFt===nextAltitude && q.temperatureC===p.temperatureC);
+    if(!next) continue;
+    const meters=(p.altitudeMslFt*0.3048+nextAltitude*0.3048)/2;
+    const actualWeight=(meters/0.3048-p.altitudeMslFt)/(nextAltitude-p.altitudeMslFt);
+    assert.equal(lookupKubicekLiftUnits(meters,p.temperatureC),p.liftUnits+(next.liftUnits-p.liftUnits)*actualWeight);
+  }
+  assert.equal(audit.validationStatus,"PENDING_MANUFACTURER_PRECISION_VALIDATION");
+});
+test("écarts fractionnaires mesurés sur les sept segments PDF indépendants, sans tolérance fabricant inventée",()=>{
+  const a=audit.axes;
+  const differences=[];
+  for(const p of audit.checks) {
+    for(const t of [0.25,0.5,0.75]) {
+      const [x,y]=point(p.pdfSegment,t);
+      const temperature=-40+(y-a.minus40CY)*75/(a.plus35CY-a.minus40CY);
+      const direct=10+(a.lu10X-x)*13/(a.lu10X-a.lu23X);
+      const interpolated=lookupKubicekLiftUnits(p.altitudeMslFt*0.3048,temperature);
+      assert.notEqual(interpolated,null);
+      differences.push(Math.abs(interpolated-direct));
+    }
+  }
+  assert.equal(differences.length,21);
+  assert.ok(differences.every(Number.isFinite));
+  // Observed regression value, not an approved operational error tolerance.
+  assert.equal(Math.max(...differences), 0.003489400791625741);
+});
