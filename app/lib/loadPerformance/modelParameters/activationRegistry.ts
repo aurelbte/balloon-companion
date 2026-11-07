@@ -4,6 +4,9 @@ import { CAMERON_ISSUE_10_A18_REVISION, CAMERON_METHOD_A2_ID, cameronModelParame
 /**
  * Deliberately empty. Entries may be added only after method, model parameters,
  * source traceability, targeted tests and real-aircraft limits are all confirmed.
+ * FM04 (50 models) and B.3102 Rev.22 (80 models) have no validated entry:
+ * see docs/load-performance/manufacturer-routing-validation.md. Their diagnostic
+ * routing through calculateOfficialLoad never enables them implicitly.
  */
 export const enabledOfficialLoadParameterCombinations = Object.freeze(
   [] as readonly OfficialLoadActivationCandidate[],

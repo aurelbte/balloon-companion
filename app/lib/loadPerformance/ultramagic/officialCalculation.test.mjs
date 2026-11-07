@@ -25,8 +25,9 @@ for (const [temperatureC, expectedLift] of [[20, 426], [10, 488]]) {
   test(`H65 at ${temperatureC} C retains FM04 theoretical lift without approving the flight`, () => {
     const result = calculateUltramagicLoadCandidate({ ...input, groundTemperature: { ...input.groundTemperature, temperatureC } }, parameters);
     noAdmissibleResult(result);
-    assert.ok(Math.abs(result.theoretical.performanceLimitedMassKg - expectedLift) <= 1);
-    if (temperatureC === 20) assert.ok(Math.abs(result.theoretical.liftKgPer1000Ft3 - 6.55) <= .02);
+    assert.equal(result.theoretical.performanceLimitedMassKg, temperatureC === 20 ? 426.2791848227497 : 487.67266152940033);
+    assert.notEqual(result.theoretical.performanceLimitedMassKg, expectedLift);
+    assert.ok(result.reasons.includes("METHOD_NOT_VALIDATED"));
     for (const reason of missingEvidence) assert.ok(result.reasons.includes(reason));
   });
 }
@@ -94,7 +95,9 @@ for (const modelParameters of ultramagicModelParameters) {
     assert.ok(reduced.theoretical.candidateMassCeilingKg <= modelParameters.reducedMtomKg);
     assert.ok(reduced.reasons.includes('REDUCED_MTOM_DOCUMENTATION_UNVERIFIED'));
     const production = calculateOfficialLoad(modelInput);
-    assert.equal(production.status, 'UNAVAILABLE'); assert.equal(production.reasonCode, 'UNSUPPORTED_MODEL');
+    assert.equal(production.status, 'UNAVAILABLE'); assert.equal(production.reasonCode, 'PENDING_VERIFICATION');
+    assert.match(production.message, /NON_VALIDÉ/);
+    assert.equal('marginKg' in production, false);
     for (const registry of [enabledPilotValidationLoadConfigurations, enabledOfficialLoadParameterCombinations]) assert.ok(!registry.some(entry => entry.modelParameterSetId === modelParameters.id));
   });
 }

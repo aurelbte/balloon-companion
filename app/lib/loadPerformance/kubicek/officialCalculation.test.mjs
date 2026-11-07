@@ -142,8 +142,10 @@ test("BB74Z : données Rev.22 complètes, références de compatibilité sans ap
   }
   assert.deepEqual(kubicekB3102Ed3Rev22Rows, []);
   for (const model of kubicekModelParameters) {
-    const result = calculateOfficialLoad({ ...input, balloonId: "TEST", model: model.model, configurationLimitsConfirmed: true });
+    const result = calculateOfficialLoad({ ...input, balloonId: "TEST", model: model.model, volumeM3: model.volumeM3, applicableMtowKg: model.standardMtomKg, configurationLimitsConfirmed: true });
     assert.equal(result.status, "UNAVAILABLE", model.model);
-    assert.equal(result.reasonCode, "UNSUPPORTED_MODEL", model.model);
+    assert.equal(result.reasonCode, "PENDING_VERIFICATION", model.model);
+    assert.match(result.message, /LU_METHOD_NOT_VALIDATED/);
+    assert.equal("marginKg" in result, false);
   }
 });

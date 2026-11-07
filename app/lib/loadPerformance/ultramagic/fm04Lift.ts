@@ -1,4 +1,4 @@
-/** Ultramagic FM04 Revision 30, section 5.3, pages 5.3 à 5.5. */
+/** Graphique FM04 Rev.30 : p.5.3 Rev.23 / p.5.4 Rev.24, exemples p.5.5 Rev.25. */
 export const FM04_INTERNAL_ENVELOPE_TEMPERATURE_C = 100;
 
 // Constantes de l'atmosphère standard internationale et de l'équation des gaz parfaits.
@@ -19,8 +19,11 @@ export type Fm04LiftInput = Readonly<{
 }>;
 
 /**
- * Reproduit la construction FM04 : la température suit une parallèle à l'ISA
- * depuis le terrain, puis la poussée d'Archimède est calculée à l'altitude maximale.
+ * Reconstruction analytique candidate inspirée du graphique FM04, non validée.
+ * La parallèle à l'ISA est documentée ; les coefficients de cette formule ne
+ * sont pas publiés dans les pages disponibles. Les gardes ci-dessous définissent
+ * un domaine physique, pas le domaine graphique constructeur intégral.
+ * Aucun résultat brut de cette fonction n'est une charge admissible.
  */
 export function calculateFm04LiftKgPer1000Ft3(input: Fm04LiftInput): number | null {
   const { groundTemperatureC, launchElevationMslM, maximumAltitudeMslM } = input;

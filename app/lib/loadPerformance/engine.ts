@@ -1,10 +1,11 @@
+import { routeValidatedManufacturerLoad, type ManufacturerEvidenceInput } from "./validatedManufacturerRouting.ts";
 import { manufacturerLoadAdapters } from "./adapters.ts";
 import { calculatePilotValidationLoad, normalizeLoadIdentifier } from "./candidateEngine.ts";
-import type { LoadCalculationInput, LoadCalculationResult } from "./types.ts";
+import type { LoadCalculationResult } from "./types.ts";
 
 const unavailable = (reasonCode: Extract<LoadCalculationResult, { status: "UNAVAILABLE" }>["reasonCode"], message: string): LoadCalculationResult => ({ status: "UNAVAILABLE", reasonCode, message });
 
-export function calculateOfficialLoad(input: LoadCalculationInput): LoadCalculationResult {
+export function calculateOfficialLoad(input: ManufacturerEvidenceInput): LoadCalculationResult {
   if (!input.balloonId || !input.manufacturer || !input.model) return unavailable("NO_BALLOON", "Sélectionnez un ballon.");
   if (!(typeof input.balloonEquipmentWeightKg === "number" && input.balloonEquipmentWeightKg > 0)) return unavailable("INCOMPLETE_BALLOON_MASSES", "Complétez les masses du ballon.");
   if (!(typeof input.occupantsWeightKg === "number" && input.occupantsWeightKg >= 0)) return unavailable("NO_OCCUPANTS_WEIGHT", "Renseignez Pilote + passagers.");
@@ -12,6 +13,8 @@ export function calculateOfficialLoad(input: LoadCalculationInput): LoadCalculat
   if (!(typeof input.launchElevationMslM === "number" && Number.isFinite(input.launchElevationMslM))) return unavailable("NO_LAUNCH_ELEVATION", "Altitude du terrain indisponible.");
   if (input.plannedMaximumAltitudeMslM < input.launchElevationMslM) return unavailable("OUTSIDE_OFFICIAL_TABLE", "L’altitude maximale prévue est inférieure à l’altitude du terrain.");
   if (!input.groundTemperature) return unavailable("NO_GROUND_TEMPERATURE", "Température au sol indisponible.");
+  const routed = routeValidatedManufacturerLoad(input);
+  if (routed) return routed;
   const adapter = manufacturerLoadAdapters.find(
     (candidate) => normalizeLoadIdentifier(candidate.manufacturer) === normalizeLoadIdentifier(input.manufacturer),
   );
