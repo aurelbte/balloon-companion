@@ -27,6 +27,8 @@ export type LoadModelParameterSet = Readonly<{
   volumeM3?: number;
   volumeCuFt?: number;
   standardMtomKg?: number;
+  /** Documentary minimum landing mass; applied only by methods that explicitly support it. */
+  standardMlmKg?: number;
   reducedMtomKg?: number;
   tableRowId?: string;
   maximumCalculationTemperatureC?: number;

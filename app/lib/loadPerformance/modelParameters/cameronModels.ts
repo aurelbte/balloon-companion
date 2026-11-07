@@ -38,6 +38,16 @@ function cameronModel(
   });
 }
 
+// Z-275 already uses A2. These additional Table 2 fields are documentary only;
+// the common Cameron calculation and its existing limits remain unchanged.
+const z275 = cameronModel("Z-275", "275", 7_788, 2_494, 1_999, "2-7");
+const cameronZ275Parameters: LoadModelParameterSet = Object.freeze({
+  ...z275,
+  volumeCuFt: 275_000,
+  standardMlmKg: 1_247,
+  notes: [...z275.notes, "MLM standard : 1247 kg (Table 2, p.2-7). Donnée documentaire, non contrôlée par le moteur A2 existant."],
+});
+
 /** Modèles Z standards explicitement désignés en Table 5 et documentés en Table 2. */
 export const cameronModelParameters = Object.freeze([
   cameronModel("Z-90", "90", 2_549, 816, 499, "2-6"),
@@ -52,7 +62,7 @@ export const cameronModelParameters = Object.freeze([
   cameronModel("Z-210", "210", 5_947, 1_905, 999, "2-6"),
   cameronModel("Z-225", "225", 6_372, 2_041, 1_999, "2-6"),
   cameronModel("Z-250", "250", 7_080, 2_268, 1_999, "2-7"),
-  cameronModel("Z-275", "275", 7_788, 2_494, 1_999, "2-7"),
+  cameronZ275Parameters,
   cameronModel("Z-315", "315", 8_920, 2_857, 2_699, "2-7"),
   cameronModel("Z-340HL", "340HL", 9_629, 3_084, 2_699, "2-7"),
   cameronModel("Z-350", "350", 9_912, 3_175, 2_699, "2-7"),
