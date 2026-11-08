@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { prepareFlightDossierOperations } from "../lib/flightDossierOperations";
+import { describePreparationAirspaces } from "../lib/preparationAirspaceSummary";
 import { describePreparationLoad } from "../lib/preparationLoadSupport";
 import { describePreparationLoadEstimate } from "../lib/preparationLoadEstimate";
 import { prepareFlightDossier, selectFlightDossierTrace } from "../lib/flightDossierEntry";
@@ -489,6 +490,12 @@ export default function MapPage() {
       .map((airspace) => [airspace.airspaceCompositeKey || airspace.airspaceId, airspace])).values()],
     [airspaceCoverage.airspaces, displayedTraces],
   );
+  const airspaceSummary = describePreparationAirspaces({
+    count: intersectedAirspaces.length,
+    hasTrajectory: displayedTraces.some((trace) => trace.projection.points.length >= 2),
+    hasUsableCoverage: airspaceCoverage.loadedCoverage.length > 0,
+    coverageStatus: airspaceCoverage.visibleCoverage.status,
+  });
   const selectedAirspaceFrequencies = useMemo(
     () =>
       selectedAirspace
@@ -1061,7 +1068,7 @@ export default function MapPage() {
                 if (intersectedAirspaces.length > 0) {
                   selectAirspaces(intersectedAirspaces);
                 } else {
-                  setNotice("Aucun espace intersecté par les trajectoires.");
+                  setNotice(airspaceSummary.emptyNotice);
                 }
               }}
               className="min-h-[118px] rounded-[16px] border p-2.5 text-left transition-transform active:scale-[0.98]"
@@ -1078,13 +1085,10 @@ export default function MapPage() {
                 Espaces
               </h2>
               <p className="mt-4 text-2xl font-semibold tracking-tight">
-                {airspaceCoverage.visibleLoading
-                  ? "…"
-                  : airspaceCoverage.visibleCoverage.status === "COMPLETE"
-                    ? `${intersectedAirspaces.length}`
-                    : "?"}
+                {airspaceSummary.value}
               </p>
-              <p className="mt-1 text-[9px] leading-tight text-[var(--bc-color-text-muted)]">{airspaceCoverage.visibleCoverage.status === "COMPLETE" ? "Croisements potentiels" : airspaceCoverage.visibleCoverage.status === "PARTIAL" ? "Couverture partielle" : airspaceCoverage.visibleLoading ? "Chargement…" : "Données indisponibles"}</p>
+              <p className="mt-1 text-[9px] leading-tight text-[var(--bc-color-text-muted)]">{airspaceSummary.label}</p>
+              {airspaceSummary.coverageNotice && <p className="mt-1 text-[9px] leading-tight text-[var(--bc-color-text-muted)]">{airspaceSummary.coverageNotice}</p>}
             </button>
 
             <button
