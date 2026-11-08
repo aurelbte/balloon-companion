@@ -24,7 +24,7 @@ test('A4 PDF includes every section and the full long raw message across automat
   const pages = document.getPages();
   for (const page of pages) { assert.equal(page.getWidth(), 595.28); assert.equal(page.getHeight(), 841.89); }
   const text = pages.map(contents).join('\n');
-  for (const label of ['FIN-MESSAGE-INTEGRAL', 'LFQQ', 'NON V', 'Graphique indisponible', '118.550', 'UTC', 'indisponible']) assert.ok(hasAscii(text, label), label);
+  for (const label of ['FIN-MESSAGE-INTEGRAL', 'LFQQ', 'NOTAM', 'Graphique indisponible', '118.550', 'UTC', 'indisponible']) assert.ok(hasAscii(text, label), label);
   pages.forEach((page, index) => assert.ok(hasAscii(contents(page), `${index + 1} / ${pages.length}`)));
   assert.ok(hasAscii(contents(pages.at(-1)), 'Carte -')); // Dedicated final map page.
 });

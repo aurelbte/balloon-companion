@@ -122,26 +122,48 @@ class DossierLayout {
   }
 }
 
-function uncertainty(reason: string): string {
-  if (reason.includes("REQUIRES_LOCAL_TERRAIN")) return "Conversion AGL/SFC impossible sans terrain local";
-  if (reason.includes("FL_REQUIRES_PRESSURE")) return "FL non comparable à l'AMSL sans référence de pression adaptée";
-  return ({ ACTIVITY_AT_PASSAGE_UNKNOWN: "Activation aux horaires de passage inconnue", ANTIMERIDIAN_UNRESOLVED: "Passage de l'antiméridien non résolu", TRACE_ALTITUDE_INVALID: "Altitude de trace invalide", INVALID_VERTICAL_LIMITS: "Limites verticales incohérentes", HORIZONTAL_BOUNDARY_CONTACT: "Contact avec une limite horizontale", VERTICAL_BOUNDARY_CONTACT: "Contact avec une limite verticale", TRACE_TIMES_INVALID: "Horaires de trace invalides", VARIABLE_FLOOR_UNRESOLVED: "Plancher variable non résolu", VARIABLE_CEILING_UNRESOLVED: "Plafond variable non résolu" }[reason] ?? `Incertitude source : ${reason}`);
+/** Presentation-only deduplication; the detection result and original vertical labels remain intact. */
+export function franceDossierAirspaceRows(airspaces: { confirmed: DossierAirspacePassage[]; uncertain: DossierAirspacePassage[] } | undefined): string[][] {
+  const zones = new Map<string, { name: string; uncertain: boolean; floors: Set<string>; ceilings: Set<string>; frequencies: Set<string> }>();
+  const entries = [...(airspaces?.confirmed ?? []).map((item) => ({ item, uncertain: false })), ...(airspaces?.uncertain ?? []).map((item) => ({ item, uncertain: true }))];
+  entries.forEach(({ item, uncertain }, index) => {
+    const p = item.airspace;
+    // Without a stable identifier, keep entries separate rather than merge distinct zones by name.
+    const key = p.airspaceCompositeKey || p.airspaceId || p.id || `unidentified-${index}`;
+    const zone = zones.get(key) ?? { name: p.name || "Zone sans nom", uncertain: false, floors: new Set<string>(), ceilings: new Set<string>(), frequencies: new Set<string>() };
+    zone.uncertain ||= uncertain || item.spatialStatus === "UNCERTAIN";
+    zone.floors.add(item.floor.displayLabel || "Non disponible");
+    zone.ceilings.add(item.ceiling.displayLabel || "Non disponible");
+    for (const frequency of item.frequencies.values) {
+      const value = frequency.value?.trim();
+      if (value) zone.frequencies.add(value);
+    }
+    zones.set(key, zone);
+  });
+  return [...zones.values()].map((zone) => [zone.name + (zone.uncertain ? " *" : ""), [...zone.floors].join(" / "), [...zone.ceilings].join(" / "), [...zone.frequencies].join(" / ") || "Non disponible"]);
 }
 
-function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, date: (value: string | null | undefined) => string) {
-  layout.ensure(85);
-  layout.paragraph(`${item.airspace.name} | Classe ${item.airspace.icaoClassLabel || absent}`, { bold: true, size: 11 });
-  layout.paragraph(`${item.airspace.typeLabel || absent} | Plancher : ${item.floor.displayLabel} | Plafond : ${item.ceiling.displayLabel}`);
-  layout.paragraph(`Intersection : ${item.spatialStatus === "INTERSECTS_3D" ? "3D sur la trajectoire prévue" : "possible / verticale incertaine"}. Activité : indéterminée.`);
-  layout.table(["Entrée locale / UTC", "Sortie locale / UTC", "Altitude entrée / sortie (m AMSL)", "Qualification"], [127, 127, 130, WIDTH - 384], item.passages.map((passage) => [date(passage.entryAt), date(passage.exitAt), `${number(passage.entryAltitudeAmslM)} / ${number(passage.exitAltitudeAmslM)}`, passage.spatialStatus === "INTERSECTS" ? "Intersection 3D" : "Incertaine"]));
-  layout.paragraph(`Fréquences OpenAIP - NON VÉRIFIÉES AIP. ${item.frequencies.notice}`, { bold: true });
-  if (!item.frequencies.values.length) layout.paragraph(`Fréquence : ${absent}`);
-  item.frequencies.values.forEach((frequency) => layout.paragraph(`${frequency.name || "Station non précisée"} : ${frequency.value || absent}${frequency.primary ? " (principale selon la source)" : ""}${frequency.remarks ? ` ; ${frequency.remarks}` : ""}`));
-  const activity = item.activity.published;
-  layout.paragraph(`Activité publiée : ${activity.activity ?? absent} (code source OpenAIP). Début : ${activity.activeFrom ?? absent} ; fin : ${activity.activeUntil ?? absent}.`);
-  const flag = (value: boolean | null) => value === null || value === undefined ? absent : value ? "oui" : "non";
-  layout.paragraph(`Par NOTAM : ${flag(activity.byNotam)} ; à la demande : ${flag(activity.onDemand)} ; sur requête : ${flag(activity.onRequest)}. ${item.activity.notice}`);
-  [...new Set([...item.reasons, ...item.passages.flatMap((passage) => passage.reasons)])].forEach((reason) => layout.paragraph(`Incertitude : ${uncertainty(reason)}`, { muted: true }));
+function franceAirspaceSection(layout: DossierLayout, airspaces: Parameters<typeof franceDossierAirspaceRows>[0]) {
+  const rows = franceDossierAirspaceRows(airspaces);
+  const headers = ["Zone", "Plancher", "Plafond", "Fréquence"];
+  const widths = [205, 100, 100, WIDTH - 405];
+  const note = "Données OpenAIP à vérifier dans les publications officielles et NOTAM.";
+  const legend = rows.some((row) => row[0].endsWith(" *")) ? "* Zone incertaine : traversée non confirmée." : null;
+  const empty = airspaces ? "Aucune zone identifiée dans les données disponibles ; couverture non exhaustive." : "Espaces aériens : Non disponible.";
+  // Same font, wrapping, leading and padding as DossierLayout.table. Preflight the complete block.
+  const lineCount = (value: string, column: number, bold = false) => wrapDossierText(value, bold ? layout.bold : layout.font, 8.2, widths[column] - 6).length;
+  const tableHeight = rows.length ? Math.max(...headers.map((value, column) => lineCount(value, column, true))) * 10.5 + 6
+    + rows.reduce((height, row) => height + Math.max(...row.map((value, column) => lineCount(value, column))) * 10.5 + 6, 0) + 7 : 0;
+  const paragraphHeight = (value: string) => wrapDossierText(value, layout.font, 8.2, WIDTH).length * 8.2 * 1.25 + 3;
+  const height = Math.max(65, 28 + tableHeight + paragraphHeight(note) + (legend ? paragraphHeight(legend) : 0) + (!rows.length ? paragraphHeight(empty) : 0));
+  if (height > A4[1] - 84 - BOTTOM) throw new Error(`Export PDF France impossible : les ${rows.length} zones uniques ne tiennent pas sur une page lisible. Aucune zone n'a été retirée ; le PDF n'a pas été exporté.`);
+  layout.section = "Espaces traversés et possibles";
+  layout.ensure(height);
+  layout.heading("Espaces traversés et possibles");
+  if (rows.length) layout.table(headers, widths, rows);
+  else layout.paragraph(empty, { size: 8.2 });
+  if (legend) layout.paragraph(legend, { size: 8.2, muted: true });
+  layout.paragraph(note, { size: 8.2, muted: true });
 }
 
 /** France presentation only: the shared acquisition remains unchanged for Morocco. */
@@ -335,20 +357,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     } else layout.paragraph(`Graphique indisponible. ${curve.notice}`);
   }
 
-  layout.heading("Espaces traversés et possibles");
-  const airspaces = dossier.operations?.airspaces;
-  layout.paragraph("Source : OpenAIP. Les fréquences ne sont jamais présentées comme vérifiées AIP.", { bold: true });
-  if (!airspaces) layout.paragraph("Espaces aériens : données indisponibles.");
-  else {
-    airspaces.notices.forEach((notice) => layout.paragraph(notice));
-    layout.paragraph(`Traversées confirmées : ${airspaces.confirmed.length}`, { bold: true, size: 12 });
-    if (!airspaces.confirmed.length) layout.paragraph("Aucune traversée active confirmée par les données disponibles ; cela ne signifie pas absence d'espaces.");
-    airspaces.confirmed.forEach((item) => airspaceSection(layout, item, date));
-    layout.paragraph(`Intersections possibles ou activité incertaine : ${airspaces.uncertain.length}`, { bold: true, size: 12 });
-    if (!airspaces.uncertain.length) layout.paragraph("Aucun espace identifié dans la couverture disponible. Exhaustivité du trajet non démontrée.");
-    airspaces.uncertain.forEach((item) => airspaceSection(layout, item, date));
-    if (airspaces.invalidSegments) layout.paragraph(`Segments avec horaires invalides : ${airspaces.invalidSegments}.`);
-  }
+  franceAirspaceSection(layout, dossier.operations?.airspaces);
 
   layout.heading("Carte - Stratégie sélectionnée", true);
   layout.paragraph(`${dossier.strategyLabel || dossier.traceId} | D : départ / A : arrivée prévue. Nord en haut.`, { size: 9 });
