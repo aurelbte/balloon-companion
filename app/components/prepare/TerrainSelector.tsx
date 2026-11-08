@@ -191,6 +191,7 @@ export default function TerrainSelector({
 
       {mapDraft && (
         <LaunchPointMapDialog
+          allowBaseMapSelection
           initialPoint={mapDraft.point}
           title={mapDraft.favorite?.name ?? proposeFavoriteDisplayName(mapDraft.point)}
           instruction="Déplacez le point sur le lieu exact de décollage"

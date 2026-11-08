@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Check, LocateFixed, Navigation, X } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { LAUNCH_SATELLITE_LAYER, LAUNCH_SATELLITE_SOURCE, launchSatelliteSource, setLaunchPointBaseMap, type LaunchPointBaseMap } from "../../lib/launchPointBaseMap";
 import type { GeocodingResult } from "../../lib/trajectory/integration";
 
 type LaunchPointMapDialogProps = {
   initialPoint: GeocodingResult;
   onCancel: () => void;
   onConfirm: (point: GeocodingResult) => void;
+  allowBaseMapSelection?: boolean;
   title?: string;
   instruction?: string;
   confirmLabel?: string;
@@ -19,10 +22,15 @@ export default function LaunchPointMapDialog({
   initialPoint,
   onCancel,
   onConfirm,
+  allowBaseMapSelection = false,
   title = "Point de décollage",
   instruction = "Touchez la carte ou déplacez le marqueur",
   confirmLabel = "Valider ce point",
 }: LaunchPointMapDialogProps) {
+  const mapTilerKey = allowBaseMapSelection ? (process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim() ?? "") : "";
+  const [baseMap, setBaseMap] = useState<LaunchPointBaseMap>("plan");
+  const baseMapRef = useRef<LaunchPointBaseMap>("plan");
+  const [satelliteError, setSatelliteError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -71,15 +79,39 @@ export default function LaunchPointMapDialog({
       updateCoordinates(event.lngLat.lng, event.lngLat.lat);
     });
     mapRef.current = map;
+    const satelliteSource = launchSatelliteSource(mapTilerKey);
+    const restorePlan = () => {
+      if (baseMapRef.current !== "satellite") return;
+      baseMapRef.current = setLaunchPointBaseMap(map, "plan");
+      setBaseMap("plan");
+      setSatelliteError("Satellite indisponible : fond Plan restauré.");
+    };
+    map.on("load", () => {
+      if (!satelliteSource) return;
+      map.addSource(LAUNCH_SATELLITE_SOURCE, satelliteSource);
+      map.addLayer({ id: LAUNCH_SATELLITE_LAYER, type: "raster", source: LAUNCH_SATELLITE_SOURCE, layout: { visibility: "none" } });
+      setLaunchPointBaseMap(map, baseMapRef.current);
+    });
+    map.on("error", (event) => {
+      if (("sourceId" in event && event.sourceId === LAUNCH_SATELLITE_SOURCE) || event.error.message.includes("api.maptiler.com")) restorePlan();
+    });
     return () => {
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
     };
-  }, [initialPoint.latitude, initialPoint.longitude]);
+  }, [initialPoint.latitude, initialPoint.longitude, mapTilerKey]);
+
+  const selectBaseMap = (selected: LaunchPointBaseMap) => {
+    if (selected === "satellite" && (!mapTilerKey || satelliteError)) return;
+    baseMapRef.current = selected;
+    const map = mapRef.current;
+    if (map?.getLayer("plan-base") && map.getLayer(LAUNCH_SATELLITE_LAYER)) setLaunchPointBaseMap(map, selected);
+    setBaseMap(selected);
+  };
 
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col bg-[var(--bc-color-canvas)]">
+    <div className={`fixed inset-0 ${allowBaseMapSelection ? "z-[110]" : "z-[90]"} flex flex-col bg-[var(--bc-color-canvas)]`}>
       <header
         className="flex items-center justify-between border-b px-3 pb-2 pt-[max(8px,env(safe-area-inset-top))]"
         style={{ borderColor: "var(--bc-border)" }}
@@ -104,8 +136,20 @@ export default function LaunchPointMapDialog({
         <span className="h-11 w-11" />
       </header>
 
+      {allowBaseMapSelection && <div className="shrink-0 border-b px-3 py-2" style={{ borderColor: "var(--bc-border)" }}>
+        <fieldset className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+          <legend className="sr-only">Fond de carte du terrain favori</legend>
+          {(["plan", "satellite"] as const).map((value) => <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm ${value === "satellite" && (!mapTilerKey || satelliteError) ? "opacity-50" : ""}`} style={{ borderColor: baseMap === value ? "var(--bc-accent)" : "var(--bc-border)" }}>
+            <input type="radio" name="favorite-launch-base-map" value={value} checked={baseMap === value} disabled={value === "satellite" && (!mapTilerKey || Boolean(satelliteError))} onChange={() => selectBaseMap(value)} className="h-4 w-4 accent-[var(--bc-accent)]" />
+            {value === "plan" ? "Plan" : "Satellite"}
+          </label>)}
+        </fieldset>
+        {(!mapTilerKey || satelliteError) && <p role="status" className="mt-1 text-center text-xs" style={{ color: "var(--bc-color-text-muted)" }}>{satelliteError ?? "Fond satellite non configuré."}</p>}
+      </div>}
+
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
+        {baseMap === "satellite" && <a href="https://www.maptiler.com/" target="_blank" rel="noreferrer" className="absolute bottom-8 left-2 z-10 rounded bg-white/90 p-1" aria-label="MapTiler"><Image unoptimized src="https://api.maptiler.com/resources/logo.svg" alt="MapTiler" width={88} height={22} /></a>}
         <div className="absolute right-3 top-3 z-10 grid gap-2">
           <button type="button" onClick={() => mapRef.current?.easeTo({ center: [coordinates.longitude, coordinates.latitude], zoom: Math.max(mapRef.current.getZoom(), 14), duration: 250 })} className="grid h-11 w-11 place-items-center rounded-full border bg-[var(--bc-color-canvas-elevated)]" style={{ borderColor: "var(--bc-border)" }} aria-label="Recentrer sur le point choisi"><Navigation size={18} /></button>
           <button type="button" onClick={() => navigator.geolocation?.getCurrentPosition((position) => { const next = { latitude: position.coords.latitude, longitude: position.coords.longitude }; setCoordinates(next); markerRef.current?.setLngLat([next.longitude, next.latitude]); mapRef.current?.easeTo({ center: [next.longitude, next.latitude], zoom: 15, duration: 250 }); })} className="grid h-11 w-11 place-items-center rounded-full border bg-[var(--bc-color-canvas-elevated)]" style={{ borderColor: "var(--bc-border)" }} aria-label="Utiliser ma position"><LocateFixed size={18} /></button>
