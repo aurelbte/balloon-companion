@@ -144,6 +144,40 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, da
   [...new Set([...item.reasons, ...item.passages.flatMap((passage) => passage.reasons)])].forEach((reason) => layout.paragraph(`Incertitude : ${uncertainty(reason)}`, { muted: true }));
 }
 
+/** France presentation only: the shared acquisition remains unchanged for Morocco. */
+export function franceDossierWeatherWindow(dossier: Pick<FlightDossierData, "startedAt" | "durationSeconds">) {
+  const departure = Date.parse(dossier.startedAt);
+  const landing = departure + dossier.durationSeconds * 1000;
+  if (!Number.isFinite(landing) || !Number.isFinite(dossier.durationSeconds) || dossier.durationSeconds <= 0) throw new Error("Horaires prévus du vol invalides.");
+  const start = departure - 3_600_000, end = landing + 3_600_000;
+  const expectedHours: string[] = [];
+  for (let time = Math.ceil(start / 3_600_000) * 3_600_000; time <= end; time += 3_600_000) expectedHours.push(new Date(time).toISOString());
+  return { startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), landingAt: new Date(landing).toISOString(), expectedHours,
+    contains: (value: string) => Number.isFinite(Date.parse(value)) && Date.parse(value) >= start && Date.parse(value) <= end };
+}
+
+/** Nearest ground forecast within 30 minutes, at the final position; ties use the earlier hour. */
+export function franceDossierLandingConditions(dossier: FlightDossierData, weather: FlightDossierWeather | null) {
+  const { landingAt } = franceDossierWeatherWindow(dossier);
+  const position = dossier.points.at(-1)!;
+  const ground = weather?.landingGroundWind;
+  const groundMatches = weather?.traceId === dossier.traceId && weather?.weatherModel === dossier.model.providerModelId && ground?.requestedLocation.latitude === position.latitude && ground?.requestedLocation.longitude === position.longitude;
+  let reason: string | null = null;
+  if (!weather || !ground) reason = "Prévisions géolocalisées au sol absentes.";
+  else if (weather.traceId !== dossier.traceId || weather.weatherModel !== dossier.model.providerModelId) reason = "Prévisions incompatibles avec la trajectoire ou le modèle sélectionné.";
+  else if (ground.requestedLocation.latitude !== position.latitude || ground.requestedLocation.longitude !== position.longitude) reason = "Prévisions au sol demandées pour une autre position que le point final.";
+  else if (ground.error || ground.status === "UNAVAILABLE") reason = ground.error || "Prévisions au sol indisponibles.";
+  const arrivalTime = Date.parse(landingAt);
+  const points = reason ? [] : ground!.points.filter((point) => point.heightAglM === 10
+    && Math.abs(Date.parse(point.validAt) - arrivalTime) <= 30 * 60_000
+    && [point.directionFromDeg, point.speedKmh, point.gustKmh].some((value) => value != null && Number.isFinite(value)))
+    .sort((a, b) => Math.abs(Date.parse(a.validAt) - arrivalTime) - Math.abs(Date.parse(b.validAt) - arrivalTime) || Date.parse(a.validAt) - Date.parse(b.validAt));
+  if (!reason && !points.length) reason = "Aucune prévision au sol disponible à 30 minutes ou moins de l'arrivée.";
+  if (!reason && points.length > 1 && Date.parse(points[0].validAt) === Date.parse(points[1].validAt)) reason = "Plusieurs prévisions au sol pour la même échéance.";
+  const point = reason ? null : points[0];
+  return { landingAt, position, point, offsetMinutes: point ? (Date.parse(point.validAt) - arrivalTime) / 60_000 : null, ground: groundMatches ? ground : undefined, reason };
+}
+
 export async function createFlightDossierPdf(input: DossierPdfInput, map: DossierPdfMap): Promise<Uint8Array> {
   const { dossier, weather } = input;
   const date = (value: string | null | undefined) => dossierLocalTime(value, dossier.launchTimeZone, true);
@@ -158,12 +192,13 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
   document.setSubject(`Stratégie ${dossier.traceId} - ${dossier.model.providerModelId}`);
   const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold));
   const first = dossier.points[0], last = dossier.points.at(-1)!;
+  const weatherWindow = franceDossierWeatherWindow(dossier);
   const coordinates = (point: typeof first) => `${number(point.latitude, 6)}, ${number(point.longitude, 6)}`;
   layout.heading("Dossier de vol");
   layout.paragraph(dossier.launchSiteName || "Terrain indisponible", { bold: true, size: 15 });
   layout.table(["Informations", "Valeur"], [155, WIDTH - 155], [
     ["Terrain de départ", dossier.launchSiteName || absent], ["Coordonnées départ", coordinates(first)], ["Coordonnées arrivée prévue", coordinates(last)],
-    ["Décollage prévu", dossierLocalTime(dossier.startedAt, dossier.launchTimeZone)], ["Atterrissage prévu", dossierLocalTime(dossier.landingAt, dossier.launchTimeZone)], ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`],
+    ["Décollage prévu", dossierLocalTime(dossier.startedAt, dossier.launchTimeZone)], ["Atterrissage prévu", dossierLocalTime(weatherWindow.landingAt, dossier.launchTimeZone)], ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`],
     ["Fuseau du terrain", dossier.launchTimeZone || absent], ["Ballon", `${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`],
     ["Modèle météo sélectionné", `${dossier.model.label} (${dossier.model.providerModelId})`], ["Stratégie", dossier.strategyLabel || absent], ["Identifiant de trace", dossier.traceId],
     ["Points horodatés", String(dossier.points.length)], ["Généré le", date(input.generatedAt ?? new Date().toISOString())],
@@ -186,7 +221,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
   }
 
   layout.heading("Vents - Modèle sélectionné");
-  layout.paragraph(`${dossier.model.label} (${dossier.model.providerModelId}). Fenêtre demandée : ${date(new Date(Date.parse(dossier.startedAt) - 7_200_000).toISOString())} -> ${date(new Date(Date.parse(dossier.landingAt) + 7_200_000).toISOString())}.`);
+  layout.paragraph(`${dossier.model.label} (${dossier.model.providerModelId}). Fenêtre demandée : ${date(weatherWindow.startAt)} -> ${date(weatherWindow.endAt)}.`);
   layout.paragraph("Direction de provenance en degrés vrais. Aucune interpolation, extrapolation ou substitution de modèle. Les heures indiquées sont les échéances réelles ; les lignes indisponibles signalent les échéances horaires attendues absentes.");
   if (!weather) layout.paragraph(`Vents en altitude et à 10 m : indisponibles sur toute la fenêtre. ${input.weatherError || ""}`);
   else {
@@ -196,7 +231,7 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
     layout.paragraph(`Maille source départ : ${altitude.sourceLocation ? `${number(altitude.sourceLocation.latitude, 5)}, ${number(altitude.sourceLocation.longitude, 5)}` : absent}.`, { size: 8, muted: true });
     if (altitude.error) layout.paragraph(altitude.error);
     layout.paragraph(`Vent en ${unit}. Altitudes AMSL ; niveaux source AGL / pression conservés. - : donnée indisponible. Rafales en altitude : indisponibles.`, { muted: true });
-    const times = [...new Set([...weather.window.expectedHours, ...altitude.points.map((point) => point.validAt)])].sort((a, b) => Date.parse(a) - Date.parse(b));
+    const times = [...new Set([...weatherWindow.expectedHours, ...altitude.points.map((point) => point.validAt).filter(weatherWindow.contains)])].sort((a, b) => Date.parse(a) - Date.parse(b));
     for (const time of times) {
       const points = altitude.points.filter((point) => Date.parse(point.validAt) === Date.parse(time));
       layout.ensure(Math.min(600, 65 + Math.max(0, ...points.map((point) => point.levels.length)) * 17));
@@ -213,17 +248,44 @@ export async function createFlightDossierPdf(input: DossierPdfInput, map: Dossie
       }
     }
     const ground = weather.landingGroundWind;
+    const groundPoints = ground.requestedLocation.latitude === last.latitude && ground.requestedLocation.longitude === last.longitude
+      ? ground.points.filter((point) => weatherWindow.contains(point.validAt)) : [];
     layout.paragraph(`Vent à 10 m AGL à l'arrivée | ${status(ground.status)} | Récupéré : ${date(ground.fetchedAt)} | Run : ${date(ground.modelRunAt)}`, { bold: true });
     layout.paragraph(`Maille source arrivée : ${ground.sourceLocation ? `${number(ground.sourceLocation.latitude, 5)}, ${number(ground.sourceLocation.longitude, 5)}` : absent}.`, { size: 8, muted: true });
     if (ground.error) layout.paragraph(ground.error);
-    const groundTimes = [...new Set([...weather.window.expectedHours, ...ground.points.map((point) => point.validAt)])].sort((a, b) => Date.parse(a) - Date.parse(b));
+    const groundTimes = [...new Set([...weatherWindow.expectedHours, ...groundPoints.map((point) => point.validAt)])].sort((a, b) => Date.parse(a) - Date.parse(b));
     layout.table(["Échéance locale / UTC", "Direction (°)", `Vent (${unit})`, `Rafales (${unit})`, "Qualité"], [190, 65, 70, 70, WIDTH - 395], groundTimes.flatMap((time) => {
-      const points = ground.points.filter((point) => Date.parse(point.validAt) === Date.parse(time));
+      const points = groundPoints.filter((point) => Date.parse(point.validAt) === Date.parse(time));
       return points.length ? points.map((point) => [date(point.validAt), point.directionFromDeg == null ? "-" : number(point.directionFromDeg), wind(point.speedKmh, "km/h"), wind(point.gustKmh, "km/h"), dossierArrivalWindWarning(point) ? "À vérifier *" : point.unavailableFields.length ? "Incomplet" : "Source"]) : [[date(time), "-", "-", "-", "Absente"]];
     }));
-    if (ground.points.some((point) => dossierArrivalWindWarning(point))) layout.paragraph(`* ${dossierArrivalWindWarning(ground.points.find((point) => dossierArrivalWindWarning(point))!)}`, { bold: true });
+    if (groundPoints.some((point) => dossierArrivalWindWarning(point))) layout.paragraph(`* ${dossierArrivalWindWarning(groundPoints.find((point) => dossierArrivalWindWarning(point))!)}`, { bold: true });
 
   }
+
+  layout.ensure(200);
+  layout.heading("Conditions à l'atterrissage");
+  const arrival = franceDossierLandingConditions(dossier, weather);
+  const missing = "Non disponible";
+  const groundValue = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? missing : number(value);
+  layout.table(["Arrivée prévue", "Valeur"], [155, WIDTH - 155], [
+    ["Position GPS estimée", coordinates(arrival.position)],
+    ["Heure prévue d'arrivée", dossierLocalTime(arrival.landingAt, dossier.launchTimeZone)],
+    ["Direction au sol (° vrais)", groundValue(arrival.point?.directionFromDeg)],
+    ["Vent au sol à 10 m (km/h)", groundValue(arrival.point?.speedKmh)],
+    ["Rafales au sol (km/h)", groundValue(arrival.point?.gustKmh)],
+    ["Modèle météo demandé", `${dossier.model.label} (${dossier.model.providerModelId})`],
+    ["Échéance météo / décalage", arrival.point && arrival.offsetMinutes != null ? `${date(arrival.point.validAt)} ; ${arrival.offsetMinutes > 0 ? "+" : ""}${number(arrival.offsetMinutes, 2)} min (validité - arrivée)` : missing],
+    ["Données récupérées le", arrival.ground?.fetchedAt ? date(arrival.ground.fetchedAt) : missing],
+    ["Run du modèle", arrival.ground?.modelRunAt ? date(arrival.ground.modelRunAt) : missing],
+  ]);
+  const retrieved = Date.parse(arrival.ground?.fetchedAt ?? "");
+  const generated = Date.parse(input.generatedAt ?? new Date().toISOString());
+  layout.paragraph(Number.isFinite(retrieved) && Number.isFinite(generated) && generated >= retrieved
+    ? `Fraîcheur : récupération il y a ${number((generated - retrieved) / 60_000, 0)} min à la génération du PDF. L'âge du run n'est pas fourni par le service.`
+    : `Fraîcheur depuis récupération : ${missing}. L'âge du run n'est pas fourni par le service.`, { muted: true });
+  if (arrival.reason) layout.paragraph(`${missing} : ${arrival.reason}`, { bold: true });
+  if (arrival.ground?.sourceLocation) layout.paragraph(`Maille source arrivée : ${number(arrival.ground.sourceLocation.latitude, 5)}, ${number(arrival.ground.sourceLocation.longitude, 5)}. Source : Open-Meteo.`, { muted: true });
+  if (arrival.point && dossierArrivalWindWarning(arrival.point)) layout.paragraph(dossierArrivalWindWarning(arrival.point)!, { bold: true });
 
   layout.ensure(210);
   layout.heading("Charge et référence constructeur");

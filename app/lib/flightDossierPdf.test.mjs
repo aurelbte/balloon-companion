@@ -136,13 +136,13 @@ test('PDF always uses km/h, converts altitude once and preserves ground values, 
   for (const preference of ['kt', 'm/s', undefined]) {
     const input = await dossierPdfFixture();
     input.windUnit = preference; // A stale caller preference must have no effect on the PDF convention.
-    input.weather.altitudeWind.points[0].levels[0].windSpeedMps = 5;
-    Object.assign(input.weather.landingGroundWind.points[0], { speedKmh: 5.2, gustKmh: 4.7, directionFromDeg: 241 });
+    input.weather.altitudeWind.points[1].levels[0].windSpeedMps = 5;
+    Object.assign(input.weather.landingGroundWind.points[1], { speedKmh: 5.2, gustKmh: 4.7, directionFromDeg: 241 });
     const text = (await PDFDocument.load(await createFlightDossierPdf(input, map))).getPages().map(contents).join('\n');
     for (const label of ['Vent (km/h)', 'Rafales (km/h)', '18', '5,2', '4,7', '241', 'valeurs source', 'Absente']) assert.ok(hasAscii(text, label), label);
     assert.ok(!hasAscii(text, 'Vent (kt)'));
     assert.ok(!hasAscii(text, 'Vent (m/s)'));
-    assert.equal(input.weather.altitudeWind.points[0].levels[0].windSpeedMps, 5);
-    assert.equal(input.weather.landingGroundWind.points[0].speedKmh, 5.2);
+    assert.equal(input.weather.altitudeWind.points[1].levels[0].windSpeedMps, 5);
+    assert.equal(input.weather.landingGroundWind.points[1].speedKmh, 5.2);
   }
 });
