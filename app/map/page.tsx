@@ -542,6 +542,9 @@ export default function MapPage() {
     : null;
   const marginTone = displayedMargin === null ? null : loadMarginTone(displayedMargin);
   const marginColor = marginTone === "positive" ? "#37c978" : marginTone === "caution" ? "#f59e0b" : marginTone === "negative" ? "#ef4444" : "var(--bc-color-text-muted)";
+  const t150Margin = t150Estimate?.remainingKg ?? null;
+  const t150MarginColor = t150Margin !== null && t150Margin > 0 ? "#37c978"
+    : t150Margin !== null && t150Margin < 0 ? "#ef4444" : "var(--bc-color-text-muted)";
   const heightAboveTerrainM = plannedMaximumAltitudeMslM !== undefined && launchElevationMslM !== null
     ? plannedMaximumAltitudeMslM - launchElevationMslM
     : null;
@@ -1038,7 +1041,7 @@ export default function MapPage() {
               {!testLoadEnabled && candidateLoadResult && <span className="mt-0.5 block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
               {t150Estimate && <div className="mt-0.5 leading-tight">
                 <p className="text-[11px] font-semibold">Estimation non validée</p>
-                <p role="status" className="mt-0.5 break-words text-xl font-semibold tracking-tight" aria-label="Marge théorique estimée T150">{t150Estimate.remainingKg === null ? "Non disponible" : `${t150Estimate.remainingKg.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`}</p>
+                <p role="status" className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: t150MarginColor }} aria-label="Marge théorique estimée T150">{t150Margin === null ? "Non disponible" : `${t150Margin > 0 ? "+" : t150Margin < 0 ? "−" : ""}${Math.abs(t150Margin).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`}</p>
                 <p className="text-[10px] text-[var(--bc-color-text-muted)]">Marge théorique · détails au toucher</p>
               </div>}
               {loadEstimate && !t150Estimate && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">Estimation non validée</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{loadEstimate.kind === "VALUES" ? "Valeurs théoriques · toucher" : "Refus · toucher pour le motif"}</p></div>}
