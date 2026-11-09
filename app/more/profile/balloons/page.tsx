@@ -26,8 +26,12 @@ export default function BalloonsPage() {
     {duplicateBalloonRegistrationKeys(registry.balloons).length > 0 && <p role="alert">Plusieurs ballons ont la même immatriculation. Les fiches sont conservées ; vérifiez leurs informations.</p>}
     {registry.balloons.length === 0 && <p className={styles.documentEmpty}>Aucun ballon enregistré</p>}
     <div className={styles.balloonList}>{registry.balloons.map((balloon) => <div key={balloon.id} className={styles.balloonListItem}>
-      <Link className={styles.balloonCard} href={`/more/profile/balloons/${encodeURIComponent(balloon.id)}`}><span><strong>{balloon.registration}</strong><small>{balloon.manufacturer} {catalogModelDisplayName(balloon.manufacturer, balloon.model)}</small><small>{balloon.category}</small>{registry.activeBalloonId === balloon.id && <em>Ballon actif</em>}</span><ChevronRight size={19} /></Link>
-      {registry.activeBalloonId !== balloon.id && <button type="button" className={styles.setActiveBalloon} aria-label={`Définir ${balloon.registration} comme ballon actif`} onClick={() => activate(balloon.id)}>Définir comme actif</button>}
+      <Link className={styles.balloonCard} href={`/more/profile/balloons/${encodeURIComponent(balloon.id)}`}><span><strong>{balloon.registration}</strong><small>{balloon.manufacturer} {catalogModelDisplayName(balloon.manufacturer, balloon.model)}</small><small>{balloon.category}</small></span><ChevronRight size={19} /></Link>
+      <div className={styles.balloonCardAction}>
+        {registry.activeBalloonId === balloon.id
+          ? <p className={styles.activeBalloonStatus}><span aria-hidden="true">✓</span> Ballon actif</p>
+          : <button type="button" className={styles.setActiveBalloon} aria-label={`Définir ${balloon.registration} comme ballon actif`} onClick={() => activate(balloon.id)}>Définir comme actif</button>}
+      </div>
     </div>)}</div>
     <Link className={styles.addBalloon} href="/more/profile/balloons/new"><Plus size={18} /> Ajouter un ballon</Link>
   </div></main>;
