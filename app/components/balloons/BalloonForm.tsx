@@ -1,7 +1,7 @@
 "use client";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { catalogManufacturers, catalogModels, catalogVolume } from "../../lib/balloonCatalog";
+import { catalogManufacturers, catalogModels, catalogVolume, catalogModelDisplayName } from "../../lib/balloonCatalog";
 import { balloonFormSectionDefaults, mtomAfterModelChange, mtomAfterManualChange } from "../../lib/balloonFormPolicy";
 import { balloonMassFormDraft, canSubmitHydratedBalloonForm } from "../../lib/balloonFormHydration";
 import { calculateBalloonWeight, type Balloon, type BalloonCategory, type BalloonInput } from "../../lib/balloons";
@@ -78,6 +78,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
   }, [focusCylinderId]);
   const manufacturer = manufacturerChoice === OTHER ? manualManufacturer.trim() : manufacturerChoice;
   const model = manufacturerChoice === OTHER || modelChoice === OTHER ? manualModel.trim() : modelChoice;
+  const catalogDocumentation = catalogModels(manufacturer).find((item) => item.model === model);
   const mtomCatalogEntry = applicableMtomCatalogEntry(manufacturer, model);
   const hasSeveralApplicableLimits = Boolean(mtomCatalogEntry && (mtomCatalogEntry.options.length > 1 || mtomCatalogEntry.aircraftSpecificReducedLimitPossible));
   const volumeM3 = parseDecimal(volume); const parsedApplicableMtowKg = parseDecimal(applicableMtow); const applicableMtowKg = parsedApplicableMtowKg && parsedApplicableMtowKg > 0 ? parsedApplicableMtowKg : undefined; const envelopeKg = parseDecimal(envelope); const burnerKg = parseDecimal(burner); const basketKg = parseDecimal(basket);
@@ -120,8 +121,10 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
         <label className={styles.balloonFormWide}><span>Immatriculation</span><input autoFocus autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={registration} onChange={(e) => setRegistration(e.target.value.toUpperCase().replace(/\s/g, ""))} /></label>
         <label><span>Fabricant</span><select value={manufacturerChoice} onChange={(e) => chooseManufacturer(e.target.value)}><option value="">Choisir</option>{catalogManufacturers().map((item) => <option key={item}>{item}</option>)}<option value={OTHER}>Autre fabricant</option></select></label>
         {manufacturerChoice === OTHER && <label><span>Fabricant libre</span><input value={manualManufacturer} onChange={(e) => { setManualManufacturer(e.target.value); setConfigurationLimitsConfirmed(false); }} /></label>}
-        {manufacturerChoice && manufacturerChoice !== OTHER && <label><span>Modèle / type</span><select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}><option value="">Choisir</option>{catalogModels(manufacturer).map((item) => <option key={item.model}>{item.model}</option>)}<option value={OTHER}>Autre modèle</option></select></label>}
+        {manufacturerChoice && manufacturerChoice !== OTHER && <label><span>Modèle / type</span><select value={modelChoice} onChange={(e) => chooseModel(e.target.value)}><option value="">Choisir</option>{catalogModels(manufacturer).map((item) => <option key={item.model} value={item.model}>{catalogModelDisplayName(manufacturer, item.model)}{item.legacyUndocumented ? " — ancien, non documenté" : ""}</option>)}<option value={OTHER}>Autre modèle</option></select></label>}
         {(manufacturerChoice === OTHER || modelChoice === OTHER) && <label><span>Modèle / type</span><input value={manualModel} onChange={(e) => { setManualModel(e.target.value); setConfigurationLimitsConfirmed(false); }} /></label>}
+        {catalogDocumentation?.documentation && <p className={styles.balloonFormWide}><small className={styles.catalogHint}>Manuel Cameron, Tables 2 et 5 : {catalogDocumentation.documentation.volumeCuFt.toLocaleString("fr-FR")} ft³ · MTOM standard {catalogDocumentation.documentation.standardMtomKg.toLocaleString("fr-FR")} kg · réduite {catalogDocumentation.documentation.reducedMtomKg.toLocaleString("fr-FR")} kg · MLM {catalogDocumentation.documentation.minimumLandingMassKg === null ? "non indiquée" : `${catalogDocumentation.documentation.minimumLandingMassKg.toLocaleString("fr-FR")} kg`}. Limites applicables selon la configuration et le manuel individuel.</small></p>}
+        {catalogDocumentation?.legacyUndocumented && <p className={styles.balloonFormWide}><small className={styles.catalogHint}>Ancienne référence conservée. Modèle exact non documenté dans la Table 5 de cette édition du manuel ; caractéristiques à vérifier.</small></p>}
         <label className={styles.balloonFormWide}><span>Volume</span><span className={styles.technicalInput}><input inputMode="decimal" value={volume} onChange={(e) => { setVolume(decimalInput(e.target.value)); setVolumeFromCatalog(false); }} /><i>m³</i></span>{volumeFromCatalog && <small className={styles.catalogHint}>Volume issu du catalogue constructeur — modifiable</small>}</label>
       </div>
     </details>

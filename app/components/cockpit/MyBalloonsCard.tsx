@@ -1,4 +1,5 @@
 "use client";
+import { catalogModelDisplayName } from "../../lib/balloonCatalog";
 
 import Link from "next/link";
 import { Balloon as BalloonIcon } from "lucide-react";
@@ -38,7 +39,7 @@ export default function MyBalloonsCard({
         </h2>
         <div className={styles.activeBalloon}>
           <strong>{primary.registration}</strong>
-          <span>{primary.manufacturer} {primary.model}</span>
+          <span>{primary.manufacturer} {catalogModelDisplayName(primary.manufacturer, primary.model)}</span>
         </div>
         <span className={styles.cardAction}>Voir mes ballons →</span>
       </Card>

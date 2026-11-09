@@ -1,4 +1,5 @@
-export type BalloonCatalogModel = { model: string; volumeM3: number };
+import { cameronDocumentedCatalogModels, type CameronCatalogDocumentation } from "./cameronCatalog.ts";
+export type BalloonCatalogModel = { model: string; volumeM3: number; documentation?: CameronCatalogDocumentation; legacyUndocumented?: boolean };
 export type BalloonCatalogManufacturer = {
   manufacturer: string;
   models: readonly BalloonCatalogModel[];
@@ -121,24 +122,20 @@ const kubicekModels: readonly BalloonCatalogModel[] = [
 export const BALLOON_CATALOG: readonly BalloonCatalogManufacturer[] = [
   {
     manufacturer: "Cameron",
-    models: [
-      { model: "Z90", volumeM3: 2_549 },
-      { model: "Z105", volumeM3: 2_973 },
-      { model: "Z120", volumeM3: 3_398 },
-      { model: "Z133", volumeM3: 3_766 },
-      { model: "Z150", volumeM3: 4_247 },
-      { model: "Z160", volumeM3: 4_531 },
-      { model: "Z180", volumeM3: 5_097 },
-      { model: "Z210", volumeM3: 5_947 },
-      { model: "Z250", volumeM3: 7_079 },
-      { model: "Z275", volumeM3: 7_788 },
-      { model: "Z300", volumeM3: 8_495 },
-      { model: "Z350", volumeM3: 9_911 },
-      { model: "Z425", volumeM3: 12_035 },
-    ],
+    models: (() => {
+      const oldKeys = ["Z90", "Z105", "Z120", "Z133", "Z150", "Z160", "Z180", "Z210", "Z250", "Z275", "Z300", "Z350", "Z425"];
+      const legacy: readonly BalloonCatalogModel[] = [
+        { model: "Z300", volumeM3: 8495, legacyUndocumented: true },
+        { model: "Z425", volumeM3: 12035, legacyUndocumented: true },
+      ];
+      return [
+        ...oldKeys.map((key) => cameronDocumentedCatalogModels.find(({ model }) => model === key) ?? legacy.find(({ model }) => model === key)!),
+        ...cameronDocumentedCatalogModels.filter(({ model }) => !oldKeys.includes(model)),
+      ];
+    })(),
     source: {
-      label: "Cameron Balloons — gamme Z-Type constructeur",
-      url: "https://www.cameronballoons.co.uk/z-type",
+      label: "Cameron Flight Manual — Issue 10 Amendment 18, Tables 2 et 5",
+      url: "https://www.cameronballoons.co.uk/c/download/Hot-Air-Balloon-Flight-Manual-Amendment-18.pdf",
     },
   },
   {
@@ -169,4 +166,13 @@ export function catalogModels(manufacturer: string): readonly BalloonCatalogMode
 
 export function catalogVolume(manufacturer: string, model: string): number | null {
   return catalogModels(manufacturer).find((item) => item.model === model)?.volumeM3 ?? null;
+}
+
+/** Display only. Values submitted to forms, stored profiles and calculations stay unchanged. */
+export function catalogModelDisplayName(manufacturer: string, model: string): string {
+  return manufacturer.trim().toLowerCase() === "cameron" ? model.replace(/^Z-?(?=\d)/i, "") : model;
+}
+
+export function balloonUiDisplayName(balloon: { registration: string; manufacturer: string; model: string }): string {
+  return `${balloon.registration} • ${balloon.manufacturer} ${catalogModelDisplayName(balloon.manufacturer, balloon.model)}`;
 }

@@ -1,4 +1,5 @@
 "use client";
+import { catalogModelDisplayName, balloonUiDisplayName as balloonDisplayName } from "../../../../lib/balloonCatalog";
 
 import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Scale, ShieldCheck, Tag } from "lucide-react";
 import Link from "next/link";
@@ -6,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import BalloonDocumentsCard from "../../../../components/balloons/BalloonDocumentsCard";
 import { useBalloonRegistry } from "../../../../hooks/useBalloons";
 import { balloonDocumentStorage } from "../../../../lib/balloonDocumentStorage";
-import { balloonDisplayName, calculateBalloonEmptyWeight } from "../../../../lib/balloons";
+import { calculateBalloonEmptyWeight } from "../../../../lib/balloons";
 import { deleteBalloon } from "../../../../lib/balloonStorage";
 import styles from "../../../More.module.css";
 
@@ -41,12 +42,12 @@ export default function BalloonDetailPage() {
   return <main className={`${styles.screen} ${styles.balloonDetailScreen}`}><div className={`${styles.layout} ${styles.balloonDetailLayout}`}>
     <Link href="/more/profile/balloons" className={styles.back}><ChevronLeft size={18} /> Mes ballons</Link>
     <header className={styles.balloonDetailHeader}>
-      <div><h1 className={styles.balloonRegistration}>{balloon.registration}</h1><p>{balloon.manufacturer} {balloon.model}</p>{registry.activeBalloonId === balloon.id && <span className={styles.activeBalloonBadge}>Ballon actif</span>}</div>
+      <div><h1 className={styles.balloonRegistration}>{balloon.registration}</h1><p>{balloon.manufacturer} {catalogModelDisplayName(balloon.manufacturer, balloon.model)}</p>{registry.activeBalloonId === balloon.id && <span className={styles.activeBalloonBadge}>Ballon actif</span>}</div>
       <details className={styles.balloonOverflowMenu}><summary aria-label="Actions secondaires"><MoreHorizontal size={20} /></summary><div><button type="button" onClick={() => void removeBalloon()}>Supprimer le ballon</button></div></details>
     </header>
 
     <section className={styles.balloonSummaryGrid} aria-label="Synthèse du ballon">
-      <Link href={editHref} className={styles.balloonSummaryCard}><Tag size={18} /><span><strong>Identité</strong><b>{balloon.manufacturer} {balloon.model}</b><small>{balloon.volumeM3.toLocaleString("fr-FR")} m³</small></span><ChevronRight size={16} /></Link>
+      <Link href={editHref} className={styles.balloonSummaryCard}><Tag size={18} /><span><strong>Identité</strong><b>{balloon.manufacturer} {catalogModelDisplayName(balloon.manufacturer, balloon.model)}</b><small>{balloon.volumeM3.toLocaleString("fr-FR")} m³</small></span><ChevronRight size={16} /></Link>
       <Link href={editHref} className={styles.balloonSummaryCard}><Scale size={18} /><span><strong>Masse équipée</strong><b>{total === null ? "— kg" : `${total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`}</b><small>{cylinders} cylindre{cylinders > 1 ? "s" : ""}</small></span><ChevronRight size={16} /></Link>
       <Link href={editHref} className={styles.balloonSummaryCard}><ShieldCheck size={18} /><span><strong>Limites</strong><b>{balloon.applicableMtowKg === undefined ? "MTOM —" : `MTOM ${balloon.applicableMtowKg.toLocaleString("fr-FR")} kg`}</b><small>{balloon.configurationLimitsConfirmed ? "Confirmées" : "À confirmer"}</small></span><ChevronRight size={16} /></Link>
       <BalloonDocumentsCard balloonId={balloon.id} />

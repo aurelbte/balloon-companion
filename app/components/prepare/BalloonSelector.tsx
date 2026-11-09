@@ -1,4 +1,5 @@
 "use client";
+import { catalogModelDisplayName } from "../../lib/balloonCatalog";
 
 import { Balloon, ChevronDown } from "lucide-react";
 import type { Balloon as BalloonRecord } from "../../lib/balloons";
@@ -59,7 +60,7 @@ export default function BalloonSelector({
               style={{ color: "var(--bc-color-text-secondary)" }}
             >
               {selected
-                ? `${selected.manufacturer} ${selected.model}`
+                ? `${selected.manufacturer} ${catalogModelDisplayName(selected.manufacturer, selected.model)}`
                 : "Sélection facultative"}
             </span>
           </span>
@@ -76,7 +77,7 @@ export default function BalloonSelector({
             <option value="">Non renseigné</option>
             {balloons.map((balloon) => (
               <option key={balloon.id} value={balloon.id}>
-                {balloon.registration} — {balloon.manufacturer} {balloon.model}
+                {balloon.registration} — {balloon.manufacturer} {catalogModelDisplayName(balloon.manufacturer, balloon.model)}
               </option>
             ))}
           </select>
