@@ -11,8 +11,6 @@ export type T150CapacityConfiguration = {
   basketCarriedKg?: number;
   buildMtomKg?: number;
   buildLmaxKg?: number;
-  baggageKg?: number;
-  accessoriesKg?: number;
   landingMassKg?: number;
   reducedMtomDocumented?: boolean;
 };
@@ -33,7 +31,7 @@ const nonnegative = (value: number | undefined): value is number => finite(value
 const positive = (value: number | undefined): value is number => finite(value) && value > 0;
 
 /** /map T150 only. Reuses the existing candidate lift; never changes official routing or evidence. */
-export function estimateT150RemainingCapacity(input: LoadCalculationInput, weights: BalloonWeights, configuration: T150CapacityConfiguration): T150CapacityEstimate | null {
+export function estimateT150RemainingCapacity(input: LoadCalculationInput, weights: BalloonWeights, configuration: T150CapacityConfiguration = {}): T150CapacityEstimate | null {
   if (normalizeLoadIdentifier(input.manufacturer) !== "ULTRAMAGIC" || normalizeLoadIdentifier(input.model) !== "T150") return null;
   const minimum = fm04MinimumTom("T150");
   if (minimum?.state !== "NUMERIC") throw new Error("Minimum TOM T150 absent des règles FM04.");
@@ -50,10 +48,10 @@ export function estimateT150RemainingCapacity(input: LoadCalculationInput, weigh
   if (equipment === null || !Number.isFinite(equipment) || equipment !== input.balloonEquipmentWeightKg) result.issues.push("Masses réelles des composants manquantes ou incohérentes avec le ballon équipé.");
   if (weights.fullCylinders.length < 2 || weights.fullCylinders.some(({ fullWeightKg }) => !Number.isFinite(fullWeightKg) || fullWeightKg <= 0)) result.issues.push("Au moins deux cylindres avec leurs masses réelles carburant compris sont nécessaires (FM04 p.5.6).");
   if (!nonnegative(input.occupantsWeightKg)) result.issues.push("Masse réelle pilote et passagers manquante ou invalide.");
-  if (!nonnegative(configuration.baggageKg)) result.issues.push("Masse des bagages manquante ou invalide (saisir 0 si aucun).");
-  if (!nonnegative(configuration.accessoriesKg)) result.issues.push("Masse des accessoires manquante ou invalide (saisir 0 si aucun).");
-  if (equipment !== null && Number.isFinite(equipment) && nonnegative(input.occupantsWeightKg) && nonnegative(configuration.baggageKg) && nonnegative(configuration.accessoriesKg)) {
-    const total = equipment + input.occupantsWeightKg + configuration.baggageKg + configuration.accessoriesKg;
+  // Main-panel estimate: profile equipment (including full cylinders) plus occupants only.
+  // No implicit bag/accessory mass or assumed landing mass is introduced.
+  if (equipment !== null && Number.isFinite(equipment) && nonnegative(input.occupantsWeightKg)) {
+    const total = equipment + input.occupantsWeightKg;
     if (Number.isFinite(total)) result.actualTotalMassKg = total;
     else result.issues.push("Somme des masses non exploitable.");
   }
@@ -62,14 +60,15 @@ export function estimateT150RemainingCapacity(input: LoadCalculationInput, weigh
     [configuration.buildLmaxKg, "Lmax Build Standard"],
   ] as const;
   for (const [value, label] of documentaryLimits) {
-    if (value === undefined) result.warnings.push(`${label} non documentée : limite non prise en compte dans le reliquat.`);
+    if (value === undefined) result.warnings.push(`${label} non documentée : limite non vérifiée pour cette estimation.`);
     else if (!positive(value)) result.issues.push(`${label} invalide.`);
   }
   const basketPlateKg = configuration.basketPlateKg ?? input.basketMaximumLoadKg;
-  if (basketPlateKg === undefined) result.warnings.push("Plaque nacelle non documentée : limite non prise en compte dans le reliquat.");
+  if (basketPlateKg === undefined) result.warnings.push("Plaque nacelle non documentée : limite non vérifiée pour cette estimation.");
   else if (!positive(basketPlateKg)) result.issues.push("Limite de plaque nacelle invalide.");
   if (configuration.basketCarriedKg !== undefined && !nonnegative(configuration.basketCarriedKg)) result.issues.push("Masse portée par la nacelle invalide.");
-  if (!nonnegative(configuration.landingMassKg)) result.issues.push("Masse prévue à l'atterrissage manquante ou invalide.");
+  if (configuration.landingMassKg === undefined) result.warnings.push(`Minimum TOM à l’atterrissage non vérifié (${minimum.kg} kg) : masse prévue à l’atterrissage indisponible.`);
+  else if (!nonnegative(configuration.landingMassKg)) result.issues.push("Masse prévue à l'atterrissage invalide.");
   if (positive(input.applicableMtowKg) && positive(configuration.buildMtomKg) && input.applicableMtowKg > configuration.buildMtomKg) result.issues.push("MTOM applicable supérieure à celle du Build Standard.");
   if (!positive(input.applicableMtowKg)) result.issues.push("MTOM applicable manquante ou invalide.");
   const standardMtomKg = ultramagicModelParameters.find(({ model }) => model === "T150")!.standardMtomKg!;
@@ -95,7 +94,8 @@ export function estimateT150RemainingCapacity(input: LoadCalculationInput, weigh
     result.headrooms.push({ label: "Plaque nacelle (hors nacelle vide)", remainingKg: basketPlateKg - carried });
   }
   if (input.configurationLimitsConfirmed !== true) result.warnings.push("Limites du profil non confirmées ; aucune charge admissible validée.");
-  const limiting = result.headrooms.reduce((a, b) => b.remainingKg < a.remainingKg ? b : a);
+  const limiting = result.headrooms.slice(0, 2).reduce((a, b) => b.remainingKg < a.remainingKg ? b : a);
+  for (const check of result.headrooms.slice(2)) if (check.remainingKg < 0) result.warnings.push(`Limite dépassée : ${check.label} (${Math.floor(check.remainingKg)} kg). La marge portance/MTOM ne tient pas compte de cette restriction.`);
   result.remainingKg = limiting.remainingKg;
   result.limitingConstraint = limiting.label;
   return result;
