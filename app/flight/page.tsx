@@ -77,6 +77,7 @@ import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
 import { EMPTY_LIVE_SHARING_UI_STATE, stopLiveSharingUi, type LiveSharingUiState } from "../lib/liveFlightUi.ts";
 import { LiveFlightRuntime, type LivePositionSource } from "../lib/liveFlightRuntime.ts";
 import { canUseLiveFlightPublisherControls, shouldPublishTrackedLiveSource, shouldRequestLocalFlightGeolocationOnMount, shouldStartGpslessTargetedLiveFlight } from "../lib/liveFlightSimulator.ts";
+import { resolvePreparationBalloon } from "../lib/preparationBalloonSelection";
 import { useBalloonRegistry } from "../hooks/useBalloons.ts";
 
 export default function FlightPage() {
@@ -377,7 +378,7 @@ export default function FlightPage() {
     if (hasFreshLocalPosition) {
       const preparation = loadPreparationDraft();
       const selectedBalloonId = preparation?.balloonName;
-      const selectedBalloon = balloonRegistry.balloons.find(({ id }) => id === selectedBalloonId);
+      const selectedBalloon = resolvePreparationBalloon(balloonRegistry.balloons, selectedBalloonId, balloonRegistry.activeBalloonId);
       weatherLaunchBusyRef.current = true;
       const scope = getRuntimeDataScope(), generation = getRuntimeDataScopeGeneration();
       const preparationIdentity = JSON.stringify(preparation), requestIdentity = JSON.stringify(getTrajectoryAnalysisRequest()?.request);
@@ -430,6 +431,7 @@ export default function FlightPage() {
     startTracking,
     storageReady,
     balloonRegistry.balloons,
+    balloonRegistry.activeBalloonId,
     isTracking,
     activeFlight,
   ]);

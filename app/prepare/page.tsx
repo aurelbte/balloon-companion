@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import NavigationBar from "../components/NavigationBar";
 import BalloonSelector from "../components/prepare/BalloonSelector";
-import { useBalloons } from "../hooks/useBalloons";
+import { useBalloonRegistry } from "../hooks/useBalloons";
+import { resolvePreparationBalloon, withPreparationBalloonChoice } from "../lib/preparationBalloonSelection";
 import LaunchPointMapDialog from "../components/prepare/LaunchPointMapDialog";
 import TerrainSelector from "../components/prepare/TerrainSelector";
 import {
@@ -164,9 +165,16 @@ function displayDuration(value: string): string {
 }
 
 export default function PreparePage() {
-  const balloons = useBalloons();
+  const balloonRegistry = useBalloonRegistry();
+  const balloons = balloonRegistry.balloons;
   const router = useRouter();
-  const [form, setForm] = useState<TrajectoryFormState>(initialForm);
+  const [formDraft, setForm] = useState<TrajectoryFormState>(initialForm);
+  const [balloonExplicitlyCleared, setBalloonExplicitlyCleared] = useState(false);
+  const explicitBalloonId = formDraft.balloonName || (balloonExplicitlyCleared ? "" : undefined);
+  const form = useMemo(() => explicitBalloonId !== undefined ? formDraft : {
+    ...formDraft,
+    balloonName: resolvePreparationBalloon(balloons, undefined, balloonRegistry.activeBalloonId)?.id ?? "",
+  }, [formDraft, explicitBalloonId, balloons, balloonRegistry.activeBalloonId]);
   const [storageReady, setStorageReady] = useState(false);
   const [formDirty, setFormDirty] = useState(false);
   const [suggestions, setSuggestions] = useState<GeocodingResult[]>([]);
@@ -189,6 +197,7 @@ export default function PreparePage() {
     const stored = loadPreparationDraft();
     const timer = window.setTimeout(() => {
       if (stored) {
+        setBalloonExplicitlyCleared(stored.balloonName === "");
         const departure = localDateParts(stored.departureTime, stored.launchTimeZone);
         setTimeDigits(departure.time.replace(":", ""));
         setForm({
@@ -226,7 +235,7 @@ export default function PreparePage() {
           descentRateMps: -clampVerticalRateMps(Math.abs(stored.descentRateMps ?? 0)),
           balloonName: stored.balloonName ?? "",
           occupantsWeightKg:
-            !stored.balloonName || stored.occupantsWeightKg === undefined
+            stored.balloonName === "" || stored.occupantsWeightKg === undefined
               ? ""
               : String(stored.occupantsWeightKg),
         });
@@ -241,10 +250,10 @@ export default function PreparePage() {
     if (!storageReady || !formDirty) return;
     const previous = loadPreparationDraft();
     const timer = window.setTimeout(() => {
-      savePreparationDraft(preparationSnapshot(form, previous, Date.now()));
+      savePreparationDraft(withPreparationBalloonChoice(preparationSnapshot(form, previous, Date.now()), explicitBalloonId));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [form, formDirty, storageReady]);
+  }, [form, formDirty, storageReady, explicitBalloonId]);
 
   useEffect(() => {
     if (!form.launchSite || typeof navigator === "undefined" || !navigator.onLine) return;
@@ -443,7 +452,7 @@ export default function PreparePage() {
     try {
       const storedPreparation = loadPreparationDraft();
       savePreparationDraft(
-        preparationSnapshot(form, storedPreparation, Date.now()),
+        withPreparationBalloonChoice(preparationSnapshot(form, storedPreparation, Date.now()), explicitBalloonId ?? (form.balloonName || undefined)),
       );
       if (!saveTrajectoryAnalysisRequest(request)) {
         setError("Les paramètres ne peuvent pas être ouverts sur la carte.");
@@ -744,6 +753,7 @@ export default function PreparePage() {
                 : ""
             }
             onChange={(balloonId) => {
+              setBalloonExplicitlyCleared(balloonId === "");
               setFormDirty(true);
               setForm((current) => ({
                 ...current,

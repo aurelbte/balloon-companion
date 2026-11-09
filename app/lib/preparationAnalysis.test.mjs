@@ -227,7 +227,7 @@ test("l'Analyse sauvegarde un cache signé et ne le restaure hors ligne que pour
 
 test("le mode Vol résout l'immatriculation depuis l'identifiant interne du ballon", () => {
   const source = readFileSync(new URL("../flight/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /balloonRegistry\.balloons\.find\(\(\{ id \}\) => id === selectedBalloonId\)/);
+  assert.match(source, /resolvePreparationBalloon\(balloonRegistry\.balloons, selectedBalloonId, balloonRegistry\.activeBalloonId\)/);
   assert.match(source, /balloonRegistration: selectedBalloon\.registration/);
   assert.doesNotMatch(source, /balloonRegistration: selectedBalloonId/);
 });

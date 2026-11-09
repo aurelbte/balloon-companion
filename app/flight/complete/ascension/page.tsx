@@ -17,7 +17,8 @@ import {
   persistOfficialAscension,
 } from "../../../lib/flightCompletionStorage";
 import { loadBalloonRegistry } from "../../../lib/balloonStorage";
-import { officialFieldsForBalloon, resolveBalloonForFlight } from "../../../lib/balloons";
+import { resolvePreparationBalloon } from "../../../lib/preparationBalloonSelection";
+import { officialFieldsForBalloon } from "../../../lib/balloons";
 import { loadPreparationDraft } from "../../../lib/preparationDraftStorage";
 import { useFlightCompletionState } from "../../../hooks/useFlightCompletionState";
 
@@ -28,7 +29,9 @@ function toFormValues(flightId: string): OfficialAscensionFormValues {
   const existing = state.officialAscensions.find(({ sourceFlightId }) => sourceFlightId === flightId);
   const preparationBalloonId = loadPreparationDraft()?.balloonName;
   const registry = loadBalloonRegistry();
-  const selectedBalloon = resolveBalloonForFlight(registry.balloons, preparationBalloonId, registry.activeBalloonId);
+  const selectedBalloon = flight?.balloonRegistration
+    ? registry.balloons.find(({ registration }) => registration === flight.balloonRegistration) ?? null
+    : resolvePreparationBalloon(registry.balloons, preparationBalloonId, registry.activeBalloonId);
   const flightValues = flight ? { dateIso: flight.dateIso, date: flight.date, registration: flight.balloonRegistration, departure: flight.departure, arrival: flight.arrival, maximumAltitudeM: flight.maxAltitudeM, officialDurationMinutes: flight.durationMinutes } : {};
   const value = existing ?? { ...defaults, ...flightValues, ...(selectedBalloon ? officialFieldsForBalloon(selectedBalloon) : {}) };
   return {
