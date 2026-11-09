@@ -1,14 +1,12 @@
 import { calculateBalloonWeight, type BalloonWeights } from "./balloons.ts";
 import { normalizeLoadIdentifier } from "./loadPerformance/candidateEngine.ts";
 import { calculateManufacturerLoad } from "./loadPerformance/manufacturerDispatcher.ts";
-import { fm04Compatibility, fm04MinimumTom } from "./loadPerformance/ultramagic/fm04Rules.ts";
+import { fm04MinimumTom } from "./loadPerformance/ultramagic/fm04Rules.ts";
 import { ultramagicModelParameters } from "./loadPerformance/modelParameters/ultramagicModels.ts";
 import type { LoadCalculationInput } from "./loadPerformance/types.ts";
 
 /** Provisional numeric inputs, NOT an fm04Evidence record or aircraft approval. */
 export type T150CapacityConfiguration = {
-  basketType?: string;
-  burnerModel?: string;
   basketPlateKg?: number;
   basketCarriedKg?: number;
   buildMtomKg?: number;
@@ -17,7 +15,6 @@ export type T150CapacityConfiguration = {
   accessoriesKg?: number;
   landingMassKg?: number;
   reducedMtomDocumented?: boolean;
-  equipmentRequirementsReviewed?: boolean;
 };
 export type T150CapacityEstimate = {
   status: "ESTIMATION_NON_VALIDEE";
@@ -29,6 +26,7 @@ export type T150CapacityEstimate = {
   limitingConstraint: string | null;
   headrooms: { label: string; remainingKg: number }[];
   issues: string[];
+  warnings: string[];
 };
 const finite = (value: number | undefined): value is number => typeof value === "number" && Number.isFinite(value);
 const nonnegative = (value: number | undefined): value is number => finite(value) && value >= 0;
@@ -39,7 +37,7 @@ export function estimateT150RemainingCapacity(input: LoadCalculationInput, weigh
   if (normalizeLoadIdentifier(input.manufacturer) !== "ULTRAMAGIC" || normalizeLoadIdentifier(input.model) !== "T150") return null;
   const minimum = fm04MinimumTom("T150");
   if (minimum?.state !== "NUMERIC") throw new Error("Minimum TOM T150 absent des règles FM04.");
-  const result: T150CapacityEstimate = { status: "ESTIMATION_NON_VALIDEE", methodReason: "METHOD_NOT_VALIDATED", theoreticalLiftKg: null, actualTotalMassKg: null, minimumTomKg: minimum.kg, remainingKg: null, limitingConstraint: null, headrooms: [], issues: [] };
+  const result: T150CapacityEstimate = { status: "ESTIMATION_NON_VALIDEE", methodReason: "METHOD_NOT_VALIDATED", theoreticalLiftKg: null, actualTotalMassKg: null, minimumTomKg: minimum.kg, remainingKg: null, limitingConstraint: null, headrooms: [], issues: [], warnings: ["Compatibilité réglementaire non justifiée : équipements multimarques acceptés pour l’estimation des masses uniquement.", "FDS, évents de rotation, équipements et suppléments applicables restent à vérifier."] };
   const candidate = calculateManufacturerLoad(input.manufacturer!, input.model!, input);
   if (candidate && "status" in candidate && candidate.status === "NON_VALIDÉ" && "theoretical" in candidate && candidate.theoretical && "liftKgPer1000Ft3" in candidate.theoretical) {
     result.theoreticalLiftKg = candidate.theoretical.performanceLimitedMassKg;
@@ -59,22 +57,23 @@ export function estimateT150RemainingCapacity(input: LoadCalculationInput, weigh
     if (Number.isFinite(total)) result.actualTotalMassKg = total;
     else result.issues.push("Somme des masses non exploitable.");
   }
-  const compatible = fm04Compatibility("T150")!;
-  if (!compatible.baskets.includes(normalizeLoadIdentifier(configuration.basketType))) result.issues.push("Type de nacelle absent ou incompatible avec T150 (FM04 p.5.6).");
-  if (!compatible.burners.includes(normalizeLoadIdentifier(configuration.burnerModel))) result.issues.push("Brûleur ou assemblage absent ou incompatible avec T150 (FM04 p.5.6).");
-  const numericFields = [
-    [configuration.basketPlateKg, "Limite de la plaque nacelle"],
-    [configuration.buildMtomKg, "MTOM du Build Standard"],
-    [configuration.buildLmaxKg, "Lmax du Build Standard"],
+  const documentaryLimits = [
+    [configuration.buildMtomKg, "MTOM Build Standard"],
+    [configuration.buildLmaxKg, "Lmax Build Standard"],
   ] as const;
-  for (const [value, label] of numericFields) if (!positive(value)) result.issues.push(`${label} manquante ou invalide.`);
-  if (!nonnegative(configuration.basketCarriedKg)) result.issues.push("Masse portée par la nacelle manquante ou invalide (hors nacelle vide).");
+  for (const [value, label] of documentaryLimits) {
+    if (value === undefined) result.warnings.push(`${label} non documentée : limite non prise en compte dans le reliquat.`);
+    else if (!positive(value)) result.issues.push(`${label} invalide.`);
+  }
+  const basketPlateKg = configuration.basketPlateKg ?? input.basketMaximumLoadKg;
+  if (basketPlateKg === undefined) result.warnings.push("Plaque nacelle non documentée : limite non prise en compte dans le reliquat.");
+  else if (!positive(basketPlateKg)) result.issues.push("Limite de plaque nacelle invalide.");
+  if (configuration.basketCarriedKg !== undefined && !nonnegative(configuration.basketCarriedKg)) result.issues.push("Masse portée par la nacelle invalide.");
   if (!nonnegative(configuration.landingMassKg)) result.issues.push("Masse prévue à l'atterrissage manquante ou invalide.");
   if (positive(input.applicableMtowKg) && positive(configuration.buildMtomKg) && input.applicableMtowKg > configuration.buildMtomKg) result.issues.push("MTOM applicable supérieure à celle du Build Standard.");
   if (!positive(input.applicableMtowKg)) result.issues.push("MTOM applicable manquante ou invalide.");
-  if (!configuration.equipmentRequirementsReviewed) result.issues.push("Vérifier FDS, évents de rotation, équipements et suppléments applicables au Build Standard.");
   const standardMtomKg = ultramagicModelParameters.find(({ model }) => model === "T150")!.standardMtomKg!;
-  if (positive(input.applicableMtowKg) && input.applicableMtowKg < standardMtomKg && configuration.reducedMtomDocumented !== true) result.issues.push("Confirmer l'inscription au carnet de la MTOM réduite utilisée ; aucune réduction automatique.");
+  if (positive(input.applicableMtowKg) && input.applicableMtowKg < standardMtomKg && configuration.reducedMtomDocumented !== true) result.warnings.push("MTOM réduite : approbation au carnet non justifiée ; la valeur saisie reste appliquée sans valider son approbation.");
   if (result.actualTotalMassKg !== null) {
     if (result.actualTotalMassKg < minimum.kg) result.issues.push(`Masse au décollage inférieure au minimum TOM de ${minimum.kg} kg.`);
     if (nonnegative(configuration.landingMassKg) && configuration.landingMassKg < minimum.kg) result.issues.push(`Masse à l'atterrissage inférieure au minimum de ${minimum.kg} kg.`);
@@ -87,10 +86,15 @@ export function estimateT150RemainingCapacity(input: LoadCalculationInput, weigh
   result.headrooms = [
     { label: "Portance théorique", remainingKg: result.theoreticalLiftKg - gross },
     { label: "MTOM applicable", remainingKg: input.applicableMtowKg! - gross },
-    { label: "MTOM Build Standard", remainingKg: configuration.buildMtomKg! - gross },
-    { label: "Lmax Build Standard", remainingKg: configuration.buildLmaxKg! - gross },
-    { label: "Plaque nacelle (hors nacelle vide)", remainingKg: configuration.basketPlateKg! - configuration.basketCarriedKg! },
   ];
+  for (const [value, label] of documentaryLimits) if (positive(value)) result.headrooms.push({ label, remainingKg: value - gross });
+  if (positive(basketPlateKg)) {
+    // Conservative carried-mass upper bound: never ask to re-enter existing component masses.
+    const carried = configuration.basketCarriedKg ?? gross - weights.envelopeKg! - weights.basketKg!;
+    if (configuration.basketCarriedKg === undefined) result.warnings.push("Plaque nacelle : hypothèse conservatrice, toutes les masses hors enveloppe et nacelle vide sont comptées comme portées ; répartition réelle non justifiée.");
+    result.headrooms.push({ label: "Plaque nacelle (hors nacelle vide)", remainingKg: basketPlateKg - carried });
+  }
+  if (input.configurationLimitsConfirmed !== true) result.warnings.push("Limites du profil non confirmées ; aucune charge admissible validée.");
   const limiting = result.headrooms.reduce((a, b) => b.remainingKg < a.remainingKg ? b : a);
   result.remainingKg = limiting.remainingKg;
   result.limitingConstraint = limiting.label;
