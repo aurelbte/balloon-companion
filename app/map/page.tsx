@@ -1,4 +1,6 @@
 "use client";
+
+import T150CapacityEstimate from "../components/prepare/T150CapacityEstimate";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
 import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
 import { ANALYSIS_POLICY, classifyWeatherFreshness, oldestWeatherRetrieval } from "../lib/weather/weatherFreshness";
@@ -1155,6 +1157,7 @@ export default function MapPage() {
             {loadEstimate.kind === "VALUES" ? <dl className="mt-2 space-y-2">
               {loadEstimate.values.map(({ label, value, unit }) => <div key={label}><dt className="text-xs text-[var(--bc-color-text-muted)]">{label}</dt><dd>{value.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} {unit}</dd></div>)}
             </dl> : <p className="mt-2">Estimation refusée : {loadEstimate.reason}</p>}
+            {selectedBalloon && <T150CapacityEstimate key={selectedBalloon.id} input={loadInput} weights={selectedBalloon.weights} />}
             {loadEstimate.kind === "VALUES" && loadEstimate.admissibilityReasonCodes.length > 0 && <p className="mt-2 text-xs text-[var(--bc-color-text-muted)]">Configuration et justificatifs individuels non validés : aucune charge admissible déterminée. Motifs dans les détails ci-dessous.</p>}
           </div> : <p className="mt-3 text-sm"><strong>{testLoadEnabled ? "Démonstration" : loadResult.status === "AVAILABLE" ? "Charge disponible" : "Charge indisponible"}</strong>{loadResult.status === "UNAVAILABLE" && ` · ${loadSupport.reason}`}</p>}
           <details className="mt-2 text-xs"><summary>Références constructeur et détails</summary>
