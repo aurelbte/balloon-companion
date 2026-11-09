@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateT150RemainingCapacity } from './t150CapacityEstimate.ts';
+import { estimateT150RemainingCapacity, t150TheoreticalMarginKg } from './t150CapacityEstimate.ts';
 import { calculateOfficialLoad } from './loadPerformance/engine.ts';
 import { buildLoadCalculationInput } from './loadPerformance/balloonInput.ts';
 
@@ -25,18 +25,18 @@ test('existing profile masses reused once, no material selection; multibrand est
 
 test('available limits remain enforced, including signed overload and conservatively derived basket mass',()=>{
   const f=fixture(); f.input.basketMaximumLoadKg=550; const r=run(f);
-  // 845 minus envelope 150 minus empty basket 150 = 545, never counted twice.
+  // 830 minus envelope 150 minus empty basket 150 = 530, never counted twice.
   assert.equal(r.remainingKg,Math.min(r.theoreticalLiftKg,1465)-830);assert.equal(r.headrooms.find(h=>h.label.includes('Plaque')).remainingKg,20);
   assert.ok(r.warnings.some(w=>w.includes('hypothèse conservatrice')));
   f.input.basketMaximumLoadKg=500;assert.ok(run(f).warnings.some(w=>w.includes("Limite dépassée")));
   delete f.input.basketMaximumLoadKg; f.config.buildLmaxKg=800;assert.ok(run(f).warnings.some(w=>w.includes("Lmax Build Standard")));
-  f.config.buildMtomKg=1400;assert.equal(run(f).remainingKg,null);
+  f.config.buildMtomKg=1400;assert.notEqual(run(f).remainingKg,null);assert.ok(run(f).issues.some(i=>i.includes("MTOM applicable supérieure")));
 });
 
 test('explicit documentary carried mass and plate override remain usable without approving compatibility',()=>{
   const f=fixture();Object.assign(f.config,{basketPlateKg:540,basketCarriedKg:530,buildMtomKg:1465,buildLmaxKg:1465});
   assert.equal(run(f).remainingKg,Math.min(run(f).theoreticalLiftKg,1465)-830);assert.ok(run(f).warnings.some(w=>w.includes('Compatibilité')));
-  f.config.basketCarriedKg=100;assert.equal(run(f).remainingKg,null);
+  f.config.basketCarriedKg=100;assert.notEqual(run(f).remainingKg,null);assert.ok(run(f).issues.some(i=>i.includes("Masse portée")));
 });
 
 test('margin needs no additional input, landing minimum stays explicitly unverified',()=>{
@@ -47,12 +47,12 @@ test('margin needs no additional input, landing minimum stays explicitly unverif
   for(const value of [NaN,Infinity,-1]) {const invalid=fixture();invalid.input.occupantsWeightKg=value;assert.equal(run(invalid).remainingKg,null);}
 });
 
-test('minimum TOM, required cylinders and invalid profile data still block',()=>{
-  const f=fixture();f.config.landingMassKg=678;assert.equal(run(f).remainingKg,null);
+test('safety alerts stay visible without masking a numerically complete theoretical margin',()=>{
+  const f=fixture();f.config.landingMassKg=678;assert.notEqual(run(f).remainingKg,null);assert.ok(run(f).issues.some(i=>i.includes("atterrissage inférieure")));
   f.config.landingMassKg=679;assert.notEqual(run(f).remainingKg,null);
-  f.input.occupantsWeightKg=100;assert.equal(run(f).remainingKg,null);
-  const missing=fixture(); missing.weights.fullCylinders.pop();missing.input.balloonEquipmentWeightKg=430;assert.equal(run(missing).remainingKg,null);
-  const mismatch=fixture();mismatch.input.balloonEquipmentWeightKg=529;assert.equal(run(mismatch).remainingKg,null);
+  f.input.occupantsWeightKg=100;assert.notEqual(run(f).remainingKg,null);assert.ok(run(f).issues.some(i=>i.includes("décollage inférieure")));
+  const missing=fixture(); missing.weights.fullCylinders.pop();missing.input.balloonEquipmentWeightKg=430;assert.notEqual(run(missing).remainingKg,null);assert.ok(run(missing).issues.some(i=>i.includes("deux cylindres")));
+  const mismatch=fixture();mismatch.input.balloonEquipmentWeightKg=529;assert.notEqual(run(mismatch).remainingKg,null);assert.ok(run(mismatch).issues.some(i=>i.includes("incohérentes")));
 });
 
 test('reduced MTOM applies as entered with unverified approval warning; hot-day lift still limits',()=>{
@@ -64,7 +64,7 @@ test('reduced MTOM applies as entered with unverified approval warning; hot-day 
 });
 
 test('invalid provided limits and missing weather cannot be silently ignored',()=>{
-  for(const key of ['basketPlateKg','buildMtomKg','buildLmaxKg']) {const f=fixture();f.config[key]=NaN;assert.equal(run(f).remainingKg,null);}
+  for(const key of ['basketPlateKg','buildMtomKg','buildLmaxKg']) {const f=fixture();f.config[key]=NaN;assert.notEqual(run(f).remainingKg,null);assert.ok(run(f).issues.some(i=>i.includes("invalide")));}
   const f=fixture();delete f.input.groundTemperature;assert.equal(run(f).remainingKg,null);
 });
 
@@ -75,4 +75,21 @@ test('other Ultramagic, Cameron and Kubicek stay outside scope',()=>{
 test('negative margin is preserved rather than clamped to zero',()=>{
   const f=fixture();f.input.occupantsWeightKg=1000;const r=run(f);
   assert.ok(r.remainingKg<0);assert.equal(r.remainingKg,Math.min(r.theoreticalLiftKg,1465)-1530);
+});
+
+test('reported four-number example gives 170.2 kg without method or equipment approval',()=>{
+  assert.ok(Math.abs(t150TheoreticalMarginKg(1050.2,1465,470,410)-170.2)<1e-9);
+  const f=fixture();f.weights.fullCylinders=[{id:'single',fullWeightKg:140}];
+  f.input.balloonEquipmentWeightKg=470;f.input.occupantsWeightKg=410;
+  const r=run(f);assert.equal(r.actualTotalMassKg,880);
+  assert.equal(r.remainingKg,Math.min(r.theoreticalLiftKg,1465)-880);
+  assert.ok(r.issues.some(i=>i.includes('deux cylindres')));
+  assert.equal(r.methodReason,'METHOD_NOT_VALIDATED');assert.equal(calculateOfficialLoad(f.input).status,'UNAVAILABLE');
+});
+
+test('each indispensable numeric value must be present and finite; no invented replacement',()=>{
+  for(const values of [[null,1465,470,410],[1050.2,undefined,470,410],[1050.2,1465,undefined,410],[1050.2,1465,470,undefined],[NaN,1465,470,410],[1050.2,Infinity,470,410]]) assert.equal(t150TheoreticalMarginKg(...values),null);
+  for(const key of ['applicableMtowKg','balloonEquipmentWeightKg','occupantsWeightKg']) {
+    const f=fixture();delete f.input[key];const r=run(f);assert.equal(r.remainingKg,null);assert.ok(r.issues.length>0);
+  }
 });

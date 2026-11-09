@@ -6,7 +6,7 @@ import type { LoadCalculationInput } from "../../lib/loadPerformance/types";
 import { estimateT150RemainingCapacity } from "../../lib/t150CapacityEstimate";
 
 const kg = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "Non disponible" : `${value.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`;
-const marginKg = (value: number | null) => kg(value === null ? null : Math.floor(value));
+const marginKg = (value: number | null) => kg(value);
 
 export default function T150CapacityEstimate({ input, weights }: { input: LoadCalculationInput; weights: BalloonWeights }) {
   const id = useId();
