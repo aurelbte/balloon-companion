@@ -1,7 +1,7 @@
 "use client";
 
 import T150CapacityEstimate from "../components/prepare/T150CapacityEstimate";
-import { estimateT150RemainingCapacity } from "../lib/t150CapacityEstimate";
+import { estimateUltramagicRemainingCapacity } from "../lib/t150CapacityEstimate";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
 import { useWeatherFreshness } from "../hooks/useWeatherFreshness";
 import { ANALYSIS_POLICY, classifyWeatherFreshness, oldestWeatherRetrieval } from "../lib/weather/weatherFreshness";
@@ -528,8 +528,8 @@ export default function MapPage() {
     ? calculateDemoLoad(loadInput, true)
     : calculateOfficialLoad(loadInput);
   const loadEstimate = testLoadEnabled ? null : describePreparationLoadEstimate(loadInput, loadResult);
-  const t150Estimate = !testLoadEnabled && selectedBalloon
-    ? estimateT150RemainingCapacity(loadInput, selectedBalloon.weights) : null;
+  const ultramagicEstimate = !testLoadEnabled && selectedBalloon
+    ? estimateUltramagicRemainingCapacity(loadInput, selectedBalloon.weights) : null;
   const loadDisplay = loadDisplayPolicy({
     demoEnabled: testLoadEnabled,
     syntheticMarginRequested: showSyntheticMargin,
@@ -542,9 +542,9 @@ export default function MapPage() {
     : null;
   const marginTone = displayedMargin === null ? null : loadMarginTone(displayedMargin);
   const marginColor = marginTone === "positive" ? "#37c978" : marginTone === "caution" ? "#f59e0b" : marginTone === "negative" ? "#ef4444" : "var(--bc-color-text-muted)";
-  const t150Margin = t150Estimate?.remainingKg ?? null;
-  const t150MarginColor = t150Margin !== null && t150Margin > 0 ? "#37c978"
-    : t150Margin !== null && t150Margin < 0 ? "#ef4444" : "var(--bc-color-text-muted)";
+  const ultramagicMargin = ultramagicEstimate?.remainingKg ?? null;
+  const ultramagicMarginColor = ultramagicMargin !== null && ultramagicMargin > 0 ? "#37c978"
+    : ultramagicMargin !== null && ultramagicMargin < 0 ? "#ef4444" : "var(--bc-color-text-muted)";
   const heightAboveTerrainM = plannedMaximumAltitudeMslM !== undefined && launchElevationMslM !== null
     ? plannedMaximumAltitudeMslM - launchElevationMslM
     : null;
@@ -1039,13 +1039,13 @@ export default function MapPage() {
               </h2>
               {loadDisplay.showSyntheticBadge && <span className="mt-1 inline-block rounded bg-orange-600 px-1.5 py-0.5 text-[8px] font-black tracking-wider text-white">{DEMO_LOAD_BADGE} — DONNÉES SYNTHÉTIQUES</span>}
               {!testLoadEnabled && candidateLoadResult && <span className="mt-0.5 block text-[9px] font-semibold text-[var(--bc-color-text-muted)]">Validation pilote</span>}
-              {t150Estimate && <div className="mt-0.5 leading-tight">
+              {ultramagicEstimate && <div className="mt-0.5 leading-tight">
                 <p className="text-[11px] font-semibold">Estimation non validée</p>
-                <p role="status" className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: t150MarginColor }} aria-label="Marge théorique estimée T150">{t150Margin === null ? "Non disponible" : `${t150Margin > 0 ? "+" : t150Margin < 0 ? "−" : ""}${Math.abs(t150Margin).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`}</p>
+                <p role="status" className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: ultramagicMarginColor }} aria-label="Marge théorique estimée Ultramagic">{ultramagicMargin === null ? "Non disponible" : `${ultramagicMargin > 0 ? "+" : ultramagicMargin < 0 ? "−" : ""}${Math.abs(ultramagicMargin).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`}</p>
                 <p className="text-[10px] text-[var(--bc-color-text-muted)]">Marge théorique · détails au toucher</p>
               </div>}
-              {loadEstimate && !t150Estimate && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">Estimation non validée</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{loadEstimate.kind === "VALUES" ? "Valeurs théoriques · toucher" : "Refus · toucher pour le motif"}</p></div>}
-              {!testLoadEnabled && !loadEstimate && !t150Estimate && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p>{loadResult.reasonCode === "UNSUPPORTED_MODEL" && <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{selectedBalloon?.manufacturer} {selectedBalloon?.model} · Toucher pour la raison</p>}</div>}
+              {loadEstimate && !ultramagicEstimate && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">Estimation non validée</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{loadEstimate.kind === "VALUES" ? "Valeurs théoriques · toucher" : "Refus · toucher pour le motif"}</p></div>}
+              {!testLoadEnabled && !loadEstimate && !ultramagicEstimate && loadResult.status === "UNAVAILABLE" && unavailableLoadCardCopy && <div className="mt-0.5 leading-tight"><p className="text-[11px] font-semibold">{unavailableLoadCardCopy[0]}</p><p className="text-[10px] text-[var(--bc-color-text-muted)]">{unavailableLoadCardCopy[1]}</p>{loadResult.reasonCode === "UNSUPPORTED_MODEL" && <p className="mt-1 text-[9px] text-[var(--bc-color-text-muted)]">{selectedBalloon?.manufacturer} {selectedBalloon?.model} · Toucher pour la raison</p>}</div>}
               {(!testLoadEnabled && displayedMargin !== null) && <p className="mt-0.5 text-xl font-semibold tracking-tight" style={{ color: marginColor }} aria-label={`Marge de charge ${displayedMargin} kilogrammes`}>{`${displayedMargin >= 0 ? "+" : "−"}${Math.abs(displayedMargin)} kg`}</p>}
               {testLoadEnabled && <p className={`${displayedMargin === null ? "text-sm leading-tight" : "text-2xl"} mt-1 font-semibold tracking-tight`} style={{ color: marginColor }} aria-label={blockingMessage ?? `Marge de charge ${displayedMargin} kilogrammes`}>{blockingMessage ?? `${displayedMargin! >= 0 ? "+" : "−"}${Math.abs(displayedMargin!)} kg`}</p>}
               {testLoadEnabled && loadResult.status === "AVAILABLE" && !loadDisplay.showSyntheticMargin && <p className="mt-1 text-[9px] font-semibold leading-tight text-[var(--bc-color-text-muted)]">Dataset officiel Cameron requis</p>}
