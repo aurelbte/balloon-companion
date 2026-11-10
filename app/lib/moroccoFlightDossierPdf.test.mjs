@@ -19,9 +19,9 @@ test('Morocco prepends both original AVB pages and adds 39 independent editable 
   const input = await dossierPdfFixture();
   const source = await PDFDocument.load(moroccoChecklistBase64);
   const pdf = await PDFDocument.load(await createMoroccoFlightDossierPdf(input, map));
-  assert.equal(pdf.getForm().getFields().length, 39);
+  assert.equal(pdf.getForm().getFields().filter(field => field instanceof PDFCheckBox).length, 39);
   for (let index = 0; index < 2; index++) {
-    const page = pdf.getPage(index);
+    const page = pdf.getPage(index + 1);
     assert.deepEqual(page.getSize(), source.getPage(index).getSize());
     assert.ok(contents(page).includes(contents(source.getPage(index))));
     assert.ok(page.node.Resources().lookup(PDFName.of('XObject'))); // Source images/logo retained.
@@ -34,24 +34,24 @@ test('Morocco prepends both original AVB pages and adds 39 independent editable 
     assert.equal(field.isReadOnly(), false);
     assert.equal(field.acroField.getWidgets().length, 1);
     const widget = field.acroField.getWidgets()[0];
-    assert.equal(widget.P().toString(), pdf.getPage(group.page).ref.toString());
+    assert.equal(widget.P().toString(), pdf.getPage(group.page + 1).ref.toString());
     assert.equal(widget.getAppearanceState().toString(), '/Off');
     const normal = widget.getAppearances().normal;
     assert.ok(normal.has(PDFName.of('Off')));
     assert.ok(normal.has(PDFName.of('Yes')));
     assert.equal(field.isExported(), true);
   }
-  assert.ok(hasText(pdf.getPage(2), '05/11/2026'));
+  assert.ok(hasText(pdf.getPage(3), '05/11/2026'));
   assert.match(pdf.getTitle(), /Maroc - 05\/11\/2026/);
-  assert.ok(pdf.getPage(2).node.Resources().lookup(PDFName.of('XObject'))); // Reused AVB logo.
+  assert.ok(pdf.getPage(3).node.Resources().lookup(PDFName.of('XObject'))); // Reused AVB logo.
   assert.equal(pdf.catalog.has(PDFName.of('OpenAction')), false);
 });
 
 test('every checkbox can be checked, saved, reopened, unchecked and saved again without a service', async () => {
   const pdf = await PDFDocument.load(await createMoroccoFlightDossierPdf(await dossierPdfFixture(), map));
-  for (const field of pdf.getForm().getFields()) field.check();
+  for (const field of pdf.getForm().getFields().filter(field => field instanceof PDFCheckBox)) field.check();
   const checked = await PDFDocument.load(await pdf.save());
-  for (const field of checked.getForm().getFields()) {
+  for (const field of checked.getForm().getFields().filter(field => field instanceof PDFCheckBox)) {
     assert.equal(field.isChecked(), true);
     assert.equal(field.acroField.getValue().toString(), '/Yes');
     assert.equal(field.acroField.getWidgets()[0].getAppearanceState().toString(), '/Yes');
@@ -60,10 +60,10 @@ test('every checkbox can be checked, saved, reopened, unchecked and saved again 
   checked.getForm().getCheckBox('avb-enveloppe-1').uncheck();
   assert.equal(checked.getForm().getCheckBox('avb-enveloppe-2').isChecked(), true);
   assert.equal(checked.getForm().getCheckBox('avb-equipements-detail-9').isChecked(), true);
-  for (const field of checked.getForm().getFields()) field.uncheck();
+  for (const field of checked.getForm().getFields().filter(field => field instanceof PDFCheckBox)) field.uncheck();
   const cleared = await PDFDocument.load(await checked.save());
-  assert.equal(cleared.getForm().getFields().length, 39);
-  for (const field of cleared.getForm().getFields()) {
+  assert.equal(cleared.getForm().getFields().filter(field => field instanceof PDFCheckBox).length, 39);
+  for (const field of cleared.getForm().getFields().filter(field => field instanceof PDFCheckBox)) {
     assert.equal(field.isChecked(), false);
     assert.equal(field.acroField.getValue().toString(), '/Off');
     assert.equal(field.acroField.getWidgets()[0].getAppearanceState().toString(), '/Off');
@@ -76,12 +76,12 @@ test('scheduled date uses the launch timezone, and France keeps its original tit
   input.dossier.launchTimeZone = 'Africa/Casablanca';
   const maroc = await PDFDocument.load(await createMoroccoFlightDossierPdf(input, map));
   assert.match(maroc.getTitle(), /06\/11\/2026/);
-  assert.ok(hasText(maroc.getPage(2), '06/11/2026'));
+  assert.ok(hasText(maroc.getPage(3), '06/11/2026'));
   const france = await PDFDocument.load(await createFlightDossierPdf(input, map));
   assert.match(france.getTitle(), /^Dossier de vol -/);
   assert.equal(france.getForm().getFields().length, 0);
   assert.ok(hasText(france.getPage(0), 'Dossier de vol'));
-  assert.equal(maroc.getPageCount(), france.getPageCount() + 2);
+  assert.equal(maroc.getPage(0).node.Annots().size(), 66); // Passenger sheet has 13 × 5 fields plus date; the two independent dossier layouts can paginate differently.
 });
 
 test('Morocco export has its own filename and respects failures and cancellation', async () => {
@@ -110,7 +110,7 @@ test('satellite changes only the Morocco map page, preserves all 39 fields and k
   // Font resource names can differ after adding attribution lines; compare drawing/text content.
   const normalized=page=>contents(page).replace(/\/(Helvetica(?:-Bold)?)-\d+/g,"/$1");
   for(let i=0;i<plan.getPageCount()-1;i++)assert.equal(normalized(satellite.getPage(i)),normalized(plan.getPage(i)),`page ${i+1}`);
-  assert.equal(satellite.getForm().getFields().length,39);
+  assert.equal(satellite.getForm().getFields().length,105);
   const page=satellite.getPage(satellite.getPageCount()-1);
   assert.ok(hasText(page,'EOxCloudless'));assert.ok(hasText(page,'CC BY 4.0'));
   assert.ok(!hasText(page,'OpenStreetMap'));

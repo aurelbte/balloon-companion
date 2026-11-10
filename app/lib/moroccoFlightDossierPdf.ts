@@ -1,3 +1,5 @@
+import { prependMoroccoPassengerListing } from "./moroccoPassengerListingPdf.ts";
+import type { MoroccoDossierPdfInput } from "./moroccoPassengers.ts";
 import { MOROCCO_SATELLITE_ATTRIBUTION, type MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
 // Independent Morocco preparation generator. France remains in flightDossierPdf.ts.
 import { moroccoChecklistBase64, moroccoLogoBase64 } from "./moroccoChecklistAsset.ts";
@@ -148,7 +150,7 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, da
   [...new Set([...item.reasons, ...item.passages.flatMap((passage) => passage.reasons)])].forEach((reason) => layout.paragraph(`Incertitude : ${uncertainty(reason)}`, { muted: true }));
 }
 
-export async function createMoroccoFlightDossierPdf(input: DossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage): Promise<Uint8Array> {
+export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage): Promise<Uint8Array> {
   const { dossier, weather } = input;
   const scheduledDate = new Intl.DateTimeFormat("fr-FR", { timeZone: dossierTimeZone(dossier.launchTimeZone) ?? "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(dossier.startedAt));
   const date = (value: string | null | undefined) => dossierLocalTime(value, dossier.launchTimeZone, true);
@@ -315,5 +317,6 @@ export async function createMoroccoFlightDossierPdf(input: DossierPdfInput, map:
     layout.paragraph(attribution, { size: 8, muted: true });
   }
   layout.finish();
+  await prependMoroccoPassengerListing(document, scheduledDate, input.passengers);
   return document.save();
 }

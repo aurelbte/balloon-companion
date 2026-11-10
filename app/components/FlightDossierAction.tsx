@@ -1,4 +1,7 @@
 "use client";
+import MoroccoPassengerDialog from "./MoroccoPassengerDialog";
+import type { MoroccoPassenger } from "../lib/moroccoPassengers";
+import { dossierTimeZone } from "../lib/flightDossierPresentation";
 import { FileDown, LoaderCircle, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import FlightDossierOperationsSummary from "./FlightDossierOperationsSummary";
@@ -14,6 +17,7 @@ const time = (iso: string, timeZone?: string) => formatInTimeZone(iso, timeZone,
 const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
 export default function FlightDossierAction({ trace, timeZone, onFlightDossier }: { trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
+  const [passengerDossier, setPassengerDossier] = useState<Extract<FlightDossierResult, { status: "READY" }> | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportMenuId = useId();
   const exportMenuRoot = useRef<HTMLDivElement>(null);
@@ -28,6 +32,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
   const dossierRequest = useRef<AbortController | null>(null);
   useEffect(() => {
     setFeedbackOpen(false);
+    setPassengerDossier(null);
     setDossierDownload(null);
     setDossier(null);
     setDossierWeather(null);
@@ -54,7 +59,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [exportMenuOpen]);
-  const requestDossier = async (variant: "FRANCE" | "MOROCCO" = "FRANCE") => {
+  const requestDossier = async (variant: "FRANCE" | "MOROCCO" = "FRANCE", passengers?: readonly MoroccoPassenger[], alreadyPrepared?: FlightDossierResult) => {
     if (!onFlightDossier || dossierRequest.current && !dossierRequest.current.signal.aborted) return;
     const controller = new AbortController();
     dossierRequest.current = controller;
@@ -64,7 +69,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
     setDossierWeather(null);
     setDossierWeatherError(null);
     try {
-      const prepared = onFlightDossier(trace.traceId);
+      const prepared = alreadyPrepared ?? onFlightDossier(trace.traceId);
       setDossier(prepared);
       if (prepared.status !== "READY") return;
       let weather: FlightDossierWeather | null = null;
@@ -78,10 +83,10 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
         setDossierWeatherError(`${weatherError} Ces données seront signalées comme indisponibles dans le PDF.`);
       }
       controller.signal.throwIfAborted();
-      const exportFlightDossier = variant === "MOROCCO"
-        ? (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier
-        : (await import("../lib/flightDossierExport")).exportFlightDossier;
-      const result = await exportFlightDossier({ dossier: prepared.data, weather, weatherError }, controller.signal);
+      const input = { dossier: prepared.data, weather, weatherError };
+      const result = variant === "MOROCCO"
+        ? await (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier({ ...input, passengers }, controller.signal)
+        : await (await import("../lib/flightDossierExport")).exportFlightDossier(input, controller.signal);
       if (!controller.signal.aborted) setDossierDownload(result.mapUnavailable ? "Dossier téléchargé. Fond cartographique indisponible, signalé dans le PDF." : "Dossier de vol téléchargé.");
     } catch (error) {
       if (!controller.signal.aborted) setDossierWeatherError(`Génération du dossier impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`);
@@ -90,15 +95,31 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
       if (!controller.signal.aborted) setDossierPending(false);
     }
   };
+  const openPassengerListing = () => {
+    setExportMenuOpen(false);
+    try {
+      const prepared = onFlightDossier(trace.traceId);
+      if (prepared.status === "READY") { setFeedbackOpen(false); setPassengerDossier(prepared); }
+      else { setDossier(prepared); setFeedbackOpen(true); }
+    } catch (error) {
+      setDossierWeatherError(`Préparation du listing impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`);
+      setFeedbackOpen(true);
+    }
+  };
   return (
     <div className="pointer-events-auto relative shrink-0">
       <div ref={exportMenuRoot}>
         <button ref={exportButton} type="button" aria-label="Dossier de vol PDF" aria-expanded={exportMenuOpen} aria-controls={exportMenuId} title="Exporter le dossier PDF" aria-busy={dossierPending} disabled={dossierPending} onClick={() => { setFeedbackOpen(false); setExportMenuOpen((open) => !open); }} className="flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md disabled:opacity-50">{dossierPending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <FileDown size={18} aria-hidden="true" />}<span className="text-[10px] font-semibold">PDF</span></button>
         {exportMenuOpen && <div id={exportMenuId} role="group" aria-label="Pays du dossier PDF" className="absolute bottom-full right-0 z-50 mb-2 w-40 max-w-[calc(100vw-24px)] rounded-xl border border-white/20 bg-slate-950 p-1 text-sm text-white shadow-xl">
           <button ref={firstExportChoice} type="button" onClick={() => { setExportMenuOpen(false); void requestDossier("FRANCE"); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇫🇷</span> France</button>
-          <button type="button" onClick={() => { setExportMenuOpen(false); void requestDossier("MOROCCO"); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇲🇦</span> Maroc</button>
+          <button type="button" onClick={openPassengerListing} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇲🇦</span> Maroc</button>
         </div>}
       </div>
+      {passengerDossier && <MoroccoPassengerDialog
+        date={new Intl.DateTimeFormat("fr-FR", { timeZone: dossierTimeZone(passengerDossier.data.launchTimeZone) ?? "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(passengerDossier.data.startedAt))}
+        onCancel={() => setPassengerDossier(null)}
+        onExport={passengers => { const prepared = passengerDossier; setPassengerDossier(null); void requestDossier("MOROCCO", passengers, prepared); }}
+      />}
       {feedbackOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-[40dvh] w-[min(280px,calc(100vw-88px))] overflow-y-auto rounded-xl border border-white/20 bg-slate-950 p-3 text-xs text-white shadow-xl">
       <div className="flex items-center justify-between gap-2"><p>{trace.model.label} · {trace.label}</p><button type="button" aria-label="Fermer le suivi du dossier PDF" className="min-h-11 min-w-11" onClick={() => setFeedbackOpen(false)}><X size={16} /></button></div>
       {dossier && (dossier.status === "INVALID" ? <p role="alert">{dossier.message}</p> : <div role="status">

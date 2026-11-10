@@ -1,3 +1,4 @@
+import { prepareMoroccoPassengers, type MoroccoDossierPdfInput } from "./moroccoPassengers.ts";
 import type { MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
 type DossierPdfMap = MoroccoDossierMapImage | { error: string };
 import type { DossierPdfInput } from "./flightDossierPdf.ts";
@@ -5,7 +6,7 @@ import type { RecordedFlightPoint } from "./recordedFlight.ts";
 
 export interface DossierExportEnvironment {
   renderMap(points: DossierPdfInput["dossier"]["points"], signal?: AbortSignal): Promise<DossierPdfMap>;
-  createPdf(input: DossierPdfInput, map: DossierPdfMap): Promise<Uint8Array>;
+  createPdf(input: MoroccoDossierPdfInput, map: DossierPdfMap): Promise<Uint8Array>;
   download(bytes: Uint8Array, filename: string): void;
 }
 
@@ -31,8 +32,9 @@ function browserEnvironment(): DossierExportEnvironment {
 }
 
 /** No calls at import/render time; this entry point is invoked by the dossier button. */
-export async function exportMoroccoFlightDossier(input: DossierPdfInput, signal?: AbortSignal, environment: DossierExportEnvironment = browserEnvironment()) {
+export async function exportMoroccoFlightDossier(input: MoroccoDossierPdfInput, signal?: AbortSignal, environment: DossierExportEnvironment = browserEnvironment()) {
   signal?.throwIfAborted();
+  prepareMoroccoPassengers(input.passengers);
   const { dossier } = input;
   if (dossier.points.length < 2 || input.weather && (input.weather.traceId !== dossier.traceId || input.weather.weatherModel !== dossier.model.providerModelId) || dossier.operations && dossier.operations.traceId !== dossier.traceId) throw new Error("Données du dossier incompatibles avec la trace sélectionnée.");
   let map: DossierPdfMap;
