@@ -4,21 +4,22 @@ import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import ts from 'typescript';
 import * as passengers from '../lib/moroccoPassengers.ts';
+import * as reference from '../lib/moroccoDossierReference.ts';
 const require=createRequire(import.meta.url);
 function harness(t){
   const descriptor=Object.getOwnPropertyDescriptor(globalThis,'document');Object.defineProperty(globalThis,'document',{configurable:true,value:{body:{}}});
   t.after(()=>{if(descriptor)Object.defineProperty(globalThis,'document',descriptor);else delete globalThis.document;});
-  const slots=[];let cursor=0;const effects=[];const exported=[];let cancelled=0;let shown=0;let tree;
+  const slots=[];let cursor=0;const effects=[];const exported=[];const references=[];let cancelled=0;let shown=0;let tree;
   const react={useId:()=> 'passenger-test',useRef:initial=>slots[cursor++]??=( {current:initial} ),useState(initial){const i=cursor++;slots[i]??={value:typeof initial==='function'?initial():initial};return[slots[i].value,value=>{slots[i].value=typeof value==='function'?value(slots[i].value):value;}];},useEffect(fn){const i=cursor++;if(!slots[i]){slots[i]={};effects.push(fn);}}};
-  const mocks={react,'react-dom':{createPortal:node=>node},'../lib/moroccoPassengers':passengers};
+  const mocks={react,'react-dom':{createPortal:node=>node},'../lib/moroccoPassengers':passengers,'../lib/moroccoDossierReference':reference};
   const js=ts.transpileModule(readFileSync(new URL('./MoroccoPassengerDialog.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,esModuleInterop:true,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const exports={};new Function('require','exports',js)(id=>id in mocks?mocks[id]:require(id),exports);
   const walk=(n,p,out=[])=>{if(n&&typeof n==='object'){if(p(n))out.push(n);for(const c of [n.props?.children].flat(Infinity))walk(c,p,out);}return out;};
-  const render=()=>{cursor=0;tree=exports.default({date:'06/11/2026',onCancel:()=>cancelled++,onExport:rows=>exported.push(rows)});tree.props.ref.current={showModal(){shown++;}};while(effects.length)effects.shift()();return tree;};
+  const render=()=>{cursor=0;tree=exports.default({reference:reference.resolveMoroccoDossierReference({startedAt:'2026-11-05T23:30:00Z',launchTimeZone:'Africa/Casablanca'}),onCancel:()=>cancelled++,onExport:(rows,ref)=>{exported.push(rows);references.push(ref);}});tree.props.ref.current={showModal(){shown++;}};while(effects.length)effects.shift()();return tree;};
   const all=p=>walk(tree,p);const row=i=>all(n=>n.type==='fieldset')[i];
   const change=(i,type,value)=>{const field=walk(row(i),n=>n.type===type)[0];field.props.onChange({target:{value}});render();};
   const submit=()=>{all(n=>n.type==='form')[0].props.onSubmit({preventDefault(){}});render();};
-  render();return{all,row,change,submit,render,exported,get cancelled(){return cancelled;},get shown(){return shown;},get tree(){return tree;}};
+  render();return{all,row,change,submit,render,exported,references,get cancelled(){return cancelled;},get shown(){return shown;},get tree(){return tree;}};
 }
 test('thirteen blank slots; category change immediately displays H/F/E weights before export',t=>{
   const h=harness(t);assert.equal(h.shown,1);assert.equal(h.all(n=>n.type==='fieldset').length,13);
@@ -51,4 +52,16 @@ test('invalid custom weight prevents export; clearing and leaving the field rest
   const h=harness(t);h.change(0,'select','H');
   for(const raw of ['0','-5','abc']){editWeight(h,raw);h.submit();assert.equal(h.exported.length,0);assert.ok(h.all(n=>n.props?.role==='alert').some(n=>n.props.children.includes('poids personnalisé')));}
   editWeight(h,'');weightInput(h).props.onBlur();h.render();assert.equal(weightInput(h).props.value,'92');h.submit();assert.equal(h.exported.length,1);
+});
+
+test('editable local dossier date and time are prefilled from preparation and forwarded on export',t=>{
+  const h=harness(t);const field=type=>h.all(n=>n.type==='input'&&n.props.type===type)[0];
+  assert.equal(field('date').props.value,'2026-11-06');assert.equal(field('time').props.value,'00:30');
+  field('date').props.onChange({target:{value:'2026-11-12'}});h.render();field('time').props.onChange({target:{value:'08:15'}});h.render();h.submit();
+  assert.deepEqual(h.references[0],{date:'2026-11-12',time:'08:15'});
+});
+test('invalid dossier date or time blocks export without changing passenger entries',t=>{
+  const h=harness(t);h.change(0,'select','F');editWeight(h,'81,5');
+  h.all(n=>n.type==='input'&&n.props.type==='date')[0].props.onChange({target:{value:'2026-02-30'}});h.render();h.submit();
+  assert.equal(h.exported.length,0);assert.ok(h.all(n=>n.props?.role==='alert').some(n=>n.props.children.includes('Date/heure')));assert.equal(weightInput(h).props.value,'81,5');
 });

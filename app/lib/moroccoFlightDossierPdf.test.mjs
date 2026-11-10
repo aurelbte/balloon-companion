@@ -81,7 +81,7 @@ test('scheduled date uses the launch timezone, and France keeps its original tit
   assert.match(france.getTitle(), /^Dossier de vol -/);
   assert.equal(france.getForm().getFields().length, 0);
   assert.ok(hasText(france.getPage(0), 'Dossier de vol'));
-  assert.equal(maroc.getPage(0).node.Annots().size(), 66); // Passenger sheet has 13 × 5 fields plus date; the two independent dossier layouts can paginate differently.
+  assert.equal(maroc.getPage(0).node.Annots().size(), 67); // Passenger sheet has 13 × 5 fields plus date/time; the two independent dossier layouts can paginate differently.
 });
 
 test('Morocco export has its own filename and respects failures and cancellation', async () => {
@@ -110,7 +110,7 @@ test('satellite changes only the Morocco map page, preserves all 39 fields and k
   // Font resource names can differ after adding attribution lines; compare drawing/text content.
   const normalized=page=>contents(page).replace(/\/(Helvetica(?:-Bold)?)-\d+/g,"/$1");
   for(let i=0;i<plan.getPageCount()-1;i++)assert.equal(normalized(satellite.getPage(i)),normalized(plan.getPage(i)),`page ${i+1}`);
-  assert.equal(satellite.getForm().getFields().length,105);
+  assert.equal(satellite.getForm().getFields().length,106);
   const page=satellite.getPage(satellite.getPageCount()-1);
   assert.ok(hasText(page,'EOxCloudless'));assert.ok(hasText(page,'CC BY 4.0'));
   assert.ok(!hasText(page,'OpenStreetMap'));

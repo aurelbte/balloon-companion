@@ -1,3 +1,4 @@
+import { resolveMoroccoDossierReference } from "./moroccoDossierReference.ts";
 import { prepareMoroccoPassengers, type MoroccoDossierPdfInput } from "./moroccoPassengers.ts";
 import type { MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
 type DossierPdfMap = MoroccoDossierMapImage | { error: string };
@@ -36,6 +37,7 @@ export async function exportMoroccoFlightDossier(input: MoroccoDossierPdfInput, 
   signal?.throwIfAborted();
   prepareMoroccoPassengers(input.passengers);
   const { dossier } = input;
+  const reference = resolveMoroccoDossierReference(dossier, input.dossierReference);
   if (dossier.points.length < 2 || input.weather && (input.weather.traceId !== dossier.traceId || input.weather.weatherModel !== dossier.model.providerModelId) || dossier.operations && dossier.operations.traceId !== dossier.traceId) throw new Error("Données du dossier incompatibles avec la trace sélectionnée.");
   let map: DossierPdfMap;
   try { map = await environment.renderMap(dossier.points, signal); }
@@ -47,7 +49,7 @@ export async function exportMoroccoFlightDossier(input: MoroccoDossierPdfInput, 
   const bytes = await environment.createPdf(input, map);
   signal?.throwIfAborted();
   const id = dossier.traceId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80) || "strategie";
-  const filename = `preparation-maroc_${dossier.startedAt.slice(0, 10)}_${id}.pdf`;
+  const filename = `preparation-maroc_${reference.date}_${id}.pdf`;
   environment.download(bytes, filename);
   return { filename, mapUnavailable: "error" in map || map.background === "NEUTRAL" };
 }

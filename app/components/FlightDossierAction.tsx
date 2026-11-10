@@ -1,7 +1,7 @@
 "use client";
 import MoroccoPassengerDialog from "./MoroccoPassengerDialog";
 import type { MoroccoPassenger } from "../lib/moroccoPassengers";
-import { dossierTimeZone } from "../lib/flightDossierPresentation";
+import { resolveMoroccoDossierReference, type MoroccoDossierReference } from "../lib/moroccoDossierReference";
 import { FileDown, LoaderCircle, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import FlightDossierOperationsSummary from "./FlightDossierOperationsSummary";
@@ -59,7 +59,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [exportMenuOpen]);
-  const requestDossier = async (variant: "FRANCE" | "MOROCCO" = "FRANCE", passengers?: readonly MoroccoPassenger[], alreadyPrepared?: FlightDossierResult) => {
+  const requestDossier = async (variant: "FRANCE" | "MOROCCO" = "FRANCE", passengers?: readonly MoroccoPassenger[], alreadyPrepared?: FlightDossierResult, dossierReference?: MoroccoDossierReference) => {
     if (!onFlightDossier || dossierRequest.current && !dossierRequest.current.signal.aborted) return;
     const controller = new AbortController();
     dossierRequest.current = controller;
@@ -85,7 +85,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
       controller.signal.throwIfAborted();
       const input = { dossier: prepared.data, weather, weatherError };
       const result = variant === "MOROCCO"
-        ? await (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier({ ...input, passengers }, controller.signal)
+        ? await (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier({ ...input, passengers, dossierReference }, controller.signal)
         : await (await import("../lib/flightDossierExport")).exportFlightDossier(input, controller.signal);
       if (!controller.signal.aborted) setDossierDownload(result.mapUnavailable ? "Dossier téléchargé. Fond cartographique indisponible, signalé dans le PDF." : "Dossier de vol téléchargé.");
     } catch (error) {
@@ -99,7 +99,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
     setExportMenuOpen(false);
     try {
       const prepared = onFlightDossier(trace.traceId);
-      if (prepared.status === "READY") { setFeedbackOpen(false); setPassengerDossier(prepared); }
+      if (prepared.status === "READY") { resolveMoroccoDossierReference(prepared.data); setFeedbackOpen(false); setPassengerDossier(prepared); }
       else { setDossier(prepared); setFeedbackOpen(true); }
     } catch (error) {
       setDossierWeatherError(`Préparation du listing impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`);
@@ -116,9 +116,9 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
         </div>}
       </div>
       {passengerDossier && <MoroccoPassengerDialog
-        date={new Intl.DateTimeFormat("fr-FR", { timeZone: dossierTimeZone(passengerDossier.data.launchTimeZone) ?? "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(passengerDossier.data.startedAt))}
+        reference={resolveMoroccoDossierReference(passengerDossier.data)}
         onCancel={() => setPassengerDossier(null)}
-        onExport={passengers => { const prepared = passengerDossier; setPassengerDossier(null); void requestDossier("MOROCCO", passengers, prepared); }}
+        onExport={(passengers, reference) => { const prepared = passengerDossier; setPassengerDossier(null); void requestDossier("MOROCCO", passengers, prepared, reference); }}
       />}
       {feedbackOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-[40dvh] w-[min(280px,calc(100vw-88px))] overflow-y-auto rounded-xl border border-white/20 bg-slate-950 p-3 text-xs text-white shadow-xl">
       <div className="flex items-center justify-between gap-2"><p>{trace.model.label} · {trace.label}</p><button type="button" aria-label="Fermer le suivi du dossier PDF" className="min-h-11 min-w-11" onClick={() => setFeedbackOpen(false)}><X size={16} /></button></div>

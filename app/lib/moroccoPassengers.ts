@@ -1,10 +1,11 @@
+import type { MoroccoDossierReference } from "./moroccoDossierReference.ts";
 import type { DossierPdfInput } from "./flightDossierPdf.ts";
 
 export const MOROCCO_PASSENGER_COUNT = 13;
 export const MOROCCO_PASSENGER_WEIGHTS = Object.freeze({ H: 92, F: 74, E: 35 } as const);
 export type MoroccoPassengerSex = "" | keyof typeof MOROCCO_PASSENGER_WEIGHTS;
 export type MoroccoPassenger = Readonly<{ lastName: string; firstName: string; nationality: string; sex: MoroccoPassengerSex; customWeightKg?: number }>;
-export type MoroccoDossierPdfInput = DossierPdfInput & { passengers?: readonly MoroccoPassenger[] };
+export type MoroccoDossierPdfInput = DossierPdfInput & { passengers?: readonly MoroccoPassenger[]; dossierReference?: MoroccoDossierReference };
 export const emptyMoroccoPassengers = (): MoroccoPassenger[] => Array.from({ length: MOROCCO_PASSENGER_COUNT }, () => ({ lastName: "", firstName: "", nationality: "", sex: "" }));
 export function moroccoPassengerWeight(sex: MoroccoPassengerSex, customWeightKg?: number): number | null {
   return customWeightKg !== undefined ? customWeightKg : sex === "" ? null : MOROCCO_PASSENGER_WEIGHTS[sex];

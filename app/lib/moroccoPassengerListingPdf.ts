@@ -1,9 +1,10 @@
+import type { ResolvedMoroccoDossierReference } from "./moroccoDossierReference.ts";
 import { PDFDocument, PDFDict, PDFHexString, PDFName, PDFString, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { moroccoPassengerListingBase64 } from "./moroccoPassengerListingAsset.ts";
 import { prepareMoroccoPassengers, type MoroccoPassenger } from "./moroccoPassengers.ts";
 
 /** Append only after the existing dossier is finished: its pages, fields and numbering are untouched. */
-export async function prependMoroccoPassengerListing(document: PDFDocument, date: string, passengers?: readonly MoroccoPassenger[]) {
+export async function prependMoroccoPassengerListing(document: PDFDocument, reference: ResolvedMoroccoDossierReference, passengers?: readonly MoroccoPassenger[]) {
   const rows = prepareMoroccoPassengers(passengers);
   const original = await PDFDocument.load(moroccoPassengerListingBase64);
   if (original.getPageCount() !== 1) throw new Error("Le listing AVB doit comporter une page.");
@@ -32,7 +33,10 @@ export async function prependMoroccoPassengerListing(document: PDFDocument, date
     field.updateAppearances(font);
     for (const widget of field.acroField.getWidgets()) widget.dict.set(PDFName.of("DA"), PDFString.of(field.acroField.getDefaultAppearance()!));
   };
-  text("pax-date", "Date du dossier", date, 460, 742, 100, 19);
+  text("pax-date", "Date du dossier", reference.dateLabel, 460, 742, 100, 19);
+  page.drawText("Heure :", { x: 421, y: 721, size: 11, font });
+  text("pax-heure", "Heure locale du dossier", reference.time, 460, 715, 100, 19);
+  page.drawText(`${reference.timeZone} (${reference.offset})`, { x: 421, y: 703, size: 7, font });
   rows.forEach((row, index) => {
     const prefix = `pax-${index + 1}`;
     const y = 599 - index * 39.0147;

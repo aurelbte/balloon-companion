@@ -1,10 +1,11 @@
+import { resolveMoroccoDossierReference } from "./moroccoDossierReference.ts";
 import { prependMoroccoPassengerListing } from "./moroccoPassengerListingPdf.ts";
 import type { MoroccoDossierPdfInput } from "./moroccoPassengers.ts";
 import { MOROCCO_SATELLITE_ATTRIBUTION, type MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
 // Independent Morocco preparation generator. France remains in flightDossierPdf.ts.
 import { moroccoChecklistBase64, moroccoLogoBase64 } from "./moroccoChecklistAsset.ts";
 import { addMoroccoChecklistFields } from "./moroccoChecklistFields.ts";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, PDFName, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { FlightDossierResult } from "./flightDossierEntry.ts";
 import type { FlightDossierWeather } from "./flightDossierWeather.ts";
 import { dossierLocalTime, dossierTimeZone, dossierWind, dossierArrivalWindWarning } from "./flightDossierPresentation.ts";
@@ -58,11 +59,14 @@ class DossierLayout {
   readonly document: PDFDocument;
   readonly font: PDFFont;
   readonly bold: PDFFont;
-  constructor(document: PDFDocument, font: PDFFont, bold: PDFFont) { this.document = document; this.font = font; this.bold = bold; }
+  readonly referenceLabel: string;
+  constructor(document: PDFDocument, font: PDFFont, bold: PDFFont, referenceLabel: string) { this.document = document; this.font = font; this.bold = bold; this.referenceLabel = referenceLabel; }
   newPage() {
     this.page = this.document.addPage(A4);
     this.page.drawRectangle({ x: 0, y: A4[1] - 61, width: A4[0], height: 61, color: INK });
     this.page.drawText("BALLOON COMPANION", { x: MARGIN, y: A4[1] - 29, size: 11, font: this.bold, color: rgb(1, 1, 1) });
+    const referenceSize = Math.min(7.5, 345 / this.font.widthOfTextAtSize(this.referenceLabel, 1));
+    this.page.drawText(this.referenceLabel, { x: A4[0] - MARGIN - this.font.widthOfTextAtSize(this.referenceLabel, referenceSize), y: A4[1] - 29, size: referenceSize, font: this.font, color: rgb(1, 1, 1) });
     this.page.drawText(safeText(this.section, this.font), { x: MARGIN, y: A4[1] - 47, size: 9, font: this.font, color: rgb(.75, .86, .90) });
     this.y = A4[1] - 84;
   }
@@ -152,7 +156,8 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, da
 
 export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage): Promise<Uint8Array> {
   const { dossier, weather } = input;
-  const scheduledDate = new Intl.DateTimeFormat("fr-FR", { timeZone: dossierTimeZone(dossier.launchTimeZone) ?? "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(dossier.startedAt));
+  const reference = resolveMoroccoDossierReference(dossier, input.dossierReference);
+  const scheduledDate = reference.dateLabel;
   const date = (value: string | null | undefined) => dossierLocalTime(value, dossier.launchTimeZone, true);
   // PDF convention: convert altitude m/s once; ground values already use km/h.
   const unit = "km/h";
@@ -161,13 +166,16 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   if (dossier.points.length < 2) throw new Error("Trajectoire sélectionnée invalide.");
   const document = await PDFDocument.load(moroccoChecklistBase64);
   addMoroccoChecklistFields(document);
-  document.setTitle(`Préparation Maroc - ${scheduledDate} - ${dossier.launchSiteName || dossier.traceId}`);
+  document.setTitle(`Préparation Maroc - ${scheduledDate} ${reference.time} - ${dossier.launchSiteName || dossier.traceId}`);
   document.setAuthor("Balloon Companion");
+  document.setCreationDate(new Date(reference.iso));
+  document.setModificationDate(new Date(reference.iso));
+  document.catalog.delete(PDFName.of("Metadata")); // Inherited XMP describes the blank template, not this dossier reference.
   document.setSubject(`Stratégie ${dossier.traceId} - ${dossier.model.providerModelId}`);
-  const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold));
+  const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold), reference.label);
   const first = dossier.points[0], last = dossier.points.at(-1)!;
   const coordinates = (point: typeof first) => `${number(point.latitude, 6)}, ${number(point.longitude, 6)}`;
-  layout.heading(`Préparation Maroc - ${scheduledDate}`);
+  layout.heading(`Préparation Maroc - ${scheduledDate} ${reference.time}`);
   const logo = await document.embedPng(moroccoLogoBase64);
   const logoSize = logo.scaleToFit(110, 55);
   layout.ensure(logoSize.height + 10);
@@ -179,7 +187,7 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
     ["Décollage prévu", dossierLocalTime(dossier.startedAt, dossier.launchTimeZone)], ["Atterrissage prévu", dossierLocalTime(dossier.landingAt, dossier.launchTimeZone)], ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`],
     ["Fuseau du terrain", dossier.launchTimeZone || absent], ["Ballon", `${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`],
     ["Modèle météo sélectionné", `${dossier.model.label} (${dossier.model.providerModelId})`], ["Stratégie", dossier.strategyLabel || absent], ["Identifiant de trace", dossier.traceId],
-    ["Points horodatés", String(dossier.points.length)], ["Généré le", date(input.generatedAt ?? new Date().toISOString())],
+    ["Points horodatés", String(dossier.points.length)], ["Date/heure du dossier", reference.label],
   ]);
   layout.paragraph("Horaires locaux du terrain en priorité, UTC entre parenthèses. Prévisions et données disponibles au moment de la préparation ; les indisponibilités et incertitudes restent explicites.");
   if (!dossierTimeZone(dossier.launchTimeZone)) layout.paragraph("Fuseau du terrain indisponible : horaires affichés en UTC uniquement.");
@@ -317,6 +325,8 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
     layout.paragraph(attribution, { size: 8, muted: true });
   }
   layout.finish();
-  await prependMoroccoPassengerListing(document, scheduledDate, input.passengers);
+  await prependMoroccoPassengerListing(document, reference, input.passengers);
+  // The two original checklists have no dossier clock fields; use their blank lower margins.
+  for (const page of document.getPages().slice(1, 3)) page.drawText(`Dossier : ${reference.label}`, { x: MARGIN, y: 18, size: 8, font: layout.font, color: MUTED });
   return document.save();
 }

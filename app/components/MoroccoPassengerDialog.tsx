@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import { resolveMoroccoDossierReference, type MoroccoDossierReference, type ResolvedMoroccoDossierReference } from "../lib/moroccoDossierReference";
 import { createPortal } from "react-dom";
 import { emptyMoroccoPassengers, moroccoPassengerWeight, prepareMoroccoPassengers, type MoroccoPassenger, type MoroccoPassengerSex } from "../lib/moroccoPassengers";
 
-type Props = { date: string; onCancel: () => void; onExport: (passengers: readonly MoroccoPassenger[]) => void };
-export default function MoroccoPassengerDialog({ date, onCancel, onExport }: Props) {
+type Props = { reference: ResolvedMoroccoDossierReference; onCancel: () => void; onExport: (passengers: readonly MoroccoPassenger[], reference: MoroccoDossierReference) => void };
+export default function MoroccoPassengerDialog({ reference, onCancel, onExport }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const [referenceDate, setReferenceDate] = useState(reference.date);
+  const [referenceTime, setReferenceTime] = useState(reference.time);
   const [rows, setRows] = useState(emptyMoroccoPassengers);
   const [weightDrafts, setWeightDrafts] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +29,16 @@ export default function MoroccoPassengerDialog({ date, onCancel, onExport }: Pro
   return createPortal(<dialog ref={dialog} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onCancel(); }} className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none bg-[var(--bc-color-canvas)] p-0 text-[var(--bc-color-text)] backdrop:bg-black/60 sm:m-auto sm:h-auto sm:max-h-[92dvh] sm:w-[min(960px,96vw)] sm:rounded-2xl">
     <form className="flex max-h-dvh flex-col sm:max-h-[92dvh]" onSubmit={event => {
       event.preventDefault();
-      try { prepareMoroccoPassengers(rows); onExport(rows); } catch (cause) { setError(cause instanceof Error ? cause.message : "Listing invalide."); }
+      try { const editedReference = { date: referenceDate, time: referenceTime }; resolveMoroccoDossierReference({ startedAt: reference.iso, launchTimeZone: reference.timeZone }, editedReference); prepareMoroccoPassengers(rows); onExport(rows, editedReference); } catch (cause) { setError(cause instanceof Error ? cause.message : "Listing invalide."); }
     }}>
       <header className="shrink-0 border-b px-4 pb-3 pt-[max(16px,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between gap-3"><h2 id={titleId} className="text-base font-semibold">Maroc · liste des passagers</h2><button type="button" onClick={onCancel} className="min-h-11 rounded-lg px-3">Annuler</button></div>
-        <p className="text-sm">Date du dossier : {date}</p>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <label className="min-w-0 text-xs">Date du dossier<input type="date" required value={referenceDate} onChange={event => { setReferenceDate(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
+          <label className="min-w-0 text-xs">Heure du dossier<input type="time" required step="60" value={referenceTime} onChange={event => { setReferenceTime(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
+        </div>
+        <p className="mt-1 text-xs">Heure locale du vol : {reference.timeZone}. Cette référence ne déplace pas les horaires des données météo ou du vol.</p>
+        {reference.warning && <p role="status" className="mt-1 text-xs">{reference.warning}</p>}
         <p className="mt-1 text-xs">13 places · valeurs par défaut H : 92 kg, F : 74 kg, E : 35 kg. Poids modifiables ; « Auto » rétablit le barème. Laissez les places inutilisées vides.</p>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
