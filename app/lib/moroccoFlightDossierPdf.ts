@@ -1,3 +1,4 @@
+import { MOROCCO_SATELLITE_ATTRIBUTION, type MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
 // Independent Morocco preparation generator. France remains in flightDossierPdf.ts.
 import { moroccoChecklistBase64, moroccoLogoBase64 } from "./moroccoChecklistAsset.ts";
 import { addMoroccoChecklistFields } from "./moroccoChecklistFields.ts";
@@ -147,7 +148,7 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, da
   [...new Set([...item.reasons, ...item.passages.flatMap((passage) => passage.reasons)])].forEach((reason) => layout.paragraph(`Incertitude : ${uncertainty(reason)}`, { muted: true }));
 }
 
-export async function createMoroccoFlightDossierPdf(input: DossierPdfInput, map: DossierPdfMap): Promise<Uint8Array> {
+export async function createMoroccoFlightDossierPdf(input: DossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage): Promise<Uint8Array> {
   const { dossier, weather } = input;
   const scheduledDate = new Intl.DateTimeFormat("fr-FR", { timeZone: dossierTimeZone(dossier.launchTimeZone) ?? "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(dossier.startedAt));
   const date = (value: string | null | undefined) => dossierLocalTime(value, dossier.launchTimeZone, true);
@@ -304,12 +305,14 @@ export async function createMoroccoFlightDossierPdf(input: DossierPdfInput, map:
   else {
     if (map.timeMarkers?.length) layout.paragraph(`Repères après décollage : ${map.timeMarkers.join(" / ")} min (points source, sans interpolation).`, { size: 8 });
     const image = await document.embedPng(map.png);
-    const availableHeight = layout.y - BOTTOM - 33;
+    const attribution = map.background === "SATELLITE" ? `Fond satellite 2016 (~10 m) : ${MOROCCO_SATELLITE_ATTRIBUTION} Échelle locale au centre.` : map.background === "OPENSTREETMAP" ? "Fond : © OpenStreetMap contributors. Échelle locale au centre de la carte." : "Fond satellite indisponible : trajectoire et zone de vol conservées. Échelle locale au centre.";
+    const attributionHeight = wrapDossierText(attribution, layout.font, 8, WIDTH).length * 10 + 11;
+    const availableHeight = layout.y - BOTTOM - Math.max(33, attributionHeight);
     const scale = Math.min(WIDTH / image.width, availableHeight / image.height);
     const width = image.width * scale, height = image.height * scale;
     layout.page.drawImage(image, { x: MARGIN + (WIDTH - width) / 2, y: layout.y - height, width, height });
     layout.y -= height + 8;
-    layout.paragraph(map.background === "OPENSTREETMAP" ? "Fond : © OpenStreetMap contributors. Échelle locale au centre de la carte." : "Fond cartographique indisponible : seule la trajectoire projetée est affichée. Échelle locale au centre.", { size: 8, muted: true });
+    layout.paragraph(attribution, { size: 8, muted: true });
   }
   layout.finish();
   return document.save();

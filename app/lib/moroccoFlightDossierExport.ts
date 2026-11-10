@@ -1,4 +1,6 @@
-import type { DossierPdfInput, DossierPdfMap } from "./flightDossierPdf.ts";
+import type { MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
+type DossierPdfMap = MoroccoDossierMapImage | { error: string };
+import type { DossierPdfInput } from "./flightDossierPdf.ts";
 import type { RecordedFlightPoint } from "./recordedFlight.ts";
 
 export interface DossierExportEnvironment {
@@ -8,9 +10,9 @@ export interface DossierExportEnvironment {
 }
 
 export async function renderFlightDossierMap(points: DossierPdfInput["dossier"]["points"], signal?: AbortSignal): Promise<DossierPdfMap> {
-  const { renderPassengerMemoryMap } = await import("./passengerMemoryMap.ts");
+  const { renderMoroccoDossierMap } = await import("./moroccoDossierMap.ts");
   const mapPoints: RecordedFlightPoint[] = points.map((point) => ({ timestamp: Date.parse(point.timestamp), latitude: point.latitude, longitude: point.longitude, altitudeMeters: point.altitudeAmslM, speedMetersPerSecond: null, headingDegrees: null, horizontalAccuracyMeters: null, verticalAccuracyMeters: null }));
-  return renderPassengerMemoryMap(mapPoints, { signal });
+  return renderMoroccoDossierMap(mapPoints, signal);
 }
 
 function browserEnvironment(): DossierExportEnvironment {
