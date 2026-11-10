@@ -8,6 +8,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { LAUNCH_SATELLITE_LAYER, LAUNCH_SATELLITE_SOURCE, launchSatelliteSource, setLaunchPointBaseMap, type LaunchPointBaseMap } from "../../lib/launchPointBaseMap";
 import type { GeocodingResult } from "../../lib/trajectory/integration";
 
+const SATELLITE_ERROR_WINDOW_MS = 10_000;
+const MAX_SATELLITE_ERRORS = 3;
+
 type LaunchPointMapDialogProps = {
   initialPoint: GeocodingResult;
   onCancel: () => void;
@@ -31,6 +34,7 @@ export default function LaunchPointMapDialog({
   const [baseMap, setBaseMap] = useState<LaunchPointBaseMap>("plan");
   const baseMapRef = useRef<LaunchPointBaseMap>("plan");
   const [satelliteError, setSatelliteError] = useState<string | null>(null);
+  const satelliteErrorsRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -84,7 +88,7 @@ export default function LaunchPointMapDialog({
       if (baseMapRef.current !== "satellite") return;
       baseMapRef.current = setLaunchPointBaseMap(map, "plan");
       setBaseMap("plan");
-      setSatelliteError("Satellite indisponible : fond Plan restauré.");
+      setSatelliteError("Satellite indisponible : fond Plan restauré. Vous pouvez réessayer Satellite.");
     };
     map.on("load", () => {
       if (!satelliteSource) return;
@@ -92,8 +96,15 @@ export default function LaunchPointMapDialog({
       map.addLayer({ id: LAUNCH_SATELLITE_LAYER, type: "raster", source: LAUNCH_SATELLITE_SOURCE, layout: { visibility: "none" } });
       setLaunchPointBaseMap(map, baseMapRef.current);
     });
+    map.on("sourcedata", (event) => {
+      if (event.sourceId === LAUNCH_SATELLITE_SOURCE && event.isSourceLoaded) satelliteErrorsRef.current = [];
+    });
     map.on("error", (event) => {
-      if (("sourceId" in event && event.sourceId === LAUNCH_SATELLITE_SOURCE) || event.error.message.includes("api.maptiler.com")) restorePlan();
+      if (baseMapRef.current !== "satellite") return;
+      if (!("sourceId" in event && event.sourceId === LAUNCH_SATELLITE_SOURCE) && !event.error.message.includes("api.maptiler.com")) return;
+      const now = Date.now();
+      satelliteErrorsRef.current = satelliteErrorsRef.current.filter(time => now - time <= SATELLITE_ERROR_WINDOW_MS).concat(now);
+      if (satelliteErrorsRef.current.length >= MAX_SATELLITE_ERRORS) restorePlan();
     });
     return () => {
       map.remove();
@@ -103,9 +114,19 @@ export default function LaunchPointMapDialog({
   }, [initialPoint.latitude, initialPoint.longitude, mapTilerKey]);
 
   const selectBaseMap = (selected: LaunchPointBaseMap) => {
-    if (selected === "satellite" && (!mapTilerKey || satelliteError)) return;
+    if (selected === "satellite" && !mapTilerKey) return;
     baseMapRef.current = selected;
     const map = mapRef.current;
+    if (selected === "satellite") {
+      satelliteErrorsRef.current = [];
+      setSatelliteError(null);
+      if (satelliteError) {
+        const source = map?.getSource(LAUNCH_SATELLITE_SOURCE) as maplibregl.RasterTileSource | undefined;
+        const specification = launchSatelliteSource(mapTilerKey);
+        // setTiles reloads the existing raster source, including previously failed tiles.
+        if (source && specification?.tiles) source.setTiles(specification.tiles);
+      }
+    }
     if (map?.getLayer("plan-base") && map.getLayer(LAUNCH_SATELLITE_LAYER)) setLaunchPointBaseMap(map, selected);
     setBaseMap(selected);
   };
@@ -139,8 +160,8 @@ export default function LaunchPointMapDialog({
       {allowBaseMapSelection && <div className="shrink-0 border-b px-3 py-2" style={{ borderColor: "var(--bc-border)" }}>
         <fieldset className="flex min-w-0 flex-wrap items-center justify-center gap-2">
           <legend className="sr-only">Fond de carte du terrain favori</legend>
-          {(["plan", "satellite"] as const).map((value) => <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm ${value === "satellite" && (!mapTilerKey || satelliteError) ? "opacity-50" : ""}`} style={{ borderColor: baseMap === value ? "var(--bc-accent)" : "var(--bc-border)" }}>
-            <input type="radio" name="favorite-launch-base-map" value={value} checked={baseMap === value} disabled={value === "satellite" && (!mapTilerKey || Boolean(satelliteError))} onChange={() => selectBaseMap(value)} className="h-4 w-4 accent-[var(--bc-accent)]" />
+          {(["plan", "satellite"] as const).map((value) => <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm ${value === "satellite" && !mapTilerKey ? "opacity-50" : ""}`} style={{ borderColor: baseMap === value ? "var(--bc-accent)" : "var(--bc-border)" }}>
+            <input type="radio" name="favorite-launch-base-map" value={value} checked={baseMap === value} disabled={value === "satellite" && !mapTilerKey} onChange={() => selectBaseMap(value)} className="h-4 w-4 accent-[var(--bc-accent)]" />
             {value === "plan" ? "Plan" : "Satellite"}
           </label>)}
         </fieldset>

@@ -926,6 +926,7 @@ export default function PreparePage() {
 
       {launchPointDraft && (
         <LaunchPointMapDialog
+          allowBaseMapSelection
           initialPoint={launchPointDraft}
           onCancel={() => setLaunchPointDraft(null)}
           onConfirm={(point) => {
