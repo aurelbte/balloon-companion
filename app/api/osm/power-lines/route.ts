@@ -9,12 +9,11 @@ const OVERPASS_PROVIDERS = [
   "https://overpass-api.de/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
-const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
 // Two attempts including body reads fit inside the client's 15-second timeout.
 const TOTAL_BUDGET_MS = 14_000;
-const PRIMARY_TIMEOUT_MS = 12_000;
-const SECONDARY_TIMEOUT_MS = 13_000;
-// Avoid a near-certain failed fallback after the primary exhausts its budget.
+const PRIMARY_TIMEOUT_MS = 6_000;
+const SECONDARY_TIMEOUT_MS = 8_000;
+// The primary is capped at 6 s, leaving up to 8 s for a real fallback.
 const MIN_FALLBACK_BUDGET_MS = 3_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -50,13 +49,14 @@ export async function GET(request: Request) {
         },
         body: new URLSearchParams({ data: buildPowerLinesQuery(bounds) + (includeObstacles ? buildObstaclesQuery(bounds) : "") }),
         signal,
+        cache: "no-store",
       });
       status = response.status;
       if (!response.ok) {
         console.warn("[power-lines]", { provider, status, cause: "http" });
         // Release the failed response without waiting for its body.
         void response.body?.cancel().catch(() => {});
-        if (RETRYABLE_STATUSES.has(status)) continue;
+        if (status === 429 || (status >= 500 && status <= 599)) continue;
         break;
       }
       phase = "json";
@@ -74,7 +74,8 @@ export async function GET(request: Request) {
     } catch (error) {
       const timeout = signal.aborted || (error instanceof Error && error.name === "TimeoutError");
       console.warn("[power-lines]", { provider, status: status ?? null, cause: timeout ? "timeout" : phase });
-      if (!timeout) break;
+      // Network, timeout, JSON and schema failures are recoverable on another provider.
+      continue;
     }
   }
   return Response.json({ error: "Données indisponibles" }, { status: 503, headers: NO_STORE });

@@ -12,7 +12,7 @@ function payload(bounds, obstacleElements = [tower], lineElements = [way]) {
 }
 function harness(fetcher) {
  const store = new PowerLineMemoryStore(fetcher); let lines, obstacles;
- const runtime = new PowerLineRuntime(s => { lines = s; }, store, s => { obstacles = s; });
+ const runtime = new PowerLineRuntime(s => { lines = s; }, store, s => { obstacles = s; }, () => Date.parse(stamp) + 60_000);
  return { store, runtime, get lines() { return lines; }, get obstacles() { return obstacles; } };
 }
 test('OSM typed IDs distinguish nodes/ways/relations and retain height and representative centers', () => {

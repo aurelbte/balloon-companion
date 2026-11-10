@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import {parsePowerLines,getPowerLineQueryBounds,powerLineBoundsContain,validatePowerLineResult} from './powerLines.ts';
-import {PowerLineMemoryStore,PowerLineRuntime,powerLineStatusLabel} from './powerLinesRuntime.ts';
+import {PowerLineMemoryStore,PowerLineRuntime,powerLineStatusLabel,POWER_LINE_CACHE_MAX_AGE_MS} from './powerLinesRuntime.ts';
 const viewport={west:2,south:50,east:2.1,north:50.1};
 const elsewhere={west:4,south:48,east:4.1,north:48.1};
 const stamp='2026-09-18T12:00:00.000Z';
@@ -12,7 +12,7 @@ const way={id:1,tags:{power:'line'},geometry:[{lon:2,lat:50},{lon:2.1,lat:50.1}]
 const envelope=(bounds,elements=[way],extra={})=>({...parsePowerLines({elements,...extra}),bounds,fetchedAt:stamp});
 const response=(body,ok=true)=>({ok,json:async()=>body});
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-function setup(fetcher){let state;const states=[];const store=new PowerLineMemoryStore(fetcher);const runtime=new PowerLineRuntime(value=>{state=value;states.push(value);},store);return {runtime,store,states,get state(){return state;}};}
+function setup(fetcher){let state;const states=[];const store=new PowerLineMemoryStore(fetcher);const runtime=new PowerLineRuntime(value=>{state=value;states.push(value);},store,undefined,()=>Date.parse(stamp)+15*60_000);return {runtime,store,states,get state(){return state;}};}
 for(const [elements,status] of [[[way],'AVAILABLE'],[[],'EMPTY_CONFIRMED']])test(`validated result => ${status}`,async()=>{
  const bounds=getPowerLineQueryBounds(viewport);const h=setup(async()=>response(envelope(bounds,elements)));
  await h.runtime.update(viewport,true);assert.equal(h.state.status,status);assert.equal(h.state.covered,true);assert.equal(h.state.fetchedAt,stamp);
@@ -163,4 +163,36 @@ test('EMPTY_CONFIRMED globally implies no pertinent known line, including crossi
  let state;const runtime=new PowerLineRuntime(value=>state=value,store);await runtime.update(area,false);assert.equal(state.status,expected);
  if(state.status==='EMPTY_CONFIRMED')assert.equal(state.data.features.filter(feature=>powerLineFeatureIntersectsViewport(feature,area)).length,0);
  }
+});
+
+for (const elements of [[way], []]) test(`stale complete ${elements.length ? 'lines' : 'empty'} refreshes, fresh cache is reused and old data stays visible while loading`, async () => {
+ const bounds=getPowerLineQueryBounds(viewport);let now=Date.parse(stamp),calls=0;
+ const pending=deferred(),states=[];
+ const store=new PowerLineMemoryStore(async (_url,options)=>{assert.equal(options.cache,'no-store');return ++calls===1?response(envelope(bounds,elements)):pending.promise;});
+ const runtime=new PowerLineRuntime(state=>states.push(state),store,undefined,()=>now);
+ await runtime.update(viewport,true);await runtime.update(viewport,true);assert.equal(calls,1);
+ now+=POWER_LINE_CACHE_MAX_AGE_MS;
+ const refreshing=runtime.update(viewport,true);
+ assert.equal(calls,2);assert.equal(states.at(-1).loading,true);
+ assert.equal(states.at(-1).data.features.length,elements.length);assert.equal(states.at(-1).fetchedAt,stamp);
+ const fresh={...envelope(bounds,[way]),fetchedAt:new Date(now).toISOString()};
+ pending.resolve(response(fresh));await refreshing;
+ assert.equal(states.at(-1).status,'AVAILABLE');assert.equal(states.at(-1).fetchedAt,fresh.fetchedAt);
+ await runtime.update(viewport,true);assert.equal(calls,2);
+});
+for (const elements of [[way], []]) test(`failed stale ${elements.length ? 'lines' : 'empty'} refresh retains original cache and allows retry`, async () => {
+ const bounds=getPowerLineQueryBounds(viewport);let now=Date.parse(stamp),calls=0,state;
+ const store=new PowerLineMemoryStore(async()=>{if(++calls===2)throw new TypeError('network');return response({...envelope(bounds,elements),fetchedAt:new Date(now).toISOString()});});
+ const runtime=new PowerLineRuntime(value=>state=value,store,undefined,()=>now);
+ await runtime.update(viewport,true);now+=POWER_LINE_CACHE_MAX_AGE_MS+1;
+ await runtime.update(viewport,true);assert.equal(state.status,'UNKNOWN_COVERAGE');assert.equal(state.data.features.length,elements.length);
+ assert.equal([...store.results.values()][0].fetchedAt,stamp);
+ await runtime.update(viewport,true);assert.equal(calls,3);assert.equal(state.fetchedAt,new Date(now).toISOString());
+});
+test('stale complete cache is retained offline without a refresh request',async()=>{
+ let now=Date.parse(stamp),calls=0,state;const bounds=getPowerLineQueryBounds(viewport);
+ const store=new PowerLineMemoryStore(async()=>{calls++;return response(envelope(bounds));});
+ const runtime=new PowerLineRuntime(value=>state=value,store,undefined,()=>now);
+ await runtime.update(viewport,true);now+=POWER_LINE_CACHE_MAX_AGE_MS+1;
+ await runtime.update(viewport,false);assert.equal(calls,1);assert.equal(state.data.features.length,1);assert.match(powerLineStatusLabel(state),/Hors ligne/);
 });

@@ -710,6 +710,10 @@ export default function PreparationMap({
       for (const layerId of [POWER_LINES_CASING_LAYER, POWER_LINES_LAYER]) {
         if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
       }
+      if (showPowerLines) {
+        const bounds = map.getBounds();
+        void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+      }
     };
     if (map.getSource(POWER_LINES_SOURCE)) sync();
     else map.once("load", sync);

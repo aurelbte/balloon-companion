@@ -1,6 +1,11 @@
 import { getPowerLineQueryBounds, powerLineBoundsContain, powerLineBoundsKey, validatePowerLineResult, type PowerLineBounds, type PowerLineResult } from "./powerLines.ts";
 import { obstacleQueryBounds, validateObstacleResult } from "./obstacles.ts";
 import { ObstacleMemoryStore, ObstacleRuntime, type ObstacleState } from "./obstacleRuntime.ts";
+export const POWER_LINE_CACHE_MAX_AGE_MS = 60 * 60_000;
+export function powerLineResultIsFresh(result: PowerLineResult, now: number): boolean {
+  const age = now - Date.parse(result.fetchedAt);
+  return Number.isFinite(age) && age >= 0 && age < POWER_LINE_CACHE_MAX_AGE_MS;
+}
 export type PowerLineStatus = "LOADING" | "AVAILABLE" | "EMPTY_CONFIRMED" | "UNAVAILABLE" | "INCOMPLETE" | "UNKNOWN_COVERAGE";
 export type PowerLineState = { status: PowerLineStatus; loading: boolean; covered: boolean; offline: boolean; data: GeoJSON.FeatureCollection; fetchedAt?: string; retained: boolean };
 export class PowerLineMemoryStore {
@@ -18,7 +23,7 @@ export class PowerLineMemoryStore {
     const request = (async () => {
       const params = new URLSearchParams(Object.entries(bounds).map(([name, value]) => [name, String(value)]));
       if (includeObstacles) params.set("obstacles", "1");
-      const response = await this.fetcher(`/api/osm/power-lines?${params}`, { signal: AbortSignal.timeout(15_000) });
+      const response = await this.fetcher(`/api/osm/power-lines?${params}`, { signal: AbortSignal.timeout(15_000), cache: "no-store" });
       if (!response.ok) throw new Error("Données de lignes indisponibles");
       const payload = await response.json();
       if (includeObstacles) {
@@ -66,8 +71,9 @@ export class PowerLineRuntime {
   private publish: (state: PowerLineState) => void;
   private store: PowerLineMemoryStore;
   private obstacles?: ObstacleRuntime;
-  constructor(publish: (state: PowerLineState) => void, store = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void) {
-    this.publish = publish; this.store = store;
+  private now: () => number;
+  constructor(publish: (state: PowerLineState) => void, store = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, now: () => number = Date.now) {
+    this.publish = publish; this.store = store; this.now = now;
     if (publishObstacles) this.obstacles = new ObstacleRuntime(publishObstacles, store.obstacles, bounds => store.load(bounds, true));
   }
   stop() { this.generation++; this.obstacles?.stop(); }
@@ -101,11 +107,13 @@ export class PowerLineRuntime {
     const generation = ++this.generation;
     const previous = this.snapshot(viewport, !online);
     this.publish(previous);
-    if (previous.covered || !online || (previous.status === "INCOMPLETE" && [...this.store.results.values()].some(result => powerLineBoundsContain(result.bounds, viewport)))) return;
+    const now = this.now();
+    const freshCoverage = [...this.store.results.values()].some(result => result.complete && powerLineResultIsFresh(result, now) && powerLineBoundsContain(result.bounds, viewport));
+    if (!online || (freshCoverage && (previous.covered || previous.status === "INCOMPLETE"))) return;
     this.publish({ ...previous, status: previous.retained ? "UNKNOWN_COVERAGE" : "LOADING", loading: true });
     try {
       const bounds = getPowerLineQueryBounds(viewport);
-      const cached = [...this.store.results.values()].find(result => result.complete && powerLineBoundsContain(result.bounds, bounds));
+      const cached = [...this.store.results.values()].find(result => result.complete && powerLineResultIsFresh(result, now) && powerLineBoundsContain(result.bounds, bounds));
       const result = cached ?? await this.store.load(bounds, includeObstacles);
       if (generation !== this.generation) return;
       const next = this.snapshot(viewport, !online);

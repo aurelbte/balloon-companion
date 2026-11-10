@@ -36,9 +36,9 @@ test("le calque reste désactivé et ne charge rien par défaut", () => {
   assert.match(page, /powerLines: false/);
   assert.match(page, /showPowerLines=\{layerSettings\.powerLines\}/);
   assert.match(panel, /\["powerLines", "Lignes haute tension"\]/);
-  assert.match(map, /if \(!showPowerLines\) return/);
+  assert.match(map, /!showPowerLinesRef\.current && !\(showObstaclesRef\.current/);
   assert.match(map, /map\.current\.on\("moveend"/);
-  assert.match(map, /powerLineBoundsContain/);
+  assert.match(map, /powerLineRuntimeRef\.current\?\.update/);
   assert.match(map, /visibility: showPowerLinesRef\.current \? "visible" as const : "none" as const/);
 });
 

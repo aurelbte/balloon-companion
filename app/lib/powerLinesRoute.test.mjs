@@ -27,7 +27,7 @@ function harness(t, outcomes) {
   );
   return { calls, logs, budgets, GET: exports.GET, advance(ms) { now += ms; } };
 }
-for (const status of [429, 502, 503, 504]) test(`HTTP ${status} falls back once and preserves C10 envelope`, async t => {
+for (const status of [429, 500, 501, 502, 503, 504, 599]) test(`HTTP ${status} falls back once and preserves C10 envelope`, async t => {
   const h = harness(t, [() => new Response('', { status }), success]);
   const result = await h.GET(request());
   assert.equal(result.status, 200);
@@ -39,26 +39,31 @@ for (const status of [429, 502, 503, 504]) test(`HTTP ${status} falls back once 
   assert.equal(h.calls[1].options.method, 'POST');
   assert.equal(h.calls[0].options.body.toString(), h.calls[1].options.body.toString());
   assert.equal(h.logs[0][1].status, status);
-  assert.deepEqual(h.budgets, [1000, 13000]);
+  assert.deepEqual(h.budgets, [6000, 8000]);
 });
 test('timeout falls back with a bounded remaining budget', async t => {
-  const h = harness(t, [() => { h.advance(1500); throw new DOMException('expired', 'TimeoutError'); }, success]);
+  const h = harness(t, [() => { h.advance(6000); throw new DOMException('expired', 'TimeoutError'); }, success]);
   assert.equal((await h.GET(request())).status, 200);
-  assert.deepEqual(h.budgets, [1000, 12500]);
+  assert.deepEqual(h.budgets, [6000, 8000]);
   assert.equal(h.logs[0][1].cause, 'timeout');
 });
-for (const [name, outcome] of [
-  ['400', () => new Response('', { status: 400 })],
-  ['500', () => new Response('', { status: 500 })],
-  ['network', () => { throw new TypeError('network failure'); }],
-  ['invalid JSON', () => new Response('invalid')],
-  ['invalid schema', () => Response.json({})],
-]) test(`${name} does not trigger fallback`, async t => {
-  const h = harness(t, [outcome]);
+for (const status of [400, 403, 404]) test(`HTTP ${status} does not trigger fallback`, async t => {
+  const h = harness(t, [() => new Response('', { status })]);
   const result = await h.GET(request());
   assert.equal(result.status, 503);
   assert.equal(result.headers.get('Cache-Control'), 'no-store');
   assert.equal(h.calls.length, 1);
+});
+for (const [name, outcome] of [
+  ['network', () => { throw new TypeError('network failure'); }],
+  ['invalid JSON', () => new Response('invalid')],
+  ['invalid schema', () => Response.json({})],
+]) test(`${name} falls back and validates the secondary response`, async t => {
+  const h = harness(t, [outcome, success]);
+  const result = await h.GET(request());
+  assert.equal(result.status, 200);
+  assert.equal(validatePowerLineResult(await result.json(), bounds).features.length, 1);
+  assert.equal(h.calls.length, 2);
 });
 test('both failures stop after two attempts and never cache errors', async t => {
   const h = harness(t, [() => new Response('', { status: 502 }), () => { throw new DOMException('expired', 'TimeoutError'); }]);
@@ -91,7 +96,7 @@ test('primary success does not contact secondary', async t => {
   assert.equal((await h.GET(request())).status, 200);
   assert.equal(h.calls.length, 1);
   assert.equal(h.logs.length, 0);
-  assert.deepEqual(h.budgets, [1000]);
+  assert.deepEqual(h.budgets, [6000]);
 });
 test('timeout while reading response body also falls back', async t => {
   const h = harness(t, [() => ({ ok: true, status: 200, json: async () => { throw new DOMException('body timeout', 'TimeoutError'); } }), success]);
