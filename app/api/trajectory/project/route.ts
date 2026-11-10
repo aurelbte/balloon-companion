@@ -1,3 +1,5 @@
+import { validateMultiAltitudeProjectionRequest } from "../../../lib/trajectory/integration";
+import type { MoroccoRawForecast } from "../../../lib/moroccoWeatherCapture";
 import { orchestrateMultiAltitudeProjection } from "../../../lib/trajectory/multiProjectionServer";
 import { OpenMeteoWindProvider } from "../../../lib/weather/openMeteo/adapter";
 import {
@@ -24,7 +26,15 @@ export async function POST(request: Request) {
   }
 
   const retrievals: string[] = [];
-  const client = createOpenMeteoClient(getOpenMeteoServerConfig());
+  const config = getOpenMeteoServerConfig();
+  const baseClient = createOpenMeteoClient(config);
+  const archive = !!payload && typeof payload === "object" && "archiveMoroccoWeather" in payload && payload.archiveMoroccoWeather === true;
+  const rawForecasts: MoroccoRawForecast[] = [];
+  const client = { ...baseClient, async fetchWindColumn(query: Parameters<typeof baseClient.fetchWindColumn>[0]) {
+    const raw = await baseClient.fetchWindColumn(query);
+    if (archive) rawForecasts.push({ source: "Open-Meteo", endpoint: config.tier === "commercial" ? "https://customer-api.open-meteo.com/v1/forecast" : "https://api.open-meteo.com/v1/forecast", kind: "calculation", model: query.weatherModel, query: { ...query }, receivedAt: new Date().toISOString(), payload: raw });
+    return raw;
+  } };
   const result = await orchestrateMultiAltitudeProjection(payload, {
     async getTerrainAltitude(latitude, longitude) {
       return parseOpenMeteoElevation(
@@ -36,5 +46,6 @@ export async function POST(request: Request) {
     },
   });
   if (result.body.ok && retrievals.length) result.body.weatherFetchedAt = retrievals.sort()[0];
+  if (result.body.ok && archive) result.body.moroccoCalculation = { request: validateMultiAltitudeProjectionRequest(payload), rawForecasts };
   return Response.json(result.body, { status: result.status });
 }

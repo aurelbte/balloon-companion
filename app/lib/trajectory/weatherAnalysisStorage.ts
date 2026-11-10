@@ -22,6 +22,7 @@ export type AnalysisLayerSettings = {
 };
 
 export type WeatherAnalysisTrace = AltitudeProjectionResult & {
+  moroccoPreparationIdentity?: string;
   traceId: string;
   model: WeatherModelDefinition;
   weatherFetchedAt?: string;

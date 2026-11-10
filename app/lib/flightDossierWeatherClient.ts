@@ -1,3 +1,4 @@
+import { resolveMoroccoDossierReference, type MoroccoDossierReference } from "./moroccoDossierReference.ts";
 import type { FlightDossierResult } from "./flightDossierEntry.ts";
 import type { FlightDossierWeather, FlightDossierWeatherRequest } from "./flightDossierWeather.ts";
 
@@ -15,4 +16,20 @@ export async function loadFlightDossierWeather(
   const payload = await response.json();
   if (!response.ok || !payload.data || payload.data.traceId !== dossier.traceId || payload.data.weatherModel !== dossier.model.providerModelId) throw new Error(payload.error ?? "Données météo du dossier indisponibles.");
   return payload.data;
+}
+
+/** Morocco only: the reference bounds source availability, never forecast validity. */
+export async function loadMoroccoFlightDossierWeather(
+  dossier: Extract<FlightDossierResult, { status: "READY" }>["data"],
+  reference?: MoroccoDossierReference,
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+): Promise<FlightDossierWeather> {
+  const availabilityReferenceAt = resolveMoroccoDossierReference(dossier, reference).iso;
+  return loadFlightDossierWeather(dossier, signal, async (_url, init) => {
+    const input = JSON.parse(String(init?.body));
+    const response = await fetchImpl("/api/preparation/morocco-dossier-weather", { ...init, body: JSON.stringify({ ...input, availabilityReferenceAt }) });
+    if (response.ok && (await response.clone().json()).data?.availabilityReferenceAt !== availabilityReferenceAt) throw new Error("Référence de disponibilité météo Maroc incohérente.");
+    return response;
+  });
 }

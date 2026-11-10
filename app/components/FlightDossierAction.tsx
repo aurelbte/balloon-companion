@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import FlightDossierOperationsSummary from "./FlightDossierOperationsSummary";
 import FlightDossierWeatherSummary from "./FlightDossierWeatherSummary";
 import { loadFlightDossierWeather } from "../lib/flightDossierWeatherClient";
+import { loadMoroccoDossierPreparation } from "../lib/moroccoPreparationClient";
 import type { FlightDossierWeather } from "../lib/flightDossierWeather";
 import type { FlightDossierResult } from "../lib/flightDossierEntry";
 import type { WeatherAnalysisTrace } from "../lib/trajectory/weatherAnalysisStorage";
@@ -72,10 +73,16 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
       const prepared = alreadyPrepared ?? onFlightDossier(trace.traceId);
       setDossier(prepared);
       if (prepared.status !== "READY") return;
+      let exportDossier = prepared.data;
       let weather: FlightDossierWeather | null = null;
       let weatherError: string | null = null;
       try {
-        weather = await loadFlightDossierWeather(prepared.data, controller.signal);
+        if (variant === "MOROCCO") {
+          const saved = await loadMoroccoDossierPreparation(prepared.data, dossierReference, controller.signal);
+          exportDossier = saved.dossier;
+          weather = saved.weather;
+          setDossier({ status: "READY", data: exportDossier });
+        } else weather = await loadFlightDossierWeather(prepared.data, controller.signal);
         if (!controller.signal.aborted) setDossierWeather(weather);
       } catch (error) {
         controller.signal.throwIfAborted();
@@ -83,7 +90,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier }
         setDossierWeatherError(`${weatherError} Ces données seront signalées comme indisponibles dans le PDF.`);
       }
       controller.signal.throwIfAborted();
-      const input = { dossier: prepared.data, weather, weatherError };
+      const input = { dossier: exportDossier, weather, weatherError };
       const result = variant === "MOROCCO"
         ? await (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier({ ...input, passengers, dossierReference }, controller.signal)
         : await (await import("../lib/flightDossierExport")).exportFlightDossier(input, controller.signal);

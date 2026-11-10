@@ -189,11 +189,12 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
     ["Modèle météo sélectionné", `${dossier.model.label} (${dossier.model.providerModelId})`], ["Stratégie", dossier.strategyLabel || absent], ["Identifiant de trace", dossier.traceId],
     ["Points horodatés", String(dossier.points.length)], ["Date/heure du dossier", reference.label],
   ]);
-  layout.paragraph("Horaires locaux du terrain en priorité, UTC entre parenthèses. Prévisions et données disponibles au moment de la préparation ; les indisponibilités et incertitudes restent explicites.");
+  layout.paragraph("Horaires locaux du terrain en priorité, UTC entre parenthèses. Disponibilité des sources limitée à la référence du dossier ; les indisponibilités et incertitudes restent explicites.");
   if (!dossierTimeZone(dossier.launchTimeZone)) layout.paragraph("Fuseau du terrain indisponible : horaires affichés en UTC uniquement.");
   layout.paragraph("Sources : Open-Meteo, AviationWeather.gov, OpenAIP et OpenStreetMap. Les fréquences OpenAIP ne sont pas vérifiées dans l'AIP. L'activité des espaces et l'exhaustivité de leur couverture doivent être vérifiées.", { muted: true });
 
   layout.heading("METAR / TAF - Départ et arrivée");
+  layout.paragraph(`Limite de disponibilité des sources : ${reference.iso} (UTC). Les heures de validité du vol ne sont pas modifiées.`);
   layout.paragraph("Source : aviationweather.gov. Les stations les plus proches déclarant chaque produit ne garantissent pas sa représentativité locale.");
   if (!weather) layout.paragraph(`Données aviation indisponibles. ${input.weatherError || "Service météo indisponible."}`);
   else for (const location of ["departure", "landing"] as const) for (const product of ["metar", "taf"] as const) {

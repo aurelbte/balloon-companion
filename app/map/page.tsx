@@ -1,5 +1,6 @@
 "use client";
 
+import { archiveMoroccoCalculation, moroccoCalculationIdentity } from "../lib/moroccoCalculationArchive";
 import T150CapacityEstimate from "../components/prepare/T150CapacityEstimate";
 import { estimateUltramagicRemainingCapacity } from "../lib/t150CapacityEstimate";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
@@ -341,6 +342,7 @@ export default function MapPage() {
             version: 2,
             launchSite: config.request.launchSite,
             launchDateTimeIso: config.request.launchDateTimeIso,
+            ...(config.request.launchTimeZone ? { launchTimeZone: config.request.launchTimeZone } : {}),
             durationSeconds: config.request.durationSeconds,
             weatherModel: model.providerModelId,
             altitudesAmslM: selectedAltitudes,
@@ -351,12 +353,12 @@ export default function MapPage() {
             const response = await fetch("/api/trajectory/project", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify(request),
+              body: JSON.stringify({ ...request, archiveMoroccoWeather: true }),
               signal: controller.signal,
             });
             const payload =
               (await response.json()) as MultiAltitudeProjectionApiResponse;
-            return { model, payload };
+            return { model, payload, receivedAt: new Date().toISOString() };
           } catch (error) {
             if (controller.signal.aborted) return null;
             return {
@@ -379,7 +381,8 @@ export default function MapPage() {
       const nextTraces: WeatherAnalysisTrace[] = results.flatMap((result) => {
         if (!result?.payload.ok) return [];
         const payload = result.payload;
-        return payload.layerProjections.map((trace) => ({
+        return payload.layerProjections.map((trace) => {
+          const next: WeatherAnalysisTrace = {
               ...trace,
               ...(payload.flightProfileProjection &&
               trace.altitudeAmslM === config.request.primaryAltitudeAmslM
@@ -393,8 +396,21 @@ export default function MapPage() {
               forecastAtIso: config.request.launchDateTimeIso,
               terrainAltitudeAmslM: payload.terrainAltitudeAmslM,
               predictedWindProfile: payload.windProfile,
-            }));
+            };
+          if (payload.moroccoCalculation) next.moroccoPreparationIdentity = moroccoCalculationIdentity(payload.moroccoCalculation.request, next, payload.terrainAltitudeAmslM);
+          return next;
+        });
       });
+      // Snapshot the exact calculation evidence immediately; never wait for the PDF component.
+      for (const result of results) {
+        if (!result?.payload.ok || !result.payload.moroccoCalculation || !("receivedAt" in result) || !result.receivedAt) continue;
+        for (const trace of nextTraces.filter(trace => trace.model.id === result.model.id)) {
+          void archiveMoroccoCalculation(result.payload, trace, result.receivedAt).catch(error => {
+            if (!controller.signal.aborted && getRuntimeDataScope() === scope && getRuntimeDataScopeGeneration() === generation)
+              setNotice(`Archive météo Maroc non sauvegardée : ${error instanceof Error ? error.message : "stockage indisponible"}`);
+          });
+        }
+      }
       const nextFailures = results.flatMap((result) => {
         if (!result) return [];
         if (!result.payload.ok) {
@@ -957,7 +973,7 @@ export default function MapPage() {
           onFlightDossier={(traceId) => {
               const dossier = prepareFlightDossier(traceId, displayedTraces, selectedBalloon);
               if (dossier.status !== "READY") return dossier;
-              return { ...dossier, data: { ...dossier.data, launchSiteName: config.request.launchSite.name, launchTimeZone: config.request.launchTimeZone, operations: prepareFlightDossierOperations(dossier.data, loadInput, airspaceCoverage.airspaces, testLoadEnabled) } };
+              return { ...dossier, data: { ...dossier.data, moroccoPreparationIdentity: displayedTraces.find(trace => trace.traceId === traceId)?.moroccoPreparationIdentity, launchSiteName: config.request.launchSite.name, launchTimeZone: config.request.launchTimeZone, operations: prepareFlightDossierOperations(dossier.data, loadInput, airspaceCoverage.airspaces, testLoadEnabled) } };
             }} />}
         </div>
         {legendOpen && (

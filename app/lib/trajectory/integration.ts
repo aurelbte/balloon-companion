@@ -112,6 +112,8 @@ export type AltitudeProjectionFailure = {
 };
 
 export type MultiAltitudeProjectionSuccess = {
+  /** Optional provenance only; the engine does not consume it. */
+  moroccoCalculation?: { request: MultiAltitudeProjectionRequest; rawForecasts: import("../moroccoWeatherCapture.ts").MoroccoRawForecast[] };
   /** Server receipt after successful weather payload validation; never a model run. */
   weatherFetchedAt?: string;
   ok: true;

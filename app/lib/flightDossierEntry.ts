@@ -5,6 +5,7 @@ import type { WeatherAnalysisTrace } from "./trajectory/weatherAnalysisStorage.t
 export type FlightDossierResult =
   | { status: "INVALID"; message: string }
   | { status: "READY"; data: {
+      moroccoPreparationIdentity?: string;
       traceId: string;
       strategyLabel?: string;
       launchSiteName?: string;
