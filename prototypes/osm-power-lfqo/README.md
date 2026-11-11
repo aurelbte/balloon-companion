@@ -68,3 +68,11 @@ Un test Python de génération hors réseau couvre seuil exact, valeurs multiple
 ```
 
 Les tests ciblés du lecteur existant vérifient les nouvelles tuiles réelles, leurs empreintes, leur déduplication et l’absence de `minor_line`/tensions inconnues dans le jeu actif. Aucun audit global ni modification du rendu.
+
+## Diagnostic des tuiles locales
+
+Le manifeste actif déclare désormais explicitement `empty_tiles=omitted_within_coverage` et `coverage_shape=disk`. Un emplacement XYZ absent de l’inventaire, mais situé dans le disque, est donc vide pour ce filtre ; il n’est pas demandé au serveur. Un emplacement hors du disque n’est pas une tuile manquante. Les intersections d’aire nulle aux bords des tuiles ne provoquent pas le chargement d’un fichier adjacent.
+
+Pour un fichier réellement indexé, le lecteur conserve séparément son URL et son statut : non chargé, chargement, disponible, HTTP 404/410, autre erreur HTTP, réseau, timeout, empreinte différente, contenu invalide ou vérification SHA-256 indisponible. Le bandeau n’appelle plus tous ces états « tuiles locales manquantes ». Un contexte sans WebCrypto sécurisé est signalé explicitement, sans affirmer que le fichier est absent. Les erreurs restent réessayables, avec revalidation HTTP après échec ; les données déjà validées restent en cache.
+
+Les 14 fichiers de l’inventaire actif ont été retrouvés localement, avec coordonnées XYZ et empreintes conformes. Cette vérification locale ne prouve pas leur disponibilité sur un déploiement distant. Aucun changement du filtre ≥63 kV ni du rendu rouge.

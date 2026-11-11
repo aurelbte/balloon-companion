@@ -77,7 +77,7 @@ test('failed or wrong-version local tiles are explicit missing data, never an Ov
   const h=harness(async url=>fail?new Response('wrong asset'):asset(url));
   await h.runtime.update(inside,true);
   assert.equal(h.state.status,'UNAVAILABLE');assert.equal(h.state.covered,false);
-  assert.match(h.state.coverageLabel,/tuiles locales manquantes/);
+  assert.match(h.state.coverageLabel,/empreinte.*SHA-256/);
   assert.equal(h.overpass.length,0);
   fail=false;await h.runtime.update(inside,true);
   assert.equal(h.state.status,'AVAILABLE');assert.equal(h.overpass.length,0);

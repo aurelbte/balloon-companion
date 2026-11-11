@@ -6,7 +6,7 @@ import type { PowerLineBounds } from "./powerLines.ts";
 const BASE = `/osm-power/lfqo/${manifest.dataset_sha256.slice(0, 16)}/`;
 type Line = GeoJSON.Feature<GeoJSON.LineString | GeoJSON.MultiLineString>;
 type Collection = GeoJSON.FeatureCollection<GeoJSON.LineString | GeoJSON.MultiLineString>;
-export type PreparationPowerLineState = PowerLineState & { coverageLabel: string; localCoverage?: "FULL" | "PARTIAL" };
+export type PreparationPowerLineState = PowerLineState & { coverageLabel: string; localCoverage?: "FULL" | "PARTIAL"; tileDiagnostics?: LFQOTileDiagnostic[] };
 const R = 6371008.8, RAD = Math.PI / 180;
 const lon0 = manifest.center.longitude, lat0 = manifest.center.latitude;
 export function lfqoDistanceM(lon: number, lat: number): number {
@@ -59,13 +59,52 @@ export function mergeLocalPowerLines(features: Line[]): Collection {
   return { type: "FeatureCollection", features: merged };
 }
 
+export type LFQOTileStatus = "OUTSIDE_COVERAGE" | "EMPTY" | "AVAILABLE" | "LOADING" | "NOT_LOADED" | "NOT_FOUND" | "HTTP_ERROR" | "NETWORK_ERROR" | "TIMEOUT" | "HASH_MISMATCH" | "INVALID_DATA" | "VERIFICATION_UNAVAILABLE";
+export type LFQOTileDiagnostic = { key: string; status: LFQOTileStatus; url?: string; httpStatus?: number };
+class LocalTileError extends Error {
+  status: LFQOTileStatus;
+  httpStatus?: number;
+  constructor(status: LFQOTileStatus, message: string, httpStatus?: number) { super(message); this.status = status; this.httpStatus = httpStatus; }
+}
+function xyzBounds(x: number, y: number): [number, number, number, number] {
+  const n = 2 ** manifest.tiling.zoom;
+  const lat = (row: number) => Math.atan(Math.sinh(Math.PI * (1 - 2 * row / n))) / RAD;
+  return [x / n * 360 - 180, lat(y + 1), (x + 1) / n * 360 - 180, lat(y)];
+}
+
 export class LFQOPowerLineTiles {
   private cache = new Map<string, Collection>();
   private pending = new Map<string, Promise<Collection>>();
+  private failures = new Map<string, { status: LFQOTileStatus; httpStatus?: number }>();
   private fetcher: typeof fetch;
   constructor(fetcher: typeof fetch = fetch) { this.fetcher = fetcher; }
+  diagnostics(view: PowerLineBounds): LFQOTileDiagnostic[] {
+    // Enumerate only the small LFQO envelope, at the manifest's fixed XYZ zoom (not the map zoom).
+    if (lfqoCoverage(view) === "OUTSIDE") return [];
+    const delta = manifest.radius_m / R, dlon = Math.asin(Math.sin(delta) / Math.cos(lat0 * RAD)) / RAD;
+    const west = Math.max(view.west, lon0 - dlon), east = Math.min(view.east, lon0 + dlon);
+    const south = Math.max(view.south, lat0 - delta / RAD), north = Math.min(view.north, lat0 + delta / RAD);
+    const n = 2 ** manifest.tiling.zoom;
+    const x = (lon: number) => Math.floor((lon + 180) / 360 * n);
+    const y = (lat: number) => Math.floor((1 - Math.asinh(Math.tan(lat * RAD)) / Math.PI) / 2 * n);
+    const entries = new Map(manifest.tiling.tiles.map(tile => [tile.key, tile]));
+    const results: LFQOTileDiagnostic[] = [];
+    for (let col = x(west); col <= x(east); col++) for (let row = y(north); row <= y(south); row++) {
+      const key = `tiles/${manifest.tiling.zoom}/${col}/${row}.geojson`, bounds = xyzBounds(col, row);
+      const intersection = { west: Math.max(view.west, bounds[0]), south: Math.max(view.south, bounds[1]), east: Math.min(view.east, bounds[2]), north: Math.min(view.north, bounds[3]) };
+      if (intersection.east <= intersection.west || intersection.north <= intersection.south) continue;
+      if (lfqoCoverage(intersection) === "OUTSIDE") { results.push({ key, status: "OUTSIDE_COVERAGE" }); continue; }
+      // The generated manifest indexes nonempty files only. Unlisted cells inside its disk are intentionally empty.
+      if (!entries.has(key)) { results.push({ key, status: "EMPTY" }); continue; }
+      if (this.cache.has(key)) results.push({ key, url: BASE + key, status: "AVAILABLE" });
+      else if (this.pending.has(key)) results.push({ key, url: BASE + key, status: "LOADING" });
+      else results.push({ key, url: BASE + key, ...(this.failures.get(key) ?? { status: "NOT_LOADED" as const }) });
+    }
+    return results;
+  }
   tiles(view: PowerLineBounds) {
-    return manifest.tiling.tiles.filter(t => t.bbox[0] <= view.east && t.bbox[2] >= view.west && t.bbox[1] <= view.north && t.bbox[3] >= view.south);
+    const relevant = new Set(this.diagnostics(view).filter(t => t.url).map(t => t.key));
+    return manifest.tiling.tiles.filter(t => relevant.has(t.key));
   }
   data(view: PowerLineBounds): Collection {
     return mergeLocalPowerLines(this.tiles(view).flatMap(t => this.cache.get(t.key)?.features ?? []));
@@ -77,15 +116,27 @@ export class LFQOPowerLineTiles {
       let request = this.pending.get(tile.key);
       if (!request) {
         request = (async () => {
-          const response = await this.fetcher(BASE + tile.key, { cache: "force-cache", signal: AbortSignal.timeout(10_000) });
-          if (!response.ok) throw new Error("Tuile locale LFQO indisponible.");
-          const bytes = await response.arrayBuffer();
-          const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), b => b.toString(16).padStart(2, "0")).join("");
-          if (digest !== tile.sha256) throw new Error("Version de tuile LFQO incohérente.");
-          const data = JSON.parse(new TextDecoder().decode(bytes)) as Collection;
-          if (data.type !== "FeatureCollection" || !Array.isArray(data.features) || data.features.length !== tile.features || data.features.some(f =>
-            !/^way\/\d+$/.test(String(f.id)) || !["line", "minor_line"].includes(f.properties?.power) || !["LineString", "MultiLineString"].includes(f.geometry?.type))) throw new Error("Tuile LFQO invalide.");
-          this.cache.set(tile.key, data); return data;
+          let phase: LFQOTileStatus = "NETWORK_ERROR";
+          try {
+            // Retry failed assets with HTTP revalidation instead of replaying a cached error or wrong body.
+            const response = await this.fetcher(BASE + tile.key, { cache: this.failures.has(tile.key) ? "reload" : "force-cache", signal: AbortSignal.timeout(10_000) });
+            if (!response.ok) throw new LocalTileError(response.status === 404 || response.status === 410 ? "NOT_FOUND" : "HTTP_ERROR", "Réponse HTTP de tuile LFQO", response.status);
+            const bytes = await response.arrayBuffer();
+            phase = "VERIFICATION_UNAVAILABLE";
+            if (!globalThis.crypto?.subtle) throw new LocalTileError(phase, "Vérification SHA-256 indisponible (contexte sécurisé requis).");
+            const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), b => b.toString(16).padStart(2, "0")).join("");
+            if (digest !== tile.sha256) throw new LocalTileError("HASH_MISMATCH", "Empreinte de tuile LFQO différente du manifeste.");
+            phase = "INVALID_DATA";
+            const data = JSON.parse(new TextDecoder().decode(bytes)) as Collection;
+            if (data.type !== "FeatureCollection" || !Array.isArray(data.features) || data.features.length !== tile.features || data.features.some(f =>
+              !/^way\/\d+$/.test(String(f.id)) || !["line", "minor_line"].includes(f.properties?.power) || !["LineString", "MultiLineString"].includes(f.geometry?.type))) throw new LocalTileError(phase, "Tuile LFQO invalide.");
+            this.cache.set(tile.key, data); this.failures.delete(tile.key); return data;
+          } catch (error) {
+            const failure = error instanceof LocalTileError ? { status: error.status, httpStatus: error.httpStatus } : {
+              status: error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "TIMEOUT" as const : phase,
+            };
+            this.failures.set(tile.key, failure); throw error;
+          }
         })();
         this.pending.set(tile.key, request);
       }
@@ -93,6 +144,21 @@ export class LFQOPowerLineTiles {
     }));
   }
 }
+function localTileIssueLabel(diagnostics: LFQOTileDiagnostic[]): string {
+  const count = (status: LFQOTileStatus) => diagnostics.filter(t => t.status === status).length;
+  const messages = [
+    ...[...new Set(diagnostics.filter(t => t.status === "NOT_FOUND").map(t => t.httpStatus))].map(status => `${diagnostics.filter(t => t.status === "NOT_FOUND" && t.httpStatus === status).length} fichier(s) local(aux) introuvable(s) (HTTP ${status})`),
+    ...[...new Set(diagnostics.filter(t => t.status === "HTTP_ERROR").map(t => t.httpStatus))].map(status => `${diagnostics.filter(t => t.status === "HTTP_ERROR" && t.httpStatus === status).length} erreur(s) HTTP ${status}`),
+    count("NETWORK_ERROR") ? `${count("NETWORK_ERROR")} erreur(s) réseau` : "",
+    count("TIMEOUT") ? `${count("TIMEOUT")} délai(s) de chargement dépassé(s)` : "",
+    count("HASH_MISMATCH") ? `${count("HASH_MISMATCH")} empreinte(s) SHA-256 différente(s) du manifeste` : "",
+    count("INVALID_DATA") ? `${count("INVALID_DATA")} tuile(s) invalide(s)` : "",
+    count("VERIFICATION_UNAVAILABLE") ? "Vérification SHA-256 indisponible (HTTPS requis)" : "",
+    count("NOT_LOADED") ? `${count("NOT_LOADED")} tuile(s) non chargée(s)` : "",
+  ];
+  return messages.filter(Boolean).join(" · ");
+}
+
 const localTiles = new LFQOPowerLineTiles();
 
 /** PreparationMap only. Crossing views stay explicitly partial rather than querying Overpass in LFQO. */
@@ -118,12 +184,12 @@ export class PreparationPowerLineRuntime {
     }
     this.fallback.stop();
     const publish = (loading: boolean) => {
-      const missing = this.tiles.missing(view), data = this.tiles.data(view);
+      const missing = this.tiles.missing(view), data = this.tiles.data(view), diagnostics = this.tiles.diagnostics(view);
       const covered = coverage === "FULL" && missing === 0;
       const snapshots = manifest.sources.map(s => s.snapshot_at_utc).filter(Boolean).sort();
-      this.publish({ data, covered, offline: !online, loading, retained: data.features.length > 0,
+      this.publish({ data, tileDiagnostics: diagnostics, covered, offline: !online, loading, retained: data.features.length > 0,
         status: missing ? loading ? "LOADING" : data.features.length ? "INCOMPLETE" : "UNAVAILABLE" : covered ? data.features.length ? "AVAILABLE" : "EMPTY_CONFIRMED" : "UNKNOWN_COVERAGE",
-        fetchedAt: snapshots[0], localCoverage: coverage === "FULL" ? "FULL" : "PARTIAL", coverageLabel: `Extrait local LFQO · rayon 20 km · ${coverage === "FULL" ? missing ? "couverture incomplète" : "vue couverte" : "couverture partielle : extérieur du disque non chargé"} · OSM du ${snapshots[0]?.slice(0, 10) ?? "date inconnue"} · non exhaustif${missing && !loading ? " · tuiles locales manquantes" : ""}` });
+        fetchedAt: snapshots[0], localCoverage: coverage === "FULL" ? "FULL" : "PARTIAL", coverageLabel: `Extrait local LFQO · rayon 20 km · ${coverage === "FULL" ? missing ? "couverture incomplète" : "vue couverte" : "couverture partielle : extérieur du disque non chargé"} · OSM du ${snapshots[0]?.slice(0, 10) ?? "date inconnue"} · non exhaustif${!loading && missing ? ` · ${localTileIssueLabel(diagnostics)}` : covered && !data.features.length ? " · extrait vide pour ce filtre" : ""}` });
     };
     publish(online && this.tiles.missing(view) > 0);
     await Promise.all([online ? this.tiles.load(view) : undefined, this.obstacles?.update(view, online, includeObstacles)]);

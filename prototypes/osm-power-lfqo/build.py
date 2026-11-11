@@ -264,7 +264,7 @@ def write_outputs(features, sources, stats, output, zoom=11):
                           'aerial':'power=line implies overhead; exclude explicit non-overhead location, tunnel, underground or submarine',
                           'unknown_voltage':'excluded; no inferred voltage'},
                 'voltage_policy':'Original voltage tag unchanged; voltage_max_v is the largest parsed component; voltage_v only for a single integer in volts',
-                'tiling':{'scheme':'XYZ','zoom':zoom,'format':'GeoJSON, NOT MVT','tile_bbox_crs':'EPSG:4326','buffer':0,'tiles':tile_manifest},
+                'tiling':{'scheme':'XYZ','zoom':zoom,'empty_tiles':'omitted_within_coverage','coverage_shape':'disk','format':'GeoJSON, NOT MVT','tile_bbox_crs':'EPSG:4326','buffer':0,'tiles':tile_manifest},
                 'dataset_sha256':hashlib.sha256(raw).hexdigest()}
     (output/'manifest.json').write_bytes(encode(manifest))
     print(json.dumps(stats, ensure_ascii=False), flush=True)
