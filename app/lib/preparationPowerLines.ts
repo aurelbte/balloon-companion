@@ -77,7 +77,7 @@ export class LFQOPowerLineTiles {
   private pending = new Map<string, Promise<Collection>>();
   private failures = new Map<string, { status: LFQOTileStatus; httpStatus?: number }>();
   private fetcher: typeof fetch;
-  constructor(fetcher: typeof fetch = fetch) { this.fetcher = fetcher; }
+  constructor(fetcher: typeof fetch = (...args) => fetch(...args)) { this.fetcher = fetcher; }
   diagnostics(view: PowerLineBounds): LFQOTileDiagnostic[] {
     // Enumerate only the small LFQO envelope, at the manifest's fixed XYZ zoom (not the map zoom).
     if (lfqoCoverage(view) === "OUTSIDE") return [];
