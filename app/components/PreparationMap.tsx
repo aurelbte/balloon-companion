@@ -40,7 +40,7 @@ import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, countValidTrajectoryPoints, createTrajectoryFitKey, trajectoryContentKey, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
 import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
 import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
-import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../lib/powerLinesRuntime";
+import { PreparationPowerLineRuntime, preparationPowerLineStatusLabel, lfqoCoverage, type PreparationPowerLineState } from "../lib/preparationPowerLines";
 import { addBourrousFlightZone } from "../lib/bourrousFlightZone";
 import { syncMapRelief } from "../lib/mapRelief";
 import { OBSTACLE_MIN_ZOOM } from "../lib/obstacles";
@@ -239,11 +239,11 @@ export default function PreparationMap({
   const lastCompletedTrajectoryFitKey = useRef("");
   const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
-  const [powerLineState, setPowerLineState] = useState<PowerLineState | null>(null);
-  const powerLineRuntimeRef = useRef<PowerLineRuntime | null>(null);
+  const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
+  const powerLineRuntimeRef = useRef<PreparationPowerLineRuntime | null>(null);
   const showObstaclesRef = useRef(showObstacles);
   const [obstacleState, setObstacleState] = useState<ObstacleState | null>(null);
-  const powerLineStateRef = useRef<PowerLineState | null>(null);
+  const powerLineStateRef = useRef<PreparationPowerLineState | null>(null);
   const viewportRef = useRef(onViewportChange);
   const selectionRef = useRef(onAirspacesSelected);
   const mapPressRef = useRef(onMapPress);
@@ -276,7 +276,7 @@ export default function PreparationMap({
   const landingZoneData = useMemo(() => landingZoneCollection(selectedTrace), [selectedTrace]);
 
   useEffect(() => {
-    const runtime = new PowerLineRuntime((state) => {
+    const runtime = new PreparationPowerLineRuntime((state) => {
       powerLineStateRef.current = state;
       setPowerLineState(state);
       (mapRef.current?.getSource(POWER_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(state.data);
@@ -424,16 +424,16 @@ export default function PreparationMap({
         attribution:
           '<a href="https://www.openaip.net/" target="_blank">© openAIP</a> — CC BY-NC 4.0',
       });
-      map.addSource(POWER_LINES_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addSource(POWER_LINES_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] }, attribution: '© OpenStreetMap contributors · Geofabrik' });
       const powerLineLayout = { "line-cap": "round" as const, "line-join": "round" as const, visibility: showPowerLines ? "visible" as const : "none" as const };
       map.addLayer({
         id: POWER_LINES_CASING_LAYER, type: "line", source: POWER_LINES_SOURCE,
-        filter: ["==", ["get", "power"], "line"], minzoom: 8, layout: powerLineLayout,
+        filter: ["in", ["get", "power"], ["literal", ["line", "minor_line"]]], minzoom: 8, layout: powerLineLayout,
         paint: { "line-color": "rgba(7, 17, 31, 0.82)", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4.6, 14, 7] },
       });
       map.addLayer({
         id: POWER_LINES_LAYER, type: "line", source: POWER_LINES_SOURCE,
-        filter: ["==", ["get", "power"], "line"], minzoom: 8, layout: powerLineLayout,
+        filter: ["in", ["get", "power"], ["literal", ["line", "minor_line"]]], minzoom: 8, layout: powerLineLayout,
         paint: { "line-color": "#dc2626", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.8, 14, 4.6] },
       });
       for (const category of AIRSPACE_RENDER_ORDER) {
@@ -873,12 +873,17 @@ export default function PreparationMap({
     let cancelled = false;
     void (async () => {
       const visibleBounds = map.getBounds();
-      await runtime.update({ west: visibleBounds.getWest(), south: visibleBounds.getSouth(), east: visibleBounds.getEast(), north: visibleBounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+      const visibleView = { west: visibleBounds.getWest(), south: visibleBounds.getSouth(), east: visibleBounds.getEast(), north: visibleBounds.getNorth() };
+      await runtime.update(visibleView, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+      // Local LFQO views must not trigger Overpass through arrival prefetch.
+      if (lfqoCoverage(visibleView) !== "OUTSIDE") return;
       // Arrival prefetch must not delay the visible area or multiply failed requests.
       if (cancelled || mapRef.current !== map || !powerLineStateRef.current?.covered) return;
       for (const point of arrivals) {
         if (cancelled || mapRef.current !== map || !navigator.onLine) return;
-        await runtime.update({ west: point.longitude - 0.06, south: point.latitude - 0.06, east: point.longitude + 0.06, north: point.latitude + 0.06 }, true);
+        const arrivalView = { west: point.longitude - 0.06, south: point.latitude - 0.06, east: point.longitude + 0.06, north: point.latitude + 0.06 };
+        if (lfqoCoverage(arrivalView) !== "OUTSIDE") continue;
+        await runtime.update(arrivalView, true);
         if (!powerLineStateRef.current?.covered) break;
       }
       if (cancelled || mapRef.current !== map) return;
@@ -892,7 +897,7 @@ export default function PreparationMap({
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
       {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" className="pointer-events-none absolute left-14 right-14 z-10 rounded bg-slate-950/90 px-2 py-1 text-center text-[10px] text-white" style={{ top: showPowerLines ? 100 : 58 }}>{obstacleStatusLabel(obstacleState)}</p>}
-      {showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{powerLineStatusLabel(powerLineState)}</p>}
+      {showPowerLines && powerLineState && preparationPowerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{preparationPowerLineStatusLabel(powerLineState)}</p>}
       {selectedTrace && <TrajectoryArrivalDetails key={selectedTrace.traceId} trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>

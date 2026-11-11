@@ -1,4 +1,5 @@
 import test from 'node:test';
+import ts from 'typescript';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -46,4 +47,24 @@ test('activation before map load requests once sources exist; cancellation remov
 test('activation preserves obstacle zoom gating and uses offline cache when disconnected', () => {
  const h = harness(); h.render(true, true, true); assert.equal(h.updates[0][2], true);
  h.zoom(10); h.render(true, true, false); assert.deepEqual(h.updates[1].slice(1), [false, false]);
+});
+
+test('arrival prefetch cannot trigger Overpass outside an LFQO viewport, while outside views keep their legacy prefetch', async () => {
+ const { lfqoCoverage } = await import('../lib/preparationPowerLines.ts');
+ const start=source.indexOf('  useEffect(() => {\n    const runtime = powerLineRuntimeRef.current;\n    const map = mapRef.current;\n    if (!runtime || !map || !navigator.onLine) return;');
+ assert.ok(start>=0);
+ const end=source.indexOf('  }, [traces, visibleTraceIds]);',start)+'  }, [traces, visibleTraceIds]);'.length;
+ const effect=new Function('useEffect','powerLineRuntimeRef','mapRef','navigator','traces','visibleTraceIds','powerLineStateRef','showObstaclesRef','OBSTACLE_MIN_ZOOM','lfqoCoverage',ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText);
+ const inside={west:3.05,east:3.1,south:50.67,north:50.71},outside={west:2.3,east:2.4,south:48.8,north:48.9};
+ for(const view of [inside,outside]){
+  const calls=[];
+  const map={getZoom:()=>12,getBounds:()=>({getWest:()=>view.west,getEast:()=>view.east,getSouth:()=>view.south,getNorth:()=>view.north})};
+  const traces=[{traceId:'local',projection:{points:[{latitude:50.68722,longitude:3.07556}]}},{traceId:'outside',projection:{points:[{latitude:48.85,longitude:2.35}]}}];
+  let cleanup;
+  effect(fn=>{cleanup=fn();},{current:{update:async bounds=>calls.push(bounds),stop(){}}},{current:map},{onLine:true},traces,['local','outside'],{current:{covered:true}},{current:false},11,lfqoCoverage);
+  await new Promise(resolve=>setImmediate(resolve));
+  if(view===inside)assert.equal(calls.length,1); // only the visible local view, no arrival viewport
+  else {assert.equal(calls.length,3);assert.ok(calls.every(b=>lfqoCoverage(b)==='OUTSIDE'));}
+  cleanup();
+ }
 });
