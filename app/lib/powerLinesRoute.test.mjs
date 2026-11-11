@@ -25,7 +25,7 @@ function harness(t, outcomes) {
     class extends Date { static now() { return now; } },
     { timeout(ms) { budgets.push(ms); return new AbortController().signal; } },
   );
-  return { calls, logs, budgets, GET: exports.GET, advance(ms) { now += ms; } };
+  return { calls, logs, budgets, GET: exports.GET, maxDuration: exports.maxDuration, advance(ms) { now += ms; } };
 }
 for (const status of [429, 500, 501, 502, 503, 504, 599]) test(`HTTP ${status} falls back once and preserves C10 envelope`, async t => {
   const h = harness(t, [() => new Response('', { status }), success]);
@@ -35,7 +35,7 @@ for (const status of [429, 500, 501, 502, 503, 504, 599]) test(`HTTP ${status} f
   assert.equal(data.features.length, 1);
   assert.equal(data.complete, true);
   assert.match(result.headers.get('Cache-Control'), /max-age=3600/);
-  assert.deepEqual(h.calls.map(call => call.url), ['https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter']);
+  assert.deepEqual(h.calls.map(call => call.url), ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter']);
   assert.equal(h.calls[1].options.method, 'POST');
   assert.equal(h.calls[0].options.body.toString(), h.calls[1].options.body.toString());
   assert.equal(h.logs[0][1].status, status);
@@ -123,4 +123,12 @@ test('malformed obstacle is partial and no-store without corrupting complete lin
  const result=await h.GET(new Request(request().url+'&obstacles=1'));const data=await result.json();
  validatePowerLineResult(data,bounds);assert.equal(data.complete,true);assert.equal(data.obstacles.complete,false);assert.equal(data.obstacles.emptyConfirmed,false);
  assert.equal(result.headers.get('Cache-Control'),'no-store');
+});
+
+test('Vercel duration leaves execution margin when the primary consumes its whole timeout', async t => {
+  const h = harness(t, [() => { h.advance(6000); throw new DOMException('expired', 'TimeoutError'); }, success]);
+  assert.equal((await h.GET(request())).status, 200);
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.budgets[1], 8000);
+  assert.ok(h.maxDuration * 1000 > h.budgets.reduce((total, ms) => total + ms, 0));
 });

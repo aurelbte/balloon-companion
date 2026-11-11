@@ -5,9 +5,12 @@ import {
 } from "../../../lib/powerLines";
 import { buildObstaclesQuery, obstacleKind, obstacleQueryBounds, parseObstacles } from "../../../lib/obstacles";
 
+// Leave a Vercel execution margin around the 14-second acquisition budget.
+export const maxDuration = 20;
+
 const OVERPASS_PROVIDERS = [
   "https://overpass-api.de/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
 ];
 // Two attempts including body reads fit inside the client's 15-second timeout.
 const TOTAL_BUDGET_MS = 14_000;
