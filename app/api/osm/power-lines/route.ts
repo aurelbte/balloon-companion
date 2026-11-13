@@ -23,6 +23,8 @@ const NO_STORE = { "Cache-Control": "no-store" };
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const includeObstacles = params.get("obstacles") === "1";
+  const includeLines = params.get("lines") !== "0";
+  if (!includeLines && !includeObstacles) return Response.json({ error: "Aucune couche demandée" }, { status: 400, headers: NO_STORE });
   const bounds: PowerLineBounds = {
     west: Number(params.get("west")),
     south: Number(params.get("south")),
@@ -50,7 +52,7 @@ export async function GET(request: Request) {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "BalloonCompanion/1.0",
         },
-        body: new URLSearchParams({ data: buildPowerLinesQuery(bounds) + (includeObstacles ? buildObstaclesQuery(bounds) : "") }),
+        body: new URLSearchParams({ data: (includeLines ? buildPowerLinesQuery(bounds) : "[out:json][timeout:15];") + (includeObstacles ? buildObstaclesQuery(bounds) : "") }),
         signal,
         cache: "no-store",
       });
@@ -65,6 +67,11 @@ export async function GET(request: Request) {
       phase = "json";
       const payload = await response.json();
       phase = "validation";
+      if (!includeLines) {
+        const fetchedAt = new Date().toISOString();
+        const obstacles = { ...parseObstacles(payload), bounds: obstacleQueryBounds(bounds), fetchedAt };
+        return Response.json({ obstacles }, { headers: { "Cache-Control": obstacles.complete ? "public, max-age=3600, stale-while-revalidate=86400" : "no-store" } });
+      }
       // Keep the strict C10 parser on its original collection, never on obstacle points.
       const linePayload = includeObstacles && Array.isArray(payload?.elements)
         ? { ...payload, elements: payload.elements.filter((item: { tags?: Record<string, unknown> }) => !obstacleKind(item?.tags) || item?.tags?.power === "line") }

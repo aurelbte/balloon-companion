@@ -20,7 +20,7 @@ function harness(fetchLocal = asset) {
     return Response.json({ type: 'FeatureCollection', features: [], bounds, fetchedAt, complete: true, rejectedElements: 0, emptyConfirmed: true,
       obstacles: { type: 'FeatureCollection', features: [], bounds: obstacleQueryBounds(bounds), fetchedAt, complete: true, rejectedElements: 0, emptyConfirmed: true } });
   });
-  const runtime = new PreparationPowerLineRuntime(state => states.push(state), store, state => obstacles.push(state), tiles);
+  const runtime = new PreparationPowerLineRuntime(state => states.push(state), store, state => obstacles.push(state), tiles, null);
   return { runtime, requests, overpass, states, obstacles, tiles, get state() { return states.at(-1); } };
 }
 test('circle coverage is independent of the surrounding XYZ rectangles; crossing views are explicit partial coverage', () => {

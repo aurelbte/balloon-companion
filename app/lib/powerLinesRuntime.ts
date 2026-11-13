@@ -13,8 +13,24 @@ export class PowerLineMemoryStore {
   readonly results = new Map<string, PowerLineResult>();
   readonly partialResults = new Map<string, PowerLineResult>();
   private requests = new Map<string, Promise<PowerLineResult>>();
+  private obstacleRequests = new Map<string, Promise<void>>();
   private fetcher: typeof fetch;
   constructor(fetcher: typeof fetch = (...args) => fetch(...args)) { this.fetcher = fetcher; }
+  async loadObstaclesOnly(bounds: PowerLineBounds): Promise<void> {
+    const key = powerLineBoundsKey(bounds);
+    const existing = this.obstacleRequests.get(key);
+    if (existing) return existing;
+    const request = (async () => {
+      const params = new URLSearchParams(Object.entries(bounds).map(([name, value]) => [name, String(value)]));
+      params.set("obstacles", "1"); params.set("lines", "0");
+      const response = await this.fetcher(`/api/osm/power-lines?${params}`, { signal: AbortSignal.timeout(15_000), cache: "no-store" });
+      if (!response.ok) throw new Error("Données obstacles indisponibles");
+      const payload = await response.json();
+      this.obstacles.put(validateObstacleResult(payload.obstacles, obstacleQueryBounds(bounds)));
+    })();
+    this.obstacleRequests.set(key, request);
+    try { await request; } finally { if (this.obstacleRequests.get(key) === request) this.obstacleRequests.delete(key); }
+  }
   async load(bounds: PowerLineBounds, includeObstacles = false): Promise<PowerLineResult> {
     const key = powerLineBoundsKey(bounds);
     const requestKey = includeObstacles ? `${key}:obstacles-v1` : key;

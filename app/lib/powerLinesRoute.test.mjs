@@ -132,3 +132,13 @@ test('Vercel duration leaves execution margin when the primary consumes its whol
   assert.equal(h.budgets[1], 8000);
   assert.ok(h.maxDuration * 1000 > h.budgets.reduce((total, ms) => total + ms, 0));
 });
+
+test('obstacles-only acquisition never queries electric lines and never claims empty electric coverage', async t => {
+  const h = harness(t, [() => Response.json({ elements: [] })]);
+  const result = await h.GET(new Request(`http://localhost/api/osm/power-lines?${new URLSearchParams(bounds)}&obstacles=1&lines=0`));
+  assert.equal(result.status, 200);
+  const data = await result.json(); assert.equal(data.obstacles.complete, true); assert.equal(data.features, undefined);
+  const query = h.calls[0].options.body.get('data');
+  assert.match(query, /^\[out:json\]/); assert.match(query, /"power"="tower"/);
+  assert.doesNotMatch(query, /"power"="line"/);
+});

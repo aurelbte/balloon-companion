@@ -40,7 +40,7 @@ import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, countValidTrajectoryPoints, createTrajectoryFitKey, trajectoryContentKey, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
 import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
 import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
-import { PreparationPowerLineRuntime, preparationPowerLineStatusLabel, lfqoCoverage, type PreparationPowerLineState } from "../lib/preparationPowerLines";
+import { PreparationPowerLineRuntime, preparationPowerLineStatusLabel, preparationPowerLineCoverage, type PreparationPowerLineState } from "../lib/preparationPowerLines";
 import { addBourrousFlightZone } from "../lib/bourrousFlightZone";
 import { syncMapRelief } from "../lib/mapRelief";
 import { OBSTACLE_MIN_ZOOM } from "../lib/obstacles";
@@ -242,6 +242,7 @@ export default function PreparationMap({
   const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
   const powerLineRuntimeRef = useRef<PreparationPowerLineRuntime | null>(null);
   const showObstaclesRef = useRef(showObstacles);
+  const showPowerLinesRef = useRef(showPowerLines);
   const [obstacleState, setObstacleState] = useState<ObstacleState | null>(null);
   const powerLineStateRef = useRef<PreparationPowerLineState | null>(null);
   const viewportRef = useRef(onViewportChange);
@@ -274,6 +275,8 @@ export default function PreparationMap({
   const selectedTrace = traces.find((trace) => trace.traceId === selectedTraceId) ?? null;
   useEffect(() => { onSelectedTraceChange?.(selectedTrace?.traceId ?? null); }, [selectedTrace?.traceId, onSelectedTraceChange]);
   const landingZoneData = useMemo(() => landingZoneCollection(selectedTrace), [selectedTrace]);
+
+  useEffect(() => { showPowerLinesRef.current = showPowerLines; }, [showPowerLines]);
 
   useEffect(() => {
     const runtime = new PreparationPowerLineRuntime((state) => {
@@ -370,7 +373,7 @@ export default function PreparationMap({
       });
       void powerLineRuntimeRef.current?.update({
         west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
-      }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+      }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current);
     };
     map.on("moveend", notify);
     map.on("click", (event) => {
@@ -700,7 +703,7 @@ export default function PreparationMap({
     if (!map?.getSource(OBSTACLE_SOURCE)) return; // Existing load handler uses the ref.
     setObstaclesVisible(map, showObstacles);
     const bounds = map.getBounds();
-    void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstacles && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+    void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstacles && map.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current);
   }, [showObstacles, initialLatitude, initialLongitude]);
 
   useEffect(() => {
@@ -710,9 +713,10 @@ export default function PreparationMap({
       for (const layerId of [POWER_LINES_CASING_LAYER, POWER_LINES_LAYER]) {
         if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
       }
+      if (!showPowerLines) powerLineRuntimeRef.current?.stopLines();
       if (showPowerLines) {
         const bounds = map.getBounds();
-        void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+        void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current);
       }
     };
     if (map.getSource(POWER_LINES_SOURCE)) sync();
@@ -850,7 +854,7 @@ export default function PreparationMap({
       const map = mapRef.current;
       if (!map) return;
       const bounds = map.getBounds();
-      void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+      void powerLineRuntimeRef.current?.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current);
     };
     window.addEventListener("online", refresh);
     return () => window.removeEventListener("online", refresh);
@@ -874,21 +878,22 @@ export default function PreparationMap({
     void (async () => {
       const visibleBounds = map.getBounds();
       const visibleView = { west: visibleBounds.getWest(), south: visibleBounds.getSouth(), east: visibleBounds.getEast(), north: visibleBounds.getNorth() };
-      await runtime.update(visibleView, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
-      // Local LFQO views must not trigger Overpass through arrival prefetch.
-      if (lfqoCoverage(visibleView) !== "OUTSIDE") return;
+      await runtime.update(visibleView, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current);
+      // Tiled LFQO/Belgium views must not trigger electric Overpass through arrival prefetch.
+      if (!showPowerLinesRef.current) return;
+      if (preparationPowerLineCoverage(visibleView) !== "OUTSIDE") return;
       // Arrival prefetch must not delay the visible area or multiply failed requests.
       if (cancelled || mapRef.current !== map || !powerLineStateRef.current?.covered) return;
       for (const point of arrivals) {
         if (cancelled || mapRef.current !== map || !navigator.onLine) return;
         const arrivalView = { west: point.longitude - 0.06, south: point.latitude - 0.06, east: point.longitude + 0.06, north: point.latitude + 0.06 };
-        if (lfqoCoverage(arrivalView) !== "OUTSIDE") continue;
-        await runtime.update(arrivalView, true);
+        if (preparationPowerLineCoverage(arrivalView) !== "OUTSIDE") continue;
+        await runtime.update(arrivalView, true, false, showPowerLinesRef.current);
         if (!powerLineStateRef.current?.covered) break;
       }
       if (cancelled || mapRef.current !== map) return;
       const bounds = map.getBounds();
-      await runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM);
+      await runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current);
     })();
     return () => { cancelled = true; runtime.stop(); };
   }, [traces, visibleTraceIds]);
