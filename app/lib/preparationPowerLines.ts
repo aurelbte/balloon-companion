@@ -1,5 +1,5 @@
 import manifest from "../../public/osm-power/lfqo/6b46a77294ac1b41/manifest.json" with { type: "json" };
-import { PowerLineRuntime, powerLineMemoryStore, powerLineStatusLabel, type PowerLineMemoryStore, type PowerLineState } from "./powerLinesRuntime.ts";
+import { PowerLineRuntime, powerLineMemoryStore, type PowerLineMemoryStore, type PowerLineState } from "./powerLinesRuntime.ts";
 import { ObstacleRuntime, type ObstacleState } from "./obstacleRuntime.ts";
 import { getPowerLineQueryBounds, type PowerLineBounds } from "./powerLines.ts";
 import belgiumManifest from "./data/belgiumPowerLinesManifest.json" with { type: "json" };
@@ -203,7 +203,7 @@ const localTiles = new LFQOPowerLineTiles();
 const belgiumTiles = new LFQOPowerLineTiles(undefined, belgiumPowerLineSource);
 const franceTiles = new LFQOPowerLineTiles(undefined, francePowerLineSource);
 
-/** PreparationMap only. Views touching a tiled extraction never request electric lines from Overpass. */
+/** Shared preparation/flight tile reader. Covered views never request electric lines from Overpass. */
 export class PreparationPowerLineRuntime {
   private generation = 0;
   private local = false;
@@ -214,11 +214,13 @@ export class PreparationPowerLineRuntime {
   private tiles: LFQOPowerLineTiles;
   private country: LFQOPowerLineTiles | null;
   private france: LFQOPowerLineTiles | null;
-  constructor(publish: (state: PreparationPowerLineState) => void, store: PowerLineMemoryStore = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, tiles = localTiles, country: LFQOPowerLineTiles | null = belgiumTiles, france: LFQOPowerLineTiles | null = franceTiles) {
+  private allowOverpassFallback: boolean;
+  constructor(publish: (state: PreparationPowerLineState) => void, store: PowerLineMemoryStore = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, tiles = localTiles, country: LFQOPowerLineTiles | null = belgiumTiles, france: LFQOPowerLineTiles | null = franceTiles, options: { allowOverpassFallback?: boolean } = {}) {
     this.publish = publish; this.tiles = tiles; this.country = country; this.france = france;
+    this.allowOverpassFallback = options.allowOverpassFallback !== false;
     this.fallback = new PowerLineRuntime(state => { if (!this.local && this.linesEnabled) publish({ ...state, coverageLabel: "Hors extrait local LFQO / hors couverture France / Belgique R2 — lignes Overpass" }); }, store);
     if (publishObstacles) this.obstacles = new ObstacleRuntime(publishObstacles, store.obstacles, bounds =>
-      !this.linesEnabled || [this.country, this.france].some(tiles => tiles && tiles.source.coverage(getPowerLineQueryBounds(bounds)) !== "OUTSIDE") ? store.loadObstaclesOnly(bounds) : store.load(bounds, true));
+      !this.linesEnabled || !this.allowOverpassFallback || [this.country, this.france].some(tiles => tiles && tiles.source.coverage(getPowerLineQueryBounds(bounds)) !== "OUTSIDE") ? store.loadObstaclesOnly(bounds) : store.load(bounds, true));
   }
   stopLines() { this.generation++; this.fallback.stop(); }
   stop() { this.stopLines(); this.obstacles?.stop(); }
@@ -236,6 +238,14 @@ export class PreparationPowerLineRuntime {
     const buffered = countries.filter(tiles => tiles.source.coverage(getPowerLineQueryBounds(view)) !== "OUTSIDE");
     const active = selected ? [selected] : touching.length ? touching : buffered.length ? buffered : coverage !== "OUTSIDE" ? [this.tiles] : [];
     this.local = active.length > 0;
+    if (!this.local && !this.allowOverpassFallback) {
+      this.fallback.stop();
+      this.publish({ data: { type: "FeatureCollection", features: [] }, status: "UNKNOWN_COVERAGE", covered: false,
+        loading: false, offline: !online, retained: false,
+        coverageLabel: "Hors couverture France / Belgique / LFQO — lignes électriques non disponibles · non exhaustif" });
+      await this.obstacles?.update(view, online, includeObstacles);
+      return;
+    }
     if (!this.local) {
       await Promise.all([this.fallback.update(view, online, includeObstacles), this.obstacles?.update(view, online, includeObstacles)]); return;
     }
@@ -261,8 +271,4 @@ export class PreparationPowerLineRuntime {
   }
 }
 
-export function preparationPowerLineStatusLabel(state: PreparationPowerLineState): string {
-  // Local dates describe the source snapshot, never the time of a browser request.
-  if (state.localCoverage) return [state.coverageLabel, state.loading ? "Chargement des tuiles…" : "", state.offline ? "Hors ligne" : ""].filter(Boolean).join(" · ");
-  return [state.coverageLabel, powerLineStatusLabel(state)].filter(Boolean).join(" · ");
-}
+export { preparationPowerLineStatusLabel } from "./tiledPowerLineStatus.ts";

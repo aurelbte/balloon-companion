@@ -52,7 +52,9 @@ import {
   REFERENCE_ORIENTATION,
   TWO_DIMENSIONAL_MAP_OPTIONS,
 } from "../../lib/mapInteraction";
-import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../../lib/powerLinesRuntime";
+import type { PreparationPowerLineState } from "../../lib/preparationPowerLines";
+import { FlightPowerLineRuntime, FLIGHT_POWER_LINE_MIN_ZOOM } from "../../lib/flightPowerLines";
+import { preparationPowerLineStatusLabel } from "../../lib/tiledPowerLineStatus";
 import { addBourrousFlightZone } from "../../lib/bourrousFlightZone";
 import { RELIEF_SOURCE_ID, syncMapRelief } from "../../lib/mapRelief";
 import { OBSTACLE_MIN_ZOOM } from "../../lib/obstacles";
@@ -365,13 +367,13 @@ export default function FlightMap({
   const showPowerLinesRef = useRef(showPowerLines);
   const showObstaclesRef = useRef(showObstacles);
   const [obstacleState, setObstacleState] = useState<ObstacleState | null>(null);
-  const [powerLineState, setPowerLineState] = useState<PowerLineState | null>(null);
-  const powerLineRuntimeRef = useRef<PowerLineRuntime | null>(null);
+  const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
+  const powerLineRuntimeRef = useRef<FlightPowerLineRuntime | null>(null);
   useEffect(() => {
-    const runtime = new PowerLineRuntime(state => {
+    const runtime = new FlightPowerLineRuntime(state => {
       setPowerLineState(state);
       (map.current?.getSource(POWER_LINES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(state.data);
-    }, undefined, state => {
+    }, state => {
       setObstacleState(state);
       (map.current?.getSource(OBSTACLE_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(state.data);
     });
@@ -379,7 +381,7 @@ export default function FlightMap({
     const refresh = () => {
       if (!map.current || (!showPowerLinesRef.current && !(showObstaclesRef.current && map.current.getZoom() >= OBSTACLE_MIN_ZOOM))) return;
       const bounds = map.current.getBounds();
-      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.current.getZoom() >= OBSTACLE_MIN_ZOOM);
+      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, showObstaclesRef.current && map.current.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current, map.current.getZoom());
     };
     window.addEventListener("online", refresh); window.addEventListener("offline", refresh);
     return () => { runtime.stop(); powerLineRuntimeRef.current = null; window.removeEventListener("online", refresh); window.removeEventListener("offline", refresh); };
@@ -482,16 +484,16 @@ export default function FlightMap({
     const bounds = map.current.getBounds();
     await powerLineRuntimeRef.current?.update({
       west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
-    }, navigator.onLine, showObstaclesRef.current && map.current.getZoom() >= OBSTACLE_MIN_ZOOM);
+    }, navigator.onLine, showObstaclesRef.current && map.current.getZoom() >= OBSTACLE_MIN_ZOOM, showPowerLinesRef.current, map.current.getZoom());
   };
 
   useEffect(() => {
     showPowerLinesRef.current = showPowerLines;
+    if (!showPowerLines) powerLineRuntimeRef.current?.stopLines();
     if (!map.current?.getLayer(POWER_LINES_LAYER_ID)) return;
     for (const layerId of [POWER_LINES_CASING_LAYER_ID, POWER_LINES_LAYER_ID]) {
       map.current.setLayoutProperty(layerId, "visibility", showPowerLines ? "visible" : "none");
     }
-    if (!showPowerLines && !showObstaclesRef.current) powerLineRuntimeRef.current?.stop();
     if (!showPowerLines && !showObstaclesRef.current) return;
     void fetchPowerLinesForViewport();
   }, [showPowerLines]);
@@ -745,7 +747,7 @@ export default function FlightMap({
         map.current.addSource(POWER_LINES_SOURCE_ID, {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
-          attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>',
+          attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · Geofabrik',
         });
       }
       if (!map.current.getSource(AIRSPACES_SOURCE_ID)) {
@@ -879,7 +881,7 @@ export default function FlightMap({
           type: "line",
           source: POWER_LINES_SOURCE_ID,
           filter: ["==", ["get", "power"], "line"],
-          minzoom: 8,
+          minzoom: FLIGHT_POWER_LINE_MIN_ZOOM,
           layout: powerLineLayout,
           paint: {
             "line-color": "rgba(7, 17, 31, 0.82)",
@@ -893,7 +895,7 @@ export default function FlightMap({
           type: "line",
           source: POWER_LINES_SOURCE_ID,
           filter: ["==", ["get", "power"], "line"],
-          minzoom: 8,
+          minzoom: FLIGHT_POWER_LINE_MIN_ZOOM,
           layout: powerLineLayout,
           paint: {
             "line-color": "#dc2626",
@@ -1723,8 +1725,10 @@ export default function FlightMap({
 
   return (
     <>
-      {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" style={{ position: "absolute", top: showPowerLines ? 110 : 70, left: 12, right: 12, zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: 11, borderRadius: 8, pointerEvents: "none" }}>{obstacleStatusLabel(obstacleState)}</p>}
-      {showPowerLineStatus && showPowerLines && powerLineState && powerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "70px", left: "12px", right: "12px", zIndex: 15, margin: 0, padding: "6px 9px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: "11px", borderRadius: "8px", pointerEvents: "none" }}>{powerLineStatusLabel(powerLineState)}</p>}
+      <div style={{ position: "absolute", top: "70px", left: "12px", right: "12px", zIndex: 15, display: "grid", gap: "4px", pointerEvents: "none" }}>
+        {showPowerLines && powerLineState && (showPowerLineStatus || powerLineState.loading || powerLineState.offline || !powerLineState.covered) && preparationPowerLineStatusLabel(powerLineState) && <p role="status" style={{ margin: 0, padding: "6px 9px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: "11px", borderRadius: "8px" }}>{preparationPowerLineStatusLabel(powerLineState)}</p>}
+        {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" style={{ margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: 11, borderRadius: 8 }}>{obstacleStatusLabel(obstacleState)}</p>}
+      </div>
       <style>{`
         .flight-map .maplibregl-ctrl-bottom-left {
           bottom: calc(max(6px, env(safe-area-inset-bottom)) + 124px);
