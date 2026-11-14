@@ -9,7 +9,7 @@ import { S3Client, HeadBucketCommand, GetBucketCorsCommand, HeadObjectCommand, P
 
 export const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const COUNTRIES = new Set(['france', 'belgium', 'morocco', 'united-kingdom']);
-const PUBLISH_COUNTRY_CODES = new Map([['belgium', 'BE'], ['france', 'FR']]);
+const PUBLISH_COUNTRY_CODES = new Map([['belgium', 'BE'], ['france', 'FR'], ['morocco', 'MA']]);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const md5 = bytes => createHash('md5').update(bytes).digest();
 function requireThat(condition, code) { if (!condition) throw new Error(code); }

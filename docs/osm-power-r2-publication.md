@@ -3,7 +3,7 @@
 Le script `scripts/publish-osm-r2.mjs` lit les sorties versionnées de
 `country_build.py` sans les modifier. Il réutilise le SDK S3 déjà installé et les
 noms de variables serveur R2 utilisés par BC. Il ne touche ni aux cartes, ni au
-cloud sync, ni aux paramètres du bucket. **La Belgique (BE) et la France (FR) sont autorisées à la publication** ;
+cloud sync, ni aux paramètres du bucket. **La Belgique (BE), la France (FR) et le Maroc (MA) sont autorisés à la publication** ;
 les autres pays peuvent uniquement être vérifiés localement. Le code du profil
 doit correspondre au dataset.
 
@@ -212,3 +212,19 @@ Les URL finales sont affichées uniquement après les contrôles publics réussi
 Les valeurs des secrets et les URL S3 signées ne sont jamais journalisées.
 
 Test ciblé hors réseau : `node --test scripts/publish-osm-r2.test.mjs`.
+
+
+Pour le Maroc, les mêmes protections et la même reprise s'appliquent, sans
+changer la configuration R2 du bucket OSM :
+
+```sh
+node scripts/publish-osm-r2.mjs \
+  --source /tmp/bc-osm-country-output/morocco/20261113-ce974015b19780e1 --dry-run
+
+node scripts/publish-osm-r2.mjs \
+  --source /tmp/bc-osm-country-output/morocco/20261113-ce974015b19780e1 --publish
+```
+
+Les 6 914 objets conservent le préfixe
+`osm-power-lines/morocco/20261113-ce974015b19780e1/`.
+Le dry-run est strictement local ; il ne vérifie ni les accès R2 ni le CORS public.

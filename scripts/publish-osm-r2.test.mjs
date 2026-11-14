@@ -26,9 +26,9 @@ async function fixture(fn, { dataset = 'belgium', tileCount = 2 } = {}) {
       await writeFile(join(source, key), body); await writeFile(join(source, `${key}.gz`), gzip);
       tiles.push({ key, bytes: body.length, gzip_bytes: gzip.length, sha256: sha(body), features: x % 2 ? 0 : 1, status: x % 2 ? 'empty' : 'data' });
     }
-    const m = { schema_version: 2, dataset, country_profile: { code: dataset === 'france' ? 'FR' : 'BE' }, version: `20261108-${'a'.repeat(16)}`,
+    const m = { schema_version: 2, dataset, country_profile: { code: ({ france: 'FR', belgium: 'BE', morocco: 'MA' })[dataset] }, version: `20261108-${'a'.repeat(16)}`,
       version_sha256: 'a'.repeat(64), generator_sha256: 'b'.repeat(64), dataset_sha256: sha(data),
-      sources: [{ id: dataset, url: `https://download.geofabrik.de/europe/${dataset}-latest.osm.pbf`, sha256: 'c'.repeat(64), snapshot_at_utc: '2026-11-08T21:21:00Z' }],
+      sources: [{ id: dataset, url: `https://download.geofabrik.de/${dataset === 'morocco' ? 'africa' : 'europe'}/${dataset}-latest.osm.pbf`, sha256: 'c'.repeat(64), snapshot_at_utc: '2026-11-08T21:21:00Z' }],
       coverage: { key: 'coverage.geojson', sha256: sha(coverage), polygon_input_sha256: 'd'.repeat(64) }, filter: { power: 'line', min_voltage_v: 63000 },
       statistics: { features: 1, geojson_bytes: data.length, tiles: tileCount, empty_tiles: Math.floor(tileCount / 2), tiles_bytes: tiles.reduce((sum, t) => sum + t.bytes, 0), tiles_gzip_bytes: tiles.reduce((sum, t) => sum + t.gzip_bytes, 0) },
       tiling: { scheme: 'XYZ', zoom, empty_tiles: 'explicit_files', tiles } };
@@ -101,7 +101,7 @@ test('failed public CORS stops at the canary; unapproved countries and mismatche
   const plan = await buildPlan(source), config = readConfig(env), fake = remote(config);
   await assert.rejects(runRemote(plan, config, { publish: true, ...fake, fetcher: async () => new Response('no cors') }), /PUBLIC_CORS_MISMATCH/);
   assert.equal(fake.writes.length, 1); assert.match(fake.writes[0], /coverage.geojson$/);
-  await assert.rejects(runRemote({ ...plan, dataset: 'morocco' }, config, { publish: true, ...fake }), /PUBLICATION_DATASET_NOT_ALLOWED/);
+  await assert.rejects(runRemote({ ...plan, dataset: 'united-kingdom' }, config, { publish: true, ...fake }), /PUBLICATION_DATASET_NOT_ALLOWED/);
   await assert.rejects(runRemote({ ...plan, dataset: 'france' }, config, { publish: true, ...fake }), /PUBLICATION_COUNTRY_MISMATCH/);
 }));
 
@@ -221,3 +221,49 @@ test('France retains bucket, public CORS, hash integrity and conflict guards bef
   await writeFile(join(source, plan.manifest.tiling.tiles[0].key), 'corrupt');
   await assert.rejects(buildPlan(source), /SHA256_MISMATCH/);
 }, { dataset: 'france' }));
+
+
+test('Morocco MA retains all publication guards and resumes interrupted objects with manifest last', async () => fixture(async source => {
+  const plan = await buildPlan(source), config = readConfig(env);
+  assert.equal(plan.dataset, 'morocco'); assert.equal(plan.manifest.country_profile.code, 'MA');
+  const mismatch = remote(config);
+  await assert.rejects(runRemote({ ...plan, manifest: { ...plan.manifest, country_profile: { code: 'FR' } } }, config,
+    { publish: true, ...mismatch }), /PUBLICATION_COUNTRY_MISMATCH/);
+  assert.deepEqual(mismatch.writes, []);
+  for (const state of [{ denied: true }, { badCors: true }, { conflict: true }]) {
+    const blocked = remote(config, state);
+    await assert.rejects(runRemote(plan, config, { publish: true, ...blocked }));
+    assert.deepEqual(blocked.writes, []);
+  }
+  for (const failure of ['cors', 'hash']) {
+    const blocked = remote(config, { corsDenied: true });
+    await assert.rejects(runRemote(plan, config, { publish: true, ...blocked, fetcher: async (url, options) => {
+      if (failure === 'cors') return new Response('missing CORS');
+      const response = await blocked.fetcher(url, options);
+      return options.method === 'OPTIONS' ? response : new Response('wrong bytes', { headers: response.headers });
+    } }), failure === 'cors' ? /PUBLIC_CORS_MISMATCH/ : /PUBLIC_SHA256_MISMATCH/);
+    assert.equal(blocked.writes.length, 1);
+    assert.ok(!blocked.writes.some(key => key.endsWith('/manifest.json')));
+  }
+  const fake = remote(config, { corsDenied: true }), send = fake.client.send;
+  let interrupt = true;
+  fake.client.send = async command => {
+    const result = await send(command);
+    if (command.constructor.name === 'PutObjectCommand' && interrupt && fake.writes.length === 3) {
+      interrupt = false; throw new Error('SIMULATED_LOST_RESPONSE');
+    }
+    return result;
+  };
+  await assert.rejects(runRemote(plan, config, { publish: true, ...fake }), /SIMULATED_LOST_RESPONSE/);
+  assert.ok(!fake.writes.some(key => key.endsWith('/manifest.json')));
+  const resumed = await runRemote(plan, config, { publish: true, ...fake });
+  assert.equal(resumed.reused, 3); assert.equal(resumed.uploaded, plan.items.length - 3);
+  assert.equal(resumed.corsVerified, true); assert.equal(resumed.publicUrlsVerified.length, 5);
+  assert.ok(fake.writes.every(key => key.startsWith(`osm-power-lines/morocco/${plan.version}/`)));
+  assert.equal(new Set(fake.writes).size, plan.items.length);
+  assert.match(fake.writes.at(-1), /\/manifest.json$/);
+  const again = await runRemote(plan, config, { publish: true, ...fake });
+  assert.equal(again.uploaded, 0); assert.equal(again.reused, plan.items.length);
+  await writeFile(join(source, plan.manifest.tiling.tiles[0].key), 'corrupt');
+  await assert.rejects(buildPlan(source), /SHA256_MISMATCH/);
+}, { dataset: 'morocco' }));
