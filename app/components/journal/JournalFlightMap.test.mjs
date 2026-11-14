@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import { preparationPowerLineStatusLabel } from "../../lib/tiledPowerLineStatus.ts";
 import * as airspaceStyle from "../../lib/airspaceMapStyle.ts";
 const require = createRequire(import.meta.url);
 
@@ -39,6 +40,7 @@ function harness(t, satelliteKey = "test-key") {
     off(event, fn) { this.listeners[event] = (this.listeners[event] ?? []).filter(item => item.fn !== fn); }
     emit(event) { for (const item of [...(this.listeners[event] ?? [])]) { if (item.once) this.off(event, item.fn); item.fn(); } }
     loaded() { return false; } // Even after load, tiles/sources may be busy.
+    getZoom() { return 12; }
     getCenter() { return { lat: 50, lng: 3 }; }
     getBounds() { return { getWest: () => 2.9, getEast: () => 3.2, getSouth: () => 49.9, getNorth: () => 50.2 }; }
     addSource(id, source) { this.sources[id] = { ...source, setData: data => { this.sources[id].data = data; if (id === "journal-flight-track") this.updates++; } }; }
@@ -54,14 +56,15 @@ function harness(t, satelliteKey = "test-key") {
   const runtimes = [];
   class RuntimeMock {
     constructor(publish) { this.publish = publish; this.requests = []; this.stops = 0; runtimes.push(this); }
-    update(bounds, online) { this.requests.push({ bounds, online }); }
+    update(bounds, online, obstacles, enabled, zoom) { this.requests.push({ bounds, online, obstacles, enabled, zoom }); }
     stop() { this.stops++; }
   }
   const mocks = {
     react,
     "../../hooks/useAirspaceCoverage": { useAirspaceCoverage: input => { coverageInput = input; return coverage; } },
     "../../lib/airspaceMapStyle": airspaceStyle,
-    "../../lib/powerLinesRuntime": { PowerLineRuntime: RuntimeMock, powerLineStatusLabel: () => "" },
+    "../../lib/flightPowerLines": { FlightPowerLineRuntime: RuntimeMock, FLIGHT_POWER_LINE_MIN_ZOOM: 8 },
+    "../../lib/tiledPowerLineStatus": { preparationPowerLineStatusLabel },
     "lucide-react": { Maximize2: () => null, X: () => null },
     "maplibre-gl": { Map: MapMock, NavigationControl: class {}, LngLatBounds: class { extend() {} } },
     "maplibre-gl/dist/maplibre-gl.css": {},
@@ -238,4 +241,35 @@ test("messages de trace : chargement, hors ligne, absence distante et échec dis
   h.setHydrated({ points, trackState: "LOCAL" }); h.render();
   assert.doesNotMatch(text(h.render()), /Impossible de charger|Trace non disponible|Chargement de la trace/);
   assert.equal(h.maps[0].sources["journal-flight-track"].data.features[0].geometry.coordinates.length, 2);
+});
+
+
+test("carnet : chargeur partagé au viewport, avertissements et rendu haute tension sans altérer la trace", t => {
+  const h = harness(t);
+  let tree = h.render(); const map = h.maps[0]; map.handlers.load();
+  openMap(tree); tree = h.render();
+  assert.equal(h.runtimes.length, 0);
+  findButton(tree, "Lignes électriques").props.onClick(); tree = h.render();
+  const runtime = h.runtimes[0];
+  assert.deepEqual(runtime.requests[0], {
+    bounds: { west: 2.9, south: 49.9, east: 3.2, north: 50.2 },
+    online: navigator.onLine, obstacles: false, enabled: true, zoom: 12,
+  });
+  const trace = map.sources["journal-flight-track"].data;
+  const data = { type: "FeatureCollection", features: [] };
+  for (const label of ["Couverture partielle — liste non exhaustive", "2 erreurs réseau — couverture non vérifiée"]) {
+    runtime.publish({ data, localCoverage: "PARTIAL", coverageLabel: label, covered: false, loading: false, offline: false });
+    tree = h.render(); assert.ok(text(tree).includes(label));
+    assert.equal(map.sources["journal-power-lines"].data, data);
+    assert.equal(map.sources["journal-flight-track"].data, trace);
+  }
+  assert.equal(map.getLayer("journal-power-casing").paint["line-color"], "rgba(7, 17, 31, 0.82)");
+  assert.equal(map.getLayer("journal-power-line").paint["line-color"], "#dc2626");
+  assert.equal(map.getLayer("journal-power-line").minzoom, 8);
+  assert.ok(map.sources["journal-power-lines"].attribution.includes("Geofabrik"));
+  h.networkListeners.get("offline")(); assert.equal(runtime.requests.length, 2);
+  findButton(tree, "Lignes électriques").props.onClick(); tree = h.render();
+  assert.equal(runtime.stops, 1);
+  assert.ok(!text(tree).includes("erreurs réseau"));
+  map.emit("moveend"); assert.equal(runtime.requests.length, 2);
 });

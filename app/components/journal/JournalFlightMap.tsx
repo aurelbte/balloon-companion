@@ -10,7 +10,9 @@ import { useRecordedFlightJournalPointsState } from "../../hooks/useRecordedFlig
 
 import { useAirspaceCoverage, type AirspaceCoverageViewport } from "../../hooks/useAirspaceCoverage";
 import { AIRSPACE_RENDER_ORDER, getAirspaceCategoryStyle, prepareAirspacesForMap } from "../../lib/airspaceMapStyle";
-import { PowerLineRuntime, powerLineStatusLabel, type PowerLineState } from "../../lib/powerLinesRuntime";
+import { FlightPowerLineRuntime, FLIGHT_POWER_LINE_MIN_ZOOM } from "../../lib/flightPowerLines";
+import type { PreparationPowerLineState } from "../../lib/preparationPowerLines";
+import { preparationPowerLineStatusLabel } from "../../lib/tiledPowerLineStatus";
 
 type JournalFlightMapProps = {
   flight: JournalFlight;
@@ -88,7 +90,7 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
   const [showAirspaces, setShowAirspaces] = useState(false);
   const [showPowerLines, setShowPowerLines] = useState(false);
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
-  const [powerState, setPowerState] = useState<PowerLineState | null>(null);
+  const [powerState, setPowerState] = useState<PreparationPowerLineState | null>(null);
   const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim() ?? "";
   const coverage = useAirspaceCoverage({
     position: null,
@@ -176,9 +178,9 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
         map.addLayer({ ...common, id: airspaceLayerId(category, "fill"), type: "fill", paint: { "fill-color": style.color, "fill-opacity": style.fillOpacity } });
         map.addLayer({ ...common, id: airspaceLayerId(category, "outline"), type: "line", paint: { "line-color": style.color, "line-width": style.lineWidth, "line-opacity": style.lineOpacity } });
       }
-      map.addSource(POWER_SOURCE, { type: "geojson", data: EMPTY_DATA, attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a>' });
+      map.addSource(POWER_SOURCE, { type: "geojson", data: EMPTY_DATA, attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · Geofabrik' });
       POWER_LAYERS.forEach((id, index) => map.addLayer({
-        id, type: "line", source: POWER_SOURCE, minzoom: 8,
+        id, type: "line", source: POWER_SOURCE, minzoom: FLIGHT_POWER_LINE_MIN_ZOOM,
         filter: ["==", ["get", "power"], "line"],
         layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
         paint: {
@@ -281,14 +283,14 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !expanded || !showPowerLines) return;
-    const runtime = new PowerLineRuntime((state) => {
+    const runtime = new FlightPowerLineRuntime((state) => {
       setPowerState(state);
       (map.getSource(POWER_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(state.data);
     });
     const refresh = () => {
       if (!map.getSource(POWER_SOURCE)) return;
       const bounds = map.getBounds();
-      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine);
+      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, false, true, map.getZoom());
     };
     if (map.getSource(POWER_SOURCE)) refresh();
     else map.once("load", refresh);
@@ -374,7 +376,7 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
             ))}
           </div>
           {showAirspaces && coverage.statusMessage && <p role="status" className="px-1 pt-1 text-xs">{coverage.statusMessage}</p>}
-          {showPowerLines && powerState && powerLineStatusLabel(powerState) && <p role="status" className="px-1 pt-1 text-xs">{powerLineStatusLabel(powerState)}</p>}
+          {showPowerLines && powerState && preparationPowerLineStatusLabel(powerState) && <p role="status" className="px-1 pt-1 text-xs">{preparationPowerLineStatusLabel(powerState)}</p>}
         </div>
       )}
       {expanded ? (
