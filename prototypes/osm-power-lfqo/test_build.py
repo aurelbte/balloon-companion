@@ -4,6 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 import build
+import hashlib
+import country_build
+from shapely.geometry import box, shape
 
 
 class PrototypeTest(unittest.TestCase):
@@ -63,6 +66,52 @@ class PrototypeTest(unittest.TestCase):
                     self.assertEqual(feature['properties']['power'],'line')
                     self.assertGreaterEqual(feature['properties']['voltage_max_v'],63000)
                     self.assertEqual(feature['properties']['license'],'ODbL-1.0')
+
+            # Same single LFQO fixture exercises the offline country extension.
+            self.assertEqual(set(country_build.COUNTRIES), {'france','belgium','morocco','united-kingdom'})
+            poly = root/'lfqo.poly'
+            poly.write_text('LFQO fixture\n1\n2.9 50.5\n3.3 50.5\n3.3 50.8\n2.9 50.8\n2.9 50.5\nEND\n!hole\n3.06 50.68\n3.07 50.68\n3.07 50.69\n3.06 50.69\n3.06 50.68\nEND\nEND\n')
+            coverage = country_build.read_poly(poly)
+            self.assertEqual(len(coverage.geoms[0].interiors),1)
+            # A newer low-voltage observation must supersede an older eligible way.
+            belgium = dict(inputs)['belgium']
+            belgium.write_text(xml.replace('<way id="206" version="1">','<way id="206" version="2">').replace(
+                '<way id="206" version="2"><nd ref="3"/><nd ref="4"/><tag k="power" v="line"/><tag k="voltage" v="63000"/>',
+                '<way id="206" version="2"><nd ref="3"/><nd ref="4"/><tag k="power" v="line"/><tag k="voltage" v="60000"/>'))
+            urls = {key:build.SOURCES[key] for key,path in inputs}
+            selected,provenance,counters = country_build.collect_country(inputs,urls,coverage)
+            ids = [f['id'] for f in selected]
+            self.assertEqual(ids,['way/201','way/207','way/208','way/215'])
+            self.assertEqual(len(ids),len(set(ids)))
+            self.assertEqual(selected[0]['geometry']['type'],'MultiLineString')
+            self.assertEqual(selected[0]['properties']['source_extracts'],'belgium;nord-pas-de-calais')
+            for feature in selected:
+                self.assertTrue(coverage.buffer(1e-7).covers(shape(feature['geometry'])))
+            # A cross-border way retains complementary fragments and the same global OSM id.
+            for mask in (box(2.9,50.5,3.08,50.8),box(3.08,50.5,3.3,50.8)):
+                fragments,_,_ = country_build.collect_country(inputs,urls,coverage.intersection(mask))
+                self.assertIn('way/201',[f['id'] for f in fragments])
+                self.assertTrue(mask.buffer(1e-7).covers(shape(fragments[0]['geometry'])))
+            profile = {'name':'LFQO synthetic validation','polygon_url':None}
+            output,national = country_build.write_country(selected,provenance,counters,coverage,poly,profile,'lfqo-validation',root/'countries')
+            self.assertEqual(national['schema_version'],2)
+            self.assertTrue(national['version'].startswith('undated-'))
+            self.assertFalse(national['source_dates_known'])
+            self.assertGreater(national['statistics']['empty_tiles'],0)
+            self.assertEqual(hashlib.sha256((output/'power-lines.geojson').read_bytes()).hexdigest(),national['dataset_sha256'])
+            self.assertEqual(hashlib.sha256((output/'coverage.geojson').read_bytes()).hexdigest(),national['coverage']['sha256'])
+            for tile in national['tiling']['tiles']:
+                raw = (output/tile['key']).read_bytes()
+                self.assertEqual(hashlib.sha256(raw).hexdigest(),tile['sha256'])
+                self.assertGreater(coverage.intersection(box(*tile['bbox'])).area,0)
+                items = json.loads(raw)['features']
+                self.assertEqual(tile['status'],'data' if items else 'empty')
+                self.assertEqual(len({f['id'] for f in items}),len(items))
+                self.assertEqual(tile['coverage'],'full' if coverage.covers(box(*tile['bbox'])) else 'partial')
+                for feature in items:
+                    self.assertTrue(box(*tile['bbox']).buffer(1e-7).covers(shape(feature['geometry'])))
+            with self.assertRaises(FileExistsError):
+                country_build.write_country(selected,provenance,counters,coverage,poly,profile,'lfqo-validation',root/'countries')
 
 
 if __name__ == '__main__':

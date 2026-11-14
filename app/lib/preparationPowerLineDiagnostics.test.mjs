@@ -46,17 +46,17 @@ test('LFQO sparse XYZ manifest distinguishes outside/empty/unloaded cells from H
  assert.ok(emptyView);await catalog.load(emptyView);assert.equal(requests,0);assert.equal(catalog.missing(emptyView),0);
  let state;
  const noOverpass=new PowerLineMemoryStore(async()=>{throw new Error('no Overpass');});
- const emptyRuntime=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,catalog,null);
+ const emptyRuntime=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,catalog,null,null);
  await emptyRuntime.update(emptyView,true);
  assert.equal(state.status,'EMPTY_CONFIRMED');assert.match(state.coverageLabel,/extrait vide pour ce filtre/);
  assert.doesNotMatch(state.coverageLabel,/introuvable|erreur|manquante/);
- const unloaded=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,new LFQOPowerLineTiles(asset),null);
+ const unloaded=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,new LFQOPowerLineTiles(asset),null,null);
  await unloaded.update(point,false);
  assert.equal(state.tileDiagnostics[0].status,'NOT_LOADED');assert.match(preparationPowerLineStatusLabel(state),/non chargée.*Hors ligne/);
  assert.doesNotMatch(state.coverageLabel,/introuvable|HTTP/);
  for(const [status,expected] of [[404,'NOT_FOUND'],[410,'NOT_FOUND'],[503,'HTTP_ERROR']]){
   const tiles=new LFQOPowerLineTiles(async()=>new Response(null,{status}));
-  const runtime=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,tiles,null);
+  const runtime=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,tiles,null,null);
   await runtime.update(point,true);
   assert.equal(state.tileDiagnostics[0].status,expected);assert.equal(state.tileDiagnostics[0].httpStatus,status);
   assert.equal(state.tileDiagnostics[0].url,root+state.tileDiagnostics[0].key);
@@ -72,7 +72,7 @@ test('LFQO sparse XYZ manifest distinguishes outside/empty/unloaded cells from H
  try{
   Object.defineProperty(globalThis,'crypto',{configurable:true,value:undefined});
   const tiles=new LFQOPowerLineTiles(asset);
-  const runtime=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,tiles,null);
+  const runtime=new PreparationPowerLineRuntime(s=>state=s,noOverpass,undefined,tiles,null,null);
   await runtime.update(point,true);
   assert.equal(state.tileDiagnostics[0].status,'VERIFICATION_UNAVAILABLE');
   assert.match(state.coverageLabel,/HTTPS requis/);assert.doesNotMatch(state.coverageLabel,/introuvable/);

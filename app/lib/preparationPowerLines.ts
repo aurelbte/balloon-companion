@@ -3,7 +3,9 @@ import { PowerLineRuntime, powerLineMemoryStore, powerLineStatusLabel, type Powe
 import { ObstacleRuntime, type ObstacleState } from "./obstacleRuntime.ts";
 import { getPowerLineQueryBounds, type PowerLineBounds } from "./powerLines.ts";
 import belgiumManifest from "./data/belgiumPowerLinesManifest.json" with { type: "json" };
-import { belgiumPowerLineCoverage, type TileCoverage } from "./belgiumPowerLineCoverage.ts";
+import { belgiumPowerLineCoverage, belgiumPowerLineCountryCoverage, type TileCoverage } from "./belgiumPowerLineCoverage.ts";
+import franceManifest from "./data/francePowerLinesManifest.json" with { type: "json" };
+import { francePowerLineCoverage } from "./francePowerLineCoverage.ts";
 
 const BASE = `/osm-power/lfqo/${manifest.dataset_sha256.slice(0, 16)}/`;
 type Line = GeoJSON.Feature<GeoJSON.LineString | GeoJSON.MultiLineString>;
@@ -83,11 +85,15 @@ const lfqoSource: TileSource = { base: BASE, manifest, coverage: lfqoCoverage, s
 export const BELGIUM_POWER_LINE_BASE = "https://pub-2e6fdd961e8345a0984d4bdc2af49aa3.r2.dev/osm-power-lines/belgium/20261108-db4ecb06f9ec03a1/";
 export const belgiumPowerLineSource: TileSource = { base: BELGIUM_POWER_LINE_BASE, manifest: belgiumManifest, coverage: belgiumPowerLineCoverage, sparseEmpty: false,
   bounds: { west: belgiumManifest.coverage.bbox[0], south: belgiumManifest.coverage.bbox[1], east: belgiumManifest.coverage.bbox[2], north: belgiumManifest.coverage.bbox[3] } };
-/** Also protect the buffered Overpass request at the edge of the Belgian footprint. */
+export const FRANCE_POWER_LINE_BASE = "https://pub-2e6fdd961e8345a0984d4bdc2af49aa3.r2.dev/osm-power-lines/france/20261112-7d80f1b5392852da/";
+export const francePowerLineSource: TileSource = { base: FRANCE_POWER_LINE_BASE, manifest: franceManifest, coverage: francePowerLineCoverage, sparseEmpty: false,
+  bounds: { west: franceManifest.coverage.bbox[0], south: franceManifest.coverage.bbox[1], east: franceManifest.coverage.bbox[2], north: franceManifest.coverage.bbox[3] } };
+/** Also protect buffered Overpass requests around both national extraction footprints. */
 export function preparationPowerLineCoverage(view: PowerLineBounds): TileCoverage {
-  const local = lfqoCoverage(view), belgium = belgiumPowerLineCoverage(view);
-  if (local === "FULL" || belgium === "FULL") return "FULL";
-  return local !== "OUTSIDE" || belgium !== "OUTSIDE" || belgiumPowerLineCoverage(getPowerLineQueryBounds(view)) !== "OUTSIDE" ? "PARTIAL" : "OUTSIDE";
+  const coverages = [lfqoCoverage(view), belgiumPowerLineCoverage(view), francePowerLineCoverage(view)];
+  if (coverages.includes("FULL")) return "FULL";
+  const buffered = getPowerLineQueryBounds(view);
+  return coverages.some(c => c !== "OUTSIDE") || belgiumPowerLineCoverage(buffered) !== "OUTSIDE" || francePowerLineCoverage(buffered) !== "OUTSIDE" ? "PARTIAL" : "OUTSIDE";
 }
 function isHighVoltageAerial(feature: Line): boolean {
   const p = feature.properties;
@@ -104,7 +110,11 @@ export class LFQOPowerLineTiles {
   private failures = new Map<string, { status: LFQOTileStatus; httpStatus?: number }>();
   private fetcher: typeof fetch;
   readonly source: TileSource;
-  constructor(fetcher: typeof fetch = (...args) => fetch(...args), source: TileSource = lfqoSource) { this.fetcher = fetcher; this.source = source; }
+  private entries: Map<string, TileManifest["tiling"]["tiles"][number]>;
+  constructor(fetcher: typeof fetch = (...args) => fetch(...args), source: TileSource = lfqoSource) {
+    this.fetcher = fetcher; this.source = source;
+    this.entries = new Map(source.manifest.tiling.tiles.map(tile => [tile.key, tile]));
+  }
   diagnostics(view: PowerLineBounds): LFQOTileDiagnostic[] {
     const { bounds, manifest: index, coverage } = this.source;
     if (coverage(view) === "OUTSIDE") return [];
@@ -113,7 +123,7 @@ export class LFQOPowerLineTiles {
     const n = 2 ** index.tiling.zoom;
     const x = (lon: number) => Math.floor((lon + 180) / 360 * n);
     const y = (lat: number) => Math.floor((1 - Math.asinh(Math.tan(lat * RAD)) / Math.PI) / 2 * n);
-    const entries = new Map(this.source.manifest.tiling.tiles.map(tile => [tile.key, tile]));
+    const entries = this.entries;
     const results: LFQOTileDiagnostic[] = [];
     for (let col = x(west); col <= x(east); col++) for (let row = y(north); row <= y(south); row++) {
       const key = `tiles/${this.source.manifest.tiling.zoom}/${col}/${row}.geojson`, bounds = xyzBounds(col, row, this.source.manifest.tiling.zoom);
@@ -130,44 +140,48 @@ export class LFQOPowerLineTiles {
   }
   tiles(view: PowerLineBounds) {
     const relevant = new Set(this.diagnostics(view).filter(t => t.url).map(t => t.key));
-    return this.source.manifest.tiling.tiles.filter(t => relevant.has(t.key));
+    return [...relevant].map(key => this.entries.get(key)!);
   }
   data(view: PowerLineBounds): Collection {
     return mergeLocalPowerLines(this.tiles(view).flatMap(t => this.cache.get(t.key)?.features ?? []));
   }
   missing(view: PowerLineBounds): number { return this.tiles(view).filter(t => !this.cache.has(t.key)).length; }
-  async load(view: PowerLineBounds): Promise<void> {
-    await Promise.allSettled(this.tiles(view).map(async tile => {
-      if (this.cache.has(tile.key)) return;
-      let request = this.pending.get(tile.key);
-      if (!request) {
-        request = (async () => {
-          let phase: LFQOTileStatus = "NETWORK_ERROR";
-          try {
-            // Retry failed assets with HTTP revalidation instead of replaying a cached error or wrong body.
-            const response = await this.fetcher(this.source.base + tile.key, { cache: this.failures.has(tile.key) ? "reload" : "force-cache", signal: AbortSignal.timeout(10_000) });
-            if (!response.ok) throw new LocalTileError(response.status === 404 || response.status === 410 ? "NOT_FOUND" : "HTTP_ERROR", "Réponse HTTP de tuile électrique", response.status);
-            const bytes = await response.arrayBuffer();
-            phase = "VERIFICATION_UNAVAILABLE";
-            if (!globalThis.crypto?.subtle) throw new LocalTileError(phase, "Vérification SHA-256 indisponible (contexte sécurisé requis).");
-            const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), b => b.toString(16).padStart(2, "0")).join("");
-            if (digest !== tile.sha256) throw new LocalTileError("HASH_MISMATCH", "Empreinte de tuile électrique différente du manifeste.");
-            phase = "INVALID_DATA";
-            const data = JSON.parse(new TextDecoder().decode(bytes)) as Collection;
-            if (data.type !== "FeatureCollection" || !Array.isArray(data.features) || data.features.length !== tile.features || data.features.some(f =>
-              !/^way\/\d+$/.test(String(f.id)) || !isHighVoltageAerial(f) || !["LineString", "MultiLineString"].includes(f.geometry?.type))) throw new LocalTileError(phase, "Tuile électrique invalide.");
-            this.cache.set(tile.key, data); this.failures.delete(tile.key); return data;
-          } catch (error) {
-            const failure = error instanceof LocalTileError ? { status: error.status, httpStatus: error.httpStatus } : {
-              status: error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "TIMEOUT" as const : phase,
-            };
-            this.failures.set(tile.key, failure); throw error;
-          }
-        })();
-        this.pending.set(tile.key, request);
-      }
-      try { await request; } finally { if (this.pending.get(tile.key) === request) this.pending.delete(tile.key); }
-    }));
+  async load(view: PowerLineBounds, stillNeeded: () => boolean = () => true): Promise<void> {
+    const tiles = this.tiles(view);
+    // Limit country-wide views and stop queued batches after a move or layer deactivation.
+    for (let offset = 0; offset < tiles.length && stillNeeded(); offset += 6) {
+      await Promise.allSettled(tiles.slice(offset, offset + 6).map(async tile => {
+        if (this.cache.has(tile.key)) return;
+        let request = this.pending.get(tile.key);
+        if (!request) {
+          request = (async () => {
+            let phase: LFQOTileStatus = "NETWORK_ERROR";
+            try {
+              // Retry failed assets with HTTP revalidation instead of replaying a cached error or wrong body.
+              const response = await this.fetcher(this.source.base + tile.key, { cache: this.failures.has(tile.key) ? "reload" : "force-cache", signal: AbortSignal.timeout(10_000) });
+              if (!response.ok) throw new LocalTileError(response.status === 404 || response.status === 410 ? "NOT_FOUND" : "HTTP_ERROR", "Réponse HTTP de tuile électrique", response.status);
+              const bytes = await response.arrayBuffer();
+              phase = "VERIFICATION_UNAVAILABLE";
+              if (!globalThis.crypto?.subtle) throw new LocalTileError(phase, "Vérification SHA-256 indisponible (contexte sécurisé requis).");
+              const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), b => b.toString(16).padStart(2, "0")).join("");
+              if (digest !== tile.sha256) throw new LocalTileError("HASH_MISMATCH", "Empreinte de tuile électrique différente du manifeste.");
+              phase = "INVALID_DATA";
+              const data = JSON.parse(new TextDecoder().decode(bytes)) as Collection;
+              if (data.type !== "FeatureCollection" || !Array.isArray(data.features) || data.features.length !== tile.features || data.features.some(f =>
+                !/^way\/\d+$/.test(String(f.id)) || !isHighVoltageAerial(f) || !["LineString", "MultiLineString"].includes(f.geometry?.type))) throw new LocalTileError(phase, "Tuile électrique invalide.");
+              this.cache.set(tile.key, data); this.failures.delete(tile.key); return data;
+            } catch (error) {
+              const failure = error instanceof LocalTileError ? { status: error.status, httpStatus: error.httpStatus } : {
+                status: error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "TIMEOUT" as const : phase,
+              };
+              this.failures.set(tile.key, failure); throw error;
+            }
+          })();
+          this.pending.set(tile.key, request);
+        }
+        try { await request; } finally { if (this.pending.get(tile.key) === request) this.pending.delete(tile.key); }
+      }));
+    }
   }
 }
 function localTileIssueLabel(diagnostics: LFQOTileDiagnostic[]): string {
@@ -187,6 +201,7 @@ function localTileIssueLabel(diagnostics: LFQOTileDiagnostic[]): string {
 
 const localTiles = new LFQOPowerLineTiles();
 const belgiumTiles = new LFQOPowerLineTiles(undefined, belgiumPowerLineSource);
+const franceTiles = new LFQOPowerLineTiles(undefined, francePowerLineSource);
 
 /** PreparationMap only. Views touching a tiled extraction never request electric lines from Overpass. */
 export class PreparationPowerLineRuntime {
@@ -198,11 +213,12 @@ export class PreparationPowerLineRuntime {
   private publish: (state: PreparationPowerLineState) => void;
   private tiles: LFQOPowerLineTiles;
   private country: LFQOPowerLineTiles | null;
-  constructor(publish: (state: PreparationPowerLineState) => void, store: PowerLineMemoryStore = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, tiles = localTiles, country: LFQOPowerLineTiles | null = belgiumTiles) {
-    this.publish = publish; this.tiles = tiles; this.country = country;
-    this.fallback = new PowerLineRuntime(state => { if (!this.local && this.linesEnabled) publish({ ...state, coverageLabel: "Hors extrait local LFQO / hors couverture Belgique R2 — lignes Overpass" }); }, store);
+  private france: LFQOPowerLineTiles | null;
+  constructor(publish: (state: PreparationPowerLineState) => void, store: PowerLineMemoryStore = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, tiles = localTiles, country: LFQOPowerLineTiles | null = belgiumTiles, france: LFQOPowerLineTiles | null = franceTiles) {
+    this.publish = publish; this.tiles = tiles; this.country = country; this.france = france;
+    this.fallback = new PowerLineRuntime(state => { if (!this.local && this.linesEnabled) publish({ ...state, coverageLabel: "Hors extrait local LFQO / hors couverture France / Belgique R2 — lignes Overpass" }); }, store);
     if (publishObstacles) this.obstacles = new ObstacleRuntime(publishObstacles, store.obstacles, bounds =>
-      !this.linesEnabled || belgiumPowerLineCoverage(getPowerLineQueryBounds(bounds)) !== "OUTSIDE" ? store.loadObstaclesOnly(bounds) : store.load(bounds, true));
+      !this.linesEnabled || [this.country, this.france].some(tiles => tiles && tiles.source.coverage(getPowerLineQueryBounds(bounds)) !== "OUTSIDE") ? store.loadObstaclesOnly(bounds) : store.load(bounds, true));
   }
   stopLines() { this.generation++; this.fallback.stop(); }
   stop() { this.stopLines(); this.obstacles?.stop(); }
@@ -210,11 +226,15 @@ export class PreparationPowerLineRuntime {
     this.linesEnabled = linesEnabled;
     if (!linesEnabled) { this.stopLines(); await this.obstacles?.update(view, online, includeObstacles); return; }
     const generation = ++this.generation, coverage = lfqoCoverage(view);
-    const countryCoverage = this.country?.source.coverage(view) ?? "OUTSIDE";
-    const active = coverage === "FULL" ? [this.tiles] : countryCoverage === "FULL" && this.country ? [this.country] : [
-      ...(coverage !== "OUTSIDE" ? [this.tiles] : []),
-      ...(this.country && (countryCoverage !== "OUTSIDE" || belgiumPowerLineCoverage(getPowerLineQueryBounds(view)) !== "OUTSIDE") ? [this.country] : []),
-    ];
+    const countries = [this.country, this.france].filter((tiles): tiles is LFQOPowerLineTiles => !!tiles);
+    // Extraction buffers overlap: use the OSM country boundary to prefer France/Belgium correctly.
+    // Straddling views keep both countries' fragments; LFQO is never mixed with national tiles.
+    const territory = belgiumPowerLineCountryCoverage(view);
+    const preferred = territory === "FULL" ? this.country : territory === "OUTSIDE" ? this.france : null;
+    const selected = preferred && preferred.source.coverage(view) !== "OUTSIDE" ? preferred : null;
+    const touching = countries.filter(tiles => tiles.source.coverage(view) !== "OUTSIDE");
+    const buffered = countries.filter(tiles => tiles.source.coverage(getPowerLineQueryBounds(view)) !== "OUTSIDE");
+    const active = selected ? [selected] : touching.length ? touching : buffered.length ? buffered : coverage !== "OUTSIDE" ? [this.tiles] : [];
     this.local = active.length > 0;
     if (!this.local) {
       await Promise.all([this.fallback.update(view, online, includeObstacles), this.obstacles?.update(view, online, includeObstacles)]); return;
@@ -224,18 +244,19 @@ export class PreparationPowerLineRuntime {
       const missing = active.reduce((sum, tiles) => sum + tiles.missing(view), 0);
       const data = mergeLocalPowerLines(active.flatMap(tiles => tiles.data(view).features));
       const diagnostics = active.flatMap(tiles => tiles.diagnostics(view));
-      const full = coverage === "FULL" || countryCoverage === "FULL";
+      const full = active.some(tiles => tiles.source.coverage(view) === "FULL");
       const covered = full && missing === 0 && diagnostics.every(t => ["AVAILABLE", "EMPTY"].includes(t.status));
       const snapshots = active.flatMap(tiles => tiles.source.manifest.sources.map(s => s.snapshot_at_utc)).filter((s): s is string => !!s).sort();
-      const belgium = active.some(tiles => tiles === this.country);
-      const label = belgium ? `Belgique R2${active.includes(this.tiles) ? " + LFQO" : ""} · lignes aériennes ≥ 63 kV` : "Extrait local LFQO · rayon 20 km";
-      const extent = full ? covered ? "vue couverte" : "couverture incomplète" : belgium ? "couverture partielle — zones hors extraits non chargées" : "couverture partielle : extérieur du disque non chargé";
+      const national = active.some(tiles => tiles !== this.tiles);
+      const names = active.map(tiles => tiles === this.france ? "France" : tiles === this.country ? "Belgique" : "LFQO");
+      const label = national ? `${names.join(" + ")} R2 · lignes aériennes ≥ 63 kV` : "Extrait local LFQO · rayon 20 km";
+      const extent = full ? covered ? "vue couverte" : "couverture incomplète" : national ? "couverture partielle — zones hors extraits non chargées" : "couverture partielle : extérieur du disque non chargé";
       this.publish({ data, tileDiagnostics: diagnostics, covered, offline: !online, loading, retained: data.features.length > 0,
         status: missing ? loading ? "LOADING" : data.features.length ? "INCOMPLETE" : "UNAVAILABLE" : covered ? data.features.length ? "AVAILABLE" : "EMPTY_CONFIRMED" : "UNKNOWN_COVERAGE",
         fetchedAt: snapshots[0], localCoverage: full ? "FULL" : "PARTIAL", coverageLabel: `${label} · ${extent} · OSM du ${snapshots[0]?.slice(0, 10) ?? "date inconnue"} · non exhaustif${!loading && missing ? ` · ${localTileIssueLabel(diagnostics)}` : covered && !data.features.length ? " · extrait vide pour ce filtre" : ""}` });
     };
     publish(online && active.some(tiles => tiles.missing(view) > 0));
-    await Promise.all([...active.map(tiles => online ? tiles.load(view) : undefined), this.obstacles?.update(view, online, includeObstacles)]);
+    await Promise.all([...active.map(tiles => online ? tiles.load(view, () => generation === this.generation && this.linesEnabled) : undefined), this.obstacles?.update(view, online, includeObstacles)]);
     if (generation === this.generation) publish(false);
   }
 }

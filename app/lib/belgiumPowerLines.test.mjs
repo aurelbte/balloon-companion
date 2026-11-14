@@ -34,7 +34,7 @@ function harness({ properties = {}, fail = () => false, gate } = {}) {
     return Response.json(params.get('lines') === '0' ? { obstacles: { ...base, bounds: obstacleQueryBounds(bounds) } } : { ...base, bounds });
   });
   const local = new LFQOPowerLineTiles(async url => new Response(await readFile(new URL('../../public' + url, import.meta.url))));
-  const runtime = new PreparationPowerLineRuntime(state => states.push(state), store, state => obstacles.push(state), local, country);
+  const runtime = new PreparationPowerLineRuntime(state => states.push(state), store, state => obstacles.push(state), local, country, null);
   return { runtime, country, requests, overpass, states, obstacles, store, get state() { return states.at(-1); } };
 }
 test('Belgian manifest pins published XYZ hashes, exact footprint and explicit empty cells', () => {

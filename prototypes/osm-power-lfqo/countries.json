@@ -1,0 +1,30 @@
+{
+  "france": {
+    "code": "FR",
+    "name": "France métropolitaine",
+    "pbf_url": "https://download.geofabrik.de/europe/france-latest.osm.pbf",
+    "polygon_url": "https://download.geofabrik.de/europe/france.poly",
+    "scope_note": "Extrait métropolitain Geofabrik ; DOM/TOM exclus. Le polygone d'extraction ne constitue pas une frontière administrative officielle."
+  },
+  "belgium": {
+    "code": "BE",
+    "name": "Belgique",
+    "pbf_url": "https://download.geofabrik.de/europe/belgium-latest.osm.pbf",
+    "polygon_url": "https://download.geofabrik.de/europe/belgium.poly",
+    "scope_note": "Couverture du polygone d'extraction Geofabrik, avec ses éventuels débords frontaliers."
+  },
+  "morocco": {
+    "code": "MA",
+    "name": "Maroc",
+    "pbf_url": "https://download.geofabrik.de/africa/morocco-latest.osm.pbf",
+    "polygon_url": "https://download.geofabrik.de/africa/morocco.poly",
+    "scope_note": "Périmètre exact du polygone Geofabrik fourni ; aucune limite territoriale ni couverture supplémentaire n'est déduite."
+  },
+  "united-kingdom": {
+    "code": "GB",
+    "name": "Royaume-Uni",
+    "pbf_url": "https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf",
+    "polygon_url": "https://download.geofabrik.de/europe/united-kingdom.poly",
+    "scope_note": "Grande-Bretagne et Irlande du Nord ; île de Man, îles Anglo-Normandes et territoires d'outre-mer exclus de cet extrait."
+  }
+}

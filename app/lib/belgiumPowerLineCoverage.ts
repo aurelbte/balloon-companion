@@ -1,8 +1,8 @@
+import countryBoundary from "./data/belgiumPowerLinesCountryBoundary.json" with { type: "json" };
 import footprint from "./data/belgiumPowerLinesCoverage.json" with { type: "json" };
 import { powerLineFeatureIntersectsViewport } from "./powerLinesRuntime.ts";
 import type { PowerLineBounds } from "./powerLines.ts";
 export type TileCoverage = "FULL" | "PARTIAL" | "OUTSIDE";
-const polygons = footprint.geometry.coordinates;
 function inRing(point: number[], ring: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -12,11 +12,22 @@ function inRing(point: number[], ring: number[][]): boolean {
   return inside;
 }
 /** Exact extraction footprint, including holes; never claim the entire XYZ envelope is covered. */
-export function belgiumPowerLineCoverage(view: PowerLineBounds): TileCoverage {
+export function powerLineFootprintCoverage(view: PowerLineBounds, polygons: number[][][][]): TileCoverage {
   const corners = [view.west, view.east].flatMap(lon => [view.south, view.north].map(lat => [lon, lat]));
   const contains = (point: number[]) => polygons.some(p => inRing(point, p[0]) && !p.slice(1).some(hole => inRing(point, hole)));
   const boundary = polygons.some(p => p.some(ring => powerLineFeatureIntersectsViewport({ type: "Feature", properties: {},
     geometry: { type: "LineString", coordinates: ring } }, view)));
   if (!boundary && corners.every(contains)) return "FULL";
   return boundary || corners.some(contains) ? "PARTIAL" : "OUTSIDE";
+}
+
+export function belgiumPowerLineCoverage(view: PowerLineBounds): TileCoverage {
+  return powerLineFootprintCoverage(view, footprint.geometry.coordinates);
+}
+
+/** OSM administrative boundary is used only for country source priority in overlapping extracts. */
+export function belgiumPowerLineCountryCoverage(view: PowerLineBounds): TileCoverage {
+  const [west, south, east, north] = countryBoundary.bbox;
+  if (view.east < west || view.west > east || view.north < south || view.south > north) return "OUTSIDE";
+  return powerLineFootprintCoverage(view, countryBoundary.geometry.coordinates);
 }

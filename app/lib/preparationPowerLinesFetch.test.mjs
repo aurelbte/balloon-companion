@@ -13,7 +13,8 @@ test('default browser fetch stays unbound during LFQO refreshes and loaded GeoJS
   assert.equal(options.signal.aborted,false);urls.push(url);
   return new Response(await readFile(new URL('../../public'+url,import.meta.url)));
  };
- const {PreparationPowerLineRuntime}=await import('./preparationPowerLines.ts');
+ const {PreparationPowerLineRuntime:Runtime,LFQOPowerLineTiles}=await import('./preparationPowerLines.ts');
+ const PreparationPowerLineRuntime=class extends Runtime { constructor(...args){super(...args,new LFQOPowerLineTiles(),null,null);} };
  const source=await readFile(new URL('../components/PreparationMap.tsx',import.meta.url),'utf8');
  const start=source.indexOf('  useEffect(() => {\n    const runtime = new PreparationPowerLineRuntime(');
  assert.ok(start>=0);

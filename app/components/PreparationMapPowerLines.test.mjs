@@ -49,17 +49,17 @@ test('activation preserves obstacle zoom gating and uses offline cache when disc
  h.zoom(10); h.render(true, true, false); assert.deepEqual(h.updates[1].slice(1), [false, false, true]);
 });
 
-test('arrival prefetch skips LFQO and Belgium viewports and destinations while outside views keep legacy prefetch', async () => {
+test('arrival prefetch skips LFQO, France and Belgium viewports and destinations while outside views keep legacy prefetch', async () => {
  const { preparationPowerLineCoverage } = await import('../lib/preparationPowerLines.ts');
  const start=source.indexOf('  useEffect(() => {\n    const runtime = powerLineRuntimeRef.current;\n    const map = mapRef.current;\n    if (!runtime || !map || !navigator.onLine) return;');
  assert.ok(start>=0);
  const end=source.indexOf('  }, [traces, visibleTraceIds]);',start)+'  }, [traces, visibleTraceIds]);'.length;
  const effect=new Function('useEffect','powerLineRuntimeRef','mapRef','navigator','traces','visibleTraceIds','powerLineStateRef','showObstaclesRef','OBSTACLE_MIN_ZOOM','preparationPowerLineCoverage','showPowerLinesRef',ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText);
- const inside={west:3.05,east:3.1,south:50.67,north:50.71},outside={west:2.3,east:2.4,south:48.8,north:48.9};
- for(const view of [inside,{west:4.34,east:4.35,south:50.84,north:50.85},outside]){
+ const inside={west:3.05,east:3.1,south:50.67,north:50.71},outside={west:-3.75,east:-3.65,south:40.4,north:40.5};
+ for(const view of [inside,{west:4.34,east:4.35,south:50.84,north:50.85},{west:2.3,east:2.4,south:48.8,north:48.9},outside]){
   const calls=[];
   const map={getZoom:()=>12,getBounds:()=>({getWest:()=>view.west,getEast:()=>view.east,getSouth:()=>view.south,getNorth:()=>view.north})};
-  const traces=[{traceId:'local',projection:{points:[{latitude:50.68722,longitude:3.07556}]}},{traceId:'outside',projection:{points:[{latitude:48.85,longitude:2.35}]}},{traceId:'belgium',projection:{points:[{latitude:50.845,longitude:4.345}]}}];
+  const traces=[{traceId:'local',projection:{points:[{latitude:50.68722,longitude:3.07556}]}},{traceId:'outside',projection:{points:[{latitude:40.45,longitude:-3.70}]}},{traceId:'belgium',projection:{points:[{latitude:50.845,longitude:4.345}]}}];
   let cleanup;
   effect(fn=>{cleanup=fn();},{current:{update:async bounds=>calls.push(bounds),stop(){}}},{current:map},{onLine:true},traces,['local','outside','belgium'],{current:{covered:true}},{current:false},11,preparationPowerLineCoverage,{current:true});
   await new Promise(resolve=>setImmediate(resolve));
