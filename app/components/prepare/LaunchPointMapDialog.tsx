@@ -8,6 +8,13 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { LAUNCH_SATELLITE_LAYER, LAUNCH_SATELLITE_SOURCE, launchSatelliteSource, setLaunchPointBaseMap, type LaunchPointBaseMap } from "../../lib/launchPointBaseMap";
 import type { GeocodingResult } from "../../lib/trajectory/integration";
 
+import { FlightPowerLineRuntime, FLIGHT_POWER_LINE_MIN_ZOOM } from "../../lib/flightPowerLines";
+import type { PreparationPowerLineState } from "../../lib/preparationPowerLines";
+import { preparationPowerLineStatusLabel } from "../../lib/tiledPowerLineStatus";
+
+const POWER_SOURCE = "launch-power-lines";
+const POWER_LAYERS = ["launch-power-casing", "launch-power-line"] as const;
+
 const SATELLITE_ERROR_WINDOW_MS = 10_000;
 const MAX_SATELLITE_ERRORS = 3;
 
@@ -31,6 +38,8 @@ export default function LaunchPointMapDialog({
   confirmLabel = "Valider ce point",
 }: LaunchPointMapDialogProps) {
   const mapTilerKey = allowBaseMapSelection ? (process.env.NEXT_PUBLIC_MAPTILER_KEY?.trim() ?? "") : "";
+  const [showPowerLines, setShowPowerLines] = useState(false);
+  const [powerState, setPowerState] = useState<PreparationPowerLineState | null>(null);
   const [baseMap, setBaseMap] = useState<LaunchPointBaseMap>("plan");
   const baseMapRef = useRef<LaunchPointBaseMap>("plan");
   const [satelliteError, setSatelliteError] = useState<string | null>(null);
@@ -113,6 +122,49 @@ export default function LaunchPointMapDialog({
     };
   }, [initialPoint.latitude, initialPoint.longitude, mapTilerKey]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !showPowerLines) return;
+    const runtime = new FlightPowerLineRuntime(state => {
+      setPowerState(state);
+      (map.getSource(POWER_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(state.data);
+    });
+    const refresh = () => {
+      if (!map.getSource(POWER_SOURCE)) return;
+      const bounds = map.getBounds();
+      void runtime.update({ west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() }, navigator.onLine, false, true, map.getZoom());
+    };
+    const initialize = () => {
+      if (!map.getSource(POWER_SOURCE)) {
+        map.addSource(POWER_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] }, attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap contributors</a> · Geofabrik' });
+        POWER_LAYERS.forEach((id, index) => map.addLayer({
+          id, type: "line", source: POWER_SOURCE, minzoom: FLIGHT_POWER_LINE_MIN_ZOOM,
+          filter: ["==", ["get", "power"], "line"],
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": index === 0 ? "rgba(7, 17, 31, 0.82)" : "#dc2626",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 8, index === 0 ? 4.6 : 2.8, 14, index === 0 ? 7 : 4.6],
+          },
+        }));
+      }
+      for (const id of POWER_LAYERS) map.setLayoutProperty(id, "visibility", "visible");
+      refresh();
+    };
+    if (map.isStyleLoaded()) initialize();
+    else map.on("load", initialize);
+    map.on("moveend", refresh);
+    window.addEventListener("online", refresh);
+    window.addEventListener("offline", refresh);
+    return () => {
+      runtime.stop();
+      map.off("load", initialize);
+      map.off("moveend", refresh);
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("offline", refresh);
+      for (const id of POWER_LAYERS) if (mapRef.current === map && map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+    };
+  }, [showPowerLines, initialPoint.latitude, initialPoint.longitude, mapTilerKey]);
+
   const selectBaseMap = (selected: LaunchPointBaseMap) => {
     if (selected === "satellite" && !mapTilerKey) return;
     baseMapRef.current = selected;
@@ -167,6 +219,14 @@ export default function LaunchPointMapDialog({
         </fieldset>
         {(!mapTilerKey || satelliteError) && <p role="status" className="mt-1 text-center text-xs" style={{ color: "var(--bc-color-text-muted)" }}>{satelliteError ?? "Fond satellite non configuré."}</p>}
       </div>}
+
+      <div className="shrink-0 border-b px-3 py-1" style={{ borderColor: "var(--bc-border)" }}>
+        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs">
+          <input type="checkbox" checked={showPowerLines} onChange={event => setShowPowerLines(event.target.checked)} className="h-4 w-4 accent-[var(--bc-accent)]" />
+          Lignes électriques
+        </label>
+        {showPowerLines && powerState && <p role="status" className="pb-1 text-xs">{preparationPowerLineStatusLabel(powerState)}</p>}
+      </div>
 
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
