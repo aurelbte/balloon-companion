@@ -209,27 +209,24 @@ export default function LaunchPointMapDialog({
         <span className="h-11 w-11" />
       </header>
 
-      {allowBaseMapSelection && <div className="shrink-0 border-b px-3 py-2" style={{ borderColor: "var(--bc-border)" }}>
-        <fieldset className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+      <div className="shrink-0 border-b px-3 py-2" style={{ borderColor: "var(--bc-border)" }}>
+        <fieldset className="flex min-w-0 items-center justify-center gap-1 sm:gap-2">
           <legend className="sr-only">Fond de carte du terrain favori</legend>
-          {(["plan", "satellite"] as const).map((value) => <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm ${value === "satellite" && !mapTilerKey ? "opacity-50" : ""}`} style={{ borderColor: baseMap === value ? "var(--bc-accent)" : "var(--bc-border)" }}>
+          {allowBaseMapSelection && (["plan", "satellite"] as const).map((value) => <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-2 text-xs sm:px-4 sm:text-sm ${value === "satellite" && !mapTilerKey ? "opacity-50" : ""}`} style={{ borderColor: baseMap === value ? "var(--bc-accent)" : "var(--bc-border)" }}>
             <input type="radio" name="favorite-launch-base-map" value={value} checked={baseMap === value} disabled={value === "satellite" && !mapTilerKey} onChange={() => selectBaseMap(value)} className="h-4 w-4 accent-[var(--bc-accent)]" />
             {value === "plan" ? "Plan" : "Satellite"}
           </label>)}
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 whitespace-nowrap rounded-xl border px-2 text-xs sm:px-4 sm:text-sm" style={{ borderColor: showPowerLines ? "var(--bc-accent)" : "var(--bc-border)" }}>
+            <input type="checkbox" checked={showPowerLines} onChange={event => setShowPowerLines(event.target.checked)} className="h-4 w-4 accent-[var(--bc-accent)]" />
+            Lignes électriques
+          </label>
         </fieldset>
-        {(!mapTilerKey || satelliteError) && <p role="status" className="mt-1 text-center text-xs" style={{ color: "var(--bc-color-text-muted)" }}>{satelliteError ?? "Fond satellite non configuré."}</p>}
-      </div>}
-
-      <div className="shrink-0 border-b px-3 py-1" style={{ borderColor: "var(--bc-border)" }}>
-        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs">
-          <input type="checkbox" checked={showPowerLines} onChange={event => setShowPowerLines(event.target.checked)} className="h-4 w-4 accent-[var(--bc-accent)]" />
-          Lignes électriques
-        </label>
-        {showPowerLines && powerState && <p role="status" className="pb-1 text-xs">{preparationPowerLineStatusLabel(powerState)}</p>}
+        {allowBaseMapSelection && (!mapTilerKey || satelliteError) && <p role="status" className="mt-1 text-center text-xs" style={{ color: "var(--bc-color-text-muted)" }}>{satelliteError ?? "Fond satellite non configuré."}</p>}
       </div>
 
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
+        {showPowerLines && powerState && <p role="status" className="pointer-events-none absolute bottom-2 left-2 right-2 z-10 rounded bg-slate-950/85 px-2 py-1 text-[10px] text-white">{preparationPowerLineStatusLabel(powerState)}</p>}
         {baseMap === "satellite" && <a href="https://www.maptiler.com/" target="_blank" rel="noreferrer" className="absolute bottom-8 left-2 z-10 rounded bg-white/90 p-1" aria-label="MapTiler"><Image unoptimized src="https://api.maptiler.com/resources/logo.svg" alt="MapTiler" width={88} height={22} /></a>}
         <div className="absolute right-3 top-3 z-10 grid gap-2">
           <button type="button" onClick={() => mapRef.current?.easeTo({ center: [coordinates.longitude, coordinates.latitude], zoom: Math.max(mapRef.current.getZoom(), 14), duration: 250 })} className="grid h-11 w-11 place-items-center rounded-full border bg-[var(--bc-color-canvas-elevated)]" style={{ borderColor: "var(--bc-border)" }} aria-label="Recentrer sur le point choisi"><Navigation size={18} /></button>
