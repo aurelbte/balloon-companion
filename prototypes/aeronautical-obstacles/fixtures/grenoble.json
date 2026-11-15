@@ -1,0 +1,625 @@
+{
+  "notice": "Real retained study subset, not synthetic records. No independent field verification. OSM attribution: © OpenStreetMap contributors / Geofabrik, ODbL-1.0; SIA / DGAC.",
+  "zone": "grenoble",
+  "provenance": {
+    "study_reference": "2026-11-15",
+    "sia_cycle": "2026-10-29",
+    "files": [
+      {
+        "file": "sia-local-raw.json",
+        "sha256": "786747425d5059a8b44bf4246cf23de86fddb77be28a1b50e0401ce890d9d03e"
+      },
+      {
+        "file": "osm-local-raw.json",
+        "sha256": "ca2af9d4b8bf076e1a6da09e693b562703f6a8db46962751f11cba3290ece071"
+      }
+    ],
+    "osm_sources": [
+      {
+        "region": "rhone-alpes",
+        "file": "/tmp/bc-obstacles-study/shared/rhone-alpes.osm.pbf",
+        "snapshot_utc": "2026-11-14T21:20:41Z",
+        "sha256": "58cdde4796fa003dbffdde8c4e3d7de6a066d60e2628cf7b7e214a3ca924688c",
+        "bytes": 533046369,
+        "url": "https://download.geofabrik.de/europe/france/rhone-alpes-latest.osm.pbf"
+      }
+    ]
+  },
+  "sia": [
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "38009",
+      "TYPE": "Pylône",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "451021N",
+      "LONGITUDE SEXAGESIMALE": "0054007E",
+      "LATITUDE DECIMALE": "45.1725000",
+      "LONGITUDE DECIMALE": "5.6686111",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "2356",
+      "HAUTEUR HORS SOL": "210",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20160818"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "38010",
+      "TYPE": "Tour",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "450754.84N",
+      "LONGITUDE SEXAGESIMALE": "0054412.01E",
+      "LATITUDE DECIMALE": "45.1319000",
+      "LONGITUDE DECIMALE": "5.7366694",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "1732",
+      "HAUTEUR HORS SOL": "276",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "Tour béton + pylône",
+      "REMARK": "Concrete tower and pylon",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20130412"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "38013",
+      "TYPE": "Pylône",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "451028N",
+      "LONGITUDE SEXAGESIMALE": "0054028E",
+      "LATITUDE DECIMALE": "45.1744444",
+      "LONGITUDE DECIMALE": "5.6744444",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "2320",
+      "HAUTEUR HORS SOL": "177",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "non balisé",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20160818"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "38015",
+      "TYPE": "Bâtiment",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "451134.00N",
+      "LONGITUDE SEXAGESIMALE": "0054414.00E",
+      "LATITUDE DECIMALE": "45.1927778",
+      "LONGITUDE DECIMALE": "5.7372222",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "1073",
+      "HAUTEUR HORS SOL": "374",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "non balisé",
+      "REMARQUE": "Immeuble + antennes",
+      "REMARK": "Building and antennas",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20131017"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "38021",
+      "TYPE": "Câble",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "450738.00N",
+      "LONGITUDE SEXAGESIMALE": "0053049.00E",
+      "LATITUDE DECIMALE": "45.1272222",
+      "LONGITUDE DECIMALE": "5.5136111",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "4233",
+      "HAUTEUR HORS SOL": "165",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "non balisé",
+      "REMARQUE": "Point moyen de la tyrolienne.#Gare de départ 45°07'40.00 N - 005°30'23.00 E, altitude 4233 ft.#Gare d'arrivée 45°07'35.00 N - 005°31'18.00 E, altitude 3413 ft.#Longueur câble : 1222 m.#Orientation : 097°/277°.",
+      "REMARK": "Zip line mean coordinates.#Departure 45°07'40.00 N - 005°30'23.00 E, elevation 4233 ft.#Arrival 45°07'35.00 N - 005°31'18.00 E, elevation 3413 ft.#Cable length : 1222 m.#Cable orientation : 097°/277°.",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20200521"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "38022",
+      "TYPE": "Câble",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "450733.00N",
+      "LONGITUDE SEXAGESIMALE": "0055326.00E",
+      "LATITUDE DECIMALE": "45.1258333",
+      "LONGITUDE DECIMALE": "5.8905556",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "7316",
+      "HAUTEUR HORS SOL": "236",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "PSN gare départ : 450736N 0055407E - PSN gare arrivée : 450732N 0055243E - Longueur : 1944 m - Orientation 086°/266°\n",
+      "REMARK": "PSN departure station : 450736N 0055407E - PSN arrival station : 450732N 0055243E - Length: 1944 m - Orientation 086°/266°",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20250612"
+    }
+  ],
+  "osm": [
+    {
+      "id": "node/9291321377",
+      "osm_version": 2,
+      "osm_timestamp_utc": "2022-08-20T20:19:46+00:00",
+      "latitude": 45.0752111,
+      "longitude": 5.8699043,
+      "distance_m": 17036.446822309554,
+      "position_method": "node",
+      "tags": {
+        "height": "180",
+        "operator": "EDF",
+        "operator:wikidata": "Q274591",
+        "pipeline": "surge_tank"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        2,
+        "2022-08-20T20:19:46+00:00",
+        false
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/1119887478",
+      "osm_version": 2,
+      "osm_timestamp_utc": "2025-01-07T22:22:24+00:00",
+      "latitude": 45.12713909893769,
+      "longitude": 5.51395165698968,
+      "distance_m": 18174.016961446934,
+      "position_method": "cable route centroid (proxy, not its footprint)",
+      "tags": {
+        "aerialway": "zip_line",
+        "description": "Tyrolienne géante",
+        "email": "zipline@autrans-meaudre.com",
+        "name": "Zipline Vercors",
+        "opening_hours": "Dec-Mar SH Mo-Su 13:00-17:00; Dec-Mar Sa-Su 13:00-17:00",
+        "phone": "+33 4 76 95 21 68",
+        "website": "https://station.autrans-meaudre.fr/fr/nos-activites/zipline-vercors/"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        2,
+        "2025-01-07T22:22:24+00:00",
+        false
+      ],
+      "selection_reason": "linear_cable_context",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            5.5062511,
+            45.1278425
+          ],
+          [
+            5.5069805,
+            45.1277717
+          ],
+          [
+            5.5146959,
+            45.1270721
+          ],
+          [
+            5.5214643,
+            45.1264558
+          ],
+          [
+            5.5216525,
+            45.1264387
+          ]
+        ]
+      }
+    },
+    {
+      "id": "way/1181989763",
+      "osm_version": 4,
+      "osm_timestamp_utc": "2025-02-06T20:05:40+00:00",
+      "latitude": 45.125971918008034,
+      "longitude": 5.890183490268325,
+      "distance_m": 14659.783978070596,
+      "position_method": "cable route centroid (proxy, not its footprint)",
+      "tags": {
+        "aerialway": "zip_line",
+        "maxweight": "130 kg",
+        "name": "Adrenaline Park",
+        "oneway": "yes",
+        "toll": "yes",
+        "website": "https://www.chamrousse.com/adrenaline-park-tyrolienne-geante-de-chamrousse.html",
+        "wikidata": "Q115128409"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        4,
+        "2025-02-06T20:05:40+00:00",
+        false
+      ],
+      "selection_reason": "linear_cable_context",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            5.9018818,
+            45.1264067
+          ],
+          [
+            5.8997061,
+            45.1263351
+          ],
+          [
+            5.8835777,
+            45.1257265
+          ],
+          [
+            5.8784865,
+            45.1255035
+          ]
+        ]
+      }
+    },
+    {
+      "id": "way/233263819",
+      "osm_version": 2,
+      "osm_timestamp_utc": "2024-12-09T19:31:46+00:00",
+      "latitude": 45.19278519388062,
+      "longitude": 5.737421109168846,
+      "distance_m": 813.7406820420257,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building:levels": "28",
+        "building:part": "yes",
+        "height": "98",
+        "min_height": "5",
+        "source": "Bing"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        2,
+        "2024-12-09T19:31:46+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/82898404",
+      "osm_version": 6,
+      "osm_timestamp_utc": "2025-10-14T19:26:56+00:00",
+      "latitude": 45.34525183296329,
+      "longitude": 5.840695862765799,
+      "distance_m": 19323.904950710956,
+      "position_method": "cable route centroid (proxy, not its footprint)",
+      "tags": {
+        "aerialway": "chair_lift",
+        "aerialway:bubble": "no",
+        "aerialway:capacity": "1200",
+        "aerialway:duration": "7:36",
+        "aerialway:heating": "no",
+        "aerialway:occupancy": "4",
+        "disused:aerialway": "chair_lift",
+        "name": "Scia",
+        "oneway": "yes",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2010"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        6,
+        "2025-10-14T19:26:56+00:00",
+        false
+      ],
+      "selection_reason": "linear_cable_context",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            5.8345031,
+            45.345604
+          ],
+          [
+            5.8352725,
+            45.3455608
+          ],
+          [
+            5.8362971,
+            45.3455028
+          ],
+          [
+            5.8380855,
+            45.3454017
+          ],
+          [
+            5.8391413,
+            45.345342
+          ],
+          [
+            5.840566,
+            45.3452596
+          ],
+          [
+            5.8416648,
+            45.3451963
+          ],
+          [
+            5.8428915,
+            45.3451245
+          ],
+          [
+            5.8442605,
+            45.3450488
+          ],
+          [
+            5.8454709,
+            45.3449797
+          ],
+          [
+            5.8460575,
+            45.3449442
+          ],
+          [
+            5.8464516,
+            45.3449215
+          ],
+          [
+            5.8468888,
+            45.3449038
+          ]
+        ]
+      }
+    },
+    {
+      "id": "node/10242644216",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2022-12-06T15:35:48+00:00",
+      "latitude": 45.1277717,
+      "longitude": 5.5069805,
+      "distance_m": 18651.961753697553,
+      "position_method": "node",
+      "tags": {
+        "aerialway": "pylon"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        1,
+        "2022-12-06T15:35:48+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/10242644217",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2022-12-06T15:35:48+00:00",
+      "latitude": 45.1270721,
+      "longitude": 5.5146959,
+      "distance_m": 18123.21269556951,
+      "position_method": "node",
+      "tags": {
+        "aerialway": "pylon"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        1,
+        "2022-12-06T15:35:48+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "way/128191255",
+      "osm_version": 8,
+      "osm_timestamp_utc": "2026-03-01T22:14:17+00:00",
+      "latitude": 45.12903400012658,
+      "longitude": 5.5182185500070355,
+      "distance_m": 17783.657017499052,
+      "position_method": "cable route centroid (proxy, not its footprint)",
+      "tags": {
+        "aerialway": "drag_lift",
+        "disused": "yes",
+        "name": "Grand Champ",
+        "ref:FR:CAIRN": "380219"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        8,
+        "2026-03-01T22:14:17+00:00",
+        false
+      ],
+      "selection_reason": "linear_cable_context",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            5.519833,
+            45.1289409
+          ],
+          [
+            5.5191476,
+            45.1289804
+          ],
+          [
+            5.518305,
+            45.129029
+          ],
+          [
+            5.5174822,
+            45.1290765
+          ],
+          [
+            5.5166041,
+            45.1291271
+          ]
+        ]
+      }
+    },
+    {
+      "id": "way/181562097",
+      "osm_version": 6,
+      "osm_timestamp_utc": "2026-03-01T22:14:17+00:00",
+      "latitude": 45.12155584354772,
+      "longitude": 5.51787319904567,
+      "distance_m": 18146.70911790727,
+      "position_method": "cable route centroid (proxy, not its footprint)",
+      "tags": {
+        "aerialway": "drag_lift",
+        "disused": "yes",
+        "name": "Cray",
+        "ref:FR:CAIRN": "380218",
+        "start_date": "1962"
+      },
+      "extracts": [
+        "rhone-alpes"
+      ],
+      "rank": [
+        6,
+        "2026-03-01T22:14:17+00:00",
+        false
+      ],
+      "selection_reason": "linear_cable_context",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            5.5197363,
+            45.1257349
+          ],
+          [
+            5.5197279,
+            45.1255247
+          ],
+          [
+            5.5195611,
+            45.124891
+          ],
+          [
+            5.5194499,
+            45.1243189
+          ],
+          [
+            5.5193156,
+            45.1236905
+          ],
+          [
+            5.5186097,
+            45.1230703
+          ],
+          [
+            5.5179111,
+            45.1224565
+          ],
+          [
+            5.517443,
+            45.1220452
+          ],
+          [
+            5.5169738,
+            45.1198375
+          ],
+          [
+            5.5169027,
+            45.1194455
+          ],
+          [
+            5.5168113,
+            45.1190057
+          ],
+          [
+            5.5167017,
+            45.1184781
+          ],
+          [
+            5.5165125,
+            45.1175674
+          ],
+          [
+            5.5164219,
+            45.1171316
+          ]
+        ]
+      }
+    }
+  ]
+}

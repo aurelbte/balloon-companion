@@ -1,0 +1,801 @@
+{
+  "notice": "Real retained study subset, not synthetic records. No independent field verification. OSM attribution: © OpenStreetMap contributors / Geofabrik, ODbL-1.0; SIA / DGAC.",
+  "zone": "le-havre",
+  "provenance": {
+    "study_reference": "2026-11-15",
+    "sia_cycle": "2026-10-29",
+    "files": [
+      {
+        "file": "sia-local-raw.json",
+        "sha256": "ff0a13cc9e8b340acba6063791acb834166fcf87db43ad4d924812714c4fc2c6"
+      },
+      {
+        "file": "osm-local-raw.json",
+        "sha256": "f4f50430ef823f54035b98ca979b30d16c216219ee84bed3cc7202d931736aec"
+      }
+    ],
+    "osm_sources": [
+      {
+        "region": "haute-normandie",
+        "file": "/tmp/bc-obstacles-study/haute-normandie.osm.pbf",
+        "snapshot_utc": "2026-11-14T21:20:41Z",
+        "sha256": "aa08288c34a35baf2365544a0f1d0c74d0924240a1a4796c13e3fef65e240984",
+        "bytes": 107573837,
+        "url": "https://download.geofabrik.de/europe/france/haute-normandie-latest.osm.pbf"
+      },
+      {
+        "region": "basse-normandie",
+        "file": "/tmp/bc-obstacles-study/shared/basse-normandie.osm.pbf",
+        "snapshot_utc": "2026-11-14T21:20:41Z",
+        "sha256": "1ff530328a3b9711cf44f4a42d8a730e2203f80b0409e73013b1f54f78b52dc2",
+        "bytes": 144544199,
+        "url": "https://download.geofabrik.de/europe/france/basse-normandie-latest.osm.pbf"
+      }
+    ]
+  },
+  "sia": [
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "14014",
+      "TYPE": "Pylône",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "492542.38N",
+      "LONGITUDE SEXAGESIMALE": "0001628.16E",
+      "LATITUDE DECIMALE": "49.4284389",
+      "LONGITUDE DECIMALE": "0.2744889",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "791",
+      "HAUTEUR HORS SOL": "774",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20130822"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76001",
+      "TYPE": "Pylône",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "493014.75N",
+      "LONGITUDE SEXAGESIMALE": "0001032.02E",
+      "LATITUDE DECIMALE": "49.5040972",
+      "LONGITUDE DECIMALE": "0.1755611",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "686",
+      "HAUTEUR HORS SOL": "404",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20130822"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76002",
+      "TYPE": "Cheminée",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "492936.89N",
+      "LONGITUDE SEXAGESIMALE": "0001343.74E",
+      "LATITUDE DECIMALE": "49.4935806",
+      "LONGITUDE DECIMALE": "0.2288167",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "489",
+      "HAUTEUR HORS SOL": "459",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "non balisé",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20130822"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76010",
+      "TYPE": "Cheminée",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "492816.00N",
+      "LONGITUDE SEXAGESIMALE": "0001735.00E",
+      "LATITUDE DECIMALE": "49.4711111",
+      "LONGITUDE DECIMALE": "0.2930556",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "184",
+      "HAUTEUR HORS SOL": "164",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20210325"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76028",
+      "TYPE": "Cheminée",
+      "NOMBRE": "2",
+      "LATITUDE SEXAGESIMALE": "492833N",
+      "LONGITUDE SEXAGESIMALE": "0000851E",
+      "LATITUDE DECIMALE": "49.4758333",
+      "LONGITUDE DECIMALE": "0.1475000",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "804",
+      "HAUTEUR HORS SOL": "787",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20161208"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76034",
+      "TYPE": "Pylône",
+      "NOMBRE": "2",
+      "LATITUDE SEXAGESIMALE": "492609.81N",
+      "LONGITUDE SEXAGESIMALE": "0001624.79E",
+      "LATITUDE DECIMALE": "49.4360583",
+      "LONGITUDE DECIMALE": "0.2735528",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "791",
+      "HAUTEUR HORS SOL": "774",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "jour et nuit",
+      "REMARQUE": "",
+      "REMARK": "",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20161208"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76049",
+      "TYPE": "Château d'eau",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "493508N",
+      "LONGITUDE SEXAGESIMALE": "0001448E",
+      "LATITUDE DECIMALE": "49.5855556",
+      "LONGITUDE DECIMALE": "0.2466667",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "459",
+      "HAUTEUR HORS SOL": "180",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "non balisé",
+      "REMARQUE": "Château d'eau + pylône",
+      "REMARK": "Water tower and pylon ",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20161208"
+    },
+    {
+      "ZONE": "zone 1",
+      "IDENTIFICATEUR": "76052",
+      "TYPE": "Silo",
+      "NOMBRE": "1",
+      "LATITUDE SEXAGESIMALE": "492847.78N",
+      "LONGITUDE SEXAGESIMALE": "0000718.65E",
+      "LATITUDE DECIMALE": "49.4799389",
+      "LONGITUDE DECIMALE": "0.1218472",
+      "PRECISION HORIZONTALE": "50 m",
+      "NIVEAU CONFIANCE HORIZONTALE": "",
+      "RESOLUTION HORIZONTALE": "0.1 s",
+      "ETENDUE HORIZONTALE": "",
+      "SYSTEME DE REFERENCE HORIZONTALE": "WGS84",
+      "ALTITUDE AU SOMMET": "207",
+      "HAUTEUR HORS SOL": "194",
+      "UNITE": "FT",
+      "PRECISION VERTICALE": "100 ft",
+      "NIVEAU CONFIANCE VERTICALE": "",
+      "RESOLUTION VERTICALE": "1 ft",
+      "SYSTEME REFERENCE VERTICALE": "IGN69",
+      "TYPE GEOMETRIE": "ponctuel",
+      "INTEGRITE": "Routine",
+      "BALISAGE": "non balisé",
+      "REMARQUE": "Silo + mât",
+      "REMARK": "Silo and mast",
+      "CREATEUR DE DONNEE": "",
+      "FOURNISSEUR DE DONNEE": "DGAC",
+      "DATE DE MISE EN VIGUEUR": "20261029"
+    }
+  ],
+  "osm": [
+    {
+      "id": "node/13041912460",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2025-08-01T20:15:20+00:00",
+      "latitude": 49.4644412,
+      "longitude": 0.2944926,
+      "distance_m": 13890.399465641696,
+      "position_method": "node",
+      "tags": {
+        "crane:type": "portal_crane",
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2025-08-01T20:15:20+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/13041912461",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2025-08-01T20:15:20+00:00",
+      "latitude": 49.46492,
+      "longitude": 0.2895469,
+      "distance_m": 13530.704431464721,
+      "position_method": "node",
+      "tags": {
+        "crane:type": "portal_crane",
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2025-08-01T20:15:20+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/1398241821",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2011-08-14T07:37:55+00:00",
+      "latitude": 49.478479,
+      "longitude": 0.1748588,
+      "distance_m": 5153.584979875593,
+      "position_method": "node",
+      "tags": {
+        "crane:height": "Unknown",
+        "crane:maxlength": "Unknown",
+        "crane:maxload": "Unknown",
+        "crane:maxradius": "Unknown",
+        "crane:maxwidth": "Unknown",
+        "crane:mobile": "Rail",
+        "crane:type": "crane",
+        "man_made": "crane",
+        "ship:maxdraft": "Unknown",
+        "ship:maxlength": "Unknown"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2011-08-14T07:37:55+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/1398241822",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2018-10-27T11:59:37+00:00",
+      "latitude": 49.4805428,
+      "longitude": 0.1774236,
+      "distance_m": 5256.6943980028,
+      "position_method": "node",
+      "tags": {
+        "crane:mobile": "Rail",
+        "crane:type": "floor-mounted_crane",
+        "man_made": "crane",
+        "note:de": "Containerverladebrücke"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        3,
+        "2018-10-27T11:59:37+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/1398241823",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2018-10-27T11:59:37+00:00",
+      "latitude": 49.4813319,
+      "longitude": 0.1783627,
+      "distance_m": 5297.034787891909,
+      "position_method": "node",
+      "tags": {
+        "crane:mobile": "Rail",
+        "crane:type": "floor-mounted_crane",
+        "man_made": "crane",
+        "note:de": "Containerverladebrücke"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        3,
+        "2018-10-27T11:59:37+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/1398241824",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2018-10-27T11:59:37+00:00",
+      "latitude": 49.4823787,
+      "longitude": 0.1794855,
+      "distance_m": 5345.017005222785,
+      "position_method": "node",
+      "tags": {
+        "crane:mobile": "Rail",
+        "crane:type": "floor-mounted_crane",
+        "man_made": "crane",
+        "note:de": "Containerverladebrücke"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        3,
+        "2018-10-27T11:59:37+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/1398242549",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2018-10-27T11:59:37+00:00",
+      "latitude": 49.4858457,
+      "longitude": 0.1831376,
+      "distance_m": 5522.245361989799,
+      "position_method": "node",
+      "tags": {
+        "crane:mobile": "Rail",
+        "crane:type": "floor-mounted_crane",
+        "man_made": "crane",
+        "note:de": "Containerverladebrücke"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        3,
+        "2018-10-27T11:59:37+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/3897013888",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2015-12-17T18:47:17+00:00",
+      "latitude": 49.4777153,
+      "longitude": 0.1278975,
+      "distance_m": 2347.0111965587143,
+      "position_method": "node",
+      "tags": {
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2015-12-17T18:47:17+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/4725626747",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2023-07-24T09:16:57+00:00",
+      "latitude": 49.3622788,
+      "longitude": 0.0800022,
+      "distance_m": 14817.12346633206,
+      "position_method": "node",
+      "tags": {
+        "man_made": "crane",
+        "seamark:crane:category": "a-frame",
+        "seamark:type": "crane"
+      },
+      "extracts": [
+        "basse-normandie"
+      ],
+      "rank": [
+        3,
+        "2023-07-24T09:16:57+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/7816091786",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2020-08-15T19:33:43+00:00",
+      "latitude": 49.491236,
+      "longitude": 0.0954223,
+      "distance_m": 956.7137183348706,
+      "position_method": "node",
+      "tags": {
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2020-08-15T19:33:43+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "way/1085528281",
+      "osm_version": 2,
+      "osm_timestamp_utc": "2026-09-10T20:12:38+00:00",
+      "latitude": 49.42844289543506,
+      "longitude": 0.2748602896635628,
+      "distance_m": 14121.043112440202,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "yes",
+        "height": "214"
+      },
+      "extracts": [
+        "basse-normandie"
+      ],
+      "rank": [
+        2,
+        "2026-09-10T20:12:38+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/1085528282",
+      "osm_version": 2,
+      "osm_timestamp_utc": "2026-09-10T20:12:38+00:00",
+      "latitude": 49.4284084880892,
+      "longitude": 0.2742181337864078,
+      "distance_m": 14083.3755166135,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "yes",
+        "height": "214"
+      },
+      "extracts": [
+        "basse-normandie"
+      ],
+      "rank": [
+        2,
+        "2026-09-10T20:12:38+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/1085528283",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2026-09-10T20:12:38+00:00",
+      "latitude": 49.43607911795265,
+      "longitude": 0.2731501986628618,
+      "distance_m": 13590.341051132538,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "service",
+        "height": "214"
+      },
+      "extracts": [
+        "basse-normandie"
+      ],
+      "rank": [
+        3,
+        "2026-09-10T20:12:38+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/1085528284",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2026-09-10T20:12:38+00:00",
+      "latitude": 49.43611629582008,
+      "longitude": 0.2738060146943915,
+      "distance_m": 13630.063929202099,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "service",
+        "height": "214"
+      },
+      "extracts": [
+        "basse-normandie"
+      ],
+      "rank": [
+        3,
+        "2026-09-10T20:12:38+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/1267132044",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2024-03-28T14:40:08+00:00",
+      "latitude": 49.45954002283205,
+      "longitude": 0.1540620658174413,
+      "distance_m": 5109.892334986886,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "area": "yes",
+        "crane:type": "portal_crane",
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2024-03-28T14:40:08+00:00",
+        true
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "way/1267132046",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2024-03-28T14:40:08+00:00",
+      "latitude": 49.476013338648514,
+      "longitude": 0.1651836852509496,
+      "distance_m": 4617.110553941638,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "area": "yes",
+        "crane:mobile": "rail",
+        "crane:type": "portal_crane",
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2024-03-28T14:40:08+00:00",
+        true
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "way/1267132047",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2024-03-28T14:40:08+00:00",
+      "latitude": 49.47320104348094,
+      "longitude": 0.15324709929133587,
+      "distance_m": 4035.1880849077043,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "area": "yes",
+        "crane:mobile": "rail",
+        "crane:type": "portal_crane",
+        "man_made": "crane"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2024-03-28T14:40:08+00:00",
+        true
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "way/445097158",
+      "osm_version": 5,
+      "osm_timestamp_utc": "2017-01-31T10:23:34+00:00",
+      "latitude": 49.4909775541932,
+      "longitude": 0.10120197021590534,
+      "distance_m": 602.9815083884652,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building:material": "concrete",
+        "building:part": "yes",
+        "height": "80",
+        "roof:material": "concrete"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        5,
+        "2017-01-31T10:23:34+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/69875689",
+      "osm_version": 8,
+      "osm_timestamp_utc": "2023-09-14T11:28:18+00:00",
+      "latitude": 49.47552734107548,
+      "longitude": 0.14963797432680914,
+      "distance_m": 3673.080435754068,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "yes",
+        "disused:generator:method": "combustion",
+        "disused:generator:output:electricity": "600 MW",
+        "disused:generator:source": "coal",
+        "disused:generator:type": "steam_turbine",
+        "disused:power": "generator",
+        "end_date": "2021-04-01",
+        "height": "80",
+        "name": "Unité 4",
+        "operator": "Électricité de France",
+        "ref:EU:ENTSOE_EIC": "17W100P100P0023X",
+        "ref:FR:RTE_nom": "HAVRE 4",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2010",
+        "start_date": "1983"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        8,
+        "2023-09-14T11:28:18+00:00",
+        true
+      ],
+      "selection_reason": "height_at_least_50m"
+    },
+    {
+      "id": "way/69875855",
+      "osm_version": 3,
+      "osm_timestamp_utc": "2013-03-27T16:14:15+00:00",
+      "latitude": 49.47609360953586,
+      "longitude": 0.14838496695988987,
+      "distance_m": 3562.805628147559,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "yes",
+        "height": "240",
+        "man_made": "chimney",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2010"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        3,
+        "2013-03-27T16:14:15+00:00",
+        true
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "way/69875893",
+      "osm_version": 5,
+      "osm_timestamp_utc": "2013-03-27T16:14:16+00:00",
+      "latitude": 49.47537269857845,
+      "longitude": 0.146717325934593,
+      "distance_m": 3511.816650663328,
+      "position_method": "area centroid (proxy)",
+      "tags": {
+        "building": "yes",
+        "height": "240",
+        "man_made": "chimney",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2010"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        5,
+        "2013-03-27T16:14:16+00:00",
+        true
+      ],
+      "selection_reason": "typed_obstacle"
+    },
+    {
+      "id": "node/10020097551",
+      "osm_version": 1,
+      "osm_timestamp_utc": "2022-09-13T07:02:49+00:00",
+      "latitude": 49.4851032,
+      "longitude": 0.2477396,
+      "distance_m": 10159.522690342392,
+      "position_method": "node",
+      "tags": {
+        "man_made": "flare"
+      },
+      "extracts": [
+        "haute-normandie"
+      ],
+      "rank": [
+        1,
+        "2022-09-13T07:02:49+00:00",
+        false
+      ],
+      "selection_reason": "typed_obstacle"
+    }
+  ]
+}
