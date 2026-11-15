@@ -1,5 +1,8 @@
 "use client";
 
+import { PowerLineInformation } from "../components/PowerLineInformation";
+import type { PreparationPowerLineState } from "../lib/preparationPowerLines";
+
 import { archiveMoroccoCalculation, moroccoCalculationIdentity } from "../lib/moroccoCalculationArchive";
 import T150CapacityEstimate from "../components/prepare/T150CapacityEstimate";
 import { estimateUltramagicRemainingCapacity } from "../lib/t150CapacityEstimate";
@@ -116,6 +119,7 @@ export default function MapPage() {
   const [manualTemperatureInput, setManualTemperatureInput] = useState("");
   const [legendOpen, setLegendOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
   const [showPowerLines, setShowPowerLines] = useState(false);
   const [showRelief, setShowRelief] = useState(false);
   const [showObstacles, setShowObstacles] = useState(false);
@@ -819,6 +823,7 @@ export default function MapPage() {
             baseMap={baseMap}
             layers={layers}
             showPowerLines={showPowerLines}
+            onPowerLineStateChange={setPowerLineState}
             showRelief={showRelief}
             showObstacles={showObstacles}
             recenterToken={recenterToken}
@@ -949,10 +954,13 @@ export default function MapPage() {
                   className="h-5 w-5 accent-[var(--bc-color-action)]"
                 />
               </label>
-              <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
+              <div className="flex items-center">
+              <label className="flex min-h-10 flex-1 items-center justify-between gap-3 text-xs font-semibold">
                 Lignes électriques
                 <input type="checkbox" checked={showPowerLines} onChange={(event) => setShowPowerLines(event.target.checked)} className="h-5 w-5 accent-[var(--bc-color-action)]" />
               </label>
+              <PowerLineInformation state={powerLineState} />
+              </div>
               <label className="flex min-h-10 items-center justify-between gap-3 text-xs font-semibold">
                 Obstacles
                 <input type="checkbox" checked={showObstacles} onChange={(event) => setShowObstacles(event.target.checked)} className="h-5 w-5 accent-[var(--bc-color-action)]" />

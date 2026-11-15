@@ -3,7 +3,7 @@
 Le script `scripts/publish-osm-r2.mjs` lit les sorties versionnées de
 `country_build.py` sans les modifier. Il réutilise le SDK S3 déjà installé et les
 noms de variables serveur R2 utilisés par BC. Il ne touche ni aux cartes, ni au
-cloud sync, ni aux paramètres du bucket. **La Belgique (BE), la France (FR) et le Maroc (MA) sont autorisés à la publication** ;
+cloud sync, ni aux paramètres du bucket. **La Belgique (BE), la France (FR), le Maroc (MA) et le Royaume-Uni (GB) sont autorisés à la publication** ;
 les autres pays peuvent uniquement être vérifiés localement. Le code du profil
 doit correspondre au dataset.
 
@@ -228,3 +228,19 @@ node scripts/publish-osm-r2.mjs \
 Les 6 914 objets conservent le préfixe
 `osm-power-lines/morocco/20261113-ce974015b19780e1/`.
 Le dry-run est strictement local ; il ne vérifie ni les accès R2 ni le CORS public.
+
+
+Pour le Royaume-Uni, utiliser le dataset `united-kingdom` et le code du profil
+`GB`, identiques au générateur et au manifeste (`UK` est refusé) :
+
+```sh
+node scripts/publish-osm-r2.mjs \
+  --source /tmp/bc-osm-country-output/united-kingdom/20261114-ef6fe7f1963aeca9 --dry-run
+
+node scripts/publish-osm-r2.mjs \
+  --source /tmp/bc-osm-country-output/united-kingdom/20261114-ef6fe7f1963aeca9 --publish
+```
+
+Les 11 732 objets conservent le préfixe
+`osm-power-lines/united-kingdom/20261114-ef6fe7f1963aeca9/`, avec les mêmes
+contrôles, reprise des objets identiques et publication du manifeste en dernier.

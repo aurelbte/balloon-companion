@@ -110,18 +110,10 @@ test('deactivation and unmount suppress queued country requests and late MapLibr
  const count=h.lines.length;release();await pending;assert.equal(h.lines.length,count);
  h.dispose();assert.equal(h.events.size,0);assert.equal(h.runtimeRef.current,null);
 });
-test('actual FlightMap status JSX keeps unloaded/partial/offline warnings visible during an active flight',()=>{
- const ast=ts.createSourceFile('FlightMap.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- let expression;const visit=node=>{if(ts.isJsxExpression(node)&&node.expression?.getText(ast).startsWith('showPowerLines && powerLineState &&'))expression=node.expression.getText(ast);ts.forEachChild(node,visit);};visit(ast);assert.ok(expression);
- const render=new Function('showPowerLines','showPowerLineStatus','powerLineState','preparationPowerLineStatusLabel','React',compile(`function render(){return (${expression});}`)+';return render();');
- const React={createElement:(type,props,...children)=>({type,props,children})};
- const base={status:'AVAILABLE',covered:true,loading:false,offline:false,data:{type:'FeatureCollection',features:[]},coverageLabel:'France R2 · non exhaustif',localCoverage:'FULL'};
- assert.equal(render(true,false,base,preparationPowerLineStatusLabel,React),false);
- for(const change of [{covered:false,status:'UNAVAILABLE'},{covered:false,localCoverage:'PARTIAL'},{loading:true,covered:false},{offline:true}]) {
-  const state={...base,...change};const badge=render(true,false,state,preparationPowerLineStatusLabel,React);
-  assert.equal(badge.props.role,'status');assert.equal(badge.children[0],preparationPowerLineStatusLabel(state));
- }
- assert.equal(render(false,true,{...base,covered:false},preparationPowerLineStatusLabel,React),false);
+test('FlightMap delegates electrical notifications to the shared transient warning, including active flight',()=>{
+ assert.match(source, /<PowerLineWarning enabled=\{showPowerLines\} state=\{powerLineState\} \/>/);
+ assert.doesNotMatch(source, /showPowerLineStatus && showPowerLines/);
+ assert.doesNotMatch(source, /\{preparationPowerLineStatusLabel\(powerLineState\)\}/);
 });
 test('FlightMap preserves the red line, dark casing and ordering of the existing renderer',()=>{
  const begin=source.indexOf('      const powerLineLayout = {'),end=source.indexOf('      addObstacleLayer(',begin);

@@ -1,5 +1,7 @@
 "use client";
 
+import { PowerLineWarning } from "../PowerLineInformation";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
@@ -54,7 +56,6 @@ import {
 } from "../../lib/mapInteraction";
 import type { PreparationPowerLineState } from "../../lib/preparationPowerLines";
 import { FlightPowerLineRuntime, FLIGHT_POWER_LINE_MIN_ZOOM } from "../../lib/flightPowerLines";
-import { preparationPowerLineStatusLabel } from "../../lib/tiledPowerLineStatus";
 import { addBourrousFlightZone } from "../../lib/bourrousFlightZone";
 import { RELIEF_SOURCE_ID, syncMapRelief } from "../../lib/mapRelief";
 import { OBSTACLE_MIN_ZOOM } from "../../lib/obstacles";
@@ -219,6 +220,7 @@ interface FlightMapProps {
   airspaces: AirspaceFeatureCollection;
   showAirspaces: boolean;
   showPowerLines: boolean;
+  onPowerLineStateChange?: (state: PreparationPowerLineState | null) => void;
   showRelief?: boolean;
   showObstacles?: boolean;
   showPowerLineStatus: boolean;
@@ -291,6 +293,7 @@ export default function FlightMap({
   airspaces,
   showAirspaces,
   showPowerLines,
+  onPowerLineStateChange,
   showRelief = false,
   showObstacles = false,
   showPowerLineStatus,
@@ -368,6 +371,7 @@ export default function FlightMap({
   const showObstaclesRef = useRef(showObstacles);
   const [obstacleState, setObstacleState] = useState<ObstacleState | null>(null);
   const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
+  useEffect(() => { onPowerLineStateChange?.(powerLineState); }, [powerLineState, onPowerLineStateChange]);
   const powerLineRuntimeRef = useRef<FlightPowerLineRuntime | null>(null);
   useEffect(() => {
     const runtime = new FlightPowerLineRuntime(state => {
@@ -1726,7 +1730,7 @@ export default function FlightMap({
   return (
     <>
       <div style={{ position: "absolute", top: "70px", left: "12px", right: "12px", zIndex: 15, display: "grid", gap: "4px", pointerEvents: "none" }}>
-        {showPowerLines && powerLineState && (showPowerLineStatus || powerLineState.loading || powerLineState.offline || !powerLineState.covered) && preparationPowerLineStatusLabel(powerLineState) && <p role="status" style={{ margin: 0, padding: "6px 9px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: "11px", borderRadius: "8px" }}>{preparationPowerLineStatusLabel(powerLineState)}</p>}
+        <PowerLineWarning enabled={showPowerLines} state={powerLineState} />
         {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" style={{ margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.93)", color: "#f1f5f9", fontSize: 11, borderRadius: 8 }}>{obstacleStatusLabel(obstacleState)}</p>}
       </div>
       <style>{`

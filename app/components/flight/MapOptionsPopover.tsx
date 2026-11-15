@@ -1,5 +1,8 @@
 "use client";
 
+import { PowerLineInformation } from "../PowerLineInformation";
+import type { PreparationPowerLineState } from "../../lib/preparationPowerLines";
+
 import { useEffect, useRef } from "react";
 import {
   FLIGHT_BOTTOM_LAYOUT,
@@ -16,6 +19,7 @@ import {
 
 interface MapOptionsPopoverProps {
   isOpen: boolean;
+  powerLineState?: PreparationPowerLineState | null;
   settings: FlightLayerSettings;
   baseMap: BaseMap;
   satelliteAvailable: boolean;
@@ -42,6 +46,7 @@ const optionKeys = [
 
 export default function MapOptionsPopover({
   isOpen,
+  powerLineState = null,
   settings,
   baseMap,
   satelliteAvailable,
@@ -152,8 +157,8 @@ export default function MapOptionsPopover({
           {optionKeys.map(([key, label]) => {
             const checked = Boolean(settings[key]);
             return (
+              <div key={key} style={{ display: "flex", alignItems: "center" }}>
               <Chip
-                key={key}
                 role="checkbox"
                 aria-checked={checked}
                 selected={checked}
@@ -187,6 +192,8 @@ export default function MapOptionsPopover({
                   {checked ? "✓" : ""}
                 </span>
               </Chip>
+              {key === "powerLines" && <PowerLineInformation state={powerLineState} />}
+              </div>
             );
           })}
         </div>

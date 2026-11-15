@@ -1,5 +1,7 @@
 "use client";
 
+import { PowerLineWarning } from "./PowerLineInformation";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -40,7 +42,7 @@ import type { AirspaceCoverageViewport } from "../hooks/useAirspaceCoverage";
 import { analysisFitMaxZoom, analysisFitPadding, calculateTrajectoryBounds, countValidTrajectoryPoints, createTrajectoryFitKey, trajectoryContentKey, type BoundsLaunchSite } from "../lib/trajectory/trajectoryBounds";
 import TrajectoryArrivalDetails from "./TrajectoryArrivalDetails";
 import { landingWeatherSamplePoints } from "../lib/trajectoryArrivalSummary";
-import { PreparationPowerLineRuntime, preparationPowerLineStatusLabel, preparationPowerLineCoverage, type PreparationPowerLineState } from "../lib/preparationPowerLines";
+import { PreparationPowerLineRuntime, preparationPowerLineCoverage, type PreparationPowerLineState } from "../lib/preparationPowerLines";
 import { addBourrousFlightZone } from "../lib/bourrousFlightZone";
 import { syncMapRelief } from "../lib/mapRelief";
 import { OBSTACLE_MIN_ZOOM } from "../lib/obstacles";
@@ -71,6 +73,7 @@ interface PreparationMapProps {
   baseMap: BaseMap;
   layers: AnalysisLayerSettings;
   showPowerLines: boolean;
+  onPowerLineStateChange?: (state: PreparationPowerLineState | null) => void;
   showRelief?: boolean;
   showObstacles?: boolean;
   airspaces?: AirspaceFeatureCollection;
@@ -224,6 +227,7 @@ export default function PreparationMap({
   baseMap,
   layers,
   showPowerLines,
+  onPowerLineStateChange,
   showRelief = false,
   showObstacles = false,
   airspaces = EMPTY_AIRSPACES,
@@ -240,6 +244,7 @@ export default function PreparationMap({
   const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
+  useEffect(() => { onPowerLineStateChange?.(powerLineState); }, [powerLineState, onPowerLineStateChange]);
   const powerLineRuntimeRef = useRef<PreparationPowerLineRuntime | null>(null);
   const showObstaclesRef = useRef(showObstacles);
   const showPowerLinesRef = useRef(showPowerLines);
@@ -902,7 +907,7 @@ export default function PreparationMap({
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
       {showObstacles && obstacleState && obstacleStatusLabel(obstacleState) && <p role="status" className="pointer-events-none absolute left-14 right-14 z-10 rounded bg-slate-950/90 px-2 py-1 text-center text-[10px] text-white" style={{ top: showPowerLines ? 100 : 58 }}>{obstacleStatusLabel(obstacleState)}</p>}
-      {showPowerLines && powerLineState && preparationPowerLineStatusLabel(powerLineState) && <p role="status" style={{ position: "absolute", top: "58px", left: "56px", right: "56px", zIndex: 15, margin: 0, padding: "5px 8px", background: "rgba(7,17,31,.9)", color: "#f1f5f9", fontSize: "10px", borderRadius: "8px", pointerEvents: "none", textAlign: "center" }}>{preparationPowerLineStatusLabel(powerLineState)}</p>}
+      <div className="pointer-events-none absolute left-14 right-14 top-[58px] z-10"><PowerLineWarning enabled={showPowerLines} state={powerLineState} /></div>
       {selectedTrace && <TrajectoryArrivalDetails key={selectedTrace.traceId} trace={selectedTrace} airspaces={airspaces} timeZone={launchTimeZone} onClose={() => { setSelectedTraceId(null); arrivalSelectionRef.current?.(false); }} />}
       <span className="sr-only">Départ : {launchSiteName}</span>
     </div>

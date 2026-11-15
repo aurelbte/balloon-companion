@@ -10,6 +10,9 @@ import { francePowerLineCoverage } from "./francePowerLineCoverage.ts";
 import moroccoManifest from "./data/moroccoPowerLinesManifest.json" with { type: "json" };
 import { moroccoPowerLineCoverage } from "./moroccoPowerLineCoverage.ts";
 
+import ukManifest from "./data/ukPowerLinesManifest.json" with { type: "json" };
+import { ukPowerLineCoverage } from "./ukPowerLineCoverage.ts";
+
 const BASE = `/osm-power/lfqo/${manifest.dataset_sha256.slice(0, 16)}/`;
 type Line = GeoJSON.Feature<GeoJSON.LineString | GeoJSON.MultiLineString>;
 type Collection = GeoJSON.FeatureCollection<GeoJSON.LineString | GeoJSON.MultiLineString>;
@@ -94,12 +97,15 @@ export const francePowerLineSource: TileSource = { base: FRANCE_POWER_LINE_BASE,
 export const MOROCCO_POWER_LINE_BASE = "https://pub-2e6fdd961e8345a0984d4bdc2af49aa3.r2.dev/osm-power-lines/morocco/20261113-ce974015b19780e1/";
 export const moroccoPowerLineSource: TileSource = { base: MOROCCO_POWER_LINE_BASE, manifest: moroccoManifest, coverage: moroccoPowerLineCoverage, sparseEmpty: false,
   bounds: { west: moroccoManifest.coverage.bbox[0], south: moroccoManifest.coverage.bbox[1], east: moroccoManifest.coverage.bbox[2], north: moroccoManifest.coverage.bbox[3] } };
+export const UK_POWER_LINE_BASE = "https://pub-2e6fdd961e8345a0984d4bdc2af49aa3.r2.dev/osm-power-lines/united-kingdom/20261114-ef6fe7f1963aeca9/";
+export const ukPowerLineSource: TileSource = { base: UK_POWER_LINE_BASE, manifest: ukManifest, coverage: ukPowerLineCoverage, sparseEmpty: false,
+  bounds: { west: ukManifest.coverage.bbox[0], south: ukManifest.coverage.bbox[1], east: ukManifest.coverage.bbox[2], north: ukManifest.coverage.bbox[3] } };
 /** Also protect buffered Overpass requests around the national extraction footprints. */
 export function preparationPowerLineCoverage(view: PowerLineBounds): TileCoverage {
-  const coverages = [lfqoCoverage(view), belgiumPowerLineCoverage(view), francePowerLineCoverage(view), moroccoPowerLineCoverage(view)];
+  const coverages = [lfqoCoverage(view), belgiumPowerLineCoverage(view), francePowerLineCoverage(view), moroccoPowerLineCoverage(view), ukPowerLineCoverage(view)];
   if (coverages.includes("FULL")) return "FULL";
   const buffered = getPowerLineQueryBounds(view);
-  return coverages.some(c => c !== "OUTSIDE") || belgiumPowerLineCoverage(buffered) !== "OUTSIDE" || francePowerLineCoverage(buffered) !== "OUTSIDE" || moroccoPowerLineCoverage(buffered) !== "OUTSIDE" ? "PARTIAL" : "OUTSIDE";
+  return coverages.some(c => c !== "OUTSIDE") || belgiumPowerLineCoverage(buffered) !== "OUTSIDE" || francePowerLineCoverage(buffered) !== "OUTSIDE" || moroccoPowerLineCoverage(buffered) !== "OUTSIDE" || ukPowerLineCoverage(buffered) !== "OUTSIDE" ? "PARTIAL" : "OUTSIDE";
 }
 function isHighVoltageAerial(feature: Line): boolean {
   const p = feature.properties;
@@ -209,6 +215,7 @@ const localTiles = new LFQOPowerLineTiles();
 const belgiumTiles = new LFQOPowerLineTiles(undefined, belgiumPowerLineSource);
 const franceTiles = new LFQOPowerLineTiles(undefined, francePowerLineSource);
 const moroccoTiles = new LFQOPowerLineTiles(undefined, moroccoPowerLineSource);
+const ukTiles = new LFQOPowerLineTiles(undefined, ukPowerLineSource);
 
 /** Shared preparation/flight tile reader. Covered views never request electric lines from Overpass. */
 export class PreparationPowerLineRuntime {
@@ -223,13 +230,15 @@ export class PreparationPowerLineRuntime {
   private france: LFQOPowerLineTiles | null;
   private allowOverpassFallback: boolean;
   private morocco: LFQOPowerLineTiles | null;
-  constructor(publish: (state: PreparationPowerLineState) => void, store: PowerLineMemoryStore = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, tiles = localTiles, country: LFQOPowerLineTiles | null = belgiumTiles, france: LFQOPowerLineTiles | null = franceTiles, options: { allowOverpassFallback?: boolean; moroccoTiles?: LFQOPowerLineTiles | null } = {}) {
+  private uk: LFQOPowerLineTiles | null;
+  constructor(publish: (state: PreparationPowerLineState) => void, store: PowerLineMemoryStore = powerLineMemoryStore, publishObstacles?: (state: ObstacleState) => void, tiles = localTiles, country: LFQOPowerLineTiles | null = belgiumTiles, france: LFQOPowerLineTiles | null = franceTiles, options: { allowOverpassFallback?: boolean; moroccoTiles?: LFQOPowerLineTiles | null; ukTiles?: LFQOPowerLineTiles | null } = {}) {
     this.publish = publish; this.tiles = tiles; this.country = country; this.france = france;
     this.morocco = options.moroccoTiles === undefined ? moroccoTiles : options.moroccoTiles;
+    this.uk = options.ukTiles === undefined ? ukTiles : options.ukTiles;
     this.allowOverpassFallback = options.allowOverpassFallback !== false;
-    this.fallback = new PowerLineRuntime(state => { if (!this.local && this.linesEnabled) publish({ ...state, coverageLabel: "Hors extrait local LFQO / hors couverture France / Belgique / Maroc R2 — lignes Overpass" }); }, store);
+    this.fallback = new PowerLineRuntime(state => { if (!this.local && this.linesEnabled) publish({ ...state, coverageLabel: "Hors extrait local LFQO / hors couverture France / Belgique / Maroc / Royaume-Uni R2 — lignes Overpass" }); }, store);
     if (publishObstacles) this.obstacles = new ObstacleRuntime(publishObstacles, store.obstacles, bounds =>
-      !this.linesEnabled || !this.allowOverpassFallback || [this.country, this.france, this.morocco].some(tiles => tiles && tiles.source.coverage(getPowerLineQueryBounds(bounds)) !== "OUTSIDE") ? store.loadObstaclesOnly(bounds) : store.load(bounds, true));
+      !this.linesEnabled || !this.allowOverpassFallback || [this.country, this.france, this.morocco, this.uk].some(tiles => tiles && tiles.source.coverage(getPowerLineQueryBounds(bounds)) !== "OUTSIDE") ? store.loadObstaclesOnly(bounds) : store.load(bounds, true));
   }
   stopLines() { this.generation++; this.fallback.stop(); }
   stop() { this.stopLines(); this.obstacles?.stop(); }
@@ -237,7 +246,7 @@ export class PreparationPowerLineRuntime {
     this.linesEnabled = linesEnabled;
     if (!linesEnabled) { this.stopLines(); await this.obstacles?.update(view, online, includeObstacles); return; }
     const generation = ++this.generation, coverage = lfqoCoverage(view);
-    const countries = [this.country, this.france, this.morocco].filter((tiles): tiles is LFQOPowerLineTiles => !!tiles);
+    const countries = [this.country, this.france, this.morocco, this.uk].filter((tiles): tiles is LFQOPowerLineTiles => !!tiles);
     // Extraction buffers overlap: use the OSM country boundary to prefer France/Belgium correctly.
     // Straddling views keep national fragments, including Morocco; never mix LFQO with national tiles.
     const territory = belgiumPowerLineCountryCoverage(view);
@@ -245,13 +254,13 @@ export class PreparationPowerLineRuntime {
     const selected = preferred && preferred.source.coverage(view) !== "OUTSIDE" ? preferred : null;
     const touching = countries.filter(tiles => tiles.source.coverage(view) !== "OUTSIDE");
     const buffered = countries.filter(tiles => tiles.source.coverage(getPowerLineQueryBounds(view)) !== "OUTSIDE");
-    const active = selected && !touching.some(tiles => tiles === this.morocco) ? [selected] : touching.length ? touching : buffered.length ? buffered : coverage !== "OUTSIDE" ? [this.tiles] : [];
+    const active = selected && !touching.some(tiles => tiles === this.morocco || tiles === this.uk) ? [selected] : touching.length ? touching : buffered.length ? buffered : coverage !== "OUTSIDE" ? [this.tiles] : [];
     this.local = active.length > 0;
     if (!this.local && !this.allowOverpassFallback) {
       this.fallback.stop();
       this.publish({ data: { type: "FeatureCollection", features: [] }, status: "UNKNOWN_COVERAGE", covered: false,
         loading: false, offline: !online, retained: false,
-        coverageLabel: "Hors couverture France / Belgique / Maroc / LFQO — lignes électriques non disponibles · non exhaustif" });
+        coverageLabel: "Hors couverture France / Belgique / Maroc / Royaume-Uni / LFQO — lignes électriques non disponibles · non exhaustif" });
       await this.obstacles?.update(view, online, includeObstacles);
       return;
     }
@@ -267,7 +276,7 @@ export class PreparationPowerLineRuntime {
       const covered = full && missing === 0 && diagnostics.every(t => ["AVAILABLE", "EMPTY"].includes(t.status));
       const snapshots = active.flatMap(tiles => tiles.source.manifest.sources.map(s => s.snapshot_at_utc)).filter((s): s is string => !!s).sort();
       const national = active.some(tiles => tiles !== this.tiles);
-      const names = active.map(tiles => tiles === this.france ? "France" : tiles === this.country ? "Belgique" : tiles === this.morocco ? "Maroc" : "LFQO");
+      const names = active.map(tiles => tiles === this.france ? "France" : tiles === this.country ? "Belgique" : tiles === this.morocco ? "Maroc" : tiles === this.uk ? "Royaume-Uni" : "LFQO");
       const label = national ? `${names.join(" + ")} R2 · lignes aériennes ≥ 63 kV` : "Extrait local LFQO · rayon 20 km";
       const extent = full ? covered ? "vue couverte" : "couverture incomplète" : national ? "couverture partielle — zones hors extraits non chargées" : "couverture partielle : extérieur du disque non chargé";
       this.publish({ data, tileDiagnostics: diagnostics, covered, offline: !online, loading, retained: data.features.length > 0,

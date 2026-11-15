@@ -1,5 +1,7 @@
 "use client";
 
+import { PowerLineInformation, PowerLineWarning } from "../PowerLineInformation";
+
 import { memo, useEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import maplibregl from "maplibre-gl";
@@ -12,7 +14,6 @@ import { useAirspaceCoverage, type AirspaceCoverageViewport } from "../../hooks/
 import { AIRSPACE_RENDER_ORDER, getAirspaceCategoryStyle, prepareAirspacesForMap } from "../../lib/airspaceMapStyle";
 import { FlightPowerLineRuntime, FLIGHT_POWER_LINE_MIN_ZOOM } from "../../lib/flightPowerLines";
 import type { PreparationPowerLineState } from "../../lib/preparationPowerLines";
-import { preparationPowerLineStatusLabel } from "../../lib/tiledPowerLineStatus";
 
 type JournalFlightMapProps = {
   flight: JournalFlight;
@@ -368,15 +369,18 @@ function JournalFlightMap({ flight }: JournalFlightMapProps) {
               { label: "Espaces aériens", active: showAirspaces, toggle: () => setShowAirspaces((value) => !value), disabled: false },
               { label: "Lignes électriques", active: showPowerLines, toggle: () => setShowPowerLines((value) => !value), disabled: false },
             ].map(({ label, active, toggle, disabled }) => (
-              <button key={label} type="button" aria-pressed={active} disabled={disabled} onClick={toggle}
+              <div key={label} className="flex items-center">
+              <button type="button" aria-pressed={active} disabled={disabled} onClick={toggle}
                 title={disabled ? "Satellite indisponible : fond non configuré" : undefined}
                 className={`min-h-11 rounded-xl border px-2 text-xs font-semibold disabled:opacity-40 ${active ? "border-sky-300 bg-sky-700" : "border-white/20 bg-black/30"}`}>
                 {label}
               </button>
+              {label === "Lignes électriques" && <PowerLineInformation state={powerState} above />}
+              </div>
             ))}
           </div>
           {showAirspaces && coverage.statusMessage && <p role="status" className="px-1 pt-1 text-xs">{coverage.statusMessage}</p>}
-          {showPowerLines && powerState && preparationPowerLineStatusLabel(powerState) && <p role="status" className="px-1 pt-1 text-xs">{preparationPowerLineStatusLabel(powerState)}</p>}
+          <PowerLineWarning enabled={showPowerLines} state={powerState} />
         </div>
       )}
       {expanded ? (

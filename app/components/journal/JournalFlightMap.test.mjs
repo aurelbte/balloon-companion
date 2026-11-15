@@ -60,6 +60,7 @@ function harness(t, satelliteKey = "test-key") {
     stop() { this.stops++; }
   }
   const mocks = {
+    "../PowerLineInformation": { PowerLineWarning: "power-line-warning", PowerLineInformation: "power-line-info" },
     react,
     "../../hooks/useAirspaceCoverage": { useAirspaceCoverage: input => { coverageInput = input; return coverage; } },
     "../../lib/airspaceMapStyle": airspaceStyle,
@@ -92,6 +93,7 @@ function harness(t, satelliteKey = "test-key") {
 }
 const points = [{ latitude: 50, longitude: 3 }, { latitude: 50.1, longitude: 3.1 }];
 function text(node) {
+  if (node?.type === "power-line-warning") return node.props.enabled ? node.props.state?.coverageLabel ?? "" : "";
   if (typeof node === "string") return node;
   if (Array.isArray(node)) return node.map(text).join("");
   return node?.props ? text(node.props.children) : "";

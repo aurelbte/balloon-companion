@@ -26,7 +26,7 @@ async function fixture(fn, { dataset = 'belgium', tileCount = 2 } = {}) {
       await writeFile(join(source, key), body); await writeFile(join(source, `${key}.gz`), gzip);
       tiles.push({ key, bytes: body.length, gzip_bytes: gzip.length, sha256: sha(body), features: x % 2 ? 0 : 1, status: x % 2 ? 'empty' : 'data' });
     }
-    const m = { schema_version: 2, dataset, country_profile: { code: ({ france: 'FR', belgium: 'BE', morocco: 'MA' })[dataset] }, version: `20261108-${'a'.repeat(16)}`,
+    const m = { schema_version: 2, dataset, country_profile: { code: ({ france: 'FR', belgium: 'BE', morocco: 'MA', 'united-kingdom': 'GB' })[dataset] }, version: `20261108-${'a'.repeat(16)}`,
       version_sha256: 'a'.repeat(64), generator_sha256: 'b'.repeat(64), dataset_sha256: sha(data),
       sources: [{ id: dataset, url: `https://download.geofabrik.de/${dataset === 'morocco' ? 'africa' : 'europe'}/${dataset}-latest.osm.pbf`, sha256: 'c'.repeat(64), snapshot_at_utc: '2026-11-08T21:21:00Z' }],
       coverage: { key: 'coverage.geojson', sha256: sha(coverage), polygon_input_sha256: 'd'.repeat(64) }, filter: { power: 'line', min_voltage_v: 63000 },
@@ -101,7 +101,7 @@ test('failed public CORS stops at the canary; unapproved countries and mismatche
   const plan = await buildPlan(source), config = readConfig(env), fake = remote(config);
   await assert.rejects(runRemote(plan, config, { publish: true, ...fake, fetcher: async () => new Response('no cors') }), /PUBLIC_CORS_MISMATCH/);
   assert.equal(fake.writes.length, 1); assert.match(fake.writes[0], /coverage.geojson$/);
-  await assert.rejects(runRemote({ ...plan, dataset: 'united-kingdom' }, config, { publish: true, ...fake }), /PUBLICATION_DATASET_NOT_ALLOWED/);
+  await assert.rejects(runRemote({ ...plan, dataset: 'unsupported-country' }, config, { publish: true, ...fake }), /PUBLICATION_DATASET_NOT_ALLOWED/);
   await assert.rejects(runRemote({ ...plan, dataset: 'france' }, config, { publish: true, ...fake }), /PUBLICATION_COUNTRY_MISMATCH/);
 }));
 
@@ -223,10 +223,11 @@ test('France retains bucket, public CORS, hash integrity and conflict guards bef
 }, { dataset: 'france' }));
 
 
-test('Morocco MA retains all publication guards and resumes interrupted objects with manifest last', async () => fixture(async source => {
+for (const [dataset, code] of [['morocco', 'MA'], ['united-kingdom', 'GB']]) test(`${dataset}/${code} retains all publication guards and resumes interrupted objects with manifest last`, async () => fixture(async source => {
   const plan = await buildPlan(source), config = readConfig(env);
-  assert.equal(plan.dataset, 'morocco'); assert.equal(plan.manifest.country_profile.code, 'MA');
+  assert.equal(plan.dataset, dataset); assert.equal(plan.manifest.country_profile.code, code);
   const mismatch = remote(config);
+  if (dataset === 'united-kingdom') await assert.rejects(runRemote({ ...plan, manifest: { ...plan.manifest, country_profile: { code: 'UK' } } }, config, { publish: true, ...mismatch }), /PUBLICATION_COUNTRY_MISMATCH/);
   await assert.rejects(runRemote({ ...plan, manifest: { ...plan.manifest, country_profile: { code: 'FR' } } }, config,
     { publish: true, ...mismatch }), /PUBLICATION_COUNTRY_MISMATCH/);
   assert.deepEqual(mismatch.writes, []);
@@ -259,11 +260,11 @@ test('Morocco MA retains all publication guards and resumes interrupted objects 
   const resumed = await runRemote(plan, config, { publish: true, ...fake });
   assert.equal(resumed.reused, 3); assert.equal(resumed.uploaded, plan.items.length - 3);
   assert.equal(resumed.corsVerified, true); assert.equal(resumed.publicUrlsVerified.length, 5);
-  assert.ok(fake.writes.every(key => key.startsWith(`osm-power-lines/morocco/${plan.version}/`)));
+  assert.ok(fake.writes.every(key => key.startsWith(`osm-power-lines/${dataset}/${plan.version}/`)));
   assert.equal(new Set(fake.writes).size, plan.items.length);
   assert.match(fake.writes.at(-1), /\/manifest.json$/);
   const again = await runRemote(plan, config, { publish: true, ...fake });
   assert.equal(again.uploaded, 0); assert.equal(again.reused, plan.items.length);
   await writeFile(join(source, plan.manifest.tiling.tiles[0].key), 'corrupt');
   await assert.rejects(buildPlan(source), /SHA256_MISMATCH/);
-}, { dataset: 'morocco' }));
+}, { dataset }));

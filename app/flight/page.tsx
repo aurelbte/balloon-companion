@@ -1,4 +1,6 @@
 "use client";
+
+import type { PreparationPowerLineState } from "../lib/preparationPowerLines";
 import { authorizeWeatherLaunch, launchNeedsWeatherConfirmation } from "../lib/weather/weatherLaunch";
 import { getTrajectoryAnalysisRequest } from "../lib/trajectory/projectionStorage";
 import { refreshCurrentWeatherAnalysis } from "../lib/trajectory/refreshWeatherAnalysis";
@@ -98,6 +100,7 @@ export default function FlightPage() {
     return `/flight/complete${query ? `?${query}` : ""}`;
   };
   const satelliteConfigured = Boolean(process.env.NEXT_PUBLIC_MAPTILER_KEY);
+  const [powerLineState, setPowerLineState] = useState<PreparationPowerLineState | null>(null);
   const [layerSettings, setLayerSettings] = useState<FlightLayerSettings>({
     relief: false,
     obstacles: false,
@@ -783,6 +786,7 @@ export default function FlightPage() {
           airspaces={airspaces}
           showAirspaces={layerSettings.airspaces}
           showPowerLines={layerSettings.powerLines}
+          onPowerLineStateChange={setPowerLineState}
           showRelief={Boolean(layerSettings.relief)}
           showObstacles={Boolean(layerSettings.obstacles)}
           showPowerLineStatus={!weatherFlightAlreadyActive}
@@ -1048,6 +1052,7 @@ export default function FlightPage() {
       )}
 
       <MapOptionsPopover
+        powerLineState={powerLineState}
         isOpen={isMapOptionsOpen}
         settings={layerSettings}
         baseMap={baseMap}

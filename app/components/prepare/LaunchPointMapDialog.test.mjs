@@ -46,7 +46,7 @@ function harness(t,key='test-key') {
     on(event,fn){this.handlers[event]=fn;}
     getLngLat(){return this.point;}
   }
-  const mocks={react,'../../lib/flightPowerLines':{FlightPowerLineRuntime:RuntimeMock,FLIGHT_POWER_LINE_MIN_ZOOM:8},'../../lib/tiledPowerLineStatus':{preparationPowerLineStatusLabel},'maplibre-gl':{Map:MapMock,Marker:MarkerMock},'maplibre-gl/dist/maplibre-gl.css':{},'next/image':()=>null,'lucide-react':{Check:()=>null,LocateFixed:()=>null,Navigation:()=>null,X:()=>null},'../../lib/launchPointBaseMap':baseMap};
+  const mocks={'../PowerLineInformation':{PowerLineWarning:'power-line-warning',PowerLineInformation:'power-line-info'},react,'../../lib/flightPowerLines':{FlightPowerLineRuntime:RuntimeMock,FLIGHT_POWER_LINE_MIN_ZOOM:8},'../../lib/tiledPowerLineStatus':{preparationPowerLineStatusLabel},'maplibre-gl':{Map:MapMock,Marker:MarkerMock},'maplibre-gl/dist/maplibre-gl.css':{},'next/image':()=>null,'lucide-react':{Check:()=>null,LocateFixed:()=>null,Navigation:()=>null,X:()=>null},'../../lib/launchPointBaseMap':baseMap};
   const source=readFileSync(new URL('./LaunchPointMapDialog.tsx',import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,esModuleInterop:true,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const exports={};new Function('require','exports',js)(id=>id in mocks?mocks[id]:require(id),exports);
@@ -117,7 +117,7 @@ test('power filter loads shared tiles by viewport only when enabled, preserves m
     const data={type:'FeatureCollection',features:[]};
     runtime.publish({data,localCoverage:'PARTIAL',coverageLabel:label});h.render();
     assert.equal(h.map.getSource('launch-power-lines').data,data);
-    assert.ok(h.find(n=>n.props?.role==='status'&&String(n.props.children).includes(label)));
+    assert.ok(h.find(n=>n.type==='power-line-warning'&&n.props.state?.coverageLabel.includes(label)));
   }
   h.map.emit('moveend');h.networkListeners.get('offline')();assert.equal(runtime.requests.length,3);
   toggle(false);assert.equal(runtime.stops,1);assert.equal(h.networkListeners.size,0);
