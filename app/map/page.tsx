@@ -86,7 +86,7 @@ import {
 } from "../lib/trajectory/weatherAnalysisStorage";
 import { WEATHER_MODEL_REGISTRY, weatherModelByProviderId } from "../lib/weather/models";
 import type { BaseMap } from "../types/flight";
-import { createTrajectoryAnalysisKey, toggleSelection } from "../lib/trajectory/analysisState";
+import { createTrajectoryAnalysisKey, createTrajectoryPreparationKey, selectedProjectionTraces, mergeProjectionResults, toggleSelection } from "../lib/trajectory/analysisState";
 import { metersPerSecondToMetersPerMinute } from "../lib/preparationInputs";
 import { useUnitPreferences } from "../contexts/UnitPreferencesContext";
 import { formatWeatherTemperature } from "../lib/unitPreferences";
@@ -138,7 +138,8 @@ export default function MapPage() {
   const [viewport, setViewport] = useState<AirspaceCoverageViewport | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const signatureRef = useRef("");
-  const displayedSignatureRef = useRef("");
+  const displayedPreparationRef = useRef("");
+  const compatibleTracesRef = useRef<WeatherAnalysisTrace[]>([]);
   const [weatherRefreshToken, setWeatherRefreshToken] = useState(0);
   const analysisFetchedAt = oldestWeatherRetrieval(traces);
   const analysisFreshness = useWeatherFreshness(analysisFetchedAt, ANALYSIS_POLICY);
@@ -197,7 +198,8 @@ export default function MapPage() {
         setVisibleTraceIds(usableOfflineCache?.traces.map(({ traceId }) => traceId) ?? []);
         setLayers(newAnalysisLayerSettings());
         signatureRef.current = usableOfflineCache?.analysisKey ?? "";
-        displayedSignatureRef.current = signatureRef.current;
+        displayedPreparationRef.current = usableOfflineCache ? createTrajectoryPreparationKey(stored.request) : "";
+        compatibleTracesRef.current = usableOfflineCache?.traces ?? [];
         desiredSignatureRef.current = "";
         if (usableOfflineCache) {
           setNotice(`Hors ligne — analyse en cache du ${new Date(usableOfflineCache.updatedAtIso).toLocaleString("fr-FR")}.`);
@@ -298,6 +300,14 @@ export default function MapPage() {
       desiredSignatureRef.current = "";
       return;
     }
+    const preparationKey = createTrajectoryPreparationKey(config.request);
+    if (displayedPreparationRef.current !== preparationKey) {
+      requestAbortRef.current?.abort();
+      signatureRef.current = "";
+      compatibleTracesRef.current = [];
+      setTraces([]); setVisibleTraceIds([]); setFailures([]);
+      displayedPreparationRef.current = preparationKey;
+    }
     const signature = createTrajectoryAnalysisKey(config.request, selectedModels, selectedAltitudes);
     desiredSignatureRef.current = signature;
     if (signature === signatureRef.current) return;
@@ -305,17 +315,15 @@ export default function MapPage() {
       const cached = loadWeatherAnalysis();
       if (isUsableWeatherAnalysisCache(cached, signature)) {
         rememberPreparationValue("analysis", cached);
+        compatibleTracesRef.current = cached.traces;
         setTraces(cached.traces);
         setFailures(cached.failures);
         setVisibleTraceIds(cached.traces.map(({ traceId }) => traceId));
         signatureRef.current = signature;
-        displayedSignatureRef.current = signature;
         setNotice(`Hors ligne — analyse en cache du ${new Date(cached.updatedAtIso).toLocaleString("fr-FR")}.`);
       } else {
-        setTraces([]);
         setFailures([]);
-        setVisibleTraceIds([]);
-        setNotice("Hors ligne — une nouvelle projection nécessite une connexion réseau.");
+        setNotice("Hors ligne — nouvelle projection indisponible ; seules les projections compatibles déjà chargées sont conservées.");
       }
       setLoading(false);
       return;
@@ -325,10 +333,7 @@ export default function MapPage() {
     requestAbortRef.current?.abort();
     requestAbortRef.current = controller;
     signatureRef.current = "";
-    // A refresh keeps the same analysis visible until its replacement succeeds.
-    if (displayedSignatureRef.current !== signature) {
-      setTraces([]); setVisibleTraceIds([]);
-    }
+    // Compatible selected traces remain visible while new projections are calculated.
     analysisBusyRef.current = true;
     setLoading(true);
     setNotice(null);
@@ -378,7 +383,7 @@ export default function MapPage() {
         }),
       );
       if (controller.signal.aborted || desiredSignatureRef.current !== signature || getRuntimeDataScope() !== scope || getRuntimeDataScopeGeneration() !== generation) return;
-      const nextTraces: WeatherAnalysisTrace[] = results.flatMap((result) => {
+      let nextTraces: WeatherAnalysisTrace[] = results.flatMap((result) => {
         if (!result?.payload.ok) return [];
         const payload = result.payload;
         return payload.layerProjections.map((trace) => {
@@ -428,20 +433,17 @@ export default function MapPage() {
           modelId: result.model.id,
         }));
       });
-      const previous = displayedSignatureRef.current === signature ? loadWeatherAnalysis() : null;
-      if (previous?.analysisKey === signature && nextFailures.length) {
-        nextTraces.push(...previous.traces.filter(trace => nextFailures.some(failure => failure.modelId === trace.model.id) && !nextTraces.some(next => next.traceId === trace.traceId)));
-      }
+      nextTraces = mergeProjectionResults(compatibleTracesRef.current, nextTraces, nextFailures, selectedModels, selectedAltitudes);
+      compatibleTracesRef.current = nextTraces;
+      setTraces(nextTraces);
+      setVisibleTraceIds(nextTraces.map((trace) => trace.traceId));
       if (nextTraces.length > 0) {
-        setTraces(nextTraces);
-        setVisibleTraceIds(nextTraces.map((trace) => trace.traceId));
         setExportIds((current) =>
           current.filter((id) =>
             nextTraces.some((trace) => trace.traceId === id),
           ),
         );
         signatureRef.current = signature;
-        displayedSignatureRef.current = signature;
         saveWeatherAnalysis({
           version: 1,
           updatedAtIso: calculatedAtIso,
@@ -452,7 +454,7 @@ export default function MapPage() {
           failures: nextFailures,
           analysisKey: signature,
         });
-        if (nextFailures.length) setNotice("Actualisation incomplète — dernières données disponibles conservées pour les sources en échec.");
+        if (nextFailures.length) setNotice("Actualisation incomplète — seules les dernières projections compatibles sont conservées pour les sources en échec.");
         const verticalProfileFailure = nextFailures.find(
           (failure) =>
             failure.code === "INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE",
@@ -637,6 +639,12 @@ export default function MapPage() {
 
   const toggleModel = (modelId: string) => {
     const values = toggleSelection({ current: selectedModels, value: modelId, minimum: 0 });
+    requestAbortRef.current?.abort();
+    desiredSignatureRef.current = "";
+    signatureRef.current = "";
+    compatibleTracesRef.current = selectedProjectionTraces(compatibleTracesRef.current, values, selectedAltitudes);
+    setTraces(compatibleTracesRef.current);
+    setVisibleTraceIds(current => current.filter(id => compatibleTracesRef.current.some(trace => trace.traceId === id)));
     setSelectedModels(values);
     if (values.length === 0 || selectedAltitudes.length === 0) {
       requestAbortRef.current?.abort();
@@ -650,6 +658,12 @@ export default function MapPage() {
   const toggleAltitude = (altitude: AltitudeOption) => {
     const toggled = toggleSelection({ current: selectedAltitudes, value: altitude, minimum: 0 });
     const values = ALTITUDE_OPTIONS.filter((option) => toggled.includes(option));
+    requestAbortRef.current?.abort();
+    desiredSignatureRef.current = "";
+    signatureRef.current = "";
+    compatibleTracesRef.current = selectedProjectionTraces(compatibleTracesRef.current, selectedModels, values);
+    setTraces(compatibleTracesRef.current);
+    setVisibleTraceIds(current => current.filter(id => compatibleTracesRef.current.some(trace => trace.traceId === id)));
     setSelectedAltitudes(values);
     if (values.length === 0 || selectedModels.length === 0) {
       requestAbortRef.current?.abort();

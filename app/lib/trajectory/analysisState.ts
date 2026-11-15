@@ -36,3 +36,24 @@ export function toggleSelection<T>({
   }
   return [...current, value];
 }
+
+/** Calculation context only; model/altitude choices belong to individual projections. */
+export function createTrajectoryPreparationKey(request: MultiAltitudeProjectionRequest): string {
+  const { weatherModel: _model, altitudesAmslM: _altitudes, ...preparation } = request;
+  return JSON.stringify(preparation);
+}
+
+type SelectedTrace = { traceId: string; model: { id: string }; altitudeKey: string };
+export function selectedProjectionTraces<T extends SelectedTrace>(traces: readonly T[], models: readonly string[], altitudes: readonly AltitudeOption[]): T[] {
+  const keys = new Set(altitudes.map(String));
+  return traces.filter(trace => models.includes(trace.model.id) && keys.has(trace.altitudeKey));
+}
+
+/** Replace successes, retaining only still-selected failures from the same preparation. */
+export function mergeProjectionResults<T extends SelectedTrace>(previous: readonly T[], incoming: readonly T[],
+  failures: readonly { modelId: string; altitudeKey: string }[], models: readonly string[], altitudes: readonly AltitudeOption[]): T[] {
+  const next = selectedProjectionTraces(incoming, models, altitudes);
+  const ids = new Set(next.map(trace => trace.traceId));
+  return [...next, ...selectedProjectionTraces(previous, models, altitudes).filter(trace => !ids.has(trace.traceId)
+    && failures.some(failure => failure.modelId === trace.model.id && (failure.altitudeKey === "all" || failure.altitudeKey === trace.altitudeKey)))];
+}
