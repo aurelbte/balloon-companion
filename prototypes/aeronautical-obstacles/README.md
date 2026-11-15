@@ -1,10 +1,15 @@
 # Obstacles aéronautiques — Preuseville, Le Havre, Grenoble
 
-Prototype local hors application. Aucun branchement cartographique, téléchargement réseau,
-génération de tuiles ou publication. Le modèle est dans `app/lib/aeronauticalObstacles.ts` ;
+Prototype local hors application. Aucun branchement cartographique, téléchargement réseau
+ou publication. Le modèle est dans `app/lib/aeronauticalObstacles.ts` ;
 il n'importe aucun module de l'ancienne couche obstacles ou de la couche électrique.
 Un seul normaliseur (`normalize.ts`) et un seul pipeline (`build.mjs`) traitent les trois zones.
 `preuseville.mjs` est un point d'entrée de compatibilité vers ce même pipeline.
+
+L'étape 2A ajoute le générateur local XYZ `tile-build.mjs`, consommant ces sorties normalisées
+sans nouvelle normalisation. Format, commandes, couverture, niveaux de détail et limites de
+redistribution sont documentés dans [TILING.md](./TILING.md). Sorties volumineuses exclusivement
+hors Git dans `/tmp/bc-aeronautical-obstacles/tiles/`. Aucune publication ou intégration cartographique.
 
 ## Exécution
 
@@ -101,7 +106,7 @@ redistribution du produit fusionné avant toute publication ; conserver attribut
 Géorisques et SIA. Les variantes de statut/hauteur exigent une revue humaine.
 
 La validation des trois zones et les adaptations du modèle sont décrites dans `VALIDATION.md`.
-Avant tuilage : réextraire les emprises natives manquantes et les routes sélectionnées par intersection,
-valider les associations et relations de composants, puis définir frontières de tuiles, niveaux de détail,
-fraîcheur et contrôles de publication. Les études initiales sélectionnaient les routes par centroïde :
+Avant extension/publication : réextraire les emprises natives manquantes et les routes sélectionnées par intersection,
+valider les associations et relations de composants, puis éprouver les niveaux de détail nationaux,
+la fraîcheur et les contrôles de publication. Les études initiales sélectionnaient les routes par centroïde :
 des routes traversantes dont le centroïde est extérieur peuvent manquer.
