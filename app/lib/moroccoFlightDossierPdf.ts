@@ -1,3 +1,6 @@
+import { addMoroccoEditableText } from "./moroccoEditableFields.ts";
+import { balloonEquipmentWeightForLoad } from "./loadPerformance/balloonInput.ts";
+import { prepareMoroccoPassengers } from "./moroccoPassengers.ts";
 import { resolveMoroccoDossierReference } from "./moroccoDossierReference.ts";
 import { prependMoroccoPassengerListing } from "./moroccoPassengerListingPdf.ts";
 import type { MoroccoDossierPdfInput } from "./moroccoPassengers.ts";
@@ -71,10 +74,15 @@ class DossierLayout {
     this.y = A4[1] - 84;
   }
   ensure(height: number) { if (!this.page || this.y - height < BOTTOM) this.newPage(); }
-  heading(value: string, newPage = false) {
-    this.section = value;
+  heading(value: string, newPage = false, editableName?: string) {
+    this.section = editableName ? "Informations du vol" : value;
     if (newPage || !this.page) this.newPage();
     this.ensure(65);
+    if (editableName) {
+      this.editable(editableName, "Titre opérationnel du dossier", value, { bold: true, size: 15 });
+      this.y -= 6;
+      return;
+    }
     const lines = wrapDossierText(value, this.bold, 15, WIDTH);
     for (const line of lines) { this.ensure(22); this.page.drawText(line, { x: MARGIN, y: this.y - 15, size: 15, font: this.bold, color: ACCENT }); this.y -= 22; }
     this.y -= 6;
@@ -88,7 +96,17 @@ class DossierLayout {
     }
     this.y -= 3;
   }
-  table(headers: string[], widths: number[], rows: string[][]) {
+  editable(name: string, label: string, value: string, options: { size?: number; bold?: boolean; lines?: number } = {}) {
+    const font = options.bold ? this.bold : this.font, size = options.size ?? 9;
+    const lines = Math.max(options.lines ?? 1, wrapDossierText(value, font, size, WIDTH - 4).length);
+    const height = lines * size * 1.25 + 4;
+    this.ensure(height + 3);
+    addMoroccoEditableText(this.document, this.page, font, { name, label, value: safeText(value, font),
+      x: MARGIN, y: this.y - height, width: WIDTH, height, size, multiline: lines > 1, color: name === "vol-titre" ? ACCENT : INK });
+    if (name === "vol-observations") this.page.drawLine({ start: { x: MARGIN, y: this.y - height }, end: { x: MARGIN + WIDTH, y: this.y - height }, thickness: .35, color: rgb(.82, .87, .89) });
+    this.y -= height + 3;
+  }
+  table(headers: string[], widths: number[], rows: string[][], editable: (string | null)[][] = []) {
     const size = 8.2, leading = 10.5, padding = 3;
     const headerLines = headers.map((value, index) => wrapDossierText(value, this.bold, size, widths[index] - padding * 2));
     const headerHeight = Math.max(...headerLines.map((lines) => lines.length)) * leading + padding * 2;
@@ -111,7 +129,15 @@ class DossierLayout {
         if (rowIndex % 2 === 0) this.page.drawRectangle({ x: MARGIN, y: this.y - height, width: WIDTH, height, color: PALE });
         let x = MARGIN;
         cells.forEach((lines, index) => {
-          lines.slice(offset, offset + count).forEach((line, lineIndex) => this.page.drawText(line, { x: x + padding, y: this.y - padding - size - lineIndex * leading, size, font: this.font, color: INK }));
+          const name = editable[rowIndex]?.[index];
+          if (name) {
+            addMoroccoEditableText(this.document, this.page, this.font, {
+              name: offset ? `${name}-suite-${offset}` : name, label: headers[index] + " / " + row[0],
+              value: offset || count < length ? lines.slice(offset, offset + count).join("\n") : safeText(row[index] || "", this.font),
+              x: x + padding, y: this.y - height + 1, width: widths[index] - padding * 2, height: height - 2,
+              size, multiline: count > 1,
+            });
+          } else lines.slice(offset, offset + count).forEach((line, lineIndex) => this.page.drawText(line, { x: x + padding, y: this.y - padding - size - lineIndex * leading, size, font: this.font, color: INK }));
           x += widths[index];
         });
         this.page.drawLine({ start: { x: MARGIN, y: this.y - height }, end: { x: MARGIN + WIDTH, y: this.y - height }, thickness: .35, color: rgb(.82, .87, .89) });
@@ -126,7 +152,7 @@ class DossierLayout {
     pages.slice(2).forEach((page, index) => {
       page.drawLine({ start: { x: MARGIN, y: 38 }, end: { x: A4[0] - MARGIN, y: 38 }, thickness: .5, color: rgb(.8, .85, .88) });
       page.drawText("Atlas Vallée Ballons - Préparation Maroc", { x: MARGIN, y: 24, size: 7.5, font: this.font, color: MUTED });
-      const label = `${index + 3} / ${pages.length}`;
+      const label = `${index + 4} / ${pages.length + 1}`; // Passenger listing is prepended after layout completion.
       page.drawText(label, { x: A4[0] - MARGIN - this.font.widthOfTextAtSize(label, 8), y: 24, size: 8, font: this.font, color: MUTED });
     });
   }
@@ -172,23 +198,34 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   document.setModificationDate(new Date(reference.iso));
   document.catalog.delete(PDFName.of("Metadata")); // Inherited XMP describes the blank template, not this dossier reference.
   document.setSubject(`Stratégie ${dossier.traceId} - ${dossier.model.providerModelId}`);
-  const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold), reference.label);
+  const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold), `Référence initiale : ${reference.label}`);
   const first = dossier.points[0], last = dossier.points.at(-1)!;
   const coordinates = (point: typeof first) => `${number(point.latitude, 6)}, ${number(point.longitude, 6)}`;
-  layout.heading(`Préparation Maroc - ${scheduledDate} ${reference.time}`);
+  layout.heading(`Préparation Maroc - ${scheduledDate} ${reference.time}`, false, "vol-titre");
   const logo = await document.embedPng(moroccoLogoBase64);
   const logoSize = logo.scaleToFit(110, 55);
   layout.ensure(logoSize.height + 10);
   layout.page.drawImage(logo, { x: MARGIN, y: layout.y - logoSize.height, ...logoSize });
   layout.y -= logoSize.height + 10;
-  layout.paragraph(dossier.launchSiteName || "Terrain indisponible", { bold: true, size: 15 });
-  layout.table(["Informations", "Valeur"], [155, WIDTH - 155], [
-    ["Terrain de départ", dossier.launchSiteName || absent], ["Coordonnées départ", coordinates(first)], ["Coordonnées arrivée prévue", coordinates(last)],
-    ["Décollage prévu", dossierLocalTime(dossier.startedAt, dossier.launchTimeZone)], ["Atterrissage prévu", dossierLocalTime(dossier.landingAt, dossier.launchTimeZone)], ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`],
-    ["Fuseau du terrain", dossier.launchTimeZone || absent], ["Ballon", `${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`],
-    ["Modèle météo sélectionné", `${dossier.model.label} (${dossier.model.providerModelId})`], ["Stratégie", dossier.strategyLabel || absent], ["Identifiant de trace", dossier.traceId],
-    ["Points horodatés", String(dossier.points.length)], ["Date/heure du dossier", reference.label],
-  ]);
+  layout.editable("vol-terrain-titre", "Terrain", dossier.launchSiteName || "Terrain indisponible", { bold: true, size: 15 });
+  const passengerRows = prepareMoroccoPassengers(input.passengers);
+  const passengerCount = passengerRows.filter(row => row.sex !== "").length;
+  const infoRows: [string, string, string | null][] = [
+    ["Pilote", input.pilotName ?? "", "vol-pilote"],
+    ["Terrain de départ", dossier.launchSiteName || absent, "vol-terrain"],
+    ["Coordonnées départ (trace)", coordinates(first), null], ["Coordonnées arrivée prévue (trace)", coordinates(last), null],
+    ["Décollage prévu", dossierLocalTime(dossier.startedAt, dossier.launchTimeZone), "vol-decollage"],
+    ["Atterrissage prévu", dossierLocalTime(dossier.landingAt, dossier.launchTimeZone), "vol-atterrissage"],
+    ["Durée prévue", `${number(dossier.durationSeconds / 60)} min`, "vol-duree"],
+    ["Fuseau du terrain", dossier.launchTimeZone || absent, "vol-fuseau"],
+    ["Ballon", `${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`, "vol-ballon"],
+    ["Nombre de passagers", String(passengerCount), "vol-passagers-nombre"],
+    ["Modèle météo sélectionné", `${dossier.model.label} (${dossier.model.providerModelId})`, null], ["Stratégie", dossier.strategyLabel || absent, null],
+    ["Identifiant de trace", dossier.traceId, null], ["Points horodatés", String(dossier.points.length), null],
+    ["Date/heure du dossier", reference.label, "vol-reference"],
+  ];
+  layout.table(["Informations", "Valeur"], [155, WIDTH - 155], infoRows.map(([label, value]) => [label, value]), infoRows.map(([, , name]) => [null, name]));
+  layout.paragraph("Champs modifiables indépendants, sans recalcul : corriger aussi les totaux et marges si nécessaire. Météo, trajectoire, références et graphique restent ceux du dossier initial.", { size: 8, muted: true });
   layout.paragraph("Horaires locaux du terrain en priorité, UTC entre parenthèses. Disponibilité des sources limitée à la référence du dossier ; les indisponibilités et incertitudes restent explicites.");
   if (!dossierTimeZone(dossier.launchTimeZone)) layout.paragraph("Fuseau du terrain indisponible : horaires affichés en UTC uniquement.");
   layout.paragraph("Sources : Open-Meteo, AviationWeather.gov, OpenAIP et OpenStreetMap. Les fréquences OpenAIP ne sont pas vérifiées dans l'AIP. L'activité des espaces et l'exhaustivité de leur couverture doivent être vérifiées.", { muted: true });
@@ -250,18 +287,26 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   layout.ensure(210);
   layout.heading("Charge et référence constructeur");
   const load = dossier.operations?.load;
-  if (!load) layout.paragraph("Charge, limite, marge et courbe : indisponibles.");
+  if (!load) {
+    layout.paragraph("Charge, limite, marge et courbe : indisponibles.");
+    layout.table(["Température au sol (°C)", "Valeur"], [255, WIDTH - 255], [["Température utilisée pour la charge", absent]], [[null, "charge-temperature"]]);
+    layout.table(["Masse prévue (kg)", "Limite applicable (kg)", "Marge signée (kg)"], [170, 170, WIDTH - 340], [[absent, absent, absent]], [["charge-masse-prevue", "charge-limite", "charge-marge"]]);
+  }
   else {
-    layout.paragraph(`${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`, { bold: true, size: 12 });
-    layout.paragraph(`Disponibilité : ${status(load.status)}. Statut du calcul constructeur : ${status(load.calculationStatus)}.`);
+    layout.editable("charge-ballon", "Ballon / charge", `${dossier.balloon.registration || absent} - ${dossier.balloon.manufacturer || absent} ${dossier.balloon.model || absent}`, { bold: true, size: 12 });
+    layout.paragraph(`Disponibilité initiale : ${status(load.status)}. Statut initial du calcul constructeur : ${status(load.calculationStatus)}.`);
     if (load.message) layout.paragraph(load.message);
     if (dossier.balloon.manufacturer?.toLowerCase().includes("ultramagic") && dossier.balloon.model?.replace(/[^a-z0-9]/gi, "").toUpperCase() === "T150" && load.status !== "AVAILABLE") layout.paragraph("Ultramagic T150 : FM04 reste candidat, non activé dans Prépa. Limite et courbe personnalisée indisponibles.");
-    layout.paragraph(`Température au sol utilisée pour la charge : ${number(load.temperature?.temperatureC)} °C | Source : ${load.temperature?.provider || load.temperature?.sourceModel || absent}.`);
-    layout.table(["Masse prévue (kg)", "Limite applicable (kg)", "Marge signée (kg)"], [170, 170, WIDTH - 340], [[number(load.plannedMassKg), number(load.applicableLimitKg), load.signedMarginKg || absent]]);
-    layout.paragraph("Marge affichée arrondie vers le bas par le moteur existant. Les données de démonstration sont exclues.", { muted: true });
+    layout.table(["Température au sol (°C)", "Valeur"], [255, WIDTH - 255], [["Température utilisée pour la charge", number(load.temperature?.temperatureC)]], [[null, "charge-temperature"]]);
+    layout.paragraph(`Source de température initiale : ${load.temperature?.provider || load.temperature?.sourceModel || absent}.`, { size: 8, muted: true });
+    layout.table(["Masse prévue (kg)", "Limite applicable (kg)", "Marge signée (kg)"], [170, 170, WIDTH - 340], [[number(load.plannedMassKg), number(load.applicableLimitKg), load.signedMarginKg || absent]], [["charge-masse-prevue", "charge-limite", "charge-marge"]]);
+    layout.paragraph("Marge initiale arrondie vers le bas par le moteur existant. Corrections manuelles sans recalcul. Données de démonstration exclues.", { muted: true });
     if (load.result?.status === "AVAILABLE") {
-      layout.paragraph(`Règle limitante : ${load.limitingRule || absent}. Dataset : ${load.result.datasetId}. Révision : ${load.result.manualRevision}.`);
-      layout.paragraph(`Calcul : ${date(load.result.calculatedAt)} | Altitude maximale : ${number(load.result.maximumAltitudeMslM)} m AMSL | Température sol : ${number(load.result.groundTemperatureC)} °C (${load.result.groundTemperatureSource}).`);
+      layout.table(["Résultat initial / correction indépendante", "Valeur"], [255, WIDTH - 255], [
+        ["Règle limitante", load.limitingRule || absent], ["Date du calcul", date(load.result.calculatedAt)],
+        ["Altitude maximale (m AMSL)", number(load.result.maximumAltitudeMslM)], ["Température sol du résultat (°C)", number(load.result.groundTemperatureC)],
+      ], ["regle", "calcul-date", "altitude-maximale", "temperature-resultat"].map(name => [null, `charge-${name}`]));
+      layout.paragraph(`Dataset : ${load.result.datasetId}. Révision : ${load.result.manualRevision}. Source température initiale : ${load.result.groundTemperatureSource}.`);
     }
     if (load.manufacturerParameters) layout.paragraph(`Référence : ${load.manufacturerParameters.source.manualId} ; ${load.manufacturerParameters.source.manualRevision} ; pages ${load.manufacturerParameters.source.pages.join(", ")}. Vérification des paramètres : ${status(load.manufacturerParameters.verificationStatus)}.`);
     const curve = load.curve;
@@ -294,6 +339,16 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
       } else layout.paragraph("Graphique indisponible : axes source non exploitables.");
     } else layout.paragraph(`Graphique indisponible. ${curve.notice}`);
   }
+
+  const equipmentMass = balloonEquipmentWeightForLoad(dossier.balloon);
+  const plannedMass = load?.plannedMassKg;
+  const occupantsMass = equipmentMass !== null && plannedMass != null && plannedMass >= equipmentMass ? plannedMass - equipmentMass : null;
+  layout.table(["Masses et limites initiales / corrections", "Valeur (kg)"], [255, WIDTH - 255], [
+    ["Ballon équipé", number(equipmentMass)], ["Occupants", number(occupantsMass)],
+    ["MTOM de la configuration", number(dossier.balloon.applicableMtowKg)],
+  ], [[null, "charge-ballon-equipe"], [null, "charge-occupants"], [null, "charge-mtom"]]);
+  layout.paragraph("Observations / corrections après vol", { bold: true });
+  layout.editable("vol-observations", "Observations et corrections après vol", input.observations ?? "", { lines: 3 });
 
   layout.heading("Espaces traversés et possibles");
   const airspaces = dossier.operations?.airspaces;
@@ -328,6 +383,6 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   layout.finish();
   await prependMoroccoPassengerListing(document, reference, input.passengers);
   // The two original checklists have no dossier clock fields; use their blank lower margins.
-  for (const page of document.getPages().slice(1, 3)) page.drawText(`Dossier : ${reference.label}`, { x: MARGIN, y: 18, size: 8, font: layout.font, color: MUTED });
+  for (const page of document.getPages().slice(1, 3)) page.drawText(`Dossier : ${reference.label} (référence initiale)`, { x: MARGIN, y: 18, size: 8, font: layout.font, color: MUTED });
   return document.save();
 }

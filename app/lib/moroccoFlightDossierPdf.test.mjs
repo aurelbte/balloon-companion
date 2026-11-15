@@ -110,7 +110,7 @@ test('satellite changes only the Morocco map page, preserves all 39 fields and k
   // Font resource names can differ after adding attribution lines; compare drawing/text content.
   const normalized=page=>contents(page).replace(/\/(Helvetica(?:-Bold)?)-\d+/g,"/$1");
   for(let i=0;i<plan.getPageCount()-1;i++)assert.equal(normalized(satellite.getPage(i)),normalized(plan.getPage(i)),`page ${i+1}`);
-  assert.equal(satellite.getForm().getFields().length,106);
+  assert.equal(satellite.getForm().getFields().filter(f=>f.getName().startsWith("pax-")||f.getName().startsWith("avb-")).length,106);
   const page=satellite.getPage(satellite.getPageCount()-1);
   assert.ok(hasText(page,'EOxCloudless'));assert.ok(hasText(page,'CC BY 4.0'));
   assert.ok(!hasText(page,'OpenStreetMap'));

@@ -30,7 +30,7 @@ test('flight events, meteorological validity and METAR emission/retrieval retain
   const fetched=input.weather.aviation.departure.metar.result.data.sourceUpdatedAt;
   // Wrapping may split a long line, so check exact local date/time tokens, not the generated layout.
   const prefix=iso=>dossierLocalTime(iso,input.dossier.launchTimeZone,true).split(' (')[0];
-  assert.ok(allHas(pdf,prefix(input.dossier.startedAt)));assert.ok(allHas(pdf,prefix(input.dossier.landingAt)));
+  assert.equal(pdf.getForm().getTextField('vol-decollage').getText(),dossierLocalTime(input.dossier.startedAt,input.dossier.launchTimeZone));assert.equal(pdf.getForm().getTextField('vol-atterrissage').getText(),dossierLocalTime(input.dossier.landingAt,input.dossier.launchTimeZone));
   assert.ok(allHas(pdf,`Émis : ${prefix(issued)}`));assert.ok(allHas(pdf,`Récupéré : ${prefix(fetched)}`));
   assert.ok(allHas(pdf,'LFQQ 050800Z 24006KT 9999 SCT030 11/08 Q1022'));
   assert.ok(allHas(pdf,prefix(input.weather.window.expectedHours[0])));
