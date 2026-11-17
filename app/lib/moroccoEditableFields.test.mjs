@@ -55,7 +55,7 @@ test('no PDF JavaScript, actions, calculation order or editable weather/trajecto
  for(const [,object]of pdf.context.enumerateIndirectObjects())if(object instanceof PDFDict){
   for(const key of ['JS','JavaScript','AA'])assert.equal(object.has(PDFName.of(key)),false,key);
  }
- for(const f of pdf.getForm().getFields())assert.match(f.getName(),/^(avb-|pax-|vol-|charge-)/);
+ for(const f of pdf.getForm().getFields())assert.match(f.getName(),/^(avb-|pax-|vol-|charge-|fpl-maroc-)/);
  const graphic=pdf.getPages().find(p=>content(p).includes(Buffer.from('Lift Units - points constructeur').toString('hex').toUpperCase()));assert.ok(graphic,'source curve retained');
  for(const ref of graphic.node.Annots()?.asArray() ?? []){const widget=pdf.context.lookup(ref);const r=widget.lookup(PDFName.of('Rect'));assert.ok(r.get(3).asNumber()<500,'no field covers the graph, axes or legend');}
  // The graph and its source are page drawing instructions, not text fields.

@@ -19,7 +19,7 @@ test('chosen dossier clock appears on listing, both checklists, every preparatio
   const pdf=await PDFDocument.load(await createMoroccoFlightDossierPdf(input,map),{updateMetadata:false});
   assert.equal(pdf.getForm().getTextField('pax-date').getText(),'12/11/2026');assert.equal(pdf.getForm().getTextField('pax-heure').getText(),'08:15');
   assert.equal(pdf.catalog.has(PDFName.of('Metadata')),false);assert.match(pdf.getTitle(),/12\/11\/2026 08:15/);assert.equal(pdf.getCreationDate().toISOString(),resolved.iso);assert.equal(pdf.getModificationDate().toISOString(),resolved.iso);
-  for(let i=1;i<pdf.getPageCount();i++)assert.ok(has(pdf.getPage(i),i<3?`Dossier : ${resolved.label}`:resolved.label),`page ${i+1}`);
+  for(let i=2;i<pdf.getPageCount();i++)assert.ok(has(pdf.getPage(i),i<4?`Dossier : ${resolved.label}`:resolved.label),`page ${i+1}`);
   assert.equal(allHas(pdf,'Généré le'),false);assert.equal(allHas(pdf,'2099'),false);
   assert.equal(JSON.stringify(input),before);
 });

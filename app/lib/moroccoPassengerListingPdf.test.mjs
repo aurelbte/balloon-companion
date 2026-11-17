@@ -20,7 +20,7 @@ test('original logo, table, MANEX and exact PDF page precede both original AVB c
   assert.equal(pdf.getPage(0).node.has(PDFName.of('StructParents')),false); // Prevent PDFKit tag-tree collisions on merge.
   assert.ok(contents(pdf.getPage(0)).includes(contents(source.getPage(0))));
   assert.ok(pdf.getPage(0).node.Resources().lookup(PDFName.of('XObject')));
-  for(let i=0;i<2;i++)assert.ok(contents(pdf.getPage(i+1)).includes(contents(checklist.getPage(i))));
+  for(let i=0;i<2;i++)assert.ok(contents(pdf.getPage(i+2)).includes(contents(checklist.getPage(i))));
   const form=pdf.getForm();assert.equal(form.getFields().filter(f=>f.getName().startsWith("pax-")||f.getName().startsWith("avb-")).length,106);assert.equal(form.getFields().filter(f=>f instanceof PDFCheckBox).length,39);
   assert.equal(pdf.getPage(0).node.Annots().size(),67);
   for(const field of form.getFields().filter(f=>f.getName().startsWith('pax-'))){assert.equal(field.isReadOnly(),false);assert.equal(field.acroField.getWidgets()[0].P().toString(),pdf.getPage(0).ref.toString());assert.ok(field.acroField.getWidgets()[0].getAppearances().normal);assert.ok(field.acroField.getWidgets()[0].dict.has(PDFName.of('DA')));assert.equal(field.acroField.dict.has(PDFName.of('AA')),false);}

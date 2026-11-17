@@ -1,4 +1,5 @@
 import { addMoroccoEditableText } from "./moroccoEditableFields.ts";
+import { insertMoroccoFlightPlan } from "./moroccoFlightPlanPdf.ts";
 import { applyMoroccoDossierLoading, calculateMoroccoLoading } from "./moroccoDossierLoading.ts";
 import { balloonEquipmentWeightForLoad } from "./loadPerformance/balloonInput.ts";
 import { prepareMoroccoPassengers } from "./moroccoPassengers.ts";
@@ -395,5 +396,6 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   await prependMoroccoPassengerListing(document, reference, input.passengers);
   // The two original checklists have no dossier clock fields; use their blank lower margins.
   for (const page of document.getPages().slice(1, 3)) page.drawText(`Dossier : ${reference.label} (référence initiale)`, { x: MARGIN, y: 18, size: 8, font: layout.font, color: MUTED });
+  await insertMoroccoFlightPlan(document, input);
   return document.save();
 }

@@ -21,7 +21,7 @@ test('Morocco prepends both original AVB pages and adds 39 independent editable 
   const pdf = await PDFDocument.load(await createMoroccoFlightDossierPdf(input, map));
   assert.equal(pdf.getForm().getFields().filter(field => field instanceof PDFCheckBox).length, 39);
   for (let index = 0; index < 2; index++) {
-    const page = pdf.getPage(index + 1);
+    const page = pdf.getPage(index + 2);
     assert.deepEqual(page.getSize(), source.getPage(index).getSize());
     assert.ok(contents(page).includes(contents(source.getPage(index))));
     assert.ok(page.node.Resources().lookup(PDFName.of('XObject'))); // Source images/logo retained.
@@ -34,7 +34,7 @@ test('Morocco prepends both original AVB pages and adds 39 independent editable 
     assert.equal(field.isReadOnly(), false);
     assert.equal(field.acroField.getWidgets().length, 1);
     const widget = field.acroField.getWidgets()[0];
-    assert.equal(widget.P().toString(), pdf.getPage(group.page + 1).ref.toString());
+    assert.equal(widget.P().toString(), pdf.getPage(group.page + 2).ref.toString());
     assert.equal(widget.getAppearanceState().toString(), '/Off');
     const normal = widget.getAppearances().normal;
     assert.ok(normal.has(PDFName.of('Off')));
@@ -76,7 +76,7 @@ test('scheduled date uses the launch timezone, and France keeps its original tit
   input.dossier.launchTimeZone = 'Africa/Casablanca';
   const maroc = await PDFDocument.load(await createMoroccoFlightDossierPdf(input, map));
   assert.match(maroc.getTitle(), /06\/11\/2026/);
-  assert.ok(hasText(maroc.getPage(3), '06/11/2026'));
+  assert.ok(hasText(maroc.getPage(4), '06/11/2026'));
   const france = await PDFDocument.load(await createFlightDossierPdf(input, map));
   assert.match(france.getTitle(), /^Dossier de vol -/);
   assert.equal(france.getForm().getFields().length, 0);
