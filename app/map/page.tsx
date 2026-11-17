@@ -991,7 +991,7 @@ export default function MapPage() {
           <span>Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
         </button>
-        {dossierTrace && <FlightDossierAction key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
+        {dossierTrace && <FlightDossierAction moroccoLoadInput={loadInput} key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
           onFlightDossier={(traceId) => {
               const dossier = prepareFlightDossier(traceId, displayedTraces, selectedBalloon);
               if (dossier.status !== "READY") return dossier;

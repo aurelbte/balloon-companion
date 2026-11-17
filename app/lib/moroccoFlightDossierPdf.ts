@@ -1,4 +1,5 @@
 import { addMoroccoEditableText } from "./moroccoEditableFields.ts";
+import { applyMoroccoDossierLoading, calculateMoroccoLoading } from "./moroccoDossierLoading.ts";
 import { balloonEquipmentWeightForLoad } from "./loadPerformance/balloonInput.ts";
 import { prepareMoroccoPassengers } from "./moroccoPassengers.ts";
 import { resolveMoroccoDossierReference } from "./moroccoDossierReference.ts";
@@ -181,6 +182,7 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, da
 }
 
 export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage): Promise<Uint8Array> {
+  input = applyMoroccoDossierLoading(input);
   const { dossier, weather } = input;
   const reference = resolveMoroccoDossierReference(dossier, input.dossierReference);
   const scheduledDate = reference.dateLabel;
@@ -286,6 +288,14 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
 
   layout.ensure(210);
   layout.heading("Charge et référence constructeur");
+  if (input.loading) {
+    const masses = calculateMoroccoLoading(input.passengers ?? [], input.loading);
+    layout.table(["Chargement issu du listing", "Masse (kg)"], [255, WIDTH - 255], [
+      ["Passagers", number(masses.passengersKg)], ["Pilote", number(masses.pilotKg)],
+      ["Équipement additionnel (hors ballon équipé)", number(masses.equipmentKg)], ["Total ajouté au ballon équipé", number(masses.loadingKg)],
+    ], [[null, "charge-passagers"], [null, "charge-pilote"], [null, "charge-equipement"], [null, "charge-chargement-total"]]);
+    layout.paragraph("Poids issus du listing avant export. Modifications PDF indépendantes, sans recalcul de la courbe après téléchargement.", { muted: true });
+  }
   const load = dossier.operations?.load;
   if (!load) {
     layout.paragraph("Charge, limite, marge et courbe : indisponibles.");
@@ -319,6 +329,7 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
       if (xmax > xmin && ymax > ymin) {
         layout.ensure(365);
         const x = MARGIN + 40, y = layout.y - 242, width = WIDTH - 60, height = 212;
+        if (input.loading) layout.page.drawText(`Chargement listing : ${number(calculateMoroccoLoading(input.passengers ?? [], input.loading).loadingKg)} kg | masse prévue : ${number(load.plannedMassKg)} kg`, { x, y: y + height + 25, size: 8, font: layout.font, color: INK });
         layout.page.drawText("Lift Units - points constructeur", { x, y: y + height + 12, size: 9, font: layout.bold, color: INK });
         for (let tick = 0; tick <= 4; tick++) {
           const tx = x + tick * width / 4, ty = y + tick * height / 4;
@@ -344,7 +355,7 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   const plannedMass = load?.plannedMassKg;
   const occupantsMass = equipmentMass !== null && plannedMass != null && plannedMass >= equipmentMass ? plannedMass - equipmentMass : null;
   layout.table(["Masses et limites initiales / corrections", "Valeur (kg)"], [255, WIDTH - 255], [
-    ["Ballon équipé", number(equipmentMass)], ["Occupants", number(occupantsMass)],
+    ["Ballon équipé", number(equipmentMass)], [input.loading ? "Pilote + passagers + équipement additionnel" : "Occupants", number(occupantsMass)],
     ["MTOM de la configuration", number(dossier.balloon.applicableMtowKg)],
   ], [[null, "charge-ballon-equipe"], [null, "charge-occupants"], [null, "charge-mtom"]]);
   layout.paragraph("Observations / corrections après vol", { bold: true });

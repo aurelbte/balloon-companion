@@ -1,4 +1,5 @@
 import { resolveMoroccoDossierReference } from "./moroccoDossierReference.ts";
+import { applyMoroccoDossierLoading } from "./moroccoDossierLoading.ts";
 import { prepareMoroccoPassengers, type MoroccoDossierPdfInput } from "./moroccoPassengers.ts";
 import type { MoroccoDossierMapImage } from "./moroccoDossierMap.ts";
 type DossierPdfMap = MoroccoDossierMapImage | { error: string };
@@ -35,6 +36,7 @@ function browserEnvironment(): DossierExportEnvironment {
 /** No calls at import/render time; this entry point is invoked by the dossier button. */
 export async function exportMoroccoFlightDossier(input: MoroccoDossierPdfInput, signal?: AbortSignal, environment: DossierExportEnvironment = browserEnvironment()) {
   signal?.throwIfAborted();
+  input = applyMoroccoDossierLoading(input);
   prepareMoroccoPassengers(input.passengers);
   const { dossier } = input;
   const reference = resolveMoroccoDossierReference(dossier, input.dossierReference);

@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import ts from 'typescript';
 import * as reference from '../lib/moroccoDossierReference.ts';
+import * as loading from '../lib/moroccoDossierLoading.ts';
 const require=createRequire(import.meta.url);
 function harness(t,prepared){
   const old=Object.getOwnPropertyDescriptor(globalThis,'document');Object.defineProperty(globalThis,'document',{configurable:true,value:{addEventListener(){},removeEventListener(){}}});
@@ -11,7 +12,7 @@ function harness(t,prepared){
   const slots=[];let cursor=0,pending=[];const calls={prepare:0,weather:0,france:[],morocco:[]};let tree;
   const react={useId:()=> 'menu-test',useRef(initial){const i=cursor++;return slots[i]??={current:initial};},useState(initial){const i=cursor++;slots[i]??={value:initial};return [slots[i].value,v=>{slots[i].value=typeof v==='function'?v(slots[i].value):v;}];},useEffect(fn,deps){const i=cursor++;const previous=slots[i];if(!previous||deps.some((d,j)=>d!==previous.deps[j])){slots[i]={deps};pending.push(()=>{previous?.cleanup?.();slots[i].cleanup=fn();});}}};
   const Dialog=()=>null;
-  const mocks={react,'../lib/moroccoPreparationClient':{loadMoroccoDossierPreparation:async dossier=>{calls.weather++;return {dossier,weather:null};}},'./MoroccoPassengerDialog':Dialog,'../lib/moroccoDossierReference':reference,'../lib/flightDossierWeatherClient':{loadFlightDossierWeather:async()=>{calls.weather++;return null;}},'../lib/moroccoFlightDossierExport':{exportMoroccoFlightDossier:async input=>{calls.morocco.push(input);return{mapUnavailable:false};}},'../lib/flightDossierExport':{exportFlightDossier:async input=>{calls.france.push(input);return{mapUnavailable:false};}},'./FlightDossierOperationsSummary':()=>null,'./FlightDossierWeatherSummary':()=>null,'../lib/balloons':{balloonDisplayName:()=> 'Ballon test'},'../lib/timeZone.ts':{formatInTimeZone:()=> '07:00'},'lucide-react':{FileDown:()=>null,LoaderCircle:()=>null,X:()=>null}};
+  const mocks={react,'../lib/moroccoDossierLoading':loading,'../lib/moroccoPreparationClient':{loadMoroccoDossierPreparation:async dossier=>{calls.weather++;return {dossier,weather:null};}},'./MoroccoPassengerDialog':Dialog,'../lib/moroccoDossierReference':reference,'../lib/flightDossierWeatherClient':{loadFlightDossierWeather:async()=>{calls.weather++;return null;}},'../lib/moroccoFlightDossierExport':{exportMoroccoFlightDossier:async input=>{calls.morocco.push(input);return{mapUnavailable:false};}},'../lib/flightDossierExport':{exportFlightDossier:async input=>{calls.france.push(input);return{mapUnavailable:false};}},'./FlightDossierOperationsSummary':()=>null,'./FlightDossierWeatherSummary':()=>null,'../lib/balloons':{balloonDisplayName:()=> 'Ballon test'},'../lib/timeZone.ts':{formatInTimeZone:()=> '07:00'},'lucide-react':{FileDown:()=>null,LoaderCircle:()=>null,X:()=>null}};
   const js=ts.transpileModule(readFileSync(new URL('./FlightDossierAction.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,esModuleInterop:true,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const exports={};new Function('require','exports',js)(id=>id in mocks?mocks[id]:require(id),exports);
   const trace={traceId:'test',model:{label:'TEST'},label:'Stratégie'};
@@ -30,7 +31,7 @@ test('Maroc opens passenger entry with dossier date before any weather/export; c
 });
 test('confirmed passenger rows reach only Morocco, using the same prepared dossier',async t=>{
   const ready=prepared(),h=harness(t,ready);h.open('Maroc');const rows=[{lastName:'Nom',firstName:'Prénom',nationality:'Marocaine',sex:'H'}];
-  h.all(n=>n.type===h.Dialog)[0].props.onExport(rows,{date:'2026-11-12',time:'08:15'});await flush();assert.equal(h.calls.prepare,1);assert.equal(h.calls.morocco.length,1);assert.equal(h.calls.morocco[0].dossier,ready.data);assert.equal(h.calls.morocco[0].passengers,rows);assert.deepEqual(h.calls.morocco[0].dossierReference,{date:'2026-11-12',time:'08:15'});assert.equal(h.calls.france.length,0);
+  h.all(n=>n.type===h.Dialog)[0].props.onExport(rows,{date:'2026-11-12',time:'08:15'},{pilotKg:70,equipmentKg:8,passengerCount:1});await flush();assert.equal(h.calls.prepare,1);assert.equal(h.calls.morocco.length,1);assert.equal(h.calls.morocco[0].dossier,ready.data);assert.equal(h.calls.morocco[0].passengers,rows);assert.deepEqual(h.calls.morocco[0].dossierReference,{date:'2026-11-12',time:'08:15'});assert.equal(h.calls.france.length,0);assert.deepEqual(h.calls.morocco[0].loading,{pilotKg:70,equipmentKg:8,passengerCount:1});
 });
 test('France still exports directly without passenger dialog or passenger data',async t=>{
   const h=harness(t,prepared());h.open('France');await flush();assert.equal(h.all(n=>n.type===h.Dialog).length,0);assert.equal(h.calls.france.length,1);assert.equal('passengers' in h.calls.france[0],false);assert.equal('dossierReference' in h.calls.france[0],false);assert.equal(h.calls.morocco.length,0);
