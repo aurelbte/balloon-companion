@@ -39,7 +39,7 @@ export function archiveSourceTimes(value: MoroccoWeatherArchive): string[] {
 
 export async function createMoroccoWeatherArchive(dossier: MoroccoArchiveDossier, trajectory: WeatherAnalysisTrace, capture: MoroccoWeatherCapture, receivedAt: string): Promise<MoroccoWeatherArchive> {
   const value = structuredClone({ ...capture, version: 2 as const, completeness: "PARTIAL" as const, id: "", matchKey: moroccoWeatherMatchKey(dossier), receivedAt, dossier, trajectory });
-  if (!capture.rawForecasts.length || capture.rawForecasts.some(raw => raw.kind !== "calculation" || raw.model !== dossier.model.providerModelId || !raw.payload) ||
+  if (!capture.rawForecasts.some(raw => raw.kind === "calculation") || capture.rawForecasts.some(raw => !["calculation", "ground"].includes(raw.kind) || raw.model !== dossier.model.providerModelId || !raw.payload) ||
       trajectory.moroccoPreparationIdentity !== dossier.moroccoPreparationIdentity || capture.weather.traceId !== dossier.traceId || capture.weather.weatherModel !== dossier.model.providerModelId || trajectory.traceId !== dossier.traceId ||
       trajectory.model.providerModelId !== dossier.model.providerModelId || stable(trajectory.projection.points) !== stable(dossier.points) ||
       !Number.isFinite(utcMs(receivedAt)) || archiveSourceTimes(value).some(time => !Number.isFinite(utcMs(time)) || utcMs(time) > utcMs(receivedAt)))
@@ -51,18 +51,39 @@ export async function createMoroccoWeatherArchive(dossier: MoroccoArchiveDossier
   return value;
 }
 
-export function latestMoroccoWeatherArchive(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData, referenceAt: string): SavedMoroccoWeatherArchive | null {
-  const limit = utcMs(referenceAt), key = moroccoWeatherMatchKey(dossier);
-  if (!Number.isFinite(limit)) return null;
-  return values.filter(value => {
-    try { return value.version === 2 && value.matchKey === key && moroccoWeatherMatchKey(value.dossier) === key &&
-      value.weather.traceId === dossier.traceId && value.weather.weatherModel === dossier.model.providerModelId &&
-      value.trajectory.traceId === dossier.traceId && value.trajectory.moroccoPreparationIdentity === dossier.moroccoPreparationIdentity && stable(value.trajectory.projection.points) === stable(value.dossier.points) && stable(value.dossier.points) === stable(dossier.points) &&
-      Number.isFinite(utcMs(value.storedAt)) && utcMs(value.storedAt) <= limit && utcMs(value.receivedAt) <= utcMs(value.storedAt) &&
-      archiveSourceTimes(value).every(time => Number.isFinite(utcMs(time)) && utcMs(time) <= utcMs(value.receivedAt));
-    } catch { return false; }
-  })
+function archiveRejection(value: SavedMoroccoWeatherArchive, dossier: FlightDossierData, referenceAt: string, key: string): string | null {
+  try {
+    if (value.version !== 2 || value.matchKey !== key || moroccoWeatherMatchKey(value.dossier) !== key ||
+      value.weather.traceId !== dossier.traceId || value.weather.weatherModel !== dossier.model.providerModelId ||
+      value.trajectory.traceId !== dossier.traceId || value.trajectory.moroccoPreparationIdentity !== dossier.moroccoPreparationIdentity ||
+      stable(value.trajectory.projection.points) !== stable(value.dossier.points) || stable(value.dossier.points) !== stable(dossier.points)) return "IDENTITY_MISMATCH";
+    if (!Number.isFinite(utcMs(value.storedAt)) || !Number.isFinite(utcMs(value.receivedAt)) || utcMs(value.receivedAt) > utcMs(value.storedAt) ||
+      archiveSourceTimes(value).some(time => !Number.isFinite(utcMs(time)) || utcMs(time) > utcMs(value.receivedAt))) return "INVALID_SOURCE_TIMES";
+    if (utcMs(value.storedAt) > utcMs(referenceAt)) return "STORED_AFTER_REFERENCE";
+    return null;
+  } catch { return "INVALID_ARCHIVE"; }
+}
+
+/** A single selection predicate drives both reuse and diagnostics; UTC/provenance guards remain unchanged. */
+export function inspectMoroccoWeatherArchives(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData, referenceAt: string) {
+  const key = moroccoWeatherMatchKey(dossier);
+  if (!Number.isFinite(utcMs(referenceAt))) return { archive: null, notice: "Référence UTC invalide : aucune archive admissible." };
+  const evaluated = values.map(value => ({ value, reason: archiveRejection(value, dossier, referenceAt, key) }));
+  const archive = evaluated.filter(item => item.reason === null).map(item => item.value)
     .sort((a, b) => utcMs(b.storedAt) - utcMs(a.storedAt) || b.id.localeCompare(a.id))[0] ?? null;
+  if (archive) return { archive, notice: "Archive locale correspondant exactement à la préparation, reçue et enregistrée avant la référence." };
+  const reasons = [...new Set(evaluated.map(item => item.reason))].map(reason => {
+    if (reason === "STORED_AFTER_REFERENCE") {
+      const times = evaluated.filter(item => item.reason === reason).map(item => item.value.storedAt).sort();
+      return `Enregistrement local postérieur à ${referenceAt} : premier enregistrement ${times[0]}. Une donnée reçue ou enregistrée après la référence ne prouve pas sa disponibilité avant.`;
+    }
+    return reason === "IDENTITY_MISMATCH" ? "Identité de préparation, modèle ou trajectoire différente : archive refusée." : "Horodatages UTC ou provenance de l’archive invalides : archive refusée.";
+  });
+  return { archive: null, notice: values.length ? `Aucune archive locale admissible. ${reasons.join(" ")}` : `Aucune archive locale trouvée pour cette identité exacte (terrain, vol, modèle ${dossier.model.providerModelId}, paramètres et trajectoire).` };
+}
+
+export function latestMoroccoWeatherArchive(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData, referenceAt: string): SavedMoroccoWeatherArchive | null {
+  return inspectMoroccoWeatherArchives(values, dossier, referenceAt).archive;
 }
 
 /** Separate scoped database: never enrolled in cloud sync, append-only versions and commit receipts. */

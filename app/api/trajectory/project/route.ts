@@ -1,5 +1,6 @@
 import { validateMultiAltitudeProjectionRequest } from "../../../lib/trajectory/integration";
 import type { MoroccoRawForecast } from "../../../lib/moroccoWeatherCapture";
+import { captureMoroccoArrivalWeather } from "../../../lib/moroccoArrivalWeather";
 import { orchestrateMultiAltitudeProjection } from "../../../lib/trajectory/multiProjectionServer";
 import { OpenMeteoWindProvider } from "../../../lib/weather/openMeteo/adapter";
 import {
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
   const config = getOpenMeteoServerConfig();
   const baseClient = createOpenMeteoClient(config);
   const archive = !!payload && typeof payload === "object" && "archiveMoroccoWeather" in payload && payload.archiveMoroccoWeather === true;
+  const acquireArrival = archive && !!payload && typeof payload === "object" && "acquireMoroccoArrivalWeather" in payload && payload.acquireMoroccoArrivalWeather === true;
   const rawForecasts: MoroccoRawForecast[] = [];
   const client = { ...baseClient, async fetchWindColumn(query: Parameters<typeof baseClient.fetchWindColumn>[0]) {
     const raw = await baseClient.fetchWindColumn(query);
@@ -46,6 +48,13 @@ export async function POST(request: Request) {
     },
   });
   if (result.body.ok && retrievals.length) result.body.weatherFetchedAt = retrievals.sort()[0];
-  if (result.body.ok && archive) result.body.moroccoCalculation = { request: validateMultiAltitudeProjectionRequest(payload), rawForecasts };
+  if (result.body.ok && archive) {
+    result.body.moroccoCalculation = { request: validateMultiAltitudeProjectionRequest(payload), rawForecasts };
+    if (acquireArrival) {
+      const arrival = await captureMoroccoArrivalWeather(result.body, baseClient, config.tier === "commercial" ? "https://customer-api.open-meteo.com/v1/forecast" : "https://api.open-meteo.com/v1/forecast");
+      result.body.moroccoCalculation.rawForecasts.push(...arrival.rawForecasts);
+      result.body.moroccoCalculation.notices = arrival.notices;
+    }
+  }
   return Response.json(result.body, { status: result.status });
 }

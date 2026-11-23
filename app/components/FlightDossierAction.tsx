@@ -2,6 +2,7 @@
 import MoroccoPassengerDialog from "./MoroccoPassengerDialog";
 import type { LoadCalculationInput } from "../lib/loadPerformance/types";
 import { moroccoPassengerDraftKey, type MoroccoDossierLoading } from "../lib/moroccoDossierLoading";
+import { moroccoLandingMassConfigurationKey, type MoroccoLandingMassApplicability } from "../lib/moroccoMinimumLandingMass";
 import type { MoroccoPassenger } from "../lib/moroccoPassengers";
 import { resolveMoroccoDossierReference, type MoroccoDossierReference } from "../lib/moroccoDossierReference";
 import { FileDown, LoaderCircle, X } from "lucide-react";
@@ -19,7 +20,7 @@ import { formatInTimeZone } from "../lib/timeZone.ts";
 const time = (iso: string, timeZone?: string) => formatInTimeZone(iso, timeZone, { hour: "2-digit", minute: "2-digit" });
 const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
-export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput }: { moroccoLoadInput?: LoadCalculationInput; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
+export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput, onMoroccoAltitudeChange, moroccoDestination = false, onMoroccoDestinationChange, onCalculateMorocco }: { moroccoLoadInput?: LoadCalculationInput; onMoroccoAltitudeChange?: (altitudeAmslM: number) => void; moroccoDestination?: boolean; onMoroccoDestinationChange?: (enabled: boolean) => void; onCalculateMorocco?: () => void; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
   const [passengerDossier, setPassengerDossier] = useState<Extract<FlightDossierResult, { status: "READY" }> | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportMenuId = useId();
@@ -62,7 +63,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [exportMenuOpen]);
-  const requestDossier = async (variant: "FRANCE" | "MOROCCO" = "FRANCE", passengers?: readonly MoroccoPassenger[], alreadyPrepared?: FlightDossierResult, dossierReference?: MoroccoDossierReference, loading?: MoroccoDossierLoading) => {
+  const requestDossier = async (variant: "FRANCE" | "MOROCCO" = "FRANCE", passengers?: readonly MoroccoPassenger[], alreadyPrepared?: FlightDossierResult, dossierReference?: MoroccoDossierReference, loading?: MoroccoDossierLoading, minimumLandingMassApplicability?: MoroccoLandingMassApplicability, validatedAltitudeAmslM?: number) => {
     if (!onFlightDossier || dossierRequest.current && !dossierRequest.current.signal.aborted) return;
     const controller = new AbortController();
     dossierRequest.current = controller;
@@ -94,7 +95,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
       controller.signal.throwIfAborted();
       const input = { dossier: exportDossier, weather, weatherError };
       const result = variant === "MOROCCO"
-        ? await (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier({ ...input, passengers, dossierReference, loading, loadInput: moroccoLoadInput }, controller.signal)
+        ? await (await import("../lib/moroccoFlightDossierExport")).exportMoroccoFlightDossier({ ...input, passengers, dossierReference, loading, minimumLandingMassApplicability, loadInput: moroccoLoadInput ? { ...moroccoLoadInput, ...(validatedAltitudeAmslM === undefined ? {} : { plannedMaximumAltitudeMslM: validatedAltitudeAmslM }) } : undefined }, controller.signal)
         : await (await import("../lib/flightDossierExport")).exportFlightDossier(input, controller.signal);
       if (!controller.signal.aborted) setDossierDownload(result.mapUnavailable ? "Dossier téléchargé. Fond cartographique indisponible, signalé dans le PDF." : "Dossier de vol téléchargé.");
     } catch (error) {
@@ -105,6 +106,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
     }
   };
   const openPassengerListing = () => {
+    onMoroccoDestinationChange?.(true);
     setExportMenuOpen(false);
     try {
       const prepared = onFlightDossier(trace.traceId);
@@ -120,8 +122,9 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
       <div ref={exportMenuRoot}>
         <button ref={exportButton} type="button" aria-label="Dossier de vol PDF" aria-expanded={exportMenuOpen} aria-controls={exportMenuId} title="Exporter le dossier PDF" aria-busy={dossierPending} disabled={dossierPending} onClick={() => { setFeedbackOpen(false); setExportMenuOpen((open) => !open); }} className="flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md disabled:opacity-50">{dossierPending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <FileDown size={18} aria-hidden="true" />}<span className="text-[10px] font-semibold">PDF</span></button>
         {exportMenuOpen && <div id={exportMenuId} role="group" aria-label="Pays du dossier PDF" className="absolute bottom-full right-0 z-50 mb-2 w-40 max-w-[calc(100vw-24px)] rounded-xl border border-white/20 bg-slate-950 p-1 text-sm text-white shadow-xl">
-          <button ref={firstExportChoice} type="button" onClick={() => { setExportMenuOpen(false); void requestDossier("FRANCE"); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇫🇷</span> France</button>
+          <button ref={firstExportChoice} type="button" onClick={() => { onMoroccoDestinationChange?.(false); setExportMenuOpen(false); void requestDossier("FRANCE"); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇫🇷</span> France</button>
           <button type="button" onClick={openPassengerListing} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇲🇦</span> Maroc</button>
+          {onMoroccoDestinationChange && <div className="mt-1 border-t border-white/20 pt-1"><label className="flex min-h-11 items-center gap-2 px-3 text-xs"><input aria-label="Préparation Maroc avec vent d’arrivée" type="checkbox" checked={moroccoDestination} onChange={event => onMoroccoDestinationChange(event.target.checked)} className="size-5 shrink-0" />Préparation Maroc</label><p className="px-3 text-[10px] text-white/70">Vent d’arrivée acquis aux prochains calculs uniquement.</p>{moroccoDestination && onCalculateMorocco && <button type="button" onClick={() => { setExportMenuOpen(false); onCalculateMorocco(); }} className="min-h-11 w-full rounded-lg px-3 text-left text-xs hover:bg-white/10">Calculer météo Maroc</button>}</div>}
         </div>}
       </div>
       {passengerDossier && <MoroccoPassengerDialog
@@ -129,9 +132,15 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
         draftKey={moroccoPassengerDraftKey(passengerDossier.data.traceId, passengerDossier.data.balloon.id, passengerDossier.data.startedAt)}
         dossier={passengerDossier.data}
         loadInput={moroccoLoadInput}
+        onAltitudeChange={onMoroccoAltitudeChange}
         reference={resolveMoroccoDossierReference(passengerDossier.data)}
         onCancel={() => setPassengerDossier(null)}
-        onExport={(passengers, reference, loading) => { const prepared = passengerDossier; setPassengerDossier(null); void requestDossier("MOROCCO", passengers, prepared, reference, loading); }}
+        onExport={(passengers, reference, loading, applicability, altitudeAmslM) => {
+          const prepared = onFlightDossier(trace.traceId);
+          if (prepared.status !== "READY") throw new Error(prepared.message);
+          if (moroccoLandingMassConfigurationKey(prepared.data.balloon) !== moroccoLandingMassConfigurationKey(passengerDossier.data.balloon)) throw new Error("Ballon ou configuration modifié : fermez puis rouvrez le listing pour vérifier la saisie conservée.");
+          setPassengerDossier(null); void requestDossier("MOROCCO", passengers, prepared, reference, loading, applicability, altitudeAmslM);
+        }}
       />}
       {feedbackOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-[40dvh] w-[min(280px,calc(100vw-88px))] overflow-y-auto rounded-xl border border-white/20 bg-slate-950 p-3 text-xs text-white shadow-xl">
       <div className="flex items-center justify-between gap-2"><p>{trace.model.label} · {trace.label}</p><button type="button" aria-label="Fermer le suivi du dossier PDF" className="min-h-11 min-w-11" onClick={() => setFeedbackOpen(false)}><X size={16} /></button></div>

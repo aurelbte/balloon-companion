@@ -1,6 +1,7 @@
 import { addMoroccoEditableText } from "./moroccoEditableFields.ts";
 import { insertMoroccoFlightPlan } from "./moroccoFlightPlanPdf.ts";
-import { applyMoroccoDossierLoading, calculateMoroccoLoading } from "./moroccoDossierLoading.ts";
+import { moroccoMinimumLandingMass } from "./moroccoMinimumLandingMass.ts";
+import { applyMoroccoDossierLoading, calculateMoroccoLoading, calculateMoroccoLandingMass } from "./moroccoDossierLoading.ts";
 import { balloonEquipmentWeightForLoad } from "./loadPerformance/balloonInput.ts";
 import { prepareMoroccoPassengers } from "./moroccoPassengers.ts";
 import { resolveMoroccoDossierReference } from "./moroccoDossierReference.ts";
@@ -298,6 +299,7 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
     layout.paragraph("Poids issus du listing avant export. Modifications PDF indépendantes, sans recalcul de la courbe après téléchargement.", { muted: true });
   }
   const load = dossier.operations?.load;
+  if (dossier.balloon.manufacturer.trim().toLowerCase() === "cameron" && (!load?.curve || load.curve.status !== "SOURCE_DATA_AVAILABLE" || !load.curve.points?.length)) layout.paragraph("Courbe constructeur Cameron non disponible", { bold: true });
   if (!load) {
     layout.paragraph("Charge, limite, marge et courbe : indisponibles.");
     layout.table(["Température au sol (°C)", "Valeur"], [255, WIDTH - 255], [["Température utilisée pour la charge", absent]], [[null, "charge-temperature"]]);
@@ -355,10 +357,26 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   const equipmentMass = balloonEquipmentWeightForLoad(dossier.balloon);
   const plannedMass = load?.plannedMassKg;
   const occupantsMass = equipmentMass !== null && plannedMass != null && plannedMass >= equipmentMass ? plannedMass - equipmentMass : null;
+  const minimumLanding = moroccoMinimumLandingMass(dossier.balloon, input.minimumLandingMassApplicability);
   layout.table(["Masses et limites initiales / corrections", "Valeur (kg)"], [255, WIDTH - 255], [
     ["Ballon équipé", number(equipmentMass)], [input.loading ? "Pilote + passagers + équipement additionnel" : "Occupants", number(occupantsMass)],
     ["MTOM de la configuration", number(dossier.balloon.applicableMtowKg)],
-  ], [[null, "charge-ballon-equipe"], [null, "charge-occupants"], [null, "charge-mtom"]]);
+    ["Masse minimale à l’atterrissage (kg)", minimumLanding.kg === null ? "" : number(minimumLanding.kg)],
+  ], [[null, "charge-ballon-equipe"], [null, "charge-occupants"], [null, "charge-mtom"], [null, "charge-masse-minimale-atterrissage"]]);
+  layout.paragraph(minimumLanding.notice, { size: 8, muted: true });
+  if (minimumLanding.source) layout.paragraph(`Référence documentaire à contrôler : ${minimumLanding.source}.`, { size: 8, muted: true });
+  if (input.loading) {
+    const landing = calculateMoroccoLandingMass(input);
+    layout.table(["Estimation à l’atterrissage", "Valeur"], [255, WIDTH - 255], [
+      ["Gaz consommé prévu (kg) - estimation pilote", input.loading.expectedGasConsumptionKg === undefined ? "" : number(input.loading.expectedGasConsumptionKg)],
+      ["Propane embarqué (kg) - déjà inclus au décollage", number(landing.propaneOnBoardKg)],
+      ["Masse estimée à l’atterrissage (kg)", number(landing.landingKg)],
+      ["Marge estimée par rapport à la MLM (kg)", number(landing.marginKg)],
+    ], [[null, "charge-gaz-consomme-prevu"], [null, "charge-propane-embarque"], [null, "charge-masse-atterrissage-estimee"], [null, "charge-marge-mlm"]]);
+    layout.paragraph(landing.notice, { size: 8, muted: true });
+    if (landing.minimum.kg === null) layout.paragraph("Marge MLM indisponible : limite constructeur applicable non confirmée. À vérifier dans le manuel de vol.", { size: 8, muted: true });
+    if (input.loadInput?.plannedMaximumAltitudeMslM !== undefined) layout.paragraph(`Altitude projetée de charge : ${number(input.loadInput.plannedMaximumAltitudeMslM)} m AMSL, issue de la préparation. La trajectoire et la météo archivées restent celles de leur calcul d’origine.`, { size: 8, muted: true });
+  }
   layout.paragraph("Observations / corrections après vol", { bold: true });
   layout.editable("vol-observations", "Observations et corrections après vol", input.observations ?? "", { lines: 3 });
 
