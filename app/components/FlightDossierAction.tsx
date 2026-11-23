@@ -20,7 +20,7 @@ import { formatInTimeZone } from "../lib/timeZone.ts";
 const time = (iso: string, timeZone?: string) => formatInTimeZone(iso, timeZone, { hour: "2-digit", minute: "2-digit" });
 const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
-export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput, onMoroccoAltitudeChange, moroccoDestination = false, onMoroccoDestinationChange, onCalculateMorocco }: { moroccoLoadInput?: LoadCalculationInput; onMoroccoAltitudeChange?: (altitudeAmslM: number) => void; moroccoDestination?: boolean; onMoroccoDestinationChange?: (enabled: boolean) => void; onCalculateMorocco?: () => void; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
+export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput, moroccoCanonicalAltitudeAmslM, onMoroccoAltitudeChange, moroccoDestination = false, onMoroccoDestinationChange, onCalculateMorocco }: { moroccoLoadInput?: LoadCalculationInput; moroccoCanonicalAltitudeAmslM?: number | null; onMoroccoAltitudeChange?: (altitudeAmslM: number) => void; moroccoDestination?: boolean; onMoroccoDestinationChange?: (enabled: boolean) => void; onCalculateMorocco?: () => void; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
   const [passengerDossier, setPassengerDossier] = useState<Extract<FlightDossierResult, { status: "READY" }> | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportMenuId = useId();
@@ -132,6 +132,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
         draftKey={moroccoPassengerDraftKey(passengerDossier.data.traceId, passengerDossier.data.balloon.id, passengerDossier.data.startedAt)}
         dossier={passengerDossier.data}
         loadInput={moroccoLoadInput}
+        canonicalAltitudeAmslM={moroccoCanonicalAltitudeAmslM}
         onAltitudeChange={onMoroccoAltitudeChange}
         reference={resolveMoroccoDossierReference(passengerDossier.data)}
         onCancel={() => setPassengerDossier(null)}

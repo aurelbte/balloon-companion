@@ -995,7 +995,7 @@ export default function MapPage() {
           <span>Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
         </button>
-        {dossierTrace && <FlightDossierAction moroccoLoadInput={loadInput} onMoroccoAltitudeChange={value => persistMaximumAltitude(String(value), true)} moroccoDestination={moroccoDestination}
+        {dossierTrace && <FlightDossierAction moroccoLoadInput={loadInput} moroccoCanonicalAltitudeAmslM={preparation?.targetAltitudeAmslM} onMoroccoAltitudeChange={value => persistMaximumAltitude(String(value), true)} moroccoDestination={moroccoDestination}
           onMoroccoDestinationChange={enabled => {
             if (!saveMoroccoPreparationIntent(config.request, enabled)) { setNotice("Destination du dossier non sauvegardée : stockage local indisponible."); return; }
             setMoroccoDestination(enabled);
