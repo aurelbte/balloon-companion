@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import BalloonDocumentsCard from "../../../../components/balloons/BalloonDocumentsCard";
 import { useBalloonRegistry } from "../../../../hooks/useBalloons";
 import { balloonDocumentStorage } from "../../../../lib/balloonDocumentStorage";
+import { balloonMinimumLandingMass } from "../../../../lib/balloonMinimumLandingMass";
 import { calculateBalloonEmptyWeight } from "../../../../lib/balloons";
 import { deleteBalloon } from "../../../../lib/balloonStorage";
 import styles from "../../../More.module.css";
@@ -21,6 +22,7 @@ export default function BalloonDetailPage() {
 
   const editHref = `/more/profile/balloons/${encodeURIComponent(balloon.id)}/edit`;
   const total = calculateBalloonEmptyWeight(balloon);
+  const minimumLandingMass = balloonMinimumLandingMass(balloon);
   const cylinders = balloon.weights.fullCylinders.length;
 
   const removeBalloon = async () => {
@@ -49,7 +51,7 @@ export default function BalloonDetailPage() {
     <section className={styles.balloonSummaryGrid} aria-label="Synthèse du ballon">
       <Link href={editHref} className={styles.balloonSummaryCard}><Tag size={18} /><span><strong>Identité</strong><b>{balloon.manufacturer} {catalogModelDisplayName(balloon.manufacturer, balloon.model)}</b><small>{balloon.volumeM3.toLocaleString("fr-FR")} m³</small></span><ChevronRight size={16} /></Link>
       <Link href={editHref} className={styles.balloonSummaryCard}><Scale size={18} /><span><strong>Masse équipée</strong><b>{total === null ? "— kg" : `${total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} kg`}</b><small>{cylinders} cylindre{cylinders > 1 ? "s" : ""}</small></span><ChevronRight size={16} /></Link>
-      <Link href={editHref} className={styles.balloonSummaryCard}><ShieldCheck size={18} /><span><strong>Limites</strong><b>{balloon.applicableMtowKg === undefined ? "MTOM —" : `MTOM ${balloon.applicableMtowKg.toLocaleString("fr-FR")} kg`}</b><small>{balloon.configurationLimitsConfirmed ? "Confirmées" : "À confirmer"}</small></span><ChevronRight size={16} /></Link>
+      <Link href={editHref} className={styles.balloonSummaryCard}><ShieldCheck size={18} /><span><strong>Limites</strong><b>{balloon.applicableMtowKg === undefined ? "MTOM —" : `MTOM ${balloon.applicableMtowKg.toLocaleString("fr-FR")} kg`}</b><small>MTOM {balloon.configurationLimitsConfirmed ? "confirmée" : "à confirmer"}</small><b>MLM {minimumLandingMass.valueKg === null ? "—" : `${minimumLandingMass.valueKg.toLocaleString("fr-FR")} kg`}</b><small>{minimumLandingMass.notice}</small></span><ChevronRight size={16} /></Link>
       <BalloonDocumentsCard balloonId={balloon.id} />
     </section>
 

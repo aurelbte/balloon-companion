@@ -6,6 +6,7 @@ import { balloonFormSectionDefaults, mtomAfterModelChange, mtomAfterManualChange
 import { balloonMassFormDraft, canSubmitHydratedBalloonForm } from "../../lib/balloonFormHydration";
 import { calculateBalloonWeight, type Balloon, type BalloonCategory, type BalloonInput } from "../../lib/balloons";
 import { applicableMtomCatalogEntry, proposedApplicableMtowKg } from "../../lib/loadPerformance/modelParameters/mtomCatalog";
+import { balloonMlmRules, balloonMlmProposal, balloonMlmModelKey, balloonMlmRuleKey, balloonMlmConfirmationKey, balloonMinimumLandingMass, type BalloonMinimumLandingMass } from "../../lib/balloonMinimumLandingMass";
 import styles from "../../more/More.module.css";
 
 const OTHER = "__other__";
@@ -18,6 +19,8 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
   const sectionDefaults = balloonFormSectionDefaults(balloon?.applicableMtowKg !== undefined, balloon?.configurationLimitsConfirmed === true);
   const knownManufacturer = balloon && catalogManufacturers().includes(balloon.manufacturer);
   const knownModel = balloon && catalogModels(balloon.manufacturer).some(({ model }) => model === balloon.model);
+  const [mlmDraft, setMlmDraft] = useState<BalloonMinimumLandingMass | undefined>(balloon?.minimumLandingMass);
+  const [mlmText, setMlmText] = useState(balloon?.minimumLandingMass ? String(balloon.minimumLandingMass.valueKg) : undefined);
   const [registration, setRegistration] = useState(balloon?.registration ?? "");
   const [manufacturerChoice, setManufacturerChoice] = useState(balloon ? knownManufacturer ? balloon.manufacturer : OTHER : "");
   const [manualManufacturer, setManualManufacturer] = useState(balloon && !knownManufacturer ? balloon.manufacturer : "");
@@ -48,6 +51,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
   useEffect(() => {
     if (!balloon || hydratedBalloonIdRef.current === balloon.id) return;
     setHydrationReady(false);
+    setMlmDraft(balloon.minimumLandingMass); setMlmText(balloon.minimumLandingMass ? String(balloon.minimumLandingMass.valueKg) : undefined);
     setRegistration(balloon.registration);
     setManufacturerChoice(knownManufacturer ? balloon.manufacturer : OTHER);
     setManualManufacturer(knownManufacturer ? "" : balloon.manufacturer);
@@ -85,7 +89,28 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
   const parsedCylinders = cylinders.map(({ id, label, weight }) => ({ id, ...(label.trim() ? { label: label.trim() } : {}), fullWeightKg: parseDecimal(weight) ?? 0 }));
   const weights = { ...(envelopeKg === undefined ? {} : { envelopeKg }), ...(burnerKg === undefined ? {} : { burnerKg }), ...(basketKg === undefined ? {} : { basketKg }), fullCylinders: parsedCylinders };
   const total = calculateBalloonWeight(weights);
-  const valid = Boolean(registration.trim() && manufacturer && model && volumeM3 && volumeM3 > 0 && total !== null);
+  const mlmBalloon: Balloon = { id: balloon?.id ?? "new", registration, manufacturer, model, category, volumeM3: volumeM3 ?? 0, applicableMtowKg, configurationLimitsConfirmed, weights, documents: [] };
+  const mlmModelKey = balloonMlmModelKey(mlmBalloon);
+  const mlmRules = balloonMlmRules(mlmBalloon);
+  const mlmProposal = balloonMlmProposal(mlmBalloon);
+  const mlmRelevant = mlmDraft?.modelKey === mlmModelKey;
+  const mlmRule = mlmRules.find(r => balloonMlmRuleKey(r) === (mlmRelevant ? mlmDraft?.ruleKey : undefined)) ?? mlmProposal;
+  const mlmValueText = mlmRelevant && mlmText !== undefined ? mlmText : mlmProposal ? String(mlmProposal.value) : "";
+  const mlmReference = mlmRelevant ? mlmDraft!.reference : mlmRule ? `${mlmRule.source.file} ; ${mlmRule.source.edition} ; §${mlmRule.source.sections} ; pages ${mlmRule.source.pages.join(", ")}` : "";
+  const mlmRecord: BalloonMinimumLandingMass | undefined = parseDecimal(mlmValueText) !== undefined && parseDecimal(mlmValueText)! > 0 ? {
+    valueKg: parseDecimal(mlmValueText)!, modelKey: mlmModelKey, ruleKey: mlmRule ? balloonMlmRuleKey(mlmRule) : "", reference: mlmReference,
+    confirmed: mlmRelevant && mlmDraft!.confirmed, confirmationKey: mlmRelevant ? mlmDraft!.confirmationKey : undefined,
+  } : undefined;
+  const mlmSignature = mlmRecord ? balloonMlmConfirmationKey(mlmBalloon, mlmRecord) : "";
+  const mlmConfirmed = !!mlmRecord && balloonMinimumLandingMass({ ...mlmBalloon, minimumLandingMass: mlmRecord }).confirmed;
+  useEffect(() => {
+    setMlmDraft(current => current?.confirmed && current.confirmationKey !== mlmSignature ? { ...current, confirmed: false, confirmationKey: undefined } : current);
+  }, [mlmSignature]);
+  const editMlm = (patch: Partial<BalloonMinimumLandingMass>, text = mlmValueText) => {
+    setMlmText(text); setMlmDraft({ valueKg: parseDecimal(text) ?? 0, modelKey: mlmModelKey, ruleKey: mlmRule ? balloonMlmRuleKey(mlmRule) : "", reference: mlmReference, ...patch, confirmed: false });
+  };
+
+  const valid = Boolean(registration.trim() && manufacturer && model && volumeM3 && volumeM3 > 0 && total !== null && (!mlmValueText.trim() || (parseDecimal(mlmValueText) !== undefined && parseDecimal(mlmValueText)! > 0)));
   const chooseManufacturer = (choice: string) => { setManufacturerChoice(choice); setModelChoice(""); setManualModel(""); setVolumeFromCatalog(false); setSelectedMtomOptionId(""); setConfigurationLimitsConfirmed(false); if (mtomFromCatalog) { setApplicableMtow(""); setMtomFromCatalog(false); } if (choice !== OTHER) setManualManufacturer(""); };
   const chooseModel = (choice: string) => {
     setModelChoice(choice);
@@ -114,7 +139,7 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
     setMtomFromCatalog(true);
   };
   const addCylinder = () => { const id = `cylinder-${Date.now()}-${cylinders.length + 1}`; setCylinders((current) => [...current, { id, label: `Cylindre ${current.length + 1}`, weight: "" }]); setFocusCylinderId(id); };
-  return <form className={styles.balloonForm} aria-busy={!hydrationReady} onSubmit={(event) => { event.preventDefault(); if (!canSubmitHydratedBalloonForm(hydrationReady, valid) || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, ...(applicableMtowKg === undefined ? {} : { applicableMtowKg }), configurationLimitsConfirmed, ...(color.trim() ? { color } : {}) }); }}>
+  return <form className={styles.balloonForm} aria-busy={!hydrationReady} onSubmit={(event) => { event.preventDefault(); if (!canSubmitHydratedBalloonForm(hydrationReady, valid) || volumeM3 === undefined) return; onSubmit({ registration, manufacturer, model, category, volumeM3, weights, minimumLandingMass: mlmRecord, ...(applicableMtowKg === undefined ? {} : { applicableMtowKg }), configurationLimitsConfirmed, ...(color.trim() ? { color } : {}) }); }}>
     <details className={styles.formSection} open={identityOpen} onToggle={(event) => setIdentityOpen(event.currentTarget.open)}>
       <summary>Identité <ChevronDown size={17} aria-hidden /></summary>
       <div className={styles.sectionGrid}>
@@ -139,6 +164,10 @@ export default function BalloonForm({ balloon, submitLabel, onSubmit, onCancel, 
       <div className={styles.sectionGrid}>
         {hasSeveralApplicableLimits && <label className={styles.balloonFormWide}><span>Limite applicable</span><select value={selectedMtomOptionId} onChange={(event) => chooseMtomOption(event.target.value)}><option value="">Choisir dans le manuel</option>{mtomCatalogEntry?.options.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.mtomKg.toLocaleString("fr-FR")} kg</option>)}{mtomCatalogEntry?.aircraftSpecificReducedLimitPossible && <option value={OTHER}>RMTOW propre au ballon — saisie manuelle</option>}</select><small className={styles.catalogHint}>Plusieurs limites possibles — vérifier le manuel du ballon.</small></label>}
         <label className={styles.balloonFormWide}><span>MTOM applicable</span><span className={styles.technicalInput}><input inputMode="decimal" value={applicableMtow} onChange={(e) => { const transition = mtomAfterManualChange(decimalInput(e.target.value)); setApplicableMtow(transition.value); setMtomFromCatalog(transition.fromCatalog); setSelectedMtomOptionId(""); setConfigurationLimitsConfirmed(transition.configurationLimitsConfirmed); }} /><i>kg</i></span>{mtomFromCatalog && <small className={styles.catalogHint}>Valeur proposée depuis le catalogue constructeur — modifiable</small>}{manufacturer && model && !mtomCatalogEntry && <small className={styles.catalogHint}>À renseigner depuis le manuel de vol.</small>}<small className={styles.catalogHint}>À confirmer avec le manuel de vol du ballon.</small></label>
+        <label className={styles.balloonFormWide}><span>Masse minimale à l’atterrissage (kg)</span><input inputMode="decimal" value={mlmValueText} onChange={event => editMlm({}, decimalInput(event.target.value))} /><small className={styles.catalogHint}>{mlmProposal ? `Valeur constructeur proposée : ${mlmProposal.value.toLocaleString("fr-FR")} kg — à confirmer pour ce ballon.` : "Minimum constructeur à vérifier. Aucune valeur déduite de la MTOM."}</small></label>
+        {mlmRules.length > 0 && <label className={styles.balloonFormWide}><span>Manuel et variante applicables</span><select value={mlmRule ? balloonMlmRuleKey(mlmRule) : ""} onChange={event => { const rule = mlmRules.find(r => balloonMlmRuleKey(r) === event.target.value); if (rule) editMlm({ ruleKey: balloonMlmRuleKey(rule), reference: `${rule.source.file} ; ${rule.source.edition} ; §${rule.source.sections} ; pages ${rule.source.pages.join(", ")}` }, mlmValueText.trim() ? mlmValueText : String(rule.value)); }}><option value="">Choisir le manuel applicable</option>{mlmRules.map(rule => <option key={balloonMlmRuleKey(rule)} value={balloonMlmRuleKey(rule)}>{rule.variant} — {rule.source.edition} — {rule.value} kg</option>)}</select><small className={styles.catalogHint}>{mlmRule?.conditions.join(" ")}</small></label>}
+        <label className={styles.balloonFormWide}><span>Référence de la vérification MLM</span><input value={mlmReference} onChange={event => editMlm({ reference: event.target.value })} /></label>
+        <label className={styles.balloonFormWide}><span className={styles.confirmationField}><input type="checkbox" checked={mlmConfirmed} disabled={!mlmRecord || !mlmRule || mlmRule.volumeM3 !== volumeM3 || !mlmReference.trim()} onChange={event => { if (mlmRecord) { setMlmText(mlmValueText); setMlmDraft({ ...mlmRecord, confirmed: event.target.checked, confirmationKey: event.target.checked ? mlmSignature : undefined }); } }} /><span>J’ai vérifié cette masse minimale, le modèle, la variante, l’édition et les suppléments applicables à la configuration réelle, en exploitation normale. Aucun supplément ne modifie cette limite.</span></span><small className={styles.catalogHint}>Une modification de configuration ou de référence annule la confirmation. Cette vérification ne valide pas globalement le vol.</small></label>
         <label className={styles.balloonFormWide}><span>Limites vérifiées</span><span className={styles.confirmationField}><input type="checkbox" checked={configurationLimitsConfirmed} onChange={(event) => setConfigurationLimitsConfirmed(event.target.checked)} /><span>J’ai vérifié la MTOM et la configuration de ce ballon avec son manuel de vol.</span></span></label>
       </div>
     </details>

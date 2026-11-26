@@ -1,10 +1,12 @@
+import { balloonMinimumLandingMass } from "./balloonMinimumLandingMass.ts";
 import type { Balloon } from "./balloons.ts";
 import { MOROCCO_LANDING_MASS_RULES, type MoroccoLandingMassRule } from "./moroccoMinimumLandingMassData.ts";
 
 const normalized = (value: unknown) => typeof value === "string" ? value.replace(/[ -]/g, "").toUpperCase() : "";
 
 /** Explicit reviewed applicability, never inferred from a filename, MTOM confirmation or load-method status.
- * Current balloon documents do not store this evidence; absent evidence deliberately keeps the field blank.
+ * Legacy preparation evidence remains supported; reviewed profile metadata takes priority.
+ * An unconfirmed documentary proposal is displayed independently from an applicable limit.
  */
 export type MoroccoLandingMassApplicability = Readonly<{
   manualSha256: string;
@@ -31,6 +33,8 @@ export function moroccoLandingMassConfigurationKey(balloon: Balloon): string {
 
 /** Presentation only: never derive a minimum from MTOM/lift/planned mass or activate a load method. */
 export function moroccoMinimumLandingMass(balloon: Balloon, applicability?: MoroccoLandingMassApplicability) {
+  const profile = balloonMinimumLandingMass(balloon);
+  if (balloon.minimumLandingMass || profile.confirmed) return { kg: profile.confirmed ? profile.valueKg : null, displayKg: profile.valueKg, confirmed: profile.confirmed, source: profile.source, notice: profile.notice };
   const matches = moroccoLandingMassRulesForBalloon(balloon);
   const candidates = matches.filter(p => p.source.sha256 === applicability?.manualSha256 && normalized(p.variant) === normalized(applicability?.variant ?? ""));
   const p = candidates.length === 1 ? candidates[0] : undefined;
@@ -43,6 +47,6 @@ export function moroccoMinimumLandingMass(balloon: Balloon, applicability?: Moro
   if (applicability?.balloonConfigurationKey !== moroccoLandingMassConfigurationKey(balloon) || typeof applicability?.configurationReference !== "string" || !applicability.configurationReference.trim()) missing.push("configuration et référence approuvée non attestées");
   if (applicability?.supplementsReview !== "NO_MLM_OVERRIDE") missing.push("suppléments ou données approuvées non vérifiés ou modifiant la MLM");
   if (applicability?.normalOperation !== true) missing.push("exploitation normale non confirmée");
-  return p && !missing.length ? { kg: p.value, source, notice: `MLM documentée : ${p.value} ${p.unit}. Configuration vérifiée : ${applicability!.configurationReference}. ${p.conditions.join(" ")} Aucun recalcul ni validation du moteur de charge.` }
-    : { kg: null, source, notice: `À vérifier dans le manuel de vol. ${matches.length ? "Une MLM documentaire existe ; " : "Aucune MLM documentée pour ce modèle exact ; "}${missing.join(" ; ")}.` };
+  return p && !missing.length ? { kg: p.value, displayKg: p.value, confirmed: true, source, notice: `MLM documentée : ${p.value} ${p.unit}. Configuration vérifiée : ${applicability!.configurationReference}. ${p.conditions.join(" ")} Aucun recalcul ni validation du moteur de charge.` }
+    : { kg: null, displayKg: profile.valueKg, confirmed: false, source: profile.source ?? source, notice: profile.valueKg !== null ? profile.notice : `À vérifier dans le manuel de vol. ${matches.length ? "Une MLM documentaire existe ; " : "Aucune MLM documentée pour ce modèle exact ; "}${missing.join(" ; ")}.` };
 }

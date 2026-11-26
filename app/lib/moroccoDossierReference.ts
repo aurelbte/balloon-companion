@@ -22,3 +22,17 @@ export function resolveMoroccoDossierReference(preparation: { startedAt: string;
   const offset = new Intl.DateTimeFormat("fr-FR", { timeZone, timeZoneName: "shortOffset" }).formatToParts(new Date(iso)).find(part => part.type === "timeZoneName")!.value.replace(/\u2212/g, "-").replace(/^UTC[+-]0(?::00)?$/, "UTC");
   return { date: reference.date, time: reference.time, iso, timeZone, dateLabel, offset, label: `${dateLabel} ${reference.time} (${timeZone}, ${offset})`, warning: zoneKnown ? null : "Fuseau local du vol non renseigné : référence affichée en UTC." };
 }
+
+/** Freeze this value once when the export dialog opens, never from planned takeoff. */
+export function moroccoDossierOpeningReference(preparation: { launchTimeZone?: string }, now = new Date()): ResolvedMoroccoDossierReference {
+  return resolveMoroccoDossierReference({ startedAt: now.toISOString(), launchTimeZone: preparation.launchTimeZone });
+}
+
+/** Older drafts had no edit flag. Preserve references differing from their old takeoff default. */
+export function moroccoReferenceDraftEdited(draft: (MoroccoDossierReference & { referenceEdited?: boolean }) | null, preparation?: { startedAt: string; launchTimeZone?: string }): boolean {
+  if (!draft) return false;
+  if (draft.referenceEdited !== undefined) return draft.referenceEdited === true;
+  if (!preparation) return true;
+  const oldDefault = resolveMoroccoDossierReference(preparation);
+  return draft.date !== oldDefault.date || draft.time !== oldDefault.time;
+}

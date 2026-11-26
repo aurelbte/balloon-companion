@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
-import { resolveMoroccoDossierReference, type MoroccoDossierReference, type ResolvedMoroccoDossierReference } from "../lib/moroccoDossierReference";
+import { moroccoReferenceDraftEdited, resolveMoroccoDossierReference, type MoroccoDossierReference, type ResolvedMoroccoDossierReference } from "../lib/moroccoDossierReference";
 import { createPortal } from "react-dom";
 import { emptyMoroccoPassengers, moroccoPassengerWeight, prepareMoroccoPassengers, type MoroccoPassenger, type MoroccoPassengerSex } from "../lib/moroccoPassengers";
 
@@ -27,8 +27,10 @@ export default function MoroccoPassengerDialog({ reference, onCancel, onExport, 
   const applicability = dossier && existingProof && moroccoMinimumLandingMass(dossier.balloon, existingProof).kg !== null ? existingProof : undefined;
   const minimum = dossier ? moroccoMinimumLandingMass(dossier.balloon, applicability) : null;
   const [draftSaved, setDraftSaved] = useState(true);
-  const [referenceDate, setReferenceDate] = useState(restored?.date ?? reference.date);
-  const [referenceTime, setReferenceTime] = useState(restored?.time ?? reference.time);
+  const restoredReferenceEdited = moroccoReferenceDraftEdited(restored, dossier);
+  const [referenceEdited, setReferenceEdited] = useState(restoredReferenceEdited);
+  const [referenceDate, setReferenceDate] = useState(restored && restoredReferenceEdited ? restored.date : reference.date);
+  const [referenceTime, setReferenceTime] = useState(restored && restoredReferenceEdited ? restored.time : reference.time);
   const [rows, setRows] = useState(() => restored?.rows ?? emptyMoroccoPassengers());
   const [weightDrafts, setWeightDrafts] = useState<Record<number, string>>(restored?.weightDrafts ?? {});
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +40,8 @@ export default function MoroccoPassengerDialog({ reference, onCancel, onExport, 
     setError(null);
   };
   useEffect(() => {
-    if (draftKey) setDraftSaved(saveMoroccoPassengerDraft(draftKey, { ...restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, minimumLandingMassApplicability: applicability, date: referenceDate, time: referenceTime }));
-  }, [draftKey, restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, applicability, referenceDate, referenceTime]);
+    if (draftKey) setDraftSaved(saveMoroccoPassengerDraft(draftKey, { ...restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, minimumLandingMassApplicability: applicability, date: referenceDate, time: referenceTime, referenceEdited }));
+  }, [draftKey, restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, applicability, referenceDate, referenceTime, referenceEdited]);
   const validateAltitude = () => {
     const value = moroccoProjectedAltitudeAmsl(altitude, "AMSL", loadInput?.launchElevationMslM);
     if (altitudeDraft !== null || value !== loadInput?.plannedMaximumAltitudeMslM) {
@@ -81,8 +83,8 @@ export default function MoroccoPassengerDialog({ reference, onCancel, onExport, 
         <div className="flex items-center justify-between gap-3"><h2 id={titleId} className="text-base font-semibold">Maroc · liste des passagers</h2><button type="button" onClick={onCancel} className="min-h-11 rounded-lg px-3">Annuler</button></div>
         <details className="mt-1 text-xs"><summary className="min-h-11 cursor-pointer py-3">Dossier : {referenceDate} · {referenceTime} ({reference.timeZone})</summary>
         <div className="mt-2 grid grid-cols-2 gap-3">
-          <label className="min-w-0 text-xs">Date du dossier<input type="date" required value={referenceDate} onChange={event => { setReferenceDate(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
-          <label className="min-w-0 text-xs">Heure du dossier<input type="time" required step="60" value={referenceTime} onChange={event => { setReferenceTime(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
+          <label className="min-w-0 text-xs">Date du dossier<input type="date" required value={referenceDate} onChange={event => { setReferenceEdited(true); setReferenceDate(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
+          <label className="min-w-0 text-xs">Heure du dossier<input type="time" required step="60" value={referenceTime} onChange={event => { setReferenceEdited(true); setReferenceTime(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
         </div>
         <p className="mt-1 text-xs">Heure locale : {reference.timeZone}. Les horaires météo et du vol ne changent pas.</p>
         </details>

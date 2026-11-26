@@ -4,7 +4,7 @@ import type { LoadCalculationInput } from "../lib/loadPerformance/types";
 import { moroccoPassengerDraftKey, type MoroccoDossierLoading } from "../lib/moroccoDossierLoading";
 import { moroccoLandingMassConfigurationKey, type MoroccoLandingMassApplicability } from "../lib/moroccoMinimumLandingMass";
 import type { MoroccoPassenger } from "../lib/moroccoPassengers";
-import { resolveMoroccoDossierReference, type MoroccoDossierReference } from "../lib/moroccoDossierReference";
+import { moroccoDossierOpeningReference, type MoroccoDossierReference } from "../lib/moroccoDossierReference";
 import { FileDown, LoaderCircle, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import FlightDossierOperationsSummary from "./FlightDossierOperationsSummary";
@@ -22,6 +22,7 @@ const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
 export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput, moroccoCanonicalAltitudeAmslM, onMoroccoAltitudeChange, moroccoDestination = false, onMoroccoDestinationChange, onCalculateMorocco }: { moroccoLoadInput?: LoadCalculationInput; moroccoCanonicalAltitudeAmslM?: number | null; onMoroccoAltitudeChange?: (altitudeAmslM: number) => void; moroccoDestination?: boolean; onMoroccoDestinationChange?: (enabled: boolean) => void; onCalculateMorocco?: () => void; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
   const [passengerDossier, setPassengerDossier] = useState<Extract<FlightDossierResult, { status: "READY" }> | null>(null);
+  const [openingReference, setOpeningReference] = useState<ReturnType<typeof moroccoDossierOpeningReference> | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportMenuId = useId();
   const exportMenuRoot = useRef<HTMLDivElement>(null);
@@ -110,7 +111,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
     setExportMenuOpen(false);
     try {
       const prepared = onFlightDossier(trace.traceId);
-      if (prepared.status === "READY") { resolveMoroccoDossierReference(prepared.data); setFeedbackOpen(false); setPassengerDossier(prepared); }
+      if (prepared.status === "READY") { setOpeningReference(moroccoDossierOpeningReference(prepared.data)); setFeedbackOpen(false); setPassengerDossier(prepared); }
       else { setDossier(prepared); setFeedbackOpen(true); }
     } catch (error) {
       setDossierWeatherError(`Préparation du listing impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`);
@@ -127,14 +128,14 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
           {onMoroccoDestinationChange && <div className="mt-1 border-t border-white/20 pt-1"><label className="flex min-h-11 items-center gap-2 px-3 text-xs"><input aria-label="Préparation Maroc avec vent d’arrivée" type="checkbox" checked={moroccoDestination} onChange={event => onMoroccoDestinationChange(event.target.checked)} className="size-5 shrink-0" />Préparation Maroc</label><p className="px-3 text-[10px] text-white/70">Vent d’arrivée acquis aux prochains calculs uniquement.</p>{moroccoDestination && onCalculateMorocco && <button type="button" onClick={() => { setExportMenuOpen(false); onCalculateMorocco(); }} className="min-h-11 w-full rounded-lg px-3 text-left text-xs hover:bg-white/10">Calculer météo Maroc</button>}</div>}
         </div>}
       </div>
-      {passengerDossier && <MoroccoPassengerDialog
+      {passengerDossier && openingReference && <MoroccoPassengerDialog
         key={moroccoPassengerDraftKey(passengerDossier.data.traceId, passengerDossier.data.balloon.id, passengerDossier.data.startedAt)}
         draftKey={moroccoPassengerDraftKey(passengerDossier.data.traceId, passengerDossier.data.balloon.id, passengerDossier.data.startedAt)}
         dossier={passengerDossier.data}
         loadInput={moroccoLoadInput}
         canonicalAltitudeAmslM={moroccoCanonicalAltitudeAmslM}
         onAltitudeChange={onMoroccoAltitudeChange}
-        reference={resolveMoroccoDossierReference(passengerDossier.data)}
+        reference={openingReference}
         onCancel={() => setPassengerDossier(null)}
         onExport={(passengers, reference, loading, applicability, altitudeAmslM) => {
           const prepared = onFlightDossier(trace.traceId);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveMoroccoDossierReference as resolve} from './moroccoDossierReference.ts';
+import {moroccoReferenceDraftEdited, moroccoDossierOpeningReference, resolveMoroccoDossierReference as resolve} from './moroccoDossierReference.ts';
 const preparation={startedAt:'2026-11-05T23:30:45Z',launchTimeZone:'Africa/Casablanca'};
 
 test('reference is prefilled in flight local time, independent of host/browser zone and wall clock',()=>{
@@ -18,4 +18,22 @@ test('invalid formats, nonexistent dates/times and ambiguous edited local times 
 });
 test('missing or invalid local timezone is explicitly disclosed, with UTC fallback',()=>{
   for(const launchTimeZone of [undefined,'Not/AZone']){const r=resolve({...preparation,launchTimeZone});assert.equal(r.timeZone,'UTC');assert.ok(r.warning.includes('non renseigné'));assert.equal(r.time,'23:30');}
+});
+
+test('actual opening instant, not tomorrow takeoff; Casablanca uses IANA rules in November and Ramadan',()=>{
+ const flight={startedAt:'2026-11-27T05:30:00Z',launchTimeZone:'Africa/Casablanca'},before=JSON.stringify(flight);
+ const opened=moroccoDossierOpeningReference(flight,new Date('2026-11-26T07:30:58Z'));
+ assert.equal(opened.date,'2026-11-26');assert.equal(opened.time,'08:30');assert.equal(opened.iso,'2026-11-26T07:30:00.000Z');
+ assert.equal(resolve(flight,{date:'2026-11-27',time:'06:30'}).iso,flight.startedAt.replace('Z','.000Z'));
+ assert.equal(moroccoDossierOpeningReference(flight,new Date('2026-03-08T07:30:00Z')).time,'07:30');
+ assert.equal(moroccoDossierOpeningReference(flight,new Date('2026-11-26T23:30:00Z')).date,'2026-11-27');
+ assert.equal(JSON.stringify(flight),before);
+});
+
+test('legacy manual references are migrated without resetting them to the new wall clock',()=>{
+ const oldDefault=resolve(preparation);
+ assert.equal(moroccoReferenceDraftEdited(oldDefault,preparation),false);
+ assert.equal(moroccoReferenceDraftEdited({date:'2026-11-10',time:'08:30'},preparation),true);
+ assert.equal(moroccoReferenceDraftEdited({...oldDefault,referenceEdited:true},preparation),true);
+ assert.equal(moroccoReferenceDraftEdited({date:'2026-11-10',time:'08:30',referenceEdited:false},preparation),false);
 });

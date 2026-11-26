@@ -6,17 +6,18 @@ import ts from 'typescript';
 import * as passengers from '../lib/moroccoPassengers.ts';
 import * as reference from '../lib/moroccoDossierReference.ts';
 import * as loading from '../lib/moroccoDossierLoading.ts';
+import * as minimum from '../lib/moroccoMinimumLandingMass.ts';
 const require=createRequire(import.meta.url);
 function harness(t,options={}){
   const descriptor=Object.getOwnPropertyDescriptor(globalThis,'document');Object.defineProperty(globalThis,'document',{configurable:true,value:{body:{}}});
   t.after(()=>{if(descriptor)Object.defineProperty(globalThis,'document',descriptor);else delete globalThis.document;});
   const slots=[];let cursor=0;const effects=[];const exported=[];const references=[];const loadings=[];let cancelled=0;let shown=0;let tree;
   const react={useId:()=> 'passenger-test',useRef:initial=>slots[cursor++]??=( {current:initial} ),useState(initial){const i=cursor++;slots[i]??={value:typeof initial==='function'?initial():initial};return[slots[i].value,value=>{slots[i].value=typeof value==='function'?value(slots[i].value):value;}];},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((d,j)=>d!==old.deps[j])){slots[i]={deps};effects.push(fn);}}};
-  const mocks={react,'../lib/moroccoDossierLoading':loading,'react-dom':{createPortal:node=>node},'../lib/moroccoPassengers':passengers,'../lib/moroccoDossierReference':reference};
+  const mocks={react,'../lib/moroccoMinimumLandingMass':minimum,'../lib/moroccoDossierLoading':loading,'react-dom':{createPortal:node=>node},'../lib/moroccoPassengers':passengers,'../lib/moroccoDossierReference':reference};
   const js=ts.transpileModule(readFileSync(new URL('./MoroccoPassengerDialog.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,esModuleInterop:true,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const exports={};new Function('require','exports',js)(id=>id in mocks?mocks[id]:require(id),exports);
   const walk=(n,p,out=[])=>{if(n&&typeof n==='object'){if(p(n))out.push(n);for(const c of [n.props?.children].flat(Infinity))walk(c,p,out);}return out;};
-  const render=()=>{cursor=0;tree=exports.default({...options,reference:reference.resolveMoroccoDossierReference({startedAt:'2026-11-05T23:30:00Z',launchTimeZone:'Africa/Casablanca'}),onCancel:()=>cancelled++,onExport:(rows,ref,masses)=>{exported.push(rows);references.push(ref);loadings.push(masses);}});tree.props.ref.current={showModal(){shown++;}};while(effects.length)effects.shift()();return tree;};
+  const render=()=>{cursor=0;tree=exports.default({loadInput:{plannedMaximumAltitudeMslM:1000,launchElevationMslM:0},onAltitudeChange(){},...options,reference:reference.resolveMoroccoDossierReference({startedAt:'2026-11-05T23:30:00Z',launchTimeZone:'Africa/Casablanca'}),onCancel:()=>cancelled++,onExport:(rows,ref,masses)=>{exported.push(rows);references.push(ref);loadings.push(masses);}});tree.props.ref.current={showModal(){shown++;}};while(effects.length)effects.shift()();return tree;};
   const all=p=>walk(tree,p);const row=i=>all(n=>n.type==='fieldset')[i];
   const change=(i,type,value)=>{const field=walk(row(i),n=>n.type===type)[0];field.props.onChange({target:{value}});render();};
   const submit=()=>{all(n=>n.type==='form')[0].props.onSubmit({preventDefault(){}});render();};
@@ -24,9 +25,9 @@ function harness(t,options={}){
 }
 test('thirteen blank slots; category change immediately displays H/F/E weights before export',t=>{
   const h=harness(t);assert.equal(h.shown,1);assert.equal(h.all(n=>n.type==='fieldset').length,13);
-  assert.ok(h.all(n=>n.type==='input'&&n.props.inputMode==='decimal').every(n=>n.props.value===''));
+  assert.ok(h.all(n=>n.type==='input'&&n.props.inputMode==='decimal'&&!n.props['aria-label']).every(n=>n.props.value===''));
   for(const [i,sex]of['H','F','E'].entries())h.change(i,'select',sex);
-  assert.deepEqual(h.all(n=>n.type==='input'&&n.props.inputMode==='decimal').slice(0,3).map(n=>n.props.value),['92','74','35']);
+  assert.deepEqual(h.all(n=>n.type==='input'&&n.props.inputMode==='decimal'&&!n.props['aria-label']).slice(0,3).map(n=>n.props.value),['92','74','35']);
   h.submit();assert.equal(h.exported.length,1);assert.deepEqual(h.exported[0].slice(0,3).map(r=>r.sex),['H','F','E']);
 });
 test('free text is retained and missing sex prevents export with an explicit row error',t=>{
@@ -40,7 +41,7 @@ test('cancellation, including Escape, never starts export; all unused slots may 
   h.submit();assert.equal(h.exported.length,1);assert.ok(h.exported[0].every(r=>r.sex===''));
 });
 
-const weightInput=h=>h.all(n=>n.type==='input'&&n.props.inputMode==='decimal')[0];
+const weightInput=h=>h.all(n=>n.type==='input'&&n.props.inputMode==='decimal'&&!n.props['aria-label'])[0];
 const editWeight=(h,value)=>{weightInput(h).props.onChange({target:{value}});h.render();};
 test('custom weight survives sex changes and reaches export unchanged; Auto explicitly restores category defaults',t=>{
   const h=harness(t);h.change(0,'select','H');editWeight(h,'81,5');

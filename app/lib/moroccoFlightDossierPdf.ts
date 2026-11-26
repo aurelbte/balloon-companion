@@ -90,11 +90,11 @@ class DossierLayout {
     for (const line of lines) { this.ensure(22); this.page.drawText(line, { x: MARGIN, y: this.y - 15, size: 15, font: this.bold, color: ACCENT }); this.y -= 22; }
     this.y -= 6;
   }
-  paragraph(value: string, options: { bold?: boolean; size?: number; muted?: boolean } = {}) {
+  paragraph(value: string, options: { bold?: boolean; size?: number; muted?: boolean; color?: ReturnType<typeof rgb> } = {}) {
     const font = options.bold ? this.bold : this.font, size = options.size ?? 9, leading = size * 1.25;
     for (const line of wrapDossierText(value, font, size, WIDTH)) {
       this.ensure(leading);
-      this.page.drawText(line, { x: MARGIN, y: this.y - size, size, font, color: options.muted ? MUTED : INK });
+      this.page.drawText(line, { x: MARGIN, y: this.y - size, size, font, color: options.color ?? (options.muted ? MUTED : INK) });
       this.y -= leading;
     }
     this.y -= 3;
@@ -109,7 +109,7 @@ class DossierLayout {
     if (name === "vol-observations") this.page.drawLine({ start: { x: MARGIN, y: this.y - height }, end: { x: MARGIN + WIDTH, y: this.y - height }, thickness: .35, color: rgb(.82, .87, .89) });
     this.y -= height + 3;
   }
-  table(headers: string[], widths: number[], rows: string[][], editable: (string | null)[][] = []) {
+  table(headers: string[], widths: number[], rows: string[][], editable: (string | null)[][] = [], valueColor?: ReturnType<typeof rgb>) {
     const size = 8.2, leading = 10.5, padding = 3;
     const headerLines = headers.map((value, index) => wrapDossierText(value, this.bold, size, widths[index] - padding * 2));
     const headerHeight = Math.max(...headerLines.map((lines) => lines.length)) * leading + padding * 2;
@@ -138,7 +138,7 @@ class DossierLayout {
               name: offset ? `${name}-suite-${offset}` : name, label: headers[index] + " / " + row[0],
               value: offset || count < length ? lines.slice(offset, offset + count).join("\n") : safeText(row[index] || "", this.font),
               x: x + padding, y: this.y - height + 1, width: widths[index] - padding * 2, height: height - 2,
-              size, multiline: count > 1,
+              size, multiline: count > 1, color: valueColor,
             });
           } else lines.slice(offset, offset + count).forEach((line, lineIndex) => this.page.drawText(line, { x: x + padding, y: this.y - padding - size - lineIndex * leading, size, font: this.font, color: INK }));
           x += widths[index];
@@ -368,12 +368,14 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   layout.table(["Masses et limites initiales / corrections", "Valeur (kg)"], [255, WIDTH - 255], [
     ["Ballon équipé", number(equipmentMass)], [input.loading ? "Pilote + passagers + équipement additionnel" : "Occupants", number(occupantsMass)],
     ["MTOM de la configuration", number(dossier.balloon.applicableMtowKg)],
-    ["Masse minimale à l’atterrissage (kg)", minimumLanding.kg === null ? "" : number(minimumLanding.kg)],
+    ["Masse minimale à l’atterrissage (kg)", minimumLanding.displayKg === null ? "" : number(minimumLanding.displayKg)],
   ], [[null, "charge-ballon-equipe"], [null, "charge-occupants"], [null, "charge-mtom"], [null, "charge-masse-minimale-atterrissage"]]);
-  if (minimumLanding.kg === null) layout.paragraph("Minimum constructeur à vérifier dans le manuel de vol.", { size: 8, muted: true });
-  else if (minimumLanding.source) layout.paragraph(`MLM applicable : ${minimumLanding.source}.`, { size: 8, muted: true });
+  layout.paragraph(minimumLanding.notice, { size: 8, muted: true });
+  if (minimumLanding.source) layout.paragraph(`MLM ${minimumLanding.confirmed ? "applicable" : "indicative"} : ${minimumLanding.source}.`, { size: 8, muted: true });
   if (landing?.marginKg !== null && landing?.marginKg !== undefined) {
-    layout.table(["Marge estimée par rapport à la MLM (kg)", "Valeur"], [255, WIDTH - 255], [["Atterrissage estimé − minimum constructeur", number(landing.marginKg)]], [[null, "charge-marge-mlm"]]);
+    layout.table(["Marge estimée par rapport à la MLM (kg)", "Valeur"], [255, WIDTH - 255], [["Atterrissage estimé − minimum constructeur", number(landing.marginKg)]], [[null, "charge-marge-mlm"]], minimumLanding.confirmed ? landing.marginKg < 0 ? rgb(.75, .08, .08) : rgb(.05, .45, .18) : MUTED);
+    if (!minimumLanding.confirmed) layout.paragraph("Comparaison indicative — valeur minimale non confirmée.", { size: 8, muted: true });
+    else if (landing.marginKg < 0) layout.paragraph("Masse minimale à l’atterrissage non respectée", { bold: true, size: 9, color: rgb(.75, .08, .08) });
     layout.paragraph("Comparaison de masses uniquement : ne valide ni l’autonomie carburant ni la sécurité globale du vol.", { size: 8, muted: true });
   }
   if (input.loading && input.loadInput?.plannedMaximumAltitudeMslM !== undefined) layout.paragraph(`Altitude projetée : ${number(input.loadInput.plannedMaximumAltitudeMslM)} m AMSL.`, { size: 8, muted: true });

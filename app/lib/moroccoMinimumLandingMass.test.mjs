@@ -19,8 +19,8 @@ test('documentary Z275 MLM is not promoted to a validated aircraft limit or deri
   const balloon = { ...dossier.balloon, model: 'Z275', volumeM3: 7787 };
   const value = moroccoMinimumLandingMass(balloon);
   assert.equal(value.kg, null);
-  assert.match(value.notice, /À vérifier dans le manuel de vol/);
-  assert.match(value.notice, /MLM documentaire/);
+  assert.equal(value.displayKg,1247);
+  assert.match(value.notice, /Valeur constructeur à confirmer/);
   assert.match(value.source, /2-7/);
   assert.equal(moroccoMinimumLandingMass({ ...balloon, model: 'UNKNOWN', applicableMtowKg: 9999 }).kg, null);
 });
@@ -78,11 +78,11 @@ test('available local manuals retain their audited byte fingerprints', () => {
   }
 });
 
-test('blank minimum landing mass is editable and survives save/reopen without changing other masses or checklist', async () => {
+test('unconfirmed documentary minimum landing mass is editable and survives save/reopen without changing other masses or checklist', async () => {
   const input = await dossierPdfFixture(), before = JSON.stringify(input);
   const pdf = await PDFDocument.load(await createMoroccoFlightDossierPdf(input, { error: 'Carte hors ligne' }));
   const form = pdf.getForm(), field = form.getTextField('charge-masse-minimale-atterrissage');
-  assert.equal(field.getText() ?? '', ''); assert.equal(field.isReadOnly(), false);
+  assert.equal(field.getText() ?? '', '476'); assert.equal(field.isReadOnly(), false);
   assert.ok(field.acroField.getWidgets()[0].getAppearances().normal);
   const mtom = form.getTextField('charge-mtom').getText();
   field.setText('1 247');

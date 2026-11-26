@@ -51,7 +51,7 @@ test('one takeoff total uses profile gross masses; legacy PAX fuel and theoretic
   const input=await fixture(), prepared=loadingModule.applyMoroccoDossierLoading(input);
   assert.equal(prepared.dossier.operations.load.plannedMassKg,595); // 450 equipped + 80 PAX + 60 + 5; propane not added twice.
   const landing=loadingModule.calculateMoroccoLandingMass(prepared);
-  assert.equal(landing.landingKg,525);assert.equal(landing.minimum.kg,null);assert.equal(landing.marginKg,null);
+  assert.equal(landing.landingKg,525);assert.equal(landing.minimum.kg,null);assert.equal(landing.marginKg,525-landing.minimum.displayKg);
   assert.equal(landing.notice,'Autonomie carburant non vérifiée');
   assert.deepEqual(landing.fuelAutonomy,{status:'UNVERIFIED',availableKg:null});assert.equal(landing.propaneOnBoardKg,null);
   assert.equal(loadingModule.applyMoroccoDossierLoading(prepared).dossier.operations.load.plannedMassKg,595);
@@ -240,7 +240,7 @@ test('Morocco PDF stores the estimated landing mass, validated MLM and independe
   const reopened=await PDFDocument.load(await pdf.save());assert.equal(reopened.getForm().getTextField('charge-gaz-consomme-prevu').getText(),'80');assert.equal(reopened.getForm().getTextField('charge-masse-atterrissage-estimee').getText(),'525');
   assert.equal(reopened.getForm().getFields().filter(f=>f instanceof PDFCheckBox).length,39);
   const missing=await PDFDocument.load(await createMoroccoFlightDossierPdf({...input,minimumLandingMassApplicability:undefined},{error:'offline'}));
-  assert.equal(missing.getForm().getTextField('charge-masse-minimale-atterrissage').getText()??'','');assert.throws(()=>missing.getForm().getTextField('charge-marge-mlm'));
+  assert.equal(missing.getForm().getTextField('charge-masse-minimale-atterrissage').getText(),'476');assert.equal(missing.getForm().getTextField('charge-marge-mlm').getText(),'49');
   assert.throws(()=>form.getTextField('charge-propane-embarque'));
   const zero=await PDFDocument.load(await createMoroccoFlightDossierPdf({...input,loading:{...input.loading,expectedGasConsumptionKg:0}},{error:'offline'}));
   assert.equal(zero.getForm().getTextField('charge-masse-atterrissage-estimee').getText(),'595');assert.equal(zero.getForm().getTextField('charge-marge-mlm').getText(),'119');
@@ -250,4 +250,22 @@ test('Morocco PDF stores the estimated landing mass, validated MLM and independe
   const theoretical=await PDFDocument.load(await createMoroccoFlightDossierPdf({...input,takeoffMassBasis:{kind:'THEORETICAL',configurationKey:minimumModule.moroccoLandingMassConfigurationKey(input.dossier.balloon)}},{error:'offline'}));
   assert.equal(theoretical.getForm().getTextField('charge-masse-atterrissage-estimee').getText(),'indisponible');
   assert.throws(()=>theoretical.getForm().getTextField('charge-marge-mlm'));
+});
+
+
+test('opening clock defaults to now; manual dossier clock survives remount and automatic clock refreshes independently of planned takeoff',async()=>{
+  const input=await fixture(), memory=new Map(), oldStorage=globalThis.sessionStorage, oldDocument=globalThis.document;
+  globalThis.sessionStorage={getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v)};globalThis.document={body:{}};
+  try {
+    const props={dossier:input.dossier,loadInput:input.loadInput,draftKey:'opening-clock',reference:referenceModule.moroccoDossierOpeningReference({launchTimeZone:'Africa/Casablanca'},new Date('2026-11-26T07:30:00Z')),onCancel(){},onExport(){}};
+    let render=harness(props), tree=render();
+    const byType=type=>nodes(tree).find(n=>n.type==='input'&&n.props.type===type);
+    assert.equal(byType('date').props.value,'2026-11-26');assert.equal(byType('time').props.value,'08:30');
+    props.reference=referenceModule.moroccoDossierOpeningReference({launchTimeZone:'Africa/Casablanca'},new Date('2026-11-26T08:45:00Z'));
+    render=harness(props);tree=render();assert.equal(byType('time').props.value,'09:45');
+    byType('date').props.onChange({target:{value:'2026-11-25'}});tree=render();byType('time').props.onChange({target:{value:'19:23'}});tree=render();
+    props.reference=referenceModule.moroccoDossierOpeningReference({launchTimeZone:'Africa/Casablanca'},new Date('2026-11-26T09:00:00Z'));
+    tree=harness(props)();assert.equal(byType('time').props.value,'19:23');assert.equal(byType('date').props.value,'2026-11-25');
+    assert.equal(referenceModule.resolveMoroccoDossierReference(input.dossier,{date:'2026-11-25',time:'19:23'}).iso,'2026-11-25T18:23:00.000Z');
+  } finally {globalThis.sessionStorage=oldStorage;globalThis.document=oldDocument;}
 });

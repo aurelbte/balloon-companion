@@ -176,7 +176,7 @@ export class BrowserCloudSyncPayloadProvider {
         applicable_mtom_kg: balloon.applicableMtowKg ?? null,
         configuration_limits_confirmed: balloon.configurationLimitsConfirmed,
         color: balloon.color ?? null,
-        weights: balloon.weights,
+        weights: { ...balloon.weights, minimumLandingMass: balloon.minimumLandingMass ?? null },
         is_favorite: balloon.isFavorite === true,
         last_used_at: balloon.lastUsedAt ?? null,
       } : {} };

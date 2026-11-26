@@ -1,3 +1,4 @@
+import { retainValidBalloonMlm, parseBalloonMinimumLandingMass } from "./balloonMinimumLandingMass.ts";
 import { writeBusinessValueWithSync } from "./durableSyncIntent.ts";
 import { assertUniqueBalloonRegistration, normalizeBalloonRegistration, createBalloon, REGISTERED_BALLOONS, updateBalloon, type Balloon, type BalloonInput } from "./balloons.ts";
 import { getRuntimeDataScope, readScopedBusinessValue, scopedBusinessStorageKey, writeScopedBusinessValue } from "./auth/dataScopeRuntime.ts";
@@ -32,7 +33,7 @@ function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Ballo
   const burnerKg = numberOrUndefined(legacyWeights.burnerKg) ?? numberOrUndefined(legacyWeights.burnerWeightKg) ?? numberOrUndefined(item.burnerWeightKg);
   const basketKg = numberOrUndefined(legacyWeights.basketKg) ?? numberOrUndefined(legacyWeights.basketWeightKg) ?? numberOrUndefined(item.basketWeightKg);
   const legacyWeightRecovery = Object.fromEntries(Object.entries({ envelopeWeightKg: legacyWeights.envelopeWeightKg ?? item.envelopeWeightKg, burnerWeightKg: legacyWeights.burnerWeightKg ?? item.burnerWeightKg, basketWeightKg: legacyWeights.basketWeightKg ?? item.basketWeightKg, cylinders: legacyWeights.cylinders ?? item.cylinders }).filter(([, entry]) => entry !== undefined));
-  return {
+  return retainValidBalloonMlm({
     id: item.id,
     registration: item.registration,
     manufacturer: item.manufacturer,
@@ -41,6 +42,7 @@ function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Ballo
     volumeM3: numberOrUndefined(item.volumeM3) ?? reference?.volumeM3 ?? 0,
     ...(numberOrUndefined(item.applicableMtowKg) === undefined ? {} : { applicableMtowKg: numberOrUndefined(item.applicableMtowKg) }),
     configurationLimitsConfirmed: allowStoredConfirmation && item.configurationLimitsConfirmed === true,
+    minimumLandingMass: parseBalloonMinimumLandingMass(item.minimumLandingMass),
     ...(typeof item.color === "string" && item.color ? { color: item.color } : {}),
     ...(item.isFavorite ? { isFavorite: true } : {}),
     ...(typeof item.lastUsedAt === "string" && Number.isFinite(Date.parse(item.lastUsedAt)) ? { lastUsedAt: item.lastUsedAt } : {}),
@@ -52,7 +54,7 @@ function migrateBalloon(value: unknown, allowStoredConfirmation: boolean): Ballo
       ...(basketKg === undefined ? {} : { basketKg }),
       fullCylinders: cylinders,
     },
-  };
+  });
 }
 export function migrateBalloonRegistry(value: unknown): BalloonRegistry { if (!value || typeof value !== "object") return createEmptyBalloonRegistry(); const stored = value as { version?: unknown; balloons?: unknown; activeBalloonId?: unknown }; if (!Array.isArray(stored.balloons)) return createEmptyBalloonRegistry(); const currentVersion = stored.version === BALLOON_REGISTRY_VERSION; const balloons = stored.balloons.map((item) => migrateBalloon(item, currentVersion)).filter((item): item is Balloon => item !== null); const storedActive = typeof stored.activeBalloonId === "string" && balloons.some(({ id }) => id === stored.activeBalloonId) ? stored.activeBalloonId : null; if (currentVersion) return { version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId: storedActive }; const legacyActive = storedActive ?? balloons.find(({ isFavorite }) => isFavorite)?.id ?? null; return { version: BALLOON_REGISTRY_VERSION, balloons, activeBalloonId: legacyActive }; }
 export function addBalloonToRegistry(registry: BalloonRegistry, input: BalloonInput): { registry: BalloonRegistry; balloon: Balloon } { assertUniqueBalloonRegistration(registry.balloons, normalizeBalloonRegistration(input.registration)); const balloon = createBalloon(input); const balloons = [...registry.balloons, balloon]; return { balloon, registry: { ...registry, balloons, activeBalloonId: registry.activeBalloonId ?? balloon.id } }; }
@@ -70,7 +72,7 @@ export function applyBalloonFromCloudWithoutEnqueue(scope: `USER:${string}`, clo
   let registry = createEmptyBalloonRegistry();
   try { registry = migrateBalloonRegistry(JSON.parse(storage.getItem(key) ?? "null")); } catch {}
   const current = registry.balloons.find(({ id }) => id === cloud.id);
-  const cloudBalloon = {
+  const cloudBalloon = retainValidBalloonMlm({
     id: cloud.id,
     registration: cloud.registration,
     manufacturer: cloud.manufacturer,
@@ -79,13 +81,14 @@ export function applyBalloonFromCloudWithoutEnqueue(scope: `USER:${string}`, clo
     volumeM3: cloud.volumeM3,
     ...(cloud.applicableMtowKg === undefined ? {} : { applicableMtowKg: cloud.applicableMtowKg }),
     configurationLimitsConfirmed: cloud.configurationLimitsConfirmed,
+    minimumLandingMass: cloud.minimumLandingMass,
     ...(cloud.color ? { color: cloud.color } : {}),
     ...(cloud.isFavorite ? { isFavorite: true } : {}),
     ...(cloud.lastUsedAt ? { lastUsedAt: cloud.lastUsedAt } : {}),
     documents: current?.documents ?? [],
     ...(current?.legacyWeightRecovery ? { legacyWeightRecovery: current.legacyWeightRecovery } : {}),
     weights: cloud.weights,
-  } satisfies Balloon;
+  } satisfies Balloon);
   const balloons = cloud.deletedAt
     ? registry.balloons.filter(({ id }) => id !== cloud.id)
     : current

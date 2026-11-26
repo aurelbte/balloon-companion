@@ -98,11 +98,11 @@ export function calculateMoroccoLandingMass(input: MoroccoDossierPdfInput) {
   // Subtract the pilot's consumption estimate once from the existing gross takeoff mass.
   // This is a mass projection, not evidence that enough net fuel is available.
   const landingKg = takeoffKg - loading.expectedGasConsumptionKg;
-  return { takeoffKg, landingKg, propaneOnBoardKg: null, minimum, marginKg: minimum.kg === null ? null : landingKg - minimum.kg, fuelAutonomy,
+  return { takeoffKg, landingKg, propaneOnBoardKg: null, minimum, marginKg: minimum.displayKg === null ? null : landingKg - minimum.displayKg, fuelAutonomy,
     notice: "Autonomie carburant non vérifiée" };
 }
 
-export type MoroccoPassengerDraft = { rows: MoroccoPassenger[]; weightDrafts: Record<number, string>; pilot: string; equipment: string; date: string; time: string;
+export type MoroccoPassengerDraft = { rows: MoroccoPassenger[]; weightDrafts: Record<number, string>; pilot: string; equipment: string; date: string; time: string; referenceEdited?: boolean;
   gas?: string; propane?: string; fuelConfirmed?: boolean; configurationKey?: string;
   mlmManualSha256?: string; mlmConfigurationReference?: string; minimumLandingMassApplicability?: MoroccoLandingMassApplicability };
 export const moroccoPassengerDraftKey = (traceId: string, balloonId: string, startedAt: string) => `bc:morocco-passengers:v1:${JSON.stringify([traceId, balloonId, startedAt])}`;

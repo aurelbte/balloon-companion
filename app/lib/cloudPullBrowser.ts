@@ -1,3 +1,4 @@
+import { parseBalloonMinimumLandingMass } from "./balloonMinimumLandingMass.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRuntimeDataScope, scopedBusinessStorageKey } from "./auth/dataScopeRuntime.ts";
 import { BrowserCloudSyncIssueRepository } from "./cloudSyncBrowser.ts";
@@ -176,6 +177,7 @@ export function parseBalloonCloudRow(value: unknown): BalloonCloudRow {
     volumeM3: row.volume_m3,
     ...(finiteOptionalNumber(row.applicable_mtom_kg) === undefined ? {} : { applicableMtowKg: finiteOptionalNumber(row.applicable_mtom_kg) }),
     configurationLimitsConfirmed: row.configuration_limits_confirmed,
+    minimumLandingMass: parseBalloonMinimumLandingMass(weights.minimumLandingMass),
     ...(typeof row.color === "string" && row.color ? { color: row.color } : {}),
     ...(row.is_favorite ? { isFavorite: true } : {}),
     ...(typeof row.last_used_at === "string" ? { lastUsedAt: row.last_used_at } : {}),
