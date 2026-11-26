@@ -60,7 +60,7 @@ test('editable local dossier date and time are prefilled from preparation and fo
   const h=harness(t);const field=type=>h.all(n=>n.type==='input'&&n.props.type===type)[0];
   assert.equal(field('date').props.value,'2026-11-06');assert.equal(field('time').props.value,'00:30');
   field('date').props.onChange({target:{value:'2026-11-12'}});h.render();field('time').props.onChange({target:{value:'08:15'}});h.render();h.submit();
-  assert.deepEqual(h.references[0],{date:'2026-11-12',time:'08:15'});
+  assert.deepEqual(h.references[0],{date:'2026-11-12',time:'08:15',timeZone:'Africa/Casablanca'});
 });
 test('invalid dossier date or time blocks export without changing passenger entries',t=>{
   const h=harness(t);h.change(0,'select','F');editWeight(h,'81,5');

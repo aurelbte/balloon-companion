@@ -102,7 +102,7 @@ export function calculateMoroccoLandingMass(input: MoroccoDossierPdfInput) {
     notice: "Autonomie carburant non vérifiée" };
 }
 
-export type MoroccoPassengerDraft = { rows: MoroccoPassenger[]; weightDrafts: Record<number, string>; pilot: string; equipment: string; date: string; time: string; referenceEdited?: boolean;
+export type MoroccoPassengerDraft = { rows: MoroccoPassenger[]; weightDrafts: Record<number, string>; pilot: string; equipment: string; date: string; time: string; referenceEdited?: boolean; referenceTimeZone?: string;
   gas?: string; propane?: string; fuelConfirmed?: boolean; configurationKey?: string;
   mlmManualSha256?: string; mlmConfigurationReference?: string; minimumLandingMassApplicability?: MoroccoLandingMassApplicability };
 export const moroccoPassengerDraftKey = (traceId: string, balloonId: string, startedAt: string) => `bc:morocco-passengers:v1:${JSON.stringify([traceId, balloonId, startedAt])}`;

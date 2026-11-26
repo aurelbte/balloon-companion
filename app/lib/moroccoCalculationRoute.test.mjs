@@ -7,7 +7,7 @@ import * as adapter from './weather/openMeteo/adapter.ts';
 import * as parser from './weather/openMeteo/parser.ts';
 import * as integration from './trajectory/integration.ts';
 import * as arrival from './moroccoArrivalWeather.ts';
-import { moroccoCalculationAcquisitionOptions } from './moroccoPreparationIntent.ts';
+import * as aviationCapture from './moroccoCalculationAviation.ts';
 
 function route({ groundFails = false } = {}) {
   const requests = [];
@@ -24,16 +24,17 @@ function route({ groundFails = false } = {}) {
     '../../../lib/weather/openMeteo/parser': parser,
     '../../../lib/trajectory/integration': integration,
     '../../../lib/moroccoArrivalWeather': arrival,
+    '../../../lib/moroccoCalculationAviation': { captureCalculationAviation: result => aviationCapture.captureCalculationAviation(result,{stations:async()=>[],aviation:async()=>({data:null,error:null})}) },
     '../../../lib/weather/openMeteo/client': { getOpenMeteoServerConfig: () => ({ tier: 'commercial', apiKey: 'test-key-must-not-be-returned' }), createOpenMeteoClient: () => client },
   };
   const js = ts.transpileModule(readFileSync(new URL('../api/trajectory/project/route.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports = {}; new Function('require', 'exports', js)(id => { if (!(id in mocks)) throw new Error(`unexpected dependency ${id}`); return mocks[id]; }, exports);
-  return { POST: exports.POST, requests, raw };
+  return { POST: exports.POST, requests, raw, client };
 }
 const input = { version: 2, launchSite: { name: 'Marrakech', latitude: 31.5, longitude: -8 }, launchDateTimeIso: '2026-11-05T10:00:00Z', launchTimeZone: 'Africa/Casablanca', durationSeconds: 3600, weatherModel: 'ecmwf_ifs025', altitudesAmslM: [300,600], primaryAltitudeAmslM: 600, climbRateMps: 2, descentRateMps: 2 };
 
-test('opt-in Morocco evidence copies the one weather body actually consumed; all computed trajectories remain identical', async () => {
-  const { POST, requests, raw } = route();
+test('normal calculation automatically copies the exact consumed weather and acquires arrivals; motor output remains identical', async () => {
+  const { POST, requests, raw, client } = route();
   const run = async archiveMoroccoWeather => {
     requests.length = 0;
     const response = await POST(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ ...input, archiveMoroccoWeather, acquireMoroccoArrivalWeather: archiveMoroccoWeather }) }));
@@ -41,11 +42,10 @@ test('opt-in Morocco evidence copies the one weather body actually consumed; all
     assert.equal(response.status, 200, JSON.stringify(body));
     assert.deepEqual(requests.slice(0, 2), ['elevation','wind']);
     assert.equal(requests.filter(item => item === 'wind').length, 1); // Calculation body is never reloaded.
-    if (!archiveMoroccoWeather) assert.equal(requests.length, 2);
     return body;
   };
-  const baseline = await run(false), archived = await run(true);
-  assert.equal(baseline.moroccoCalculation, undefined);
+  const baseline = (await orchestration.orchestrateMultiAltitudeProjection(input,{ getTerrainAltitude:async()=>47, createWindProvider:altitude=>new adapter.OpenMeteoWindProvider(client,altitude) })).body;
+  const archived = await run(false);
   assert.deepEqual(archived.layerProjections, baseline.layerProjections);
   assert.deepEqual(archived.flightProfileProjection, baseline.flightProfileProjection);
   assert.deepEqual(archived.windProfile, baseline.windProfile);
@@ -69,25 +69,31 @@ test('opt-in Morocco evidence copies the one weather body actually consumed; all
 
 test('arrival acquisition failure preserves successful trajectories and departure evidence without leaking provider secrets', async () => {
   const { POST } = route({ groundFails: true });
-  const body = await (await POST(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ ...input, ...moroccoCalculationAcquisitionOptions(true) }) }))).json();
+  const body = await (await POST(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ ...input }) }))).json();
   assert.equal(body.ok, true); assert.ok(body.layerProjections.length);
   assert.equal(body.moroccoCalculation.rawForecasts.length, 1);
   assert.match(body.moroccoCalculation.notices.join(' '), /acquisition échouée/);
   assert.doesNotMatch(JSON.stringify(body), /private|apikey|provider.invalid/);
 });
 
-test('normal /map calculation preserves departure capture with zero additional arrival requests; explicit Morocco /map opts in', async () => {
-  const { POST, requests } = route();
-  const run = async enabled => {
-    requests.length = 0;
-    const body = await (await POST(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ ...input, ...moroccoCalculationAcquisitionOptions(enabled) }) }))).json();
-    assert.equal(body.ok, true); return body;
-  };
-  const normal = await run(false);
-  assert.deepEqual(requests, ['elevation','wind']);
-  assert.equal(normal.moroccoCalculation.rawForecasts.length, 1);
-  const morocco = await run(true);
-  assert.ok(requests.some(r => typeof r === 'object'));
-  assert.ok(morocco.moroccoCalculation.rawForecasts.some(r => r.kind === 'ground'));
-  assert.deepEqual(morocco.layerProjections, normal.layerProjections);
+test('ordinary request needs no destination flag and legacy opt-out flags do not disable evidence',async()=>{
+ const {POST,requests}=route();
+ for(const payload of [input,{...input,archiveMoroccoWeather:false,acquireMoroccoArrivalWeather:false}]) {
+  requests.length=0;
+  const body=await(await POST(new Request('http://localhost',{method:'POST',body:JSON.stringify(payload)}))).json();
+  assert.equal(body.ok,true);assert.equal(requests.filter(r=>r==='wind').length,1);
+  assert.ok(body.moroccoCalculation.rawForecasts.some(r=>r.kind==='ground'));assert.ok(body.moroccoCalculation.aviation.length);
+ }
+});
+
+test('METAR/TAF acquisition reuses existing station services and original emissions, with station requests deduplicated',async()=>{
+ const {POST}=route();const body=await(await POST(new Request('http://localhost',{method:'POST',body:JSON.stringify(input)}))).json();
+ let calls=0,stationCalls=0;
+ const station={icao:'GMMX',name:'Marrakech',latitude:31.6,longitude:-8,products:['METAR','TAF']};
+ const data={airport:'GMMX',metarRaw:'GMMX METAR fixture',tafRaw:'GMMX TAF fixture',metarIssuedAt:'2026-11-05T08:00:00Z',tafIssuedAt:'2026-11-05T06:00:00Z',sourceUpdatedAt:new Date().toISOString(),status:'AVAILABLE'};
+ const captured=await aviationCapture.captureCalculationAviation(body,{stations:async()=>{stationCalls++;return[station];},aviation:async()=>{calls++;return{data,error:null};}});
+ assert.equal(stationCalls,1);assert.equal(calls,1);assert.ok(captured.length);
+ assert.equal(captured[0].data.departure.metar.result.data.metarRaw,data.metarRaw);
+ assert.equal(captured[0].data.landing.taf.result.data.tafIssuedAt,data.tafIssuedAt);
+ assert.equal(captured[0].data.landing.taf.result.data.sourceUpdatedAt,data.sourceUpdatedAt);
 });

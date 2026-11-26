@@ -4,7 +4,6 @@ import { PowerLineInformation } from "../components/PowerLineInformation";
 import type { PreparationPowerLineState } from "../lib/preparationPowerLines";
 
 import { archiveMoroccoCalculation, moroccoCalculationIdentity } from "../lib/moroccoCalculationArchive";
-import { readMoroccoPreparationIntent, saveMoroccoPreparationIntent, moroccoCalculationAcquisitionOptions } from "../lib/moroccoPreparationIntent";
 import T150CapacityEstimate from "../components/prepare/T150CapacityEstimate";
 import { estimateUltramagicRemainingCapacity } from "../lib/t150CapacityEstimate";
 import { getRuntimeDataScope, getRuntimeDataScopeGeneration } from "../lib/auth/dataScopeRuntime";
@@ -105,7 +104,6 @@ export default function MapPage() {
   const [config, setConfig] = useState<StoredTrajectoryAnalysisRequest | null>(
     null,
   );
-  const [moroccoDestination, setMoroccoDestination] = useState(false);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedAltitudes, setSelectedAltitudes] = useState<AltitudeOption[]>([]);
   const [layers, setLayers] = useState<AnalysisLayerSettings>(
@@ -183,7 +181,6 @@ export default function MapPage() {
       const preparation = loadPreparationDraft();
       const stored = loadMapAnalysisRequest();
       setConfig(stored);
-      setMoroccoDestination(stored ? readMoroccoPreparationIntent(stored.request) : false);
       setSelectedBalloonId(preparation?.balloonName ?? "");
       setPreparation(preparation);
       setMaximumAltitudeInput(
@@ -336,7 +333,6 @@ export default function MapPage() {
       return;
     }
     const scope = getRuntimeDataScope(), generation = getRuntimeDataScopeGeneration();
-    const acquisitionOptions = moroccoCalculationAcquisitionOptions(readMoroccoPreparationIntent(config.request));
     const controller = new AbortController();
     requestAbortRef.current?.abort();
     requestAbortRef.current = controller;
@@ -366,7 +362,7 @@ export default function MapPage() {
             const response = await fetch("/api/trajectory/project", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ ...request, ...acquisitionOptions }),
+              body: JSON.stringify(request),
               signal: controller.signal,
             });
             const payload =
@@ -995,17 +991,8 @@ export default function MapPage() {
           <span>Utiliser cette analyse en Vol</span>
           <span className="flex-1" />
         </button>
-        {dossierTrace && <FlightDossierAction moroccoLoadInput={loadInput} moroccoCanonicalAltitudeAmslM={preparation?.targetAltitudeAmslM} onMoroccoAltitudeChange={value => persistMaximumAltitude(String(value), true)} moroccoDestination={moroccoDestination}
-          onMoroccoDestinationChange={enabled => {
-            if (!saveMoroccoPreparationIntent(config.request, enabled)) { setNotice("Destination du dossier non sauvegardée : stockage local indisponible."); return; }
-            setMoroccoDestination(enabled);
-            if (enabled) setNotice("Préparation Maroc activée pour les prochains calculs. Utilisez « Calculer météo Maroc » pour une nouvelle acquisition horodatée ; aucun rattrapage météo actuel à l’export.");
-          }}
-          onCalculateMorocco={() => {
-            if (!readMoroccoPreparationIntent(config.request)) { setNotice("Activez d’abord Préparation Maroc."); return; }
-            if (!navigator.onLine) { setNotice("Hors ligne : nouvelle acquisition Maroc indisponible ; archives conservées."); return; }
-            signatureRef.current = ""; setWeatherRefreshToken(token => token + 1);
-          }} key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
+        {dossierTrace && <FlightDossierAction moroccoLoadInput={loadInput} moroccoCanonicalAltitudeAmslM={preparation?.targetAltitudeAmslM} onMoroccoAltitudeChange={value => persistMaximumAltitude(String(value), true)}
+          key={dossierTrace.traceId} trace={dossierTrace} timeZone={config.request.launchTimeZone}
           onFlightDossier={(traceId) => {
               const dossier = prepareFlightDossier(traceId, displayedTraces, selectedBalloon);
               if (dossier.status !== "READY") return dossier;

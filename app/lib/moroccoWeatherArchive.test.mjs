@@ -2,42 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dossierPdfFixture } from './flightDossierPdf.fixtures.mjs';
-import { moroccoCalculationIdentity, archiveMoroccoCalculation } from './moroccoCalculationArchive.ts';
+import { moroccoCalculationIdentity, archiveMoroccoCalculation, currentCalculationArchive } from './moroccoCalculationArchive.ts';
 import { createMoroccoWeatherArchive, latestMoroccoWeatherArchive, inspectMoroccoWeatherArchives, moroccoWeatherMatchKey, IndexedDbMoroccoWeatherArchive } from './moroccoWeatherArchive.ts';
 import { loadMoroccoDossierPreparation } from './moroccoPreparationClient.ts';
 import { setRuntimeAuthSnapshot, setRuntimeGuestModeActive, getRuntimeDataScopeGeneration } from './auth/dataScopeRuntime.ts';
 import { POST as retiredCapture } from '../api/preparation/morocco-weather-capture/route.ts';
-const receivedAt = '2026-11-05T08:01:00.000Z', storedAt = '2026-11-05T08:01:01.000Z';
-const memory = () => { const rows = new Map(); return { rows, async saveOnce(value) { if (!rows.has(value.id)) rows.set(value.id, structuredClone({ ...value, storedAt })); }, async matching(key) { return structuredClone([...rows.values()].filter(row => row.matchKey === key)); } }; };
-async function fixture() {
-  const { dossier } = await dossierPdfFixture();
-  const first = dossier.points[0];
-  const request = { version: 2, launchSite: { name: dossier.launchSiteName, latitude: first.latitude, longitude: first.longitude }, launchTimeZone: dossier.launchTimeZone,
-    launchDateTimeIso: dossier.startedAt, durationSeconds: dossier.durationSeconds, weatherModel: dossier.model.providerModelId, altitudesAmslM: [600], primaryAltitudeAmslM: 600, climbRateMps: 2, descentRateMps: 2 };
-  const trajectory = { traceId: dossier.traceId, label: dossier.strategyLabel, altitudeKey: '600', altitudeAmslM: 600, model: dossier.model,
-    weatherFetchedAt: '2026-11-05T08:00:00Z', calculatedAtIso: '2026-11-05T07:59:30Z', modelRunAt: null,
-    projection: { points: dossier.points, startedAt: dossier.startedAt, durationSeconds: dossier.durationSeconds } };
-  const raw = { source: 'Open-Meteo', endpoint: 'https://api.open-meteo.com/v1/forecast', kind: 'calculation', model: request.weatherModel, query: { latitude: first.latitude, longitude: first.longitude, validAt: request.launchDateTimeIso, weatherModel: request.weatherModel }, receivedAt: trajectory.weatherFetchedAt,
-    payload: { latitude: first.latitude, longitude: first.longitude, elevation: 47, generationtime_ms: 12, hourly_units: { wind_speed_80m: 'm/s', wind_direction_80m: '°' }, hourly: { time: ['2026-11-05T09:00','2026-11-05T10:00','2026-11-05T11:00','2026-11-05T12:00'], wind_speed_80m: [4,5,6,7], wind_direction_80m: [240,250,260,270] } } };
-  const payload = { ok: true, terrainAltitudeAmslM: 47, moroccoCalculation: { request, rawForecasts: [raw] } };
-  trajectory.moroccoPreparationIdentity = moroccoCalculationIdentity(request, trajectory, 47);
-  dossier.moroccoPreparationIdentity = trajectory.moroccoPreparationIdentity;
-  const store = memory(); await archiveMoroccoCalculation(payload, trajectory, receivedAt, store);
-  const record = [...store.rows.values()][0];
-  return { dossier, trajectory, request, payload, store, record };
-}
-
-test('archive diagnostics distinguish missing, late, incompatible and invalid evidence without changing selection', async () => {
+import {fixture,memory,receivedAt,storedAt} from './moroccoWeatherArchive.fixtures.mjs';
+test('archive diagnostics distinguish missing, incompatible and invalid evidence without changing selection', async () => {
   const { dossier, record } = await fixture();
   const cutoff = '2026-11-05T08:30:00Z';
-  assert.match(inspectMoroccoWeatherArchives([], dossier, cutoff).notice, /Aucune archive locale trouvée/);
+  assert.match(inspectMoroccoWeatherArchives([], dossier).notice, /Aucune archive locale trouvée/);
   const late = { ...record, storedAt: '2026-11-05T09:00:00Z' };
-  assert.match(inspectMoroccoWeatherArchives([late], dossier, cutoff).notice, /postérieur.*09:00:00Z/);
+  assert.equal(inspectMoroccoWeatherArchives([late], dossier).archive.id, late.id);
   const wrong = structuredClone(record); wrong.dossier.points.at(-1).longitude += .01;
-  assert.match(inspectMoroccoWeatherArchives([wrong], dossier, cutoff).notice, /trajectoire différente/);
+  assert.match(inspectMoroccoWeatherArchives([wrong], dossier).notice, /trajectoire différente/);
   const invalid = { ...record, receivedAt: '2026-11-05T09:00:00Z' };
-  assert.match(inspectMoroccoWeatherArchives([invalid], dossier, cutoff).notice, /Horodatages UTC/);
-  assert.equal(inspectMoroccoWeatherArchives([late, record], dossier, cutoff).archive.id, record.id);
+  assert.match(inspectMoroccoWeatherArchives([invalid], dossier).notice, /Horodatages UTC/);
+  assert.equal(inspectMoroccoWeatherArchives([late, record], dossier).archive.storedAt, late.storedAt);
 });
 
 test('ECMWF synthetic November 23 case reuses captured future-valid forecasts at 06:30 UTC, even when exporting later', async () => {
@@ -61,13 +42,13 @@ test('ECMWF synthetic November 23 case reuses captured future-valid forecasts at
   const store = { async saveOnce(value) { record = { ...value, storedAt: '2026-11-23T06:02:00Z' }; }, async matching() { return [record]; } };
   await archiveMoroccoCalculation(payload, trajectory, '2026-11-23T06:01:01Z', store);
   const reference = { date: '2026-11-23', time: '07:30' }; // Europe/Paris, UTC 06:30.
-  const exported = await loadMoroccoDossierPreparation(dossier, reference, undefined, { store, fetchImpl: async () => { throw new Error('No current weather fetch allowed'); } });
+  const exported = await loadMoroccoDossierPreparation(dossier, undefined, { store, memoryArchive:null });
   assert.equal(exported.weather.weatherModel, 'ecmwf_ifs025');
   assert.ok(exported.weather.altitudeWind.points.length > 0);
   assert.ok(exported.weather.altitudeWind.points.every(point => Date.parse(point.validAt) > Date.parse('2026-11-23T06:30:00Z')));
   assert.equal(exported.weather.landingGroundWind.status, 'UNAVAILABLE');
   assert.equal(exported.weather.altitudeWind.modelRunAt, null);
-  assert.equal(inspectMoroccoWeatherArchives([{ ...record, storedAt: '2026-11-23T06:31:00Z' }], dossier, '2026-11-23T06:30:00Z').archive, null);
+  assert.ok(inspectMoroccoWeatherArchives([{ ...record, storedAt: '2026-11-23T06:31:00Z' }], dossier).archive);
 });
 
 test('calculation archive preserves exact raw body and partial statuses with no network or balloon/PDF prerequisite', async () => {
@@ -99,7 +80,7 @@ test('departure and arrival winds archive exact raw data, units, grid and indepe
   const record = [...store.rows.values()][0];
   assert.deepEqual(record.rawForecasts[1], arrival);
   assert.equal(record.weather.altitudeWind.points[1].levels[0].windSpeedMps, 5);
-  const result = await loadMoroccoDossierPreparation(dossier, { date: '2026-11-05', time: '09:30' }, undefined, { store, fetchImpl: async () => { throw new Error('No export fetch'); } });
+  const result = await loadMoroccoDossierPreparation(dossier, undefined, { store, memoryArchive:null });
   const ground = result.weather.landingGroundWind;
   assert.deepEqual(ground.requestedLocation, { latitude: last.latitude, longitude: last.longitude });
   assert.deepEqual(ground.sourceLocation, { latitude: arrival.payload.latitude, longitude: arrival.payload.longitude });
@@ -110,8 +91,8 @@ test('departure and arrival winds archive exact raw data, units, grid and indepe
   late.moroccoCalculation.rawForecasts[1].receivedAt = '2026-11-05T09:00:00Z';
   let lateRecord;
   await archiveMoroccoCalculation(late, trajectory, '2026-11-05T09:00:01Z', { async saveOnce(value) { lateRecord = { ...value, storedAt: '2026-11-05T09:00:02Z' }; }, async matching() { return []; } });
-  assert.equal(latestMoroccoWeatherArchive([lateRecord], dossier, '2026-11-05T08:30:00Z'), null);
-  assert.equal(latestMoroccoWeatherArchive([lateRecord], dossier, '2026-11-05T09:30:00Z').id, lateRecord.id);
+  assert.equal(latestMoroccoWeatherArchive([lateRecord], dossier).id,lateRecord.id);
+  assert.equal(latestMoroccoWeatherArchive([lateRecord], dossier).id, lateRecord.id);
   for (const mutate of [r => r.query.latitude += .01, r => r.query.landingAt = '2026-11-05T12:00:00Z', r => r.payload.utc_offset_seconds = 3600, r => r.payload.hourly_units.wind_speed_10m = 'm/s']) {
     const other = structuredClone(payload); mutate(other.moroccoCalculation.rawForecasts[1]);
     const s = memory(); await archiveMoroccoCalculation(other, trajectory, receivedAt, s);
@@ -132,7 +113,7 @@ test('immediate export waits for the existing archive commit; write failure is e
   await started;
   let matched = false; const matching = store.matching;
   store.matching = async key => { matched = true; return matching(key); };
-  const exported = loadMoroccoDossierPreparation(dossier, { date: '2026-11-05', time: '09:30' }, undefined, { store, fetchImpl: async () => { throw new Error('Unexpected forecast'); } });
+  const exported = loadMoroccoDossierPreparation(dossier, undefined, { store, memoryArchive:null });
   await Promise.resolve(); assert.equal(matched, false);
   release(); await write; assert.ok((await exported).weather.altitudeWind.points.length);
 
@@ -143,13 +124,12 @@ test('immediate export waits for the existing archive commit; write failure is e
   const badWrite = archiveMoroccoCalculation(payload, trajectory, receivedAt, badStore);
   const caught = assert.rejects(badWrite, /Quota dépassé/);
   await badStarted;
-  const fallback = loadMoroccoDossierPreparation(dossier, { date: '2026-11-05', time: '09:30' }, undefined, { store: badStore, fetchImpl: async (url, init) => {
-    assert.equal(url, '/api/preparation/morocco-dossier-weather');
-    const body = JSON.parse(init.body);
-    return Response.json({ data: { traceId: dossier.traceId, weatherModel: dossier.model.providerModelId, availabilityReferenceAt: body.availabilityReferenceAt, notices: [] } });
-  } });
+  const fallback = loadMoroccoDossierPreparation(dossier, undefined, {store:badStore});
   fail(new Error('Quota dépassé')); await caught;
-  assert.match((await fallback).weather.notices[0], /Quota dépassé/);
+  const reused=await fallback;
+  assert.ok(reused.weather.altitudeWind.points.length);
+  assert.match(reused.weather.notices.join(' '),/Sauvegarde locale échouée/);
+  assert.match(reused.weather.notices.join(' '),/mémoire uniquement/);
 });
 
 test('identity includes every request parameter, effective terrain and selected altitude, including climb/descent/profile parameters', async () => {
@@ -168,27 +148,27 @@ test('identity includes every request parameter, effective terrain and selected 
 test('export rejects same traceId with different calculation identity OR different trajectory; legacy archives are refused', async () => {
   const { dossier, trajectory, request, record } = await fixture();
   const cutoff = '2026-11-05T08:30:00Z';
-  assert.equal(latestMoroccoWeatherArchive([record], dossier, cutoff).id, record.id);
+  assert.equal(latestMoroccoWeatherArchive([record], dossier).id, record.id);
   const different = structuredClone(dossier);
   different.moroccoPreparationIdentity = moroccoCalculationIdentity({ ...request, climbRateMps: 3 }, trajectory, 47);
-  assert.equal(latestMoroccoWeatherArchive([record], different, cutoff), null);
+  assert.equal(latestMoroccoWeatherArchive([record], different), null);
   const geometry = structuredClone(dossier); geometry.points.at(-1).longitude += .01;
-  assert.equal(latestMoroccoWeatherArchive([record], geometry, cutoff), null);
-  assert.equal(latestMoroccoWeatherArchive([{ ...record, version: 1 }], dossier, cutoff), null);
+  assert.equal(latestMoroccoWeatherArchive([record], geometry), null);
+  assert.equal(latestMoroccoWeatherArchive([{ ...record, version: 1 }], dossier), null);
   assert.throws(() => moroccoWeatherMatchKey({ ...dossier, moroccoPreparationIdentity: undefined }), /Identité complète/);
 });
 
-test('UTC cutoff checks each reception and committed storage, not forecast validity; newest admissible version wins', async () => {
+test('original UTC coherence is checked but writing dates never gate evidence; newest valid version wins', async () => {
   const { dossier, record } = await fixture();
   const later = { ...record, id: 'later', storedAt: '2026-11-05T09:00:00Z' };
-  assert.equal(latestMoroccoWeatherArchive([record, later], dossier, '2026-11-05T08:30:00Z').id, record.id);
-  assert.equal(latestMoroccoWeatherArchive([record, later], dossier, '2026-11-05T09:00:00Z').id, 'later');
-  assert.equal(latestMoroccoWeatherArchive([record], dossier, receivedAt), null);
+  assert.equal(latestMoroccoWeatherArchive([record, later], dossier).id, 'later');
+  assert.equal(latestMoroccoWeatherArchive([record, later], dossier).id, 'later');
+  assert.equal(latestMoroccoWeatherArchive([record], dossier).id,record.id);
   for (const mutate of [v => v.receivedAt = '2026-11-05T09:00:00Z', v => v.rawForecasts[0].receivedAt = '2026-11-05T09:00:00Z', v => v.trajectory.weatherFetchedAt = '2026-11-05T09:00:00Z']) {
     const bad = structuredClone(record); mutate(bad);
-    assert.equal(latestMoroccoWeatherArchive([bad], dossier, '2026-11-05T08:30:00Z'), null);
+    assert.equal(latestMoroccoWeatherArchive([bad], dossier), null);
   }
-  assert.equal(latestMoroccoWeatherArchive([{}, record], dossier, '2026-11-05T08:30:00Z').id, record.id);
+  assert.equal(latestMoroccoWeatherArchive([{}, record], dossier).id, record.id);
 });
 
 test('duplicate bodies keep first version; raw changes add versions; missing or divergent provenance is rejected', async () => {
@@ -203,26 +183,23 @@ test('duplicate bodies keep first version; raw changes add versions; missing or 
   await assert.rejects(createMoroccoWeatherArchive(dossier, trajectory, { ...capture, rawForecasts: [{ ...record.rawForecasts[0], kind: 'ground' }] }, receivedAt), /Horodatages/);
 });
 
-test('offline export uses exact saved calculation while preserving current non-weather data; mismatch uses historical-only fallback', async () => {
+test('offline export uses exact saved calculation while preserving current non-weather data; mismatch remains unavailable without a fetch', async () => {
   const { dossier, store } = await fixture();
-  const result = await loadMoroccoDossierPreparation(dossier, { date: '2026-11-05', time: '09:30' }, undefined, { store, fetchImpl: async () => { throw new Error('must not fetch'); } });
+  const result = await loadMoroccoDossierPreparation(dossier, undefined, { store, memoryArchive:null });
   assert.deepEqual(result.dossier.points, dossier.points);
   assert.deepEqual(result.dossier.balloon, dossier.balloon);
   assert.deepEqual(result.dossier.operations, dossier.operations);
-  assert.match(result.weather.notices[0], /Préparation locale immuable/);
+  assert.match(result.weather.notices.join(' '), /Données archivées localement/);
   const mismatch = { ...dossier, moroccoPreparationIdentity: 'different' };
-  const fallback = await loadMoroccoDossierPreparation(mismatch, { date: '2026-11-05', time: '09:30' }, undefined, { store, fetchImpl: async (url, init) => {
-    assert.equal(url, '/api/preparation/morocco-dossier-weather');
-    const body = JSON.parse(init.body);
-    return Response.json({ data: { traceId: dossier.traceId, weatherModel: dossier.model.providerModelId, availabilityReferenceAt: body.availabilityReferenceAt, notices: [] } });
-  } });
-  assert.match(fallback.weather.notices[0], /Historique fournisseur uniquement/);
+  const fallback = await loadMoroccoDossierPreparation(mismatch, undefined, {store,memoryArchive:null});
+  assert.equal(fallback.weather.altitudeWind.status,'UNAVAILABLE');
+  assert.match(fallback.weather.notices.join(' '), /Aucun rechargement ni substitution/);
 });
 
 test('map archives every new calculated trace outside PDF mounting; old current-capture endpoint is disabled', async () => {
   const map = readFileSync(new URL('../map/page.tsx', import.meta.url), 'utf8');
   const action = readFileSync(new URL('../components/FlightDossierAction.tsx', import.meta.url), 'utf8');
-  assert.match(map, /moroccoCalculationAcquisitionOptions\(readMoroccoPreparationIntent\(config.request\)\)/);
+  assert.doesNotMatch(map,/moroccoPreparationIntent|acquisitionOptions/);
   assert.match(map, /for \(const trace of nextTraces.filter/);
   assert.ok(map.indexOf('archiveMoroccoCalculation(result.payload') < map.indexOf('const dossierTrace ='));
   assert.doesNotMatch(action, /saveLoadedMoroccoPreparation|archiveMoroccoCalculation/);
@@ -293,4 +270,40 @@ test('partial calculation failures are retained verbatim and visible in archive 
   assert.deepEqual(record.calculationFailures, payload.failures);
   assert.deepEqual(record.calculationRequest, payload.moroccoCalculation.request);
   assert.match(record.weather.notices.join(' '), /INSUFFICIENT_DURATION_FOR_VERTICAL_PROFILE/);
+});
+
+test('incoherent aviation timestamps retain original evidence but do not discard usable calculation winds',async()=>{
+ const {dossier,trajectory,payload}=await fixture(),store=memory();
+ const sample=(await dossierPdfFixture()).weather.aviation;
+ sample.departure.metar.result.data.sourceUpdatedAt='2099-01-01T00:00:00Z';
+ payload.moroccoCalculation.aviation=[{departure:dossier.points[0],landing:dossier.points.at(-1),data:sample}];
+ await archiveMoroccoCalculation(payload,trajectory,receivedAt,store);
+ const record=[...store.rows.values()][0];assert.ok(record.weather.altitudeWind.points.length);
+ assert.equal(record.weather.aviation.departure.metar.status,'UNAVAILABLE');assert.equal(record.weather.aviation.departure.metar.result.data,null);
+ assert.equal(record.calculationAviation[0].data.departure.metar.result.data.sourceUpdatedAt,'2099-01-01T00:00:00Z');
+ assert.match(record.weather.notices.join(' '),/horodatages absents ou incohérents/);
+});
+
+test('identical aviation/weather content keeps first archive receipt despite a later reception timestamp',async()=>{
+ const {moroccoWorkflowFixture}=await import('./moroccoWorkflow.fixtures.mjs');
+ const {dossier,trajectory,payload,store}=await moroccoWorkflowFixture();const record=[...store.rows.values()][0];
+ const capture=structuredClone({weather:record.weather,rawForecasts:record.rawForecasts,calculationRequest:record.calculationRequest,calculationAviation:record.calculationAviation,calculationFailures:record.calculationFailures});
+ for(const location of ['departure','landing'])for(const product of ['metar','taf'])capture.weather.aviation[location][product].result.data.sourceUpdatedAt='2026-11-05T08:00:30Z';
+ const duplicate=await createMoroccoWeatherArchive(record.dossier,trajectory,capture,receivedAt);
+ assert.equal(duplicate.id,record.id);await store.saveOnce(duplicate);
+ const kept=await store.matching(moroccoWeatherMatchKey(dossier));assert.equal(kept.length,1);assert.equal(kept[0].weather.aviation.departure.metar.result.data.sourceUpdatedAt,'2026-11-05T08:00:00Z');
+ for(const entry of payload.moroccoCalculation.aviation)for(const location of ['departure','landing'])for(const product of ['metar','taf'])entry.data[location][product].result.data.sourceUpdatedAt='2026-11-05T08:00:30Z';
+ await archiveMoroccoCalculation(payload,trajectory,receivedAt,store);
+ const reused=await loadMoroccoDossierPreparation(dossier,undefined,{store});
+ assert.equal(reused.weather.aviation.departure.metar.result.data.sourceUpdatedAt,'2026-11-05T08:00:00Z');
+});
+
+test('asynchronous archive enrichment cannot write or expose one account’s weather in another account',async()=>{
+ const {dossier,trajectory,payload}=await fixture();let written=false;
+ setRuntimeAuthSnapshot({state:'SIGNED_IN',user:{id:'archive-owner-a'}});
+ const write=archiveMoroccoCalculation(payload,trajectory,receivedAt,{saveOnce:async()=>{written=true;},matching:async()=>[]});
+ setRuntimeAuthSnapshot({state:'SIGNED_IN',user:{id:'archive-owner-b'}});
+ try {
+  await assert.rejects(write,/Compte local modifié/);assert.equal(written,false);assert.equal(currentCalculationArchive(dossier.moroccoPreparationIdentity),undefined);
+ } finally {setRuntimeAuthSnapshot({state:'SIGNED_OUT',user:null});setRuntimeGuestModeActive(false);}
 });

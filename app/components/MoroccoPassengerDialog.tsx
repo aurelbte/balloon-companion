@@ -28,6 +28,7 @@ export default function MoroccoPassengerDialog({ reference, onCancel, onExport, 
   const minimum = dossier ? moroccoMinimumLandingMass(dossier.balloon, applicability) : null;
   const [draftSaved, setDraftSaved] = useState(true);
   const restoredReferenceEdited = moroccoReferenceDraftEdited(restored, dossier);
+  const writingTimeZone = restoredReferenceEdited ? restored?.referenceTimeZone ?? dossier?.launchTimeZone ?? reference.timeZone : reference.timeZone;
   const [referenceEdited, setReferenceEdited] = useState(restoredReferenceEdited);
   const [referenceDate, setReferenceDate] = useState(restored && restoredReferenceEdited ? restored.date : reference.date);
   const [referenceTime, setReferenceTime] = useState(restored && restoredReferenceEdited ? restored.time : reference.time);
@@ -40,8 +41,8 @@ export default function MoroccoPassengerDialog({ reference, onCancel, onExport, 
     setError(null);
   };
   useEffect(() => {
-    if (draftKey) setDraftSaved(saveMoroccoPassengerDraft(draftKey, { ...restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, minimumLandingMassApplicability: applicability, date: referenceDate, time: referenceTime, referenceEdited }));
-  }, [draftKey, restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, applicability, referenceDate, referenceTime, referenceEdited]);
+    if (draftKey) setDraftSaved(saveMoroccoPassengerDraft(draftKey, { ...restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, minimumLandingMassApplicability: applicability, date: referenceDate, time: referenceTime, referenceEdited, referenceTimeZone: writingTimeZone }));
+  }, [draftKey, restored, rows, weightDrafts, pilot, equipment, gas, configurationKey, applicability, referenceDate, referenceTime, referenceEdited, writingTimeZone]);
   const validateAltitude = () => {
     const value = moroccoProjectedAltitudeAmsl(altitude, "AMSL", loadInput?.launchElevationMslM);
     if (altitudeDraft !== null || value !== loadInput?.plannedMaximumAltitudeMslM) {
@@ -77,16 +78,16 @@ export default function MoroccoPassengerDialog({ reference, onCancel, onExport, 
   return createPortal(<dialog ref={dialog} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onCancel(); }} className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none bg-[var(--bc-color-canvas)] p-0 text-[var(--bc-color-text)] backdrop:bg-black/60 sm:m-auto sm:h-auto sm:max-h-[92dvh] sm:w-[min(960px,96vw)] sm:rounded-2xl">
     <form className="flex max-h-dvh flex-col sm:max-h-[92dvh]" onSubmit={event => {
       event.preventDefault();
-      try { const editedReference = { date: referenceDate, time: referenceTime }; resolveMoroccoDossierReference({ startedAt: reference.iso, launchTimeZone: reference.timeZone }, editedReference); prepareMoroccoPassengers(rows); calculateMoroccoLoading(rows, loading); if (validationError) throw new Error(validationError); const validatedAltitude = validateAltitude(); onExport(rows, editedReference, loading, applicability, validatedAltitude); } catch (cause) { setError(cause instanceof Error ? cause.message : "Listing invalide."); }
+      try { const editedReference = { date: referenceDate, time: referenceTime, timeZone: writingTimeZone }; resolveMoroccoDossierReference({ startedAt: reference.iso, launchTimeZone: writingTimeZone }, editedReference); prepareMoroccoPassengers(rows); calculateMoroccoLoading(rows, loading); if (validationError) throw new Error(validationError); const validatedAltitude = validateAltitude(); onExport(rows, editedReference, loading, applicability, validatedAltitude); } catch (cause) { setError(cause instanceof Error ? cause.message : "Listing invalide."); }
     }}>
       <header className="shrink-0 border-b px-4 pb-3 pt-[max(16px,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between gap-3"><h2 id={titleId} className="text-base font-semibold">Maroc · liste des passagers</h2><button type="button" onClick={onCancel} className="min-h-11 rounded-lg px-3">Annuler</button></div>
-        <details className="mt-1 text-xs"><summary className="min-h-11 cursor-pointer py-3">Dossier : {referenceDate} · {referenceTime} ({reference.timeZone})</summary>
+        <details className="mt-1 text-xs"><summary className="min-h-11 cursor-pointer py-3">Dossier : {referenceDate} · {referenceTime} ({writingTimeZone})</summary>
         <div className="mt-2 grid grid-cols-2 gap-3">
           <label className="min-w-0 text-xs">Date du dossier<input type="date" required value={referenceDate} onChange={event => { setReferenceEdited(true); setReferenceDate(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
           <label className="min-w-0 text-xs">Heure du dossier<input type="time" required step="60" value={referenceTime} onChange={event => { setReferenceEdited(true); setReferenceTime(event.target.value); setError(null); }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border bg-[var(--bc-surface)] px-2 text-base" /></label>
         </div>
-        <p className="mt-1 text-xs">Heure locale : {reference.timeZone}. Les horaires météo et du vol ne changent pas.</p>
+        <p className="mt-1 text-xs">Rédaction : {writingTimeZone}. Décollage : {dossier?.launchTimeZone ?? "fuseau non renseigné"}. Les horaires météo et du vol ne changent pas.</p>
         </details>
         {reference.warning && <p role="status" className="mt-1 text-xs">{reference.warning}</p>}
         <p className="mt-1 text-xs">13 places · poids modifiables · laissez les places inutilisées vides.</p>

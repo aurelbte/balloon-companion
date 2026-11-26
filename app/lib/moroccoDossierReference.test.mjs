@@ -22,11 +22,11 @@ test('missing or invalid local timezone is explicitly disclosed, with UTC fallba
 
 test('actual opening instant, not tomorrow takeoff; Casablanca uses IANA rules in November and Ramadan',()=>{
  const flight={startedAt:'2026-11-27T05:30:00Z',launchTimeZone:'Africa/Casablanca'},before=JSON.stringify(flight);
- const opened=moroccoDossierOpeningReference(flight,new Date('2026-11-26T07:30:58Z'));
+ const opened=moroccoDossierOpeningReference(new Date('2026-11-26T07:30:58Z'),'Africa/Casablanca');
  assert.equal(opened.date,'2026-11-26');assert.equal(opened.time,'08:30');assert.equal(opened.iso,'2026-11-26T07:30:00.000Z');
  assert.equal(resolve(flight,{date:'2026-11-27',time:'06:30'}).iso,flight.startedAt.replace('Z','.000Z'));
- assert.equal(moroccoDossierOpeningReference(flight,new Date('2026-03-08T07:30:00Z')).time,'07:30');
- assert.equal(moroccoDossierOpeningReference(flight,new Date('2026-11-26T23:30:00Z')).date,'2026-11-27');
+ assert.equal(moroccoDossierOpeningReference(new Date('2026-03-08T07:30:00Z'),'Africa/Casablanca').time,'07:30');
+ assert.equal(moroccoDossierOpeningReference(new Date('2026-11-26T23:30:00Z'),'Africa/Casablanca').date,'2026-11-27');
  assert.equal(JSON.stringify(flight),before);
 });
 
@@ -36,4 +36,14 @@ test('legacy manual references are migrated without resetting them to the new wa
  assert.equal(moroccoReferenceDraftEdited({date:'2026-11-10',time:'08:30'},preparation),true);
  assert.equal(moroccoReferenceDraftEdited({...oldDefault,referenceEdited:true},preparation),true);
  assert.equal(moroccoReferenceDraftEdited({date:'2026-11-10',time:'08:30',referenceEdited:false},preparation),false);
+});
+
+test('opening uses device timezone independently from the launch site; writing zone travels with manual values',()=>{
+ const flight={startedAt:'2026-11-27T05:30:00Z',launchTimeZone:'Africa/Casablanca'};
+ const opened=moroccoDossierOpeningReference(new Date('2026-11-26T07:30:00Z'),'America/New_York');
+ assert.equal(opened.time,'02:30');assert.equal(opened.timeZone,'America/New_York');
+ const edited=resolve(flight,{date:'2026-11-01',time:'08:30',timeZone:'Asia/Tokyo'});
+ assert.equal(edited.iso,'2026-10-31T23:30:00.000Z');assert.equal(edited.timeZone,'Asia/Tokyo');
+ assert.equal(flight.startedAt,'2026-11-27T05:30:00Z');
+ assert.throws(()=>resolve(flight,{date:'2026-11-01',time:'08:30',timeZone:'Invalid/Zone'}),/Fuseau/);
 });

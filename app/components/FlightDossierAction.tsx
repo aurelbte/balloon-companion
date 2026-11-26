@@ -20,7 +20,7 @@ import { formatInTimeZone } from "../lib/timeZone.ts";
 const time = (iso: string, timeZone?: string) => formatInTimeZone(iso, timeZone, { hour: "2-digit", minute: "2-digit" });
 const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
-export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput, moroccoCanonicalAltitudeAmslM, onMoroccoAltitudeChange, moroccoDestination = false, onMoroccoDestinationChange, onCalculateMorocco }: { moroccoLoadInput?: LoadCalculationInput; moroccoCanonicalAltitudeAmslM?: number | null; onMoroccoAltitudeChange?: (altitudeAmslM: number) => void; moroccoDestination?: boolean; onMoroccoDestinationChange?: (enabled: boolean) => void; onCalculateMorocco?: () => void; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
+export default function FlightDossierAction({ trace, timeZone, onFlightDossier, moroccoLoadInput, moroccoCanonicalAltitudeAmslM, onMoroccoAltitudeChange }: { moroccoLoadInput?: LoadCalculationInput; moroccoCanonicalAltitudeAmslM?: number | null; onMoroccoAltitudeChange?: (altitudeAmslM: number) => void; trace: WeatherAnalysisTrace; timeZone?: string; onFlightDossier: (traceId: string) => FlightDossierResult }) {
   const [passengerDossier, setPassengerDossier] = useState<Extract<FlightDossierResult, { status: "READY" }> | null>(null);
   const [openingReference, setOpeningReference] = useState<ReturnType<typeof moroccoDossierOpeningReference> | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -82,7 +82,7 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
       let weatherError: string | null = null;
       try {
         if (variant === "MOROCCO") {
-          const saved = await loadMoroccoDossierPreparation(prepared.data, dossierReference, controller.signal);
+          const saved = await loadMoroccoDossierPreparation(prepared.data, controller.signal);
           exportDossier = saved.dossier;
           weather = saved.weather;
           setDossier({ status: "READY", data: exportDossier });
@@ -107,11 +107,10 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
     }
   };
   const openPassengerListing = () => {
-    onMoroccoDestinationChange?.(true);
     setExportMenuOpen(false);
     try {
       const prepared = onFlightDossier(trace.traceId);
-      if (prepared.status === "READY") { setOpeningReference(moroccoDossierOpeningReference(prepared.data)); setFeedbackOpen(false); setPassengerDossier(prepared); }
+      if (prepared.status === "READY") { setOpeningReference(moroccoDossierOpeningReference()); setFeedbackOpen(false); setPassengerDossier(prepared); }
       else { setDossier(prepared); setFeedbackOpen(true); }
     } catch (error) {
       setDossierWeatherError(`Préparation du listing impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`);
@@ -123,9 +122,8 @@ export default function FlightDossierAction({ trace, timeZone, onFlightDossier, 
       <div ref={exportMenuRoot}>
         <button ref={exportButton} type="button" aria-label="Dossier de vol PDF" aria-expanded={exportMenuOpen} aria-controls={exportMenuId} title="Exporter le dossier PDF" aria-busy={dossierPending} disabled={dossierPending} onClick={() => { setFeedbackOpen(false); setExportMenuOpen((open) => !open); }} className="flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full border border-white/20 bg-[var(--bc-color-surface-glass)] text-white shadow-[var(--bc-shadow-high)] backdrop-blur-md disabled:opacity-50">{dossierPending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <FileDown size={18} aria-hidden="true" />}<span className="text-[10px] font-semibold">PDF</span></button>
         {exportMenuOpen && <div id={exportMenuId} role="group" aria-label="Pays du dossier PDF" className="absolute bottom-full right-0 z-50 mb-2 w-40 max-w-[calc(100vw-24px)] rounded-xl border border-white/20 bg-slate-950 p-1 text-sm text-white shadow-xl">
-          <button ref={firstExportChoice} type="button" onClick={() => { onMoroccoDestinationChange?.(false); setExportMenuOpen(false); void requestDossier("FRANCE"); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇫🇷</span> France</button>
+          <button ref={firstExportChoice} type="button" onClick={() => { setExportMenuOpen(false); void requestDossier("FRANCE"); }} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇫🇷</span> France</button>
           <button type="button" onClick={openPassengerListing} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">🇲🇦</span> Maroc</button>
-          {onMoroccoDestinationChange && <div className="mt-1 border-t border-white/20 pt-1"><label className="flex min-h-11 items-center gap-2 px-3 text-xs"><input aria-label="Préparation Maroc avec vent d’arrivée" type="checkbox" checked={moroccoDestination} onChange={event => onMoroccoDestinationChange(event.target.checked)} className="size-5 shrink-0" />Préparation Maroc</label><p className="px-3 text-[10px] text-white/70">Vent d’arrivée acquis aux prochains calculs uniquement.</p>{moroccoDestination && onCalculateMorocco && <button type="button" onClick={() => { setExportMenuOpen(false); onCalculateMorocco(); }} className="min-h-11 w-full rounded-lg px-3 text-left text-xs hover:bg-white/10">Calculer météo Maroc</button>}</div>}
         </div>}
       </div>
       {passengerDossier && openingReference && <MoroccoPassengerDialog

@@ -13,5 +13,13 @@ export type MoroccoRawForecast = {
 export type MoroccoWeatherCapture = {
   weather: FlightDossierWeather; rawForecasts: MoroccoRawForecast[];
   calculationRequest?: import("./trajectory/integration.ts").MultiAltitudeProjectionRequest;
+  calculationAviation?: CalculationAviation[];
   calculationFailures?: import("./trajectory/integration.ts").AltitudeProjectionFailure[];
+};
+
+/** Original bulletins and their real receipt times, bound to a calculated endpoint. */
+export type CalculationAviation = {
+  departure: import("./flightDossierWeather.ts").DossierLocation;
+  landing: import("./flightDossierWeather.ts").DossierLocation;
+  data: FlightDossierWeather["aviation"];
 };

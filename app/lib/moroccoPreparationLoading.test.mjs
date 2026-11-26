@@ -257,15 +257,29 @@ test('opening clock defaults to now; manual dossier clock survives remount and a
   const input=await fixture(), memory=new Map(), oldStorage=globalThis.sessionStorage, oldDocument=globalThis.document;
   globalThis.sessionStorage={getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v)};globalThis.document={body:{}};
   try {
-    const props={dossier:input.dossier,loadInput:input.loadInput,draftKey:'opening-clock',reference:referenceModule.moroccoDossierOpeningReference({launchTimeZone:'Africa/Casablanca'},new Date('2026-11-26T07:30:00Z')),onCancel(){},onExport(){}};
+    const props={dossier:input.dossier,loadInput:input.loadInput,draftKey:'opening-clock',reference:referenceModule.moroccoDossierOpeningReference(new Date('2026-11-26T07:30:00Z'),'Africa/Casablanca'),onCancel(){},onExport(){}};
     let render=harness(props), tree=render();
     const byType=type=>nodes(tree).find(n=>n.type==='input'&&n.props.type===type);
     assert.equal(byType('date').props.value,'2026-11-26');assert.equal(byType('time').props.value,'08:30');
-    props.reference=referenceModule.moroccoDossierOpeningReference({launchTimeZone:'Africa/Casablanca'},new Date('2026-11-26T08:45:00Z'));
+    props.reference=referenceModule.moroccoDossierOpeningReference(new Date('2026-11-26T08:45:00Z'),'Africa/Casablanca');
     render=harness(props);tree=render();assert.equal(byType('time').props.value,'09:45');
     byType('date').props.onChange({target:{value:'2026-11-25'}});tree=render();byType('time').props.onChange({target:{value:'19:23'}});tree=render();
-    props.reference=referenceModule.moroccoDossierOpeningReference({launchTimeZone:'Africa/Casablanca'},new Date('2026-11-26T09:00:00Z'));
+    props.reference=referenceModule.moroccoDossierOpeningReference(new Date('2026-11-26T09:00:00Z'),'Africa/Casablanca');
     tree=harness(props)();assert.equal(byType('time').props.value,'19:23');assert.equal(byType('date').props.value,'2026-11-25');
     assert.equal(referenceModule.resolveMoroccoDossierReference(input.dossier,{date:'2026-11-25',time:'19:23'}).iso,'2026-11-25T18:23:00.000Z');
   } finally {globalThis.sessionStorage=oldStorage;globalThis.document=oldDocument;}
+});
+
+test('manual writing timezone survives reopening on a device in another zone and remains distinct from takeoff',async()=>{
+ const input=await fixture(),memory=new Map(),oldStorage=globalThis.sessionStorage,oldDocument=globalThis.document;
+ globalThis.sessionStorage={getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v)};globalThis.document={body:{}};
+ try {
+  let exported;
+  const props={dossier:{...input.dossier,launchTimeZone:'Africa/Casablanca'},loadInput:input.loadInput,draftKey:'writing-zone',reference:referenceModule.moroccoDossierOpeningReference(new Date('2026-11-26T07:30:00Z'),'America/New_York'),onExport:(...args)=>{exported=args;},onCancel(){}};
+  let render=harness(props),tree=render();const byType=type=>nodes(tree).find(n=>n.type==='input'&&n.props.type===type);
+  assert.equal(byType('time').props.value,'02:30');byType('time').props.onChange({target:{value:'03:05'}});tree=render();
+  props.reference=referenceModule.moroccoDossierOpeningReference(new Date('2026-11-26T07:45:00Z'),'Asia/Tokyo');
+  tree=harness(props)();assert.equal(byType('time').props.value,'03:05');nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+  assert.equal(exported[1].timeZone,'America/New_York');assert.equal(exported[1].time,'03:05');assert.equal(props.dossier.launchTimeZone,'Africa/Casablanca');
+ } finally {globalThis.sessionStorage=oldStorage;globalThis.document=oldDocument;}
 });

@@ -51,7 +51,7 @@ export async function createMoroccoWeatherArchive(dossier: MoroccoArchiveDossier
   return value;
 }
 
-function archiveRejection(value: SavedMoroccoWeatherArchive, dossier: FlightDossierData, referenceAt: string, key: string): string | null {
+function archiveRejection(value: SavedMoroccoWeatherArchive, dossier: FlightDossierData, key: string): string | null {
   try {
     if (value.version !== 2 || value.matchKey !== key || moroccoWeatherMatchKey(value.dossier) !== key ||
       value.weather.traceId !== dossier.traceId || value.weather.weatherModel !== dossier.model.providerModelId ||
@@ -59,31 +59,25 @@ function archiveRejection(value: SavedMoroccoWeatherArchive, dossier: FlightDoss
       stable(value.trajectory.projection.points) !== stable(value.dossier.points) || stable(value.dossier.points) !== stable(dossier.points)) return "IDENTITY_MISMATCH";
     if (!Number.isFinite(utcMs(value.storedAt)) || !Number.isFinite(utcMs(value.receivedAt)) || utcMs(value.receivedAt) > utcMs(value.storedAt) ||
       archiveSourceTimes(value).some(time => !Number.isFinite(utcMs(time)) || utcMs(time) > utcMs(value.receivedAt))) return "INVALID_SOURCE_TIMES";
-    if (utcMs(value.storedAt) > utcMs(referenceAt)) return "STORED_AFTER_REFERENCE";
     return null;
   } catch { return "INVALID_ARCHIVE"; }
 }
 
-/** A single selection predicate drives both reuse and diagnostics; UTC/provenance guards remain unchanged. */
-export function inspectMoroccoWeatherArchives(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData, referenceAt: string) {
+/** Writing dates never select weather. Exact identity and original UTC provenance still govern reuse. */
+export function inspectMoroccoWeatherArchives(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData) {
   const key = moroccoWeatherMatchKey(dossier);
-  if (!Number.isFinite(utcMs(referenceAt))) return { archive: null, notice: "Référence UTC invalide : aucune archive admissible." };
-  const evaluated = values.map(value => ({ value, reason: archiveRejection(value, dossier, referenceAt, key) }));
+  const evaluated = values.map(value => ({ value, reason: archiveRejection(value, dossier, key) }));
   const archive = evaluated.filter(item => item.reason === null).map(item => item.value)
     .sort((a, b) => utcMs(b.storedAt) - utcMs(a.storedAt) || b.id.localeCompare(a.id))[0] ?? null;
-  if (archive) return { archive, notice: "Archive locale correspondant exactement à la préparation, reçue et enregistrée avant la référence." };
+  if (archive) return { archive, notice: "Archive locale correspondant exactement à la préparation, avec ses dates réelles de réception et d’enregistrement." };
   const reasons = [...new Set(evaluated.map(item => item.reason))].map(reason => {
-    if (reason === "STORED_AFTER_REFERENCE") {
-      const times = evaluated.filter(item => item.reason === reason).map(item => item.value.storedAt).sort();
-      return `Enregistrement local postérieur à ${referenceAt} : premier enregistrement ${times[0]}. Une donnée reçue ou enregistrée après la référence ne prouve pas sa disponibilité avant.`;
-    }
     return reason === "IDENTITY_MISMATCH" ? "Identité de préparation, modèle ou trajectoire différente : archive refusée." : "Horodatages UTC ou provenance de l’archive invalides : archive refusée.";
   });
   return { archive: null, notice: values.length ? `Aucune archive locale admissible. ${reasons.join(" ")}` : `Aucune archive locale trouvée pour cette identité exacte (terrain, vol, modèle ${dossier.model.providerModelId}, paramètres et trajectoire).` };
 }
 
-export function latestMoroccoWeatherArchive(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData, referenceAt: string): SavedMoroccoWeatherArchive | null {
-  return inspectMoroccoWeatherArchives(values, dossier, referenceAt).archive;
+export function latestMoroccoWeatherArchive(values: SavedMoroccoWeatherArchive[], dossier: FlightDossierData): SavedMoroccoWeatherArchive | null {
+  return inspectMoroccoWeatherArchives(values, dossier).archive;
 }
 
 /** Separate scoped database: never enrolled in cloud sync, append-only versions and commit receipts. */

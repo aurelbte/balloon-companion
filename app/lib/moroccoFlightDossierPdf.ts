@@ -230,12 +230,14 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   ];
   layout.table(["Informations", "Valeur"], [155, WIDTH - 155], infoRows.map(([label, value]) => [label, value]), infoRows.map(([, , name]) => [null, name]));
   layout.paragraph("Champs modifiables indépendants, sans recalcul : corriger aussi les totaux et marges si nécessaire. Météo, trajectoire, références et graphique restent ceux du dossier initial.", { size: 8, muted: true });
-  layout.paragraph("Horaires locaux du terrain en priorité, UTC entre parenthèses. Disponibilité des sources limitée à la référence du dossier ; les indisponibilités et incertitudes restent explicites.");
+  layout.paragraph("Horaires du vol et météo dans le fuseau du terrain, UTC entre parenthèses. La rédaction possède son propre fuseau ; elle ne filtre ni ne redéfinit les acquisitions météo.");
   if (!dossierTimeZone(dossier.launchTimeZone)) layout.paragraph("Fuseau du terrain indisponible : horaires affichés en UTC uniquement.");
   layout.paragraph("Sources : Open-Meteo, AviationWeather.gov, OpenAIP et OpenStreetMap. Les fréquences OpenAIP ne sont pas vérifiées dans l'AIP. L'activité des espaces et l'exhaustivité de leur couverture doivent être vérifiées.", { muted: true });
 
   layout.heading("METAR / TAF - Départ et arrivée");
-  layout.paragraph(`Limite de disponibilité des sources : ${reference.iso} (UTC). Les heures de validité du vol ne sont pas modifiées.`);
+  layout.paragraph(`Rédaction : ${reference.label}. Fuseau du décollage : ${dossier.launchTimeZone ?? "UTC (non renseigné)"}. Acquisitions et échéances météo originales, indépendantes de la rédaction.`);
+  if (weather && [weather.altitudeWind.fetchedAt, weather.landingGroundWind.fetchedAt, ...["departure", "landing"].flatMap(location => Object.values(weather.aviation[location as "departure" | "landing"]).map(product => product.result.data?.sourceUpdatedAt))].some(stamp => stamp && Date.parse(stamp) > Date.parse(reference.iso)))
+    layout.paragraph("Rédaction antidatée par rapport à certaines acquisitions : leurs horodatages réels sont conservés. Ces données ne sont pas un historique attesté à la date de rédaction.", { bold: true });
   layout.paragraph("Source : aviationweather.gov. Les stations les plus proches déclarant chaque produit ne garantissent pas sa représentativité locale.");
   if (!weather) layout.paragraph(`Données aviation indisponibles. ${input.weatherError || "Service météo indisponible."}`);
   else for (const location of ["departure", "landing"] as const) for (const product of ["metar", "taf"] as const) {

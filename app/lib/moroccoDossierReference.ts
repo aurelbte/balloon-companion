@@ -1,14 +1,16 @@
 import { civilDateTimeToIso, isValidTimeZone, zonedDateTimeParts } from "./timeZone.ts";
 
-export type MoroccoDossierReference = Readonly<{ date: string; time: string }>;
+export type MoroccoDossierReference = Readonly<{ date: string; time: string; timeZone?: string }>;
 export type ResolvedMoroccoDossierReference = MoroccoDossierReference & Readonly<{
   iso: string; timeZone: string; dateLabel: string; offset: string; label: string; warning: string | null;
 }>;
 
 /** A document reference only: never retime the flight, forecasts, observations or events. */
 export function resolveMoroccoDossierReference(preparation: { startedAt: string; launchTimeZone?: string }, override?: MoroccoDossierReference): ResolvedMoroccoDossierReference {
-  const zoneKnown = isValidTimeZone(preparation.launchTimeZone);
-  const timeZone = zoneKnown ? preparation.launchTimeZone! : "UTC";
+  if (override?.timeZone !== undefined && !isValidTimeZone(override.timeZone)) throw new Error("Fuseau de rédaction invalide.");
+  const requestedZone = override?.timeZone ?? preparation.launchTimeZone;
+  const zoneKnown = isValidTimeZone(requestedZone);
+  const timeZone = zoneKnown ? requestedZone! : "UTC";
   const initial = zonedDateTimeParts(preparation.startedAt, timeZone);
   if (!initial) throw new Error("Date/heure de préparation invalide pour préremplir le dossier.");
   const reference = override ?? initial;
@@ -20,12 +22,12 @@ export function resolveMoroccoDossierReference(preparation: { startedAt: string;
   const [year, month, day] = reference.date.split("-");
   const dateLabel = `${day}/${month}/${year}`;
   const offset = new Intl.DateTimeFormat("fr-FR", { timeZone, timeZoneName: "shortOffset" }).formatToParts(new Date(iso)).find(part => part.type === "timeZoneName")!.value.replace(/\u2212/g, "-").replace(/^UTC[+-]0(?::00)?$/, "UTC");
-  return { date: reference.date, time: reference.time, iso, timeZone, dateLabel, offset, label: `${dateLabel} ${reference.time} (${timeZone}, ${offset})`, warning: zoneKnown ? null : "Fuseau local du vol non renseigné : référence affichée en UTC." };
+  return { date: reference.date, time: reference.time, iso, timeZone, dateLabel, offset, label: `${dateLabel} ${reference.time} (${timeZone}, ${offset})`, warning: zoneKnown ? null : "Fuseau de référence non renseigné : rédaction affichée en UTC." };
 }
 
 /** Freeze this value once when the export dialog opens, never from planned takeoff. */
-export function moroccoDossierOpeningReference(preparation: { launchTimeZone?: string }, now = new Date()): ResolvedMoroccoDossierReference {
-  return resolveMoroccoDossierReference({ startedAt: now.toISOString(), launchTimeZone: preparation.launchTimeZone });
+export function moroccoDossierOpeningReference(now = new Date(), deviceTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): ResolvedMoroccoDossierReference {
+  return resolveMoroccoDossierReference({ startedAt: now.toISOString(), launchTimeZone: deviceTimeZone });
 }
 
 /** Older drafts had no edit flag. Preserve references differing from their old takeoff default. */
