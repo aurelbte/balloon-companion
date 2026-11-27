@@ -1,4 +1,5 @@
 import { addMoroccoEditableText } from "./moroccoEditableFields.ts";
+import { addMoroccoNotamPanel, MOROCCO_NOTAM_HEIGHT, type MoroccoNotamWindBlock } from "./moroccoNotamPdf.ts";
 import { insertMoroccoFlightPlan } from "./moroccoFlightPlanPdf.ts";
 import { moroccoMinimumLandingMass } from "./moroccoMinimumLandingMass.ts";
 import { applyMoroccoDossierLoading, calculateMoroccoLoading, calculateMoroccoLandingMass } from "./moroccoDossierLoading.ts";
@@ -59,6 +60,8 @@ export function wrapDossierText(value: string, font: PDFFont, size: number, widt
 }
 
 class DossierLayout {
+  readonly pageEndY = new Map<PDFPage, number>();
+  readonly windBlocks: { page: PDFPage; start: number; end: number; block: MoroccoNotamWindBlock }[] = [];
   page!: PDFPage;
   y = 0;
   section = "Informations du vol";
@@ -66,8 +69,12 @@ class DossierLayout {
   readonly font: PDFFont;
   readonly bold: PDFFont;
   readonly referenceLabel: string;
-  constructor(document: PDFDocument, font: PDFFont, bold: PDFFont, referenceLabel: string) { this.document = document; this.font = font; this.bold = bold; this.referenceLabel = referenceLabel; }
+  readonly reserveNotamSpace: boolean;
+  constructor(document: PDFDocument, font: PDFFont, bold: PDFFont, referenceLabel: string, reserveNotamSpace = false) { this.document = document; this.font = font; this.bold = bold; this.referenceLabel = referenceLabel; this.reserveNotamSpace = reserveNotamSpace; }
+  // Two checklist pages are already present; PAX and flight plan are inserted later.
+  get bottom() { return this.reserveNotamSpace && this.document.getPages().indexOf(this.page) === 4 ? BOTTOM + MOROCCO_NOTAM_HEIGHT + 14 : BOTTOM; }
   newPage() {
+    if (this.page) this.pageEndY.set(this.page, this.y);
     this.page = this.document.addPage(A4);
     this.page.drawRectangle({ x: 0, y: A4[1] - 61, width: A4[0], height: 61, color: INK });
     this.page.drawText("BALLOON COMPANION", { x: MARGIN, y: A4[1] - 29, size: 11, font: this.bold, color: rgb(1, 1, 1) });
@@ -76,7 +83,13 @@ class DossierLayout {
     this.page.drawText(safeText(this.section, this.font), { x: MARGIN, y: A4[1] - 47, size: 9, font: this.font, color: rgb(.75, .86, .90) });
     this.y = A4[1] - 84;
   }
-  ensure(height: number) { if (!this.page || this.y - height < BOTTOM) this.newPage(); }
+  ensure(height: number) {
+    if (!this.page || this.y - height < this.bottom) {
+      this.newPage();
+      // An indivisible field/graphic that fits a full page may not fit above NOTAM.
+      if (this.reserveNotamSpace && this.document.getPages().indexOf(this.page) === 4 && this.y - height < this.bottom) this.newPage();
+    }
+  }
   heading(value: string, newPage = false, editableName?: string) {
     this.section = editableName ? "Informations du vol" : value;
     if (newPage || !this.page) this.newPage();
@@ -126,8 +139,8 @@ class DossierLayout {
       const length = Math.max(...cells.map((lines) => lines.length));
       let offset = 0;
       while (offset < length) {
-        if (this.y - (leading + padding * 2) < BOTTOM) { this.newPage(); drawHeader(); }
-        const count = Math.min(length - offset, Math.floor((this.y - BOTTOM - padding * 2) / leading));
+        if (this.y - (leading + padding * 2) < this.bottom) { this.newPage(); drawHeader(); }
+        const count = Math.min(length - offset, Math.floor((this.y - this.bottom - padding * 2) / leading));
         const height = count * leading + padding * 2;
         if (rowIndex % 2 === 0) this.page.drawRectangle({ x: MARGIN, y: this.y - height, width: WIDTH, height, color: PALE });
         let x = MARGIN;
@@ -151,11 +164,12 @@ class DossierLayout {
     this.y -= 7;
   }
   finish() {
+    this.pageEndY.set(this.page, this.y);
     const pages = this.document.getPages();
     pages.slice(2).forEach((page, index) => {
       page.drawLine({ start: { x: MARGIN, y: 38 }, end: { x: A4[0] - MARGIN, y: 38 }, thickness: .5, color: rgb(.8, .85, .88) });
       page.drawText("Atlas Vallée Ballons - Préparation Maroc", { x: MARGIN, y: 24, size: 7.5, font: this.font, color: MUTED });
-      const label = `${index + 4} / ${pages.length + 1}`; // Passenger listing is prepended after layout completion.
+      const label = `${index + 5} / ${pages.length + 2}`; // PAX and flight plan are inserted after layout completion.
       page.drawText(label, { x: A4[0] - MARGIN - this.font.widthOfTextAtSize(label, 8), y: 24, size: 8, font: this.font, color: MUTED });
     });
   }
@@ -185,8 +199,12 @@ function airspaceSection(layout: DossierLayout, item: DossierAirspacePassage, da
 
 export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage): Promise<Uint8Array> {
   input = applyMoroccoDossierLoading(input);
+  return renderMoroccoFlightDossierPdf(input, map, false, resolveMoroccoDossierReference(input.dossier, input.dossierReference));
+}
+
+/** Layout preflight only: a retry reuses the exact input, without any network acquisition. */
+async function renderMoroccoFlightDossierPdf(input: MoroccoDossierPdfInput, map: DossierPdfMap | MoroccoDossierMapImage, reserveNotamSpace: boolean, reference: ReturnType<typeof resolveMoroccoDossierReference>): Promise<Uint8Array> {
   const { dossier, weather } = input;
-  const reference = resolveMoroccoDossierReference(dossier, input.dossierReference);
   const scheduledDate = reference.dateLabel;
   const date = (value: string | null | undefined) => dossierLocalTime(value, dossier.launchTimeZone, true);
   // PDF convention: convert altitude m/s once; ground values already use km/h.
@@ -202,7 +220,7 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
   document.setModificationDate(new Date(reference.iso));
   document.catalog.delete(PDFName.of("Metadata")); // Inherited XMP describes the blank template, not this dossier reference.
   document.setSubject(`Stratégie ${dossier.traceId} - ${dossier.model.providerModelId}`);
-  const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold), `Référence initiale : ${reference.label}`);
+  const layout = new DossierLayout(document, await document.embedFont(StandardFonts.Helvetica), await document.embedFont(StandardFonts.HelveticaBold), `Référence initiale : ${reference.label}`, reserveNotamSpace);
   const first = dossier.points[0], last = dossier.points.at(-1)!;
   const coordinates = (point: typeof first) => `${number(point.latitude, 6)}, ${number(point.longitude, 6)}`;
   layout.heading(`Préparation Maroc - ${scheduledDate} ${reference.time}`, false, "vol-titre");
@@ -265,17 +283,28 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
     for (const time of times) {
       const points = altitude.points.filter((point) => Date.parse(point.validAt) === Date.parse(time));
       layout.ensure(Math.min(600, 65 + Math.max(0, ...points.map((point) => point.levels.length)) * 17));
+      const blockPage = layout.page, blockStart = layout.y;
+      const block: MoroccoNotamWindBlock = { label: date(time), tables: [], missing: [], warnings: [] };
       layout.paragraph(date(time), { bold: true });
-      if (!points.length) layout.paragraph("Échéance indisponible.");
+      if (!points.length) { block.missing.push("Échéance indisponible."); layout.paragraph("Échéance indisponible."); }
       for (const point of points) {
-        if (point.levels.length) layout.table(["Niveau / référence source", "Altitude AMSL (m)", "Direction (°)", `Vent (${unit})`], [205, 110, 90, WIDTH - 405], point.levels.map((level) => [
+        if (point.levels.length) {
+          const table = { headers: ["Niveau / référence source", "Altitude AMSL (m)", "Direction (°)", `Vent (${unit})`], widths: [205, 110, 90, WIDTH - 405], rows: point.levels.map((level) => [
           `${level.sourceLevel || absent}${level.isApproximation ? " (approximation source)" : ""}`, number(level.geopotentialHeightAmslM), number(level.windDirectionFromDeg), wind(level.windSpeedMps, "m/s"),
-        ]));
-        else layout.paragraph("Profil exploitable indisponible.");
+          ]) };
+          block.tables.push(table);
+          layout.table(table.headers, table.widths, table.rows);
+        }
+        else { block.missing.push("Profil exploitable indisponible."); layout.paragraph("Profil exploitable indisponible."); }
         const reasons = new Map<string, string[]>();
         for (const rejected of point.rejectedLevels) reasons.set(rejected.reason, [...(reasons.get(rejected.reason) ?? []), rejected.sourceLevel]);
-        for (const [reason, levels] of reasons) layout.paragraph(`Niveaux sous terrain / incomplets écartés : ${levels.join(", ")} - ${reason}.`, { size: 8, muted: true });
+        for (const [reason, levels] of reasons) {
+          const warning = `Niveaux sous terrain / incomplets écartés : ${levels.join(", ")} - ${reason}.`;
+          block.warnings.push(warning);
+          layout.paragraph(warning, { size: 8, muted: true });
+        }
       }
+      if (layout.page === blockPage) layout.windBlocks.push({ page: blockPage, start: blockStart, end: layout.y, block });
     }
     const ground = weather.landingGroundWind;
     layout.paragraph(`Vent à 10 m AGL à l'arrivée | ${status(ground.status)} | Récupéré : ${date(ground.fetchedAt)} | Run : ${date(ground.modelRunAt)}`, { bold: true });
@@ -407,17 +436,36 @@ export async function createMoroccoFlightDossierPdf(input: MoroccoDossierPdfInpu
     const image = await document.embedPng(map.png);
     const attribution = map.background === "SATELLITE" ? `Fond satellite 2016 (~10 m) : ${MOROCCO_SATELLITE_ATTRIBUTION} Échelle locale au centre.` : map.background === "OPENSTREETMAP" ? "Fond : © OpenStreetMap contributors. Échelle locale au centre de la carte." : "Fond satellite indisponible : trajectoire et zone de vol conservées. Échelle locale au centre.";
     const attributionHeight = wrapDossierText(attribution, layout.font, 8, WIDTH).length * 10 + 11;
-    const availableHeight = layout.y - BOTTOM - Math.max(33, attributionHeight);
+    const availableHeight = layout.y - layout.bottom - Math.max(33, attributionHeight);
     const scale = Math.min(WIDTH / image.width, availableHeight / image.height);
     const width = image.width * scale, height = image.height * scale;
     layout.page.drawImage(image, { x: MARGIN + (WIDTH - width) / 2, y: layout.y - height, width, height });
     layout.y -= height + 8;
     layout.paragraph(attribution, { size: 8, muted: true });
   }
+  // Even a dossier with very little weather must have exactly one NOTAM panel.
+  if (document.getPageCount() <= 4) { layout.section = "NOTAM"; layout.newPage(); }
+  const notamPage = document.getPage(4);
   layout.finish();
   await prependMoroccoPassengerListing(document, reference, input.passengers);
   // The two original checklists have no dossier clock fields; use their blank lower margins.
   for (const page of document.getPages().slice(1, 3)) page.drawText(`Dossier : ${reference.label} (référence initiale)`, { x: MARGIN, y: 18, size: 8, font: layout.font, color: MUTED });
   await insertMoroccoFlightPlan(document, input);
+  {
+    const blocks = layout.windBlocks.filter(block => block.page === notamPage);
+    const end = layout.pageEndY.get(notamPage);
+    const complete = blocks.length > 0 && Math.abs(blocks[0].start - (A4[1] - 84)) < .01
+      && end !== undefined && Math.abs(blocks.at(-1)!.end - end) < .01
+      && blocks.every((block, index) => block.block.tables.length <= 1 && (index === 0 || Math.abs(block.start - blocks[index - 1].end) < .01));
+    const result = await addMoroccoNotamPanel(document, notamPage, layout.font, layout.bold, wrapDossierText, {
+      bodyEndY: end ?? BOTTOM, completeWeatherBlocks: complete ? blocks.map(block => block.block) : undefined,
+    });
+    if (!result.added) {
+      if (reserveNotamSpace) throw new Error("Réservation de l'espace NOTAM incohérente.");
+      // Keep the validated compact layout when it fits. Otherwise all layout methods
+      // paginate above the fixed NOTAM rectangle, including tables and editable values.
+      return renderMoroccoFlightDossierPdf(input, map, true, reference);
+    }
+  }
   return document.save();
 }
