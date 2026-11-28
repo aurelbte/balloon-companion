@@ -38,24 +38,39 @@ async function checkedOutput(path) {
 
 export const ZONES = ['preuseville', 'le-havre', 'grenoble'];
 
+/** Backward-compatible study inputs. Never label a fresh source as the old AIRAC. */
+export function studySourceSpec(inventory) {
+  const source = inventory.sourceFiles?.sia ?? { artifact: 'sia-20261029.xlsx', referenceDate: '2026-10-29', airacCycle: '2026-10-29', license: null };
+  const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+  requireThat(/^sia-\d{8}\.xlsx$/.test(source.artifact ?? '') && validDate(source.referenceDate) && validDate(source.airacCycle)
+    && source.artifact === `sia-${source.referenceDate.replaceAll('-', '')}.xlsx`
+    && (source.license === null || typeof source.license === 'string'), 'INVALID_STUDY_SIA_EDITION');
+  const scripts = inventory.extractionScripts;
+  requireThat(scripts === undefined || Array.isArray(scripts) && scripts.length > 0 && new Set(scripts).size === scripts.length
+    && scripts.every(file => typeof file === 'string' && /^[a-zA-Z0-9_/-]+\.py$/.test(file) && !file.startsWith('/') && !file.split('/').includes('..')), 'INVALID_EXTRACTION_SCRIPT_PATH');
+  return { sia: source, scripts };
+}
+
 export async function buildZone(zone, studyPath = '/tmp/bc-obstacles-study', outputPath) {
   requireThat(ZONES.includes(zone), `UNSUPPORTED_ZONE: ${zone}`);
   const study = await realpath(studyPath);
   const local = zone === 'preuseville' ? study : join(study, zone);
   const inventory = await readJson(join(local, 'sources.json'));
+  const sourceSpec = studySourceSpec(inventory), siaFile = sourceSpec.sia.artifact;
   const config = zone === 'preuseville' ? { longitude: CENTRE[0], latitude: CENTRE[1], radius_m: RADIUS_M } :
     await readJson(join(local, 'study-config.json'));
   requireThat([config.longitude, config.latitude, config.radius_m].every(Number.isFinite) && config.radius_m > 0, 'INVALID_STUDY_CONFIG');
   const centre = [config.longitude, config.latitude], radiusM = config.radius_m;
   const [sia, geo, osm, siaMeta, geoMeta] = await Promise.all([
     readJson(join(local, 'sia-local-raw.json')), readJson(join(local, 'georisques-local-raw.json')),
-    readJson(join(local, 'osm-local-raw.json')), readJson(join(study, 'sia-20261029.xlsx.metadata.json')),
+    readJson(join(local, 'osm-local-raw.json')), readJson(join(study, `${siaFile}.metadata.json`)),
     readJson(join(study, 'georisques-turbine.csv.metadata.json')),
   ]);
   requireThat(Array.isArray(sia) && Array.isArray(geo) && Array.isArray(osm.elements) && Array.isArray(osm.sources), 'INVALID_STUDY_COLLECTIONS');
   const inputs = [];
   // All retained originals are checked, including the regional PBFs, without a network request.
-  const originals = ['sia-20261029.xlsx', 'georisques-turbine.csv', ...osm.sources.map(source => `${source.region}.osm.pbf`)];
+  const originals = [siaFile, 'georisques-turbine.csv', ...osm.sources.map(source => `${source.region}.osm.pbf`)];
   for (const file of [...originals, 'sia-local-raw.json', 'georisques-local-raw.json', 'osm-local-raw.json']) {
     const localExtract = file.endsWith('-local-raw.json');
     const expected = inventory.raw_files?.find(item => item.file === file) ??
@@ -73,23 +88,25 @@ export async function buildZone(zone, studyPath = '/tmp/bc-obstacles-study', out
     // Later studies did not pre-attest local JSON hashes. Capture them now, without pretending otherwise.
     inputs.push({ file, sha256: hash, integrity: expected ? 'verified_against_study_inventory' : 'captured_local_extract_not_pre_attested' });
   }
-  for (const [file, metadata] of [['sia-20261029.xlsx', siaMeta], ['georisques-turbine.csv', geoMeta]]) {
+  for (const [file, metadata] of [[siaFile, siaMeta], ['georisques-turbine.csv', geoMeta]]) {
     requireThat(metadata.status === 200 && metadata.sha256 === inputs.find(i => i.file === file).sha256, `INVALID_DOWNLOAD_METADATA: ${file}`);
   }
+  requireThat((siaMeta.referenceDate === undefined || siaMeta.referenceDate === sourceSpec.sia.referenceDate)
+    && (siaMeta.airacCycle === undefined || siaMeta.airacCycle === sourceSpec.sia.airacCycle), 'SIA_EDITION_METADATA_MISMATCH');
   const sources = [
-    { id: 'sia-enr54-20261029', source: 'SIA', url: siaMeta.final_url ?? siaMeta.url,
-      artifact: 'sia-20261029.xlsx', sha256: siaMeta.sha256, referenceDate: '2026-10-29', airacCycle: '2026-10-29',
-      snapshotAtUtc: null, retrievedAtUtc: siaMeta.requested_at_utc ?? null, license: null,
-      attribution: 'SIA / DGAC — ENR 5.4; redistribution conditions to verify' },
+    { id: `sia-enr54-${sourceSpec.sia.referenceDate.replaceAll('-', '')}`, source: 'SIA', url: siaMeta.final_url ?? siaMeta.url,
+      artifact: siaFile, sha256: siaMeta.sha256, referenceDate: sourceSpec.sia.referenceDate, airacCycle: sourceSpec.sia.airacCycle,
+      snapshotAtUtc: null, retrievedAtUtc: siaMeta.completed_at_utc ?? siaMeta.requested_at_utc ?? null, license: sourceSpec.sia.license,
+      attribution: sourceSpec.sia.license ? 'Service de l’Information Aéronautique / DGAC — ENR 5.4; attribution et date à conserver' : 'SIA / DGAC — ENR 5.4; redistribution conditions to verify' },
     { id: 'georisques-eolien-study', source: 'GEORISQUES', url: geoMeta.final_url ?? geoMeta.url,
       artifact: 'georisques-turbine.csv', sha256: geoMeta.sha256, referenceDate: null, airacCycle: null,
-      snapshotAtUtc: null, retrievedAtUtc: geoMeta.requested_at_utc ?? null, license: 'Licence Ouverte 2.0 — verify dataset-specific third-party conditions',
+      snapshotAtUtc: null, retrievedAtUtc: geoMeta.completed_at_utc ?? geoMeta.requested_at_utc ?? null, license: 'Licence Ouverte 2.0 — verify dataset-specific third-party conditions',
       attribution: 'Géorisques / Ministère de la Transition écologique — individual date_maj retained without assumed timezone' },
     ...osm.sources.map(source => {
       requireThat(source.sha256 === inputs.find(i => i.file === `${source.region}.osm.pbf`)?.sha256, `INVALID_OSM_SOURCE: ${source.region}`);
       return { id: `osm-${source.region}-${source.sha256}`, source: 'OSM', url: source.url ?? null,
         artifact: `${source.region}.osm.pbf`, sha256: source.sha256, referenceDate: null, airacCycle: null,
-        snapshotAtUtc: source.snapshot_utc ?? null, retrievedAtUtc: null, license: 'ODbL-1.0',
+        snapshotAtUtc: source.snapshot_utc ?? null, retrievedAtUtc: source.retrieved_at_utc ?? null, license: 'ODbL-1.0',
         attribution: '© OpenStreetMap contributors · Geofabrik' };
     }),
   ];
@@ -102,6 +119,10 @@ export async function buildZone(zone, studyPath = '/tmp/bc-obstacles-study', out
   for (const raw of sia) include(normalizeSia(raw, [sources[0].id]));
   for (const raw of geo) include(normalizeGeorisques(raw, [sources[1].id]));
   for (const raw of osm.elements) {
+    if (raw.unresolved_native_geometry === true) {
+      excluded.push({ source: 'OSM', sourceId: raw.id, reason: osmExclusionReason(raw) ?? 'native_relation_geometry_unresolved_requires_review', original: raw });
+      continue;
+    }
     const editions = (raw.extracts ?? []).map(region => {
       const source = sources.find(s => s.source === 'OSM' && s.artifact === `${region}.osm.pbf`);
       requireThat(source, `MISSING_OSM_EDITION: ${region}`); return source.id;
@@ -139,9 +160,9 @@ export async function buildZone(zone, studyPath = '/tmp/bc-obstacles-study', out
   }
   const metadata = [
     { file: 'sources.json', sha256: await hashFile(join(local, 'sources.json')) },
-    ...await Promise.all(['sia-20261029.xlsx.metadata.json', 'georisques-turbine.csv.metadata.json'].map(async file => ({ file, sha256: await hashFile(join(study, file)) }))),
-    ...await Promise.all((zone === 'preuseville' ? ['fetch.py', 'extract_osm.py', 'normalize.py'] :
-      ['shared/common.py', 'shared/prepare_sources.py', 'shared/extract_zones.py', ...(zone === 'grenoble' ? ['shared/extract_linear.py'] : [])])
+    ...await Promise.all([`${siaFile}.metadata.json`, 'georisques-turbine.csv.metadata.json'].map(async file => ({ file, sha256: await hashFile(join(study, file)) }))),
+    ...await Promise.all((sourceSpec.scripts ?? (zone === 'preuseville' ? ['fetch.py', 'extract_osm.py', 'normalize.py'] :
+      ['shared/common.py', 'shared/prepare_sources.py', 'shared/extract_zones.py', ...(zone === 'grenoble' ? ['shared/extract_linear.py'] : [])]))
       .map(async file => ({ file, sha256: await hashFile(join(study, file)) }))),
   ];
   if (zone !== 'preuseville') metadata.push({ file: 'study-config.json', sha256: await hashFile(join(local, 'study-config.json')) });
@@ -156,11 +177,24 @@ export async function buildZone(zone, studyPath = '/tmp/bc-obstacles-study', out
   await mkdir(output); // Refuse overwriting any existing output or previous study.
   const limitations = [
     'Local non-exhaustive source inventory, not a certified navigation or clearance database',
-    'Reuses verified study extracts; XLSX/PBF extraction and CRS transformation not rerun here',
-    'OSM extraction already resolved overlapping PBF observations; original discarded variants cannot be reconstructed from it',
-    'OSM polygons/ways may be represented by study centroids; native geometries not recreated',
+    inventory.acquisition?.freshExtraction === true
+      ? 'Fresh XLSX/PBF/WFS extraction precedes this normalization; raw sources, horizontal CRS conversion and extraction scripts retained'
+      : 'Reuses verified study extracts; XLSX/PBF extraction and CRS transformation not rerun here',
+    inventory.acquisition?.freshExtraction === true
+      ? 'Only exactly identical overlapping PBF observations collapsed; other variants and original regional PBFs retained'
+      : 'OSM extraction already resolved overlapping PBF observations; original discarded variants cannot be reconstructed from it',
+    inventory.acquisition?.freshExtraction === true
+      ? 'OSM surface structures use explicit representative points; available original outlines retained in source records, not converted to cable routes'
+      : 'OSM polygons/ways may be represented by study centroids; native geometries not recreated',
     ...(summary.cables ? ['Cable geometry is 2D only; no complete vertical profile or ground clearance is established'] : ['No cable in this local inventory']),
-    'Original study OSM selection used centroids; routes intersecting the circle with an outside centroid may be absent',
+    inventory.acquisition?.nativeTracesByIntersection === true
+      ? 'Native OSM traces selected by 2D intersection, not centroid; surface objects still use explicit representative points'
+      : 'Original study OSM selection used centroids; routes intersecting the circle with an outside centroid may be absent',
+    ...(inventory.acquisition?.georisquesScope ? [`Géorisques extraction scope: ${inventory.acquisition.georisquesScope}`] : []),
+    ...(Number.isFinite(inventory.acquisition?.osmCoverage?.nominalAreaCoverageFraction) && inventory.acquisition.osmCoverage.nominalAreaCoverageFraction < .999999
+      ? [`OSM regional extract footprint covers ${(inventory.acquisition.osmCoverage.nominalAreaCoverageFraction * 100).toFixed(2)}% of the study circle; remaining area is not acquired, never implicitly obstacle-free`] : []),
+    ...(excluded.some(r => r.reason === 'native_relation_geometry_unresolved_requires_review')
+      ? ['Tagged OSM relations without resolved native geometry retained in exclusions for review; no point or route invented'] : []),
     'Later study local JSON hashes are captured now where no prior hash was recorded; retained original source hashes are checked',
     'No automatic merge or physical-object count; every cross-source match requires review',
     'SIA publication/OSM mapping alone do not attest physical presence; park lifecycle is not turbine field verification',
