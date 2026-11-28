@@ -127,9 +127,12 @@
 .suffixedInput { position: relative; display: block; margin: 0 !important; }
 .suffixedInput input { padding-right: 42px; }
 .suffixedInput > span { position: absolute; top: 50%; right: 11px; margin: 0; color: var(--bc-text-muted); font-size: .7rem; transform: translateY(-50%); text-transform: none; }
-.manualDateField { position: relative; display: flex !important; min-height: 46px; align-items: center; margin: 0 !important; padding: 0 11px; overflow: hidden; border: 1px solid var(--bc-border); border-radius: 13px; background: var(--bc-surface); color: var(--bc-text-primary) !important; font-size: .82rem !important; font-weight: 400 !important; letter-spacing: normal !important; text-transform: none !important; }
+.manualDateField { position: relative; display: flex !important; min-height: 46px; align-items: center; margin: 0 !important; color: var(--bc-text-primary) !important; font-size: .82rem !important; font-weight: 400 !important; letter-spacing: normal !important; text-transform: none !important; }
 .manualDateField:focus-within { outline: 2px solid var(--bc-accent); outline-offset: 1px; }
-.manualDateField > input { position: absolute; inset: 0; min-height: 100%; cursor: pointer; opacity: 0; }
+.manualDateField > input { padding-right: 44px; }
+.manualDateCalendar { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 44px; display: flex; align-items: center; justify-content: center; color: var(--bc-text-muted); }
+.manualDateCalendar > input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; cursor: pointer; opacity: 0; }
+.manualDateCalendar > input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: auto; height: auto; margin: 0; cursor: pointer; }
 .form textarea { min-height: 84px; padding-block: 11px; resize: vertical; }
 .wide { grid-column: 1 / -1; }
 .durationPreview { margin-top: 4px; color: var(--bc-text-secondary); font-size: 0.7rem; }

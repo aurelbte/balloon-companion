@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { CalendarDays, ChevronLeft } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useBalloons } from "../../hooks/useBalloons";
@@ -10,6 +10,7 @@ import { NEW_BALLOON_RETURN_KEY, NEW_BALLOON_SELECTION_KEY } from "../../lib/bal
 import { pilotFunctionForRegulatoryRole, roundJournalAltitudeMeters, type OfficialAscensionInput, type OfficialFlightNature, type OfficialRegulatoryRole } from "../../lib/flightCompletion";
 import { createScopedOfficialAscensionDraft, parseScopedOfficialAscensionDraft } from "../../lib/officialAscensionDraft";
 import { flightNatureRequiresExaminer, flightNatureRequiresInstructor } from "../../lib/officialAscensionQualifications";
+import { formatAscensionDate, openAscensionDatePicker, parseAscensionDate } from "../../lib/officialAscensionDate";
 import styles from "../../flight/complete/FlightComplete.module.css";
 
 const ADD_BALLOON_VALUE = "__add_balloon__";
@@ -58,6 +59,8 @@ export default function OfficialAscensionForm({ submissionError, mode, ascension
   const [hydrated, setHydrated] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const restoredRef = useRef(false);
+  const datePickerRef = useRef<HTMLInputElement>(null);
+  const [dateText, setDateText] = useState<string | null>(null);
 
   const selectedBalloon = balloons.find(({ id }) => id === selectedBalloonId);
   const inferredBalloonId = useMemo(() => balloons.find(({ registration }) => registration === values.registration)?.id ?? "", [balloons, values.registration]);
@@ -154,7 +157,20 @@ export default function OfficialAscensionForm({ submissionError, mode, ascension
       <label className={styles.wide}><span>Ballon</span><select value={selectedBalloonId || MANUAL_BALLOON_VALUE} onChange={(event) => chooseBalloon(event.target.value)}><option value={MANUAL_BALLOON_VALUE}>Aucun ballon enregistré</option>{balloons.map((balloon) => <option key={balloon.id} value={balloon.id}>{balloonDisplayName(balloon)}</option>)}<option value={ADD_BALLOON_VALUE}>Ajouter un ballon…</option></select></label>
       <label><span>Immatriculation</span><input autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={values.registration} readOnly={Boolean(selectedBalloon)} onChange={(e) => update("registration", e.target.value.toUpperCase())} /></label>
       <label><span>Type de ballon</span><input value={values.balloonModel} readOnly={Boolean(selectedBalloon)} onChange={(e) => update("balloonModel", e.target.value)} /></label>
-      <label><span>Date</span>{manualDateEntry ? <span className={styles.manualDateField}><span aria-hidden="true">{values.dateIso ? new Date(`${values.dateIso}T12:00:00`).toLocaleDateString("fr-FR") : "Choisir une date"}</span><input type="date" required autoComplete="off" value={values.dateIso} aria-label="Choisir la date de l’ascension" onChange={(e) => update("dateIso", e.target.value)} /></span> : <input type="date" required value={values.dateIso} aria-label="Date de l’ascension" onChange={(e) => update("dateIso", e.target.value)} />}</label>
+      <label><span>Date</span>{manualDateEntry ? <span className={styles.manualDateField}>
+        <input type="text" required autoComplete="off" inputMode="text" placeholder="Choisir une date" aria-label="Date de l’ascension (JJ/MM/AAAA)" title="JJ/MM/AAAA" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" maxLength={10}
+          value={dateText ?? formatAscensionDate(values.dateIso)}
+          onClick={() => openAscensionDatePicker(datePickerRef.current)}
+          onKeyDown={(event) => { if (event.altKey && event.key === "ArrowDown") { event.preventDefault(); openAscensionDatePicker(datePickerRef.current); } }}
+          onChange={(event) => { const text = event.target.value, iso = parseAscensionDate(text); setDateText(text); update("dateIso", iso ?? ""); event.target.setCustomValidity(text && !iso ? "Saisissez une date valide au format JJ/MM/AAAA." : ""); }}
+          onBlur={() => { if (dateText === "" || dateText !== null && parseAscensionDate(dateText)) setDateText(null); }} />
+        <span className={styles.manualDateCalendar}>
+          <CalendarDays size={18} aria-hidden="true" />
+          <input ref={datePickerRef} type="date" lang="fr" tabIndex={-1} autoComplete="off" value={values.dateIso} aria-label="Ouvrir le calendrier de l’ascension"
+            onClick={() => openAscensionDatePicker(datePickerRef.current)}
+            onChange={(event) => { setDateText(null); update("dateIso", event.target.value); const textInput = event.target.closest("label")?.querySelector('input[type="text"]'); if (textInput instanceof HTMLInputElement) textInput.setCustomValidity(""); }} />
+        </span>
+      </span> : <input type="date" required value={values.dateIso} aria-label="Date de l’ascension" onChange={(e) => update("dateIso", e.target.value)} />}</label>
       <label><span>Lieu d’envol</span><input value={values.departure} onChange={(e) => update("departure", e.target.value)} /></label>
       <label><span>Lieu d’atterrissage</span><input value={values.arrival} onChange={(e) => update("arrival", e.target.value)} /></label>
       <label><span>Catégorie</span><select value={values.category} onChange={(e) => update("category", e.target.value as typeof values.category)}><option value="">Sélectionner</option><option>Libre à air chaud</option><option>Libre à gaz</option></select></label>

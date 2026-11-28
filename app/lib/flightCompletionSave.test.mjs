@@ -390,3 +390,70 @@ for(const mode of ['CREATE','UPDATE']) test(`B8 ${mode} synchronous reentrant su
   });
   handler=hooks.render(Page).props.onSubmit;assert.equal(handler(defaultOfficialAscensionInput()),true);assert.equal(nested,false);assert.equal(writes,1);
 });
+
+test('date manuelle du formulaire : saisie visible progressive, calendrier, validation et réouverture', async (t) => {
+  const hooks = dispatcher(); t.after(() => hooks.unmount()); browser(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const Form = loadComponent('../components/journal/OfficialAscensionForm.tsx', {
+    react: hooks.react, 'next/navigation': { useRouter: () => ({}), usePathname: () => '/journal/ascension/new' },
+    '../../hooks/useBalloons': { useBalloons: () => [] },
+  });
+  const initialValues = { ...defaultOfficialAscensionInput(), dateIso: '', balloonModel: 'Ballon', balloonManufacturer: '', registration: 'F-TEST', departure: 'Terrain', arrival: 'Champ', category: 'Libre à air chaud', pilotFunction: 'Pilote', regulatoryRole: 'PIC', supervisedByFiB: false, officialDurationMinutes: 60, maximumAltitudeM: '300', flightNature: 'STANDARD', takeoffCount: '1', landingCount: '1', instructorName: '', instructorLicenceNumber: '', examinerName: '', examinerLicenceNumber: '', observations: '' };
+  const submissions = [];
+  const props = {mode:'CREATE',manualDateEntry:true,initialValues,title:'Nouvelle ascension',submitLabel:'Enregistrer',backLabel:'Retour',onCancel:()=>{},onSubmit:input=>submissions.push(input)};
+  const render = () => hooks.render(() => Form(props));
+  let tree=render(); t.mock.timers.tick(0); tree=render();
+  const text = () => find(tree,n=>n.props?.placeholder==='Choisir une date');
+  const date = () => find(tree,n=>n.type==='input'&&n.props.type==='date');
+  let validity='',pickerCalls=0;
+  date().props.ref.current={showPicker(){pickerCalls++;}};
+  text().props.onClick(); assert.equal(pickerCalls,1);
+  for(let i=1;i<=10;i++) {
+    const value='28/11/2026'.slice(0,i);
+    text().props.onChange({target:{value,setCustomValidity(v){validity=v;}}});tree=render();
+    assert.equal(text().props.value,value);
+    assert.equal(date().props.value,i===10?'2026-11-28':'');
+  }
+  assert.equal(validity,'');text().props.onBlur();tree=render();assert.equal(text().props.value,'28/11/2026');
+  find(tree,n=>n.type==='form').props.onSubmit({preventDefault(){}});await flush();
+  assert.equal(submissions[0].dateIso,'2026-11-28');
+  text().props.onChange({target:{value:'31/02/2026',setCustomValidity(v){validity=v;}}});tree=render();
+  assert.ok(validity);assert.equal(date().props.value,'');
+  find(tree,n=>n.type==='form').props.onSubmit({preventDefault(){}});await flush();assert.equal(submissions.length,1);
+  // A native selection replaces the invalid draft, rather than leaving stale displayed text.
+  globalThis.HTMLInputElement=class {};t.after(()=>delete globalThis.HTMLInputElement);
+  date().props.onChange({target:{value:'2028-02-29',closest:()=>null}});tree=render();assert.equal(text().props.value,'29/02/2028');
+  const restored=dispatcher();
+  const RestoredForm=loadComponent('../components/journal/OfficialAscensionForm.tsx',{
+    react:restored.react,'next/navigation':{useRouter:()=>({}),usePathname:()=>'/journal/ascension/new'},'../../hooks/useBalloons':{useBalloons:()=>[]},
+  });
+  const reopened=restored.render(()=>RestoredForm({...props,initialValues:{...initialValues,dateIso:'2028-02-29'}}));
+  assert.equal(find(reopened,n=>n.props?.placeholder==='Choisir une date').props.value,'29/02/2028');
+  restored.unmount();
+});
+
+test('date civile conservée : création, modification, stockage et aller-retour cloud dans quatre fuseaux', async t => {
+  const { localStorage } = browser(t);
+  const { BrowserCloudSyncPayloadProvider } = await import('./cloudSyncBrowser.ts');
+  const { parseLogbookEntryCloudRow } = await import('./cloudPullBrowser.ts');
+  const { scopedBusinessStorageKey } = await import('./auth/dataScopeRuntime.ts');
+  const { parseAscensionDate } = await import('./officialAscensionDate.ts');
+  const previous = process.env.TZ;
+  t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+  for (const tz of ['Europe/Paris','America/Los_Angeles','Pacific/Kiritimati','Africa/Casablanca']) {
+    process.env.TZ=tz;
+    const dateIso=parseAscensionDate('29/03/2026');
+    const previousIds=new Set(persistence.loadFlightCompletionState().officialAscensions.map(a=>a.id));
+    const created=persistence.persistManualOfficialAscension({...defaultOfficialAscensionInput(),dateIso,date:'29 mars 2026'}).officialAscensions.find(a=>!previousIds.has(a.id));
+    assert.equal(created.dateIso,'2026-03-29');
+    const modified=persistence.persistOfficialAscensionUpdate(created.id,{...created,dateIso:parseAscensionDate('25/10/2026'),date:'25 octobre 2026'});
+    assert.equal(modified.dateIso,'2026-10-25');
+    assert.equal(persistence.loadFlightCompletionState().officialAscensions.find(a=>a.id===created.id).dateIso,'2026-10-25');
+    const scope='USER:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    localStorage.setItem(scopedBusinessStorageKey(scope,persistence.FLIGHT_COMPLETION_STORAGE_KEY),JSON.stringify({officialAscensions:[modified]}));
+    const payload=await new BrowserCloudSyncPayloadProvider(localStorage,scope).build({entityType:'logbook-entry',entityId:created.id,operation:'UPSERT'});
+    assert.equal(payload.payload.date_iso,'2026-10-25');
+    const pulled=parseLogbookEntryCloudRow({...payload.payload,id:created.id,user_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',revision:1,created_at:'2026-11-28T10:00:00Z',updated_at:'2026-11-28T10:00:00Z',deleted_at:null});
+    assert.equal(pulled.value.dateIso,'2026-10-25');assert.equal(pulled.value.date,'25 octobre 2026');
+  }
+});
