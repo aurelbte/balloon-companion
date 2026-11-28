@@ -226,3 +226,61 @@ test('export downloads a complete PDF with NOTAM even when the old page 7 had in
   assert.ok(pdf.getForm().getTextField(MOROCCO_NOTAM_FIELD));
   assert.equal(pdf.getForm().getFields().filter(field => field instanceof PDFCheckBox).length, 39);
 });
+
+// A handwritten signature is a reader annotation, not an AcroForm /Sig (certificate).
+const signatureRect = { x: 303.64, y: 58, width: 243.64, height: 124 };
+const overlapsSignature = r => r.x < signatureRect.x + signatureRect.width && r.x + r.width > signatureRect.x
+  && r.y < signatureRect.y + signatureRect.height && r.y + r.height > signatureRect.y;
+
+test('generated NOTAM signature area has no encryption, certification, signature lock or intercepting widget', async () => {
+  const pdf = await PDFDocument.load(await createMoroccoFlightDossierPdf(await extendedWeather(), { error: 'Carte hors ligne' }));
+  assert.equal(pdf.isEncrypted, false); assert.equal(pdf.context.trailerInfo.Encrypt, undefined);
+  assert.equal(pdf.catalog.has(PDFName.of('Perms')), false);
+  const page = pdf.getPage(6), form = pdf.getForm();
+  assert.equal(form.acroForm.dict.has(PDFName.of('SigFlags')), false);
+  assert.equal(form.getFields().filter(field => field.acroField.dict.get(PDFName.of('FT'))?.toString() === '/Sig').length, 0);
+  for (const field of form.getFields()) {
+    assert.equal(field.acroField.dict.has(PDFName.of('Lock')), false);
+    for (const widget of field.acroField.getWidgets()) if (widget.P()?.toString() === page.ref.toString()) {
+      assert.equal(overlapsSignature(widget.getRectangle()), false, field.getName());
+    }
+  }
+});
+
+test('standard handwritten Ink and imported-image Stamp survive two saves without losing editable fields or page layout', async () => {
+  for (const subtype of ['Ink','Stamp']) {
+    let pdf = await PDFDocument.load(await createMoroccoFlightDossierPdf(await extendedWeather(), { error: 'Carte hors ligne' }));
+    // pdf-lib may add balanced graphics-state wrappers when an annotation is attached.
+    const painting = page => content(page).split('\n').filter(line => !['', 'q', 'Q'].includes(line.trim())).join('\n');
+    const beforePages = pdf.getPages().map(painting), pageCount = pdf.getPageCount();
+    const fields = pdf.getForm().getFields().map(f => ({ name: f.getName(), readOnly: f.isReadOnly() }));
+    const page = pdf.getPage(6), c = pdf.context;
+    const normal = subtype === 'Ink'
+      ? c.flateStream('q 0 0 0 RG 2 w 5 15 m 25 45 l 35 12 l 60 35 l 95 20 l 140 30 l S Q', { Type: 'XObject', Subtype: 'Form', BBox: [0,0,180,60] })
+      : await (async () => {
+        const image = await pdf.embedPng(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6QAAAABJRU5ErkJggg==','base64'));
+        await image.embed();
+        return c.flateStream('q 180 0 0 60 0 0 cm /SignatureImage Do Q', { Type: 'XObject', Subtype: 'Form', BBox: [0,0,180,60], Resources: { XObject: { SignatureImage: image.ref } } });
+      })();
+    const annotation = c.obj({ Type:'Annot', Subtype:subtype, Rect:[320,80,500,140], P:page.ref, F:4,
+      AP:{N:c.register(normal)}, ...(subtype==='Ink'?{InkList:[[325,95,345,125,355,92,380,115,415,100,460,110]], C:[0,0,0], BS:{W:2}}:{Name:'Signature'}) });
+    page.node.addAnnot(c.register(annotation));
+    const comment='Commentaire NOTAM conservé avec annotation manuscrite.';
+    pdf.getForm().getTextField(MOROCCO_NOTAM_FIELD).setText(comment);
+    pdf.getForm().getCheckBox('avb-enveloppe-1').check();
+    for(let i=0;i<2;i++) {
+      pdf=await PDFDocument.load(await pdf.save());
+      assert.equal(pdf.getPageCount(),pageCount); assert.deepEqual(pdf.getPages().map(painting),beforePages);
+      for(const original of fields) assert.equal(pdf.getForm().getField(original.name).isReadOnly(),original.readOnly);
+      assert.equal(pdf.getForm().getTextField(MOROCCO_NOTAM_FIELD).getText(),comment);
+      assert.equal(pdf.getForm().getCheckBox('avb-enveloppe-1').isChecked(),true);
+      const annots=pdf.getPage(6).node.Annots();
+      const found=Array.from({length:annots.size()},(_,i)=>annots.lookup(i)).filter(a=>a.get(PDFName.of('Subtype'))?.toString()===`/${subtype}`);
+      assert.equal(found.length,1);const a=found[0];
+      assert.ok(a.lookup(PDFName.of('AP'),PDFDict).lookup(PDFName.of('N')));
+      if(subtype==='Ink')assert.ok(a.get(PDFName.of('InkList')));
+      assert.equal(pdf.isEncrypted,false);
+      assert.equal(pdf.getForm().getFields().length,fields.length);
+    }
+  }
+});
